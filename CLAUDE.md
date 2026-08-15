@@ -51,6 +51,36 @@ converts a WSL path to something the Windows binary can read, and it round-trips
 Windows process writing "here" lands back at the expected WSL path too). The MCP bridge
 is **not** left running by default — see that skill for why and how to start it.
 
+### WSL2 ↔ Windows networking — required for any live MCP connection
+
+**Both `blender-mcp` and `unreal-mcp` need WSL2 to reach `127.0.0.1` on the Windows
+host** (Unreal's HTTP server directly; Blender's TCP bridge via the `blender-mcp`
+relay process, which itself runs in WSL). By default WSL2 uses NAT networking with
+"localhost forwarding," which is *supposed* to make this work automatically — **it did
+not, on this machine.** Diagnosed 2026-08-15: `UnrealEditor` already had an explicit
+Windows Firewall "Allow" rule for both Private and Public profiles, and WSL still
+couldn't reach port 8000 or Blender's port 9876 — that combination points at WSL2's
+NAT/loopback-forwarding mechanism itself failing, not a firewall block (no admin
+rights were available in this session to rule firewall out completely, but an
+already-allowed process still failing is strong evidence against it being the cause).
+
+**Fix applied: WSL2 mirrored networking mode** — `%UserProfile%\.wslconfig`
+(`C:\Users\Admin\.wslconfig`) now has:
+```ini
+[wsl2]
+networkingMode=mirrored
+```
+This makes WSL2 share the Windows host's network namespace outright — `127.0.0.1` means
+the same thing on both sides, no per-port forwarding to rely on, so it fixes this
+category of problem for any future port too, not just these two. Requires Windows 11
+with a build supporting mirrored mode (confirmed here: build 26200, well above the
+~22621.2428 minimum) and **a full WSL restart to take effect** (`wsl --shutdown` from a
+Windows-side terminal — not from inside WSL — then reopen). **Applied but not yet
+verified** as of this commit — restarting WSL ends the session that made this change;
+verify connectivity fresh after the restart (`curl http://127.0.0.1:8000/mcp` from WSL
+should get a response instead of hanging/refusing, and likewise a raw TCP connect to
+`127.0.0.1:9876` once Blender's bridge is started).
+
 ## Project Overview
 
 **TBD.** See `MISSION.md`.
