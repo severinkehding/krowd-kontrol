@@ -148,6 +148,31 @@ bool FKrowdKontrolEnergyMeterWidgetTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// (9b) Resolution safety - the meter's pixel footprint stays inside a small
+	// top-left corner region rather than creeping toward the central play area, at
+	// both ends of this project's target resolution range. MISSION.md does not pin
+	// down an exact resolution list yet, so this uses the same low/high bounds
+	// (1280x720 minimum, 3840x2160 / 4K maximum) this genre's HUD-safe-area
+	// reasoning typically assumes. Since the footprint is a fixed pixel size
+	// anchored to the corner, the low (smallest) resolution is the binding case: if
+	// the corner region is safe there, every larger resolution in the range is
+	// strictly safer (the same fixed-size box occupies a smaller fraction of a
+	// bigger screen) - both are still checked explicitly rather than relying on
+	// that argument alone.
+	const float MeterFootprintWidthPx = UEnergyMeterWidget::MeterMarginPx + UEnergyMeterWidget::MeterWidthPx;
+	const float MeterFootprintHeightPx = UEnergyMeterWidget::MeterMarginPx + UEnergyMeterWidget::MeterHeightPx;
+	const float SafeCornerFraction = 0.25f;
+	const FVector2D TargetResolutions[] = { FVector2D(1280.0f, 720.0f), FVector2D(3840.0f, 2160.0f) };
+	for (const FVector2D& TargetResolution : TargetResolutions)
+	{
+		TestTrue(*FString::Printf(TEXT("Meter footprint width should stay within the top-left %.0f%% corner region at %dx%d"),
+			SafeCornerFraction * 100.0f, (int32)TargetResolution.X, (int32)TargetResolution.Y),
+			MeterFootprintWidthPx <= TargetResolution.X * SafeCornerFraction);
+		TestTrue(*FString::Printf(TEXT("Meter footprint height should stay within the top-left %.0f%% corner region at %dx%d"),
+			SafeCornerFraction * 100.0f, (int32)TargetResolution.X, (int32)TargetResolution.Y),
+			MeterFootprintHeightPx <= TargetResolution.Y * SafeCornerFraction);
+	}
+
 	// (10) Chrome compliance - MISSION.md Hard Invariant 3 reserves
 	// Purple/Teal/Orange/Blue/White for gameplay information; the meter's background
 	// must not drift onto one of those values.
