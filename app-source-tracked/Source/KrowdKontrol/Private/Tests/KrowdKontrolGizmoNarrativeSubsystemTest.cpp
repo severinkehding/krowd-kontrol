@@ -6,7 +6,10 @@
 // No UWorld/CreateNewMap() needed - RegisterBark/TriggerBark/HasBarkFired never call
 // GetWorld() or GetGameInstance(), so the subsystem is constructed directly via
 // NewObject<>(), matching KrowdKontrolAbilityDataTest.cpp's "no engine-object
-// dependency" precedent.
+// dependency" precedent. UGameInstanceSubsystem is UCLASS(Within = GameInstance),
+// so NewObject<> still needs a UGameInstance Outer (a bare NewObject<>() defaults to
+// the transient package and fails Outer-class validation) - a plain NewObject<UGameInstance>()
+// satisfies that without needing a real engine-started game instance.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -14,6 +17,7 @@
 #include "Misc/AutomationTest.h"
 #include "GizmoNarrativeSubsystem.h"
 #include "GizmoBarkTestListener.h"
+#include "Engine/GameInstance.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -24,7 +28,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FKrowdKontrolGizmoNarrativeSubsystemTest::RunTest(const FString& Parameters)
 {
-	UGizmoNarrativeSubsystem* Subsystem = NewObject<UGizmoNarrativeSubsystem>();
+	UGameInstance* GameInstanceOuter = NewObject<UGameInstance>();
+	UGizmoNarrativeSubsystem* Subsystem = NewObject<UGizmoNarrativeSubsystem>(GameInstanceOuter);
 	if (!TestNotNull(TEXT("UGizmoNarrativeSubsystem should construct"), Subsystem))
 	{
 		return false;

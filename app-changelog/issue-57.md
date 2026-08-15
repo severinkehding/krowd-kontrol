@@ -54,23 +54,14 @@ $ python harness/ci.py --quick
 GATE_OK (STATIC_SKIPPED, UNIT_PASSED tests=9)
 ```
 
-**Note on full-gate validation:** this workflow's automated `dark-factory-validate`
-run recorded a `GATE_OK mode=full` result, but on inspection that run's hard-invariant
-review and diff discussion refer to `AbilityData.cpp/h` and `StationPowerUpComponent.cpp/h`
-— unrelated files from issues #60/#63 — not this issue's `GizmoBark`/
-`GizmoNarrativeSubsystem` files. That happened because the validation step's local
-`main` ref was two commits stale at the time it ran (missing the since-merged PRs for
-#60/#63), which made `git diff main...HEAD` pick up those commits' files instead of
-this branch's actual change. That artifact did not cover this issue.
-
-**Superseded by a fresh, direct re-run (operator, during PR review):** ran
-`python3 harness/ci.py` (full mode, not `--quick`) against this branch's actual
-current `app/` state and got a clean `GATE_OK mode=full` — `UNIT_PASSED tests=9`,
-`APP_STARTED driver=cli`, `UE_AUTOMATION_RESULT passed=1 total=1`,
-`UE_AUTOMATION_OK`, `E2E_PASSED steps=1`. This does cover this issue's actual diff
-and genuinely ran `KrowdKontrolGizmoNarrativeSubsystemTest.cpp` through the real
-headless Automation Framework, not a stale/substitute result — treat this as the
-validation record for this PR, not the stale-`main` run above.
+**Note on an earlier `dark-factory-validate` run:** that run recorded a `GATE_OK
+mode=full` result, but its hard-invariant review and diff discussion referred to
+`AbilityData.cpp/h` and `StationPowerUpComponent.cpp/h` — unrelated files from issues
+#60/#63, not this issue's `GizmoBark`/`GizmoNarrativeSubsystem` files. The validation
+step's local `main` ref was two commits stale at the time it ran (missing the
+since-merged PRs for #60/#63), which made `git diff main...HEAD` pick up those
+commits' files instead of this branch's actual change, so that run's result did not
+cover this issue's diff.
 
 MISSION.md Hard Invariants reviewed by inspection: this change adds no enemy, kill, or
 colour-channel logic and touches no existing file's behavior — Hard Invariants 2-5 are
