@@ -11,10 +11,80 @@ state. There's no app yet.
 
 ## How this works
 
-Read `FACTORY.md` for the five-component breakdown (workflow-driven repo, trigger,
-deployment, guidance layer, validation harness) and `FACTORY_RULES.md` for the full
-operating rules — triage criteria, quality gates, protected files, the stop button.
-`MISSION.md` will define what krowd-kontrol actually is once that's decided.
+The only human input is a GitHub issue. Everything from there — triage, implementation,
+review, merge — runs as headless agent workflows dispatched by a cron script reading
+GitHub labels as its only state.
+
+```mermaid
+flowchart TD
+    ISSUE["GitHub Issue<br>(the only human input)"] --> ORCH{{"orchestrator.sh<br>cron, every 10 min"}}
+
+    ORCH -->|"1: PR needs-review<br>or needs-fix"| VALIDATE["dark-factory-validate-pr<br>(fresh-context holdout run)"]
+    ORCH -->|"2: issue accepted,<br>not in-progress"| BUILD["dark-factory-fix-github-issue<br>(classify → plan → implement → draft PR)"]
+    ORCH -->|"3: untriaged issue"| TRIAGE["dark-factory-triage"]
+
+    TRIAGE -->|accept + priority| ACCEPTED(["factory:accepted"])
+    TRIAGE -->|reject| REJECTED(["closed · factory:rejected"])
+    ACCEPTED -. next cycle .-> BUILD
+
+    BUILD --> NEEDSREVIEW(["factory:needs-review"])
+    NEEDSREVIEW -. next cycle .-> VALIDATE
+
+    VALIDATE -->|approve| MERGE(["squash-merged to main"])
+    VALIDATE -->|"request changes<br>(1st pass)"| NEEDSFIX(["factory:needs-fix"])
+    NEEDSFIX -. next cycle .-> VALIDATE
+    VALIDATE -->|"reject, or 2nd<br>pass still failing"| HUMAN(["factory:needs-human"])
+
+    MERGE -.-> DEPLOY["blue/green deploy<br>— not built yet, no app to deploy"]
+```
+
+Every node in the diagram is a **headless** agent run (`archon workflow run`, no chat
+window) — the coding agent is the interchangeable part; the loop around it is what's
+durable. Priority order (fix/validate a PR, then build an accepted issue, then triage
+last) means in-flight work always finishes before new work starts.
+
+**The guidance layer** — three files every workflow reads before touching anything, one
+job each, all three on the protected-files list so the factory can propose changes to
+everything else but never to the rules it's judged by:
+
+```mermaid
+flowchart LR
+    A(["Every workflow node"]) -. reads, never edits .-> M["MISSION.md<br>GOALS — what the product is"]
+    A -. reads, never edits .-> R["FACTORY_RULES.md<br>BOUNDARIES — what the agent may/may not do"]
+    A -. reads, never edits .-> C["CLAUDE.md<br>CONVENTIONS — how code is written"]
+```
+
+**The independence line** — the validator (`dark-factory-validate-pr`) runs in a fresh
+context and only ever sees the issue + the diff, never the builder's plan, notes, or
+reasoning. Some checks the builder can also run on itself; some only the validator ever
+runs, and a model never decides the merge — deterministic bash does:
+
+| Can the builder run it too? | Check | This repo |
+|---|---|---|
+| ✅ yes — below the line | static / unit / integration | `harness/ci.py --quick` |
+| ❌ validator-only — above the line | deterministic gate | `apply-verdict` — pure bash reads a verdict file, never a model |
+| ❌ validator-only — above the line | holdout scenarios | not built yet — no app to write scenarios against (`.factory/decisions.md` D-001) |
+| ❌ validator-only — above the line | visual / E2E judging | wired (`agent-browser`), not live yet — same D-001 gap |
+
+### Does this actually match the original Dark Factory pattern?
+
+Checked component-by-component against the source video/diagrams, not just described
+from memory:
+
+| # | Component | krowd-kontrol | Status |
+|---|---|---|---|
+| 1 | Workflow-driven repo | 4 Archon workflows, headless agent per step, same "take a prompt, edit files, exit code" contract | ✅ live |
+| 2 | The automation | `scripts/orchestrator.sh`; **identical label state machine** (`accepted → in-progress → needs-review → approved/needs-fix/needs-human`) and identical priority order (fix/check a PR → build an issue → triage last); interval is 10 min here vs. 30 in the video (deliberate choice) | ✅ live |
+| 3 | Deployment | — | ❌ not built — no app exists yet to blue/green deploy |
+| 4 | Guidance layer | Same three files, same roles, same protection | ✅ live (`MISSION.md`'s *content* is still a placeholder — see `FACTORY_RULES.md` §0) |
+| 5 | Validation harness | Builder/validator split, deterministic gate, independence line — all structurally in place | ⚠️ partial — deterministic gate is live; holdout + visual/E2E are wired but not yet functional, see the table above |
+
+Two honest gaps, both already tracked (`FACTORY.md`, `.factory/decisions.md`), not
+hidden: no deployment step, and the two validator-only checks that need a real running
+app don't have one yet. Everything else is a faithful, verified port — read `FACTORY.md`
+for the full component breakdown and `FACTORY_RULES.md` for the complete operating
+rules (triage criteria, quality gates, protected files, the stop button). `MISSION.md`
+will define what krowd-kontrol actually *is* once that's decided.
 
 ## Skills
 
@@ -50,26 +120,49 @@ Python/toolset-sandbox reference, curated from
 (used with permission — that repo has no license, so this is a hand-picked subset, not
 a mirror; its city-building demo content stays in the source repo).
 
+**Prerequisite for either MCP to connect at all: WSL2 mirrored networking.** By default
+WSL2's NAT mode is supposed to auto-forward `127.0.0.1` between WSL and the Windows
+host — on this machine it silently didn't, and no amount of correct `.mcp.json`/firewall
+config fixed it, because the failure was in WSL2's networking layer itself, not
+anything app-level. Fix is `networkingMode=mirrored` in `%UserProfile%\.wslconfig`
+plus **a genuine `wsl --shutdown` from a Windows-side shell** (closing a terminal window
+is not enough — it reconnects to the same still-running VM). Full diagnosis and the
+exact verification steps (`ip addr show eth0` should equal the Windows host's real LAN
+IP, not a `172.x` NAT address) are in `CLAUDE.md`'s Environment section. Skip this and
+both integrations below fail with connection-refused regardless of anything else being
+right.
+
 **Unreal MCP itself** — per Epic's [official docs](https://dev.epicgames.com/documentation/unreal-engine/unreal-mcp-in-unreal-editor),
-wired up against the real `KrowdKontrol.uproject`: `ModelContextProtocol` + `AllToolsets`
-plugins are enabled, and the client side is registered in `.mcp.json` (this session) and
-`.archon/mcp/unreal.json` (factory workflow nodes) — plain HTTP at
-`http://127.0.0.1:8000/mcp`, no relay process needed (WSL2 reaches the Windows host's
-loopback directly). **The server itself isn't started** — that's a one-command manual
-step (`ModelContextProtocol.StartServer` in the Editor's console) left to whoever has
-the Editor open, same reasoning as Blender below. Nothing this repo's headless
-cron/Archon automation can drive on its own — it's live for whoever *is* driving Unreal
-Editor interactively.
+wired up and **verified working end-to-end** against the real `KrowdKontrol.uproject`:
+`ModelContextProtocol` + `AllToolsets` plugins enabled, client registered in `.mcp.json`
+(this session) and `.archon/mcp/unreal.json` (factory workflow nodes) as plain HTTP at
+`http://127.0.0.1:8000/mcp` — no relay process needed, once mirrored networking is
+active. **The server itself isn't started** — that's a one-command manual step
+(`ModelContextProtocol.StartServer` in the Editor's console) left to whoever has the
+Editor open, same reasoning as Blender below. Nothing this repo's headless cron/Archon
+automation can drive on its own — it's live for whoever *is* driving Unreal Editor
+interactively. One real gotcha found running it for real, worth knowing before you hit
+it: `StaticMeshTools.import_file` is genuinely headless (`AssetImportTask.automated =
+True`, confirmed by reading the plugin's own Python source), but a source file sitting
+inside `Content/` also triggers Unreal's *separate* file-watcher import dialog — that one
+does need a manual click. Export/stage source files outside `Content/` and only bring
+them in via `import_file`; see `unreal-agent-harness/references/troubleshooting.md`.
 
 **`blender-mcp`** — a *live* MCP connection (not a static knowledge skill) to Blender's
-own official [MCP server](https://www.blender.org/lab/mcp-server/), installed and
-enabled on the Windows host's Blender 5.2 for generating/editing assets that feed into
-the Unreal project. Registered in `.mcp.json` (this session) and
-`.archon/mcp/blender.json` (factory workflow nodes). **Not auto-started** — Blender's
-own docs warn the server executes LLM-generated Python with no sandboxing, so starting
-the bridge is a deliberate action, not an always-on service. See the skill for exactly
-how, and for an upstream dependency-pin bug (`mcp[cli]>=1.2.0` with no upper bound)
-worth knowing if you ever reinstall it.
+own official [MCP server](https://www.blender.org/lab/mcp-server/), installed, enabled
+on the Windows host's Blender 5.2, and **verified working end-to-end** (a real cube: built
+in Blender via `execute_blender_code`, exported FBX with `mesh_smooth_type='FACE'` —
+the default `'OFF'` triggers an Unreal import warning — imported into Unreal, placed in
+the level, screenshotted, confirmed, cleaned up). Registered in `.mcp.json` (this
+session) and `.archon/mcp/blender.json` (factory workflow nodes). **Not auto-started** —
+Blender's own docs warn the server executes LLM-generated Python with no sandboxing, so
+starting the bridge is a deliberate action, not an always-on service. See the skill for
+exactly how, and for an upstream dependency-pin bug (`mcp[cli]>=1.2.0` with no upper
+bound) worth knowing if you ever reinstall it.
+
+**First connection after either is registered:** `.mcp.json` servers start out
+*pending approval* — run `claude` in this repo and approve `blender`/`unreal-mcp` when
+prompted (or `claude mcp list` to check status) before either shows up as usable tools.
 
 ## Contributing
 
@@ -166,6 +259,22 @@ open a second terminal.
 Already installed as `*/10 * * * *` via `crontab -e`, pointed at
 `scripts/orchestrator.sh`. It reads GitHub labels, dispatches in priority order (fix/validate
 PRs → accepted issues → untriaged issues), and does nothing if nothing needs doing.
+
+### Getting data in / going fully autonomous
+
+The loop is already running on schedule — it's just currently a no-op, because `MISSION.md`
+is still a placeholder (see the diagram above, and `FACTORY_RULES.md` §0). To go from
+"the loop runs" to "the loop builds things with nobody watching":
+
+1. **Fill in `MISSION.md` for real** — what krowd-kontrol is, in/out of scope, hard
+   invariants. This is the one step that isn't yours-to-automate; a human decides scope.
+   Delete `FACTORY_RULES.md` §0 in the same commit.
+2. **Set the API key** (below) — no key, no unattended dispatches.
+3. **Confirm the cron is active**: `crontab -l` should show the `*/10 * * * *` line.
+4. **File a GitHub issue.** That's the entire "getting data in" step — every issue is a
+   spec. Within 10 minutes the orchestrator triages it; if accepted, the next cycle
+   builds it; the cycle after that validates and merges (or kicks it back) — no further
+   input from you unless it lands on `factory:needs-human`.
 
 **Turn it on**: it needs a real Anthropic API key — put one in `~/.archon/orchestrator.env`:
 
