@@ -24,6 +24,7 @@ class KROWDKONTROL_API UAbilityCooldownTrayWidget : public UUserWidget
 	GENERATED_BODY()
 
 	friend class FKrowdKontrolAbilityCooldownTrayWidgetTest;
+	friend class FKrowdKontrolReservedGameplayColoursTest;
 
 public:
 	static constexpr int32 NumAbilitySlots = static_cast<int32>(EAbilitySlot::Count);
