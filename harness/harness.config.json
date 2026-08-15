@@ -1,0 +1,12 @@
+{
+  "_what_this_is": "Every command this repo's validation gate runs. ci.py and appproc.py are the ladder + driver (never edited per-repo, verbatim from the build-dark-factory skill); this file is the only thing that changes when the stack changes. Every command here must match .archon/workflows/dark-factory-validate-pr.yaml's harness invocation - one definition of a green build, not two.",
+
+  "driver": "http",
+  "http": {},
+  "static": "",
+  "unit": "",
+  "unit_count_pattern": "",
+  "e2e_timeout_s": 300,
+
+  "_bootstrap_state": "No app exists yet. `http` is deliberately empty, so appproc.py's HttpApp raises AppDidNotStart('driver=http but http.start is empty') the moment ci.py's full run tries to boot the app - loud, not silent, with zero custom code. `static`/`unit` are empty too, so ci.py --quick prints STATIC_SKIPPED/UNIT_SKIPPED and still exits GATE_OK. Fill these in the same commit that adds app/: set http.start to the real boot command (e.g. 'python harness/serve.py --port {port}'), http.health_path, and static/unit to the real check commands. See harness/README.md and harness/serve.py."
+}

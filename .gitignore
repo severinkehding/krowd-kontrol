@@ -1,0 +1,25 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# factory stop button (local kill file, never committed)
+.factory-stop
+
+# node / bun
+node_modules/
+bun.lock.local
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# harness artifacts
+harness/.artifacts/
+
+# OS
+.DS_Store

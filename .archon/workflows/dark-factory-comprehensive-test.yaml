@@ -1,0 +1,52 @@
+name: dark-factory-comprehensive-test
+description: |
+  PARKED — not wired into scripts/orchestrator.sh's dispatch rotation yet, and this
+  file is a placeholder, not a working workflow. See FACTORY.md and
+  .factory/decisions.md.
+
+  Use when (once activated): Weekly cron fires a full end-to-end regression against
+            `main`, driving the real user journeys MISSION.md documents, to catch
+            regressions that individual PR validation didn't.
+  Triggers (once activated): Weekly cron, or manual "run comprehensive test".
+  Does (once activated): Checks out main -> starts the app -> runs the real user
+            journeys sequentially against the live UI via agent-browser -> tears
+            down -> synthesizes a report -> auto-files GitHub issues on failures
+            (with dedup) so triage picks them up and the factory heals itself.
+  NOT for: Per-PR validation (dark-factory-validate-pr), triage
+           (dark-factory-triage), issue implementation
+           (dark-factory-fix-github-issue).
+
+  =====================================================================
+  WHY THIS IS PARKED, NOT DELETED
+  =====================================================================
+
+  dark-factory-experiment's version of this workflow is ~470 lines of real user
+  journeys (chat flow, video ingestion, citation rendering, conversation history) —
+  100% specific to a product that hasn't been decided here yet (MISSION.md is a
+  placeholder). Porting a 470-line workflow that references journeys and commands
+  which don't exist would be dead weight nobody could run or trust.
+
+  The self-healing loop this workflow exists for — a regression on `main` files its
+  own GitHub issue, triage accepts it, fix-github-issue opens a PR, validate-pr holds
+  it out, merge — is worth building once there's a real app and MISSION.md defines
+  what "still works" means. Until then, this file exists as a placeholder so its role
+  in the five-component picture (see FACTORY.md) isn't silently missing from
+  `archon workflow list`.
+
+  Unlike validate-pr, once built this workflow is NOT bound by the holdout principle —
+  it runs against main (already-merged code), so there's nothing to hold out from.
+
+  Prerequisite once active: `agent-browser` must be installed and available on PATH
+  — see `.claude/skills/agent-browser/SKILL.md`.
+
+provider: claude
+model: sonnet
+
+nodes:
+  - id: not-yet-active
+    bash: |
+      echo "COMPREHENSIVE_TEST_PARKED: no app exists yet and MISSION.md is a placeholder."
+      echo "See FACTORY.md and .factory/decisions.md for what activates this workflow."
+      echo "This workflow is deliberately excluded from scripts/orchestrator.sh's dispatch rotation."
+      exit 0
+    timeout: 10000
