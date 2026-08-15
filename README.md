@@ -54,6 +54,16 @@ enabled — nothing this repo's headless cron/Archon automation can drive on its
 It's knowledge available to whoever *is* driving Unreal Editor interactively, same
 discovery mechanism as every other skill here.
 
+**`blender-mcp`** — a *live* MCP connection (not a static knowledge skill) to Blender's
+own official [MCP server](https://www.blender.org/lab/mcp-server/), installed and
+enabled on the Windows host's Blender 5.2 for generating/editing assets that feed into
+the Unreal project. Registered in `.mcp.json` (this session) and
+`.archon/mcp/blender.json` (factory workflow nodes). **Not auto-started** — Blender's
+own docs warn the server executes LLM-generated Python with no sandboxing, so starting
+the bridge is a deliberate action, not an always-on service. See the skill for exactly
+how, and for an upstream dependency-pin bug (`mcp[cli]>=1.2.0` with no upper bound)
+worth knowing if you ever reinstall it.
+
 ## Contributing
 
 Once `MISSION.md` is filled in for real: file an issue. Don't open a PR — the factory
@@ -82,6 +92,21 @@ gh auth login
 
 # Global Archon config — interactive session use rides your `claude` login
 mkdir -p ~/.archon && echo "CLAUDE_USE_GLOBAL_AUTH=true" > ~/.archon/.env
+
+# uv (Python) — also needed by blender-mcp below
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# blender-mcp — see .claude/skills/blender-mcp/SKILL.md for the extension
+# build/install steps (needs Blender itself, on whatever host runs it)
+git clone https://projects.blender.org/lab/blender_mcp.git ~/tools/blender_mcp
+cd ~/tools/blender_mcp && uv venv .venv --python 3.10
+source .venv/bin/activate && uv pip install -r mcp/requirements.txt
+uv pip install -e mcp && uv pip install "mcp[cli]<2.0.0"   # pin — see skill for why
+cat > ~/.local/bin/blender-mcp <<'EOF'
+#!/usr/bin/env bash
+exec "$HOME/tools/blender_mcp/.venv/bin/blender-mcp" "$@"
+EOF
+chmod +x ~/.local/bin/blender-mcp
 ```
 
 Verify: `archon doctor` and, from this repo, `archon validate workflows && archon validate commands`.

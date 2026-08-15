@@ -42,14 +42,23 @@ are **macOS-specific templates** from the original author's machine (hardcoded
 rewrite (PowerShell or a WSL-side script invoking `.exe` paths under `/mnt/c/...`)
 before they're usable here. Not done yet.
 
+**Blender 5.2** is also installed on the Windows host
+(`C:\Program Files\Blender Foundation\Blender 5.2`), wired up via the `blender-mcp`
+skill (`.claude/skills/blender-mcp/`) for asset generation feeding into the Unreal
+project. Cross-boundary calls from WSL to Windows `.exe`s work directly — `wslpath -w`
+converts a WSL path to something the Windows binary can read, and it round-trips (a
+Windows process writing "here" lands back at the expected WSL path too). The MCP bridge
+is **not** left running by default — see that skill for why and how to start it.
+
 ## Project Overview
 
 **TBD.** See `MISSION.md`.
 
 ## Tech Stack
 
-**Unreal Engine** (confirmed — see Environment above). Version/plugins/gameplay
-architecture: **TBD** beyond what's already in `KrowdKontrol.uproject`.
+**Unreal Engine** (confirmed — see Environment above), asset pipeline through
+**Blender 5.2** via `blender-mcp`. Version/plugins/gameplay architecture: **TBD** beyond
+what's already in `KrowdKontrol.uproject`.
 
 ## Repo Layout
 

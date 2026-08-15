@@ -1,0 +1,7 @@
+{
+  "blender": {
+    "command": "blender-mcp",
+    "args": [],
+    "env": {}
+  }
+}
