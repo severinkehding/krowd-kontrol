@@ -25,12 +25,28 @@ set -uo pipefail
 REPO="${FACTORY_REPO:-severinkehding/krowd-kontrol}"
 KILL_FILE="${FACTORY_KILL_FILE:-${FACTORY_WORKDIR:-.}/.factory-stop}"
 STOP_LABEL="factory:stop"
+# How long a kill file is honored before it self-expires. Pauses here are almost
+# always short, deliberate ones (e.g. "Editor's open for MCP work, don't collide
+# with a headless build") - but nothing enforced that they actually got resumed.
+# A pause left in place by a forgotten `rm`, a crashed session, or a conversation
+# that just never got back to it would otherwise silence the loop indefinitely
+# with no signal to anyone that it happened. Auto-expiry bounds that blast radius
+# without needing a human to remember - override with FACTORY_KILL_FILE_MAX_AGE_S.
+KILL_FILE_MAX_AGE_S="${FACTORY_KILL_FILE_MAX_AGE_S:-14400}"  # 4 hours
 
 # --- 1. the local half -------------------------------------------------------
 if [ -f "$KILL_FILE" ]; then
-  echo "STOPPED: $KILL_FILE present. Remove it to resume."
-  [ -s "$KILL_FILE" ] && echo "reason: $(head -1 "$KILL_FILE")"
-  exit 1
+  AGE_S=$(( $(date +%s) - $(stat -c %Y "$KILL_FILE" 2>/dev/null || stat -f %m "$KILL_FILE") ))
+  if [ "$AGE_S" -ge "$KILL_FILE_MAX_AGE_S" ]; then
+    echo "STOP_EXPIRED: $KILL_FILE was ${AGE_S}s old (limit ${KILL_FILE_MAX_AGE_S}s) — auto-resuming. Last reason was: $([ -s "$KILL_FILE" ] && head -1 "$KILL_FILE" || echo "(none given)")"
+    rm -f "$KILL_FILE"
+    # fall through to the remote check below rather than exiting 0 here directly -
+    # a stray factory:stop issue should still hold even if the local pause just expired
+  else
+    echo "STOPPED: $KILL_FILE present (${AGE_S}s old, expires at ${KILL_FILE_MAX_AGE_S}s). Remove it to resume."
+    [ -s "$KILL_FILE" ] && echo "reason: $(head -1 "$KILL_FILE")"
+    exit 1
+  fi
 fi
 
 # --- 2. the remote half, and it FAILS CLOSED ---------------------------------

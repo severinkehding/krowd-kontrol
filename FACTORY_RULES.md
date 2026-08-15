@@ -351,9 +351,20 @@ readable, for the same reason: nothing should be able to halt the factory except
 something visible and reviewable.
 
 1. **A local kill file** — `touch .factory-stop` in the orchestrator's working copy.
-   Works with the network down, which is when you most want it.
+   Works with the network down, which is when you most want it. **Self-expires after
+   4 hours** (`FACTORY_KILL_FILE_MAX_AGE_S`, default 14400) — added 2026-08-16 after a
+   real gap: pauses here are typically short and deliberate (e.g. leaving the Unreal
+   Editor open for interactive/MCP work without a headless build colliding with it),
+   but nothing guaranteed the file actually got removed afterward. A pause left behind
+   by a forgotten `rm`, a crashed session, or a conversation that never got back to it
+   would otherwise silence the loop indefinitely with no signal to anyone. Expiry logs
+   `STOP_EXPIRED` (with the original reason) and deletes the stale file before falling
+   through to the remote check below — a genuine `factory:stop` issue still holds even
+   if the local pause just expired.
 2. **A remote label** — open any issue and label it `factory:stop`. Reachable from a
-   phone.
+   phone. No expiry on this half — it requires a deliberate GitHub action to set, is
+   easy to spot by anyone checking open issues, and is exactly the mechanism you want
+   to still hold if the machine running the local kill-file check is itself down.
 
 **The remote half fails closed.** Any error listing the label counts as stopped. The
 obvious design — "run while the label is absent" — is the wrong polarity: an absent
