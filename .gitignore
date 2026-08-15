@@ -27,19 +27,9 @@ harness/.artifacts/
 # local Claude Code session runtime state
 .claude/scheduled_tasks.lock
 
-# Unreal Engine (app/) — transient/regenerable, never commit. Real content
-# (app/Config/, app/Content/, app/Source/, app/*.uproject) is tracked; everything
-# below is machine-local build/cache state the engine recreates on open/build.
-app/Binaries/
-app/Build/
-app/DerivedDataCache/
-app/Intermediate/
-app/Saved/
-app/.vs/
-app/*.sln
-app/*.xcodeproj
-app/*.VC.db
-app/*.opensdf
-app/*.sdf
-app/*.opendb
-app/*.suo
+# Unreal project (app/) — a local-machine symlink to the real project on the Windows
+# filesystem (see scripts/link-unreal-project.sh and CLAUDE.md's Environment section),
+# not repo content. It failed to open via a WSL-hosted copy (Unreal couldn't open the
+# .uproject across the WSL<->Windows network-share boundary — .factory/decisions.md
+# D-003), so it stays external and gitignored rather than git-tracked.
+/app

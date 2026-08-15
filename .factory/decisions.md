@@ -130,16 +130,32 @@ everything, and a coarse but definitely-safe rule beats a precise rule that requ
 classifying each issue's content before dispatch (which the orchestrator has no cheap
 way to do - it reads labels, not issue bodies).
 
-**Recommendation, not yet done:** revisit once either (a) the Unreal project is
-git-tracked (with LFS set up first, not retrofitted - see `CLAUDE.md`) and therefore
-copied fresh per-worktree like everything else, making it safe to isolate the same way
-code changes already are, or (b) there's enough of a mix between Unreal-touching and
-purely-infra/docs issues that a smarter per-target lock (classify at triage time,
-carry a label like `factory:touches-unreal`, only serialize those) is worth the added
-complexity. Until one of those happens, do not raise `MAX_PARALLEL` above 1 - a factory
-issue proposing that change, on its own, should be rejected per `MISSION.md`'s
-technical-architecture hard invariant (the project stays where `CLAUDE.md` says it is
-until a human decides otherwise).
+**Update 2026-08-15, same day: (a) tried, and it doesn't work.** Copied the project's
+real files (`.uproject`, `Config/`) into `app/`, git-tracked, with `git-lfs` installed
+and `app/.gitattributes` committed *before* any binary landed - the correct ordering,
+done properly. Then asked the project to be opened from that new WSL-hosted location
+via the Windows-side Unreal Editor. It failed: `LogProjectManager: Error: Failed to
+open descriptor file wsl.localhost/Ubuntu/home/severin/projects/krowd-kontrol/app/
+KrowdKontrol.uproject` - confirmed in Unreal's own log, not just a dialog box, so this
+is a real engine-level limitation opening a `.uproject` across the WSL<->Windows
+network-share boundary, not a typo or a config mistake. Reverted: `git rm -r app/`,
+`app/` is now gitignored and instead created by `scripts/link-unreal-project.sh` as a
+local, unversioned symlink straight to the project's original Windows-native path -
+restores full editor compatibility (nothing about where Unreal reads the project
+changed) and keeps `app/` usable from WSL/Claude Code for direct file access.
+
+**This closes option (a) above - it is not coming back without solving the underlying
+WSL<->Windows compatibility gap, which is out of scope here.** A symlink provides
+*zero* per-worktree isolation (every worktree's `app/` resolves to the identical
+external files, same as an unlinked path would), so `MAX_PARALLEL` stays at 1 for the
+same reason as before, now with more confidence that this is the durable state, not a
+bootstrap one. Option (b) - classify issues at triage time and serialize only the ones
+that actually touch `app/` - remains the only realistic path to raising it, and is
+still speculative infrastructure not worth building until there's enough issue volume
+and non-Unreal work to make it pay for itself. Until then: do not raise
+`MAX_PARALLEL` above 1, and do not re-attempt copying the project into git-tracked
+`app/` without a genuinely new plan for the WSL<->Windows open failure above - it has
+now been tried once and confirmed not to work.
 
 ---
 

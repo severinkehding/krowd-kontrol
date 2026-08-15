@@ -324,9 +324,16 @@ why, and stop all factory activity on that issue or PR until a human removes the
   isolates *this git repo's* worktrees — it does nothing for the actual Unreal
   project, which lives outside this repo entirely (`MISSION.md` Hard Invariant 8) and
   is therefore shared, unisolated state across every concurrent workflow. Two
-  workflows editing it at once is a real corruption risk, not a theoretical one. Raise
-  this once the Unreal project is git-tracked (with LFS) and isolable per-worktree
-  like everything else — see `.factory/decisions.md` D-003.
+  workflows editing it at once is a real corruption risk, not a theoretical one.
+  **Git-tracking the project to fix this was tried and confirmed not to work**: Unreal
+  Editor cannot open a `.uproject` file across the WSL↔Windows network-share boundary
+  that a WSL-hosted, git-tracked `app/` would require — a real engine limitation, not
+  a config mistake (see `.factory/decisions.md` D-003 for the log evidence). `app/` is
+  a local, gitignored symlink to the project's real Windows-native location instead
+  (`scripts/link-unreal-project.sh`), which restores editor compatibility but
+  provides zero per-worktree isolation. Treat `MAX_PARALLEL=1` as a durable choice for
+  this project, not a temporary bootstrap one — see D-003 for the one remaining path
+  that could change that.
 - **Fix attempts per PR: maximum 2.** The third cycle escalates.
 - **PR size: 500 lines.** See section 2.
 - **Flood protection.** Non-owner GitHub accounts are capped at 3 issues per UTC

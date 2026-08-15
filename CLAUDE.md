@@ -38,6 +38,19 @@ rejected: committing it as a subfolder here, because Unreal's binary asset files
 needs Git LFS set up *before* the first binary lands, not retrofitted after (that means
 a history rewrite). Revisit if that tradeoff changes.
 
+**Actually attempted once, 2026-08-15: copying the project into a git-tracked `app/`
+(with LFS already set up correctly).** Unreal Editor failed to open the project from
+that new WSL-hosted location — `LogProjectManager: Error: Failed to open descriptor
+file wsl.localhost/Ubuntu/...`, confirmed in Unreal's own log, a real WSL↔Windows
+network-share limitation, not a config mistake. Reverted. `app/` in this repo is now a
+**local, gitignored symlink** to the path above, created by
+`scripts/link-unreal-project.sh` (run once per machine / after a fresh clone) — this
+keeps the project on its working Windows-native location while giving WSL/Claude Code
+a consistent `app/` path to read and write through. See `.factory/decisions.md` D-003
+for the full account, including why this closes off git-tracking as a fix for the
+factory's concurrency isolation problem (`FACTORY_RULES.md` §8) rather than deferring
+it.
+
 See the `unreal-agent-harness` skill (`.claude/skills/unreal-agent-harness/`) for MCP
 connection setup and troubleshooting. Its `scripts/ue_launch.sh` and `ue_crashlog.sh`
 are **macOS-specific templates** from the original author's machine (hardcoded
