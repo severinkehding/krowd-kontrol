@@ -8,9 +8,9 @@
     "smoke_contains": "UE_CMD_PRESENT"
   },
   "static": "",
-  "unit": "",
+  "unit": "harness/run_ue_automation.sh KrowdKontrol.Unit.",
   "unit_count_pattern": "UE_AUTOMATION_RESULT passed=\\d+ total=(\\d+)",
   "e2e_timeout_s": 300,
 
-  "_bootstrap_state": "app/ is a local symlink to the real Unreal project (scripts/link-unreal-project.sh), not repo content - see .factory/decisions.md D-003/D-004 and CLAUDE.md's Environment section for why. driver=cli with smoke_args=--check-exe-only is a deliberately fast, launch-free check (appproc.py's CliApp hardcodes a 60s timeout on the smoke step with no way to configure it, and a real Editor boot does not reliably fit that window - verified empirically). The real Automation Framework run happens in harness/e2e.py instead, via app.run() with its own generous timeout. `static`/`unit` stay empty (honest SKIPPED, not a fabricated pass) until there is at least one real KrowdKontrol.Unit.* test - once one exists, set unit to: harness/run_ue_automation.sh KrowdKontrol.Unit. (unit_count_pattern above already matches its output). See harness/README.md and harness/run_ue_automation.sh."
+  "_bootstrap_state": "app/ is a local symlink to the real Unreal project (scripts/link-unreal-project.sh), not repo content - see .factory/decisions.md D-003/D-004 and CLAUDE.md's Environment section for why. driver=cli with smoke_args=--check-exe-only is a deliberately fast, launch-free check (appproc.py's CliApp hardcodes a 60s timeout on the smoke step with no way to configure it, and a real Editor boot does not reliably fit that window - verified empirically). The real Automation Framework run happens in harness/e2e.py instead, via app.run() with its own generous timeout. `static` stays empty (honest SKIPPED, not a fabricated pass) until there is a real static-analysis/lint command for the Unreal project. `unit` was wired up once the first real KrowdKontrol.Unit.* test (PlaceholderCubeActorHasCubeMesh) existed; unit_count_pattern above already matches its output. See harness/README.md and harness/run_ue_automation.sh."
 }
