@@ -14,7 +14,7 @@ record of that change, see the closing note below)
 
 | File | Action | What it contains |
 |------|--------|-------------------|
-| `app/Source/KrowdKontrol/Herdable.h` | CREATE | `UHerdable` `UINTERFACE(MinimalAPI)` + `KROWDKONTROL_API IHerdable` exposing pure-virtual `IsControlled() const` and `GetHerdColourTag() const`. Header-only (no `.cpp`). Lives at module root, not `Public/`, matching this module's actual layout (mirrors `ThreatState.h`, issue #81). |
+| `app/Source/KrowdKontrol/Public/Herdable.h` | CREATE | `UHerdable` `UINTERFACE(MinimalAPI)` + `KROWDKONTROL_API IHerdable` exposing pure-virtual `IsControlled() const` and `GetHerdColourTag() const`. Header-only (no `.cpp`). Lives under `Public/`, per the issue's acceptance criteria. |
 | `app/Source/KrowdKontrol/Private/Tests/HerdableTestActor.h`/`.cpp` | CREATE | Minimal test-only `AActor` implementing `IHerdable`, with `SetControlled()`/`SetHerdColourTag()` setters for the test to drive. Mirrors the `ThreatStateTestActor` pattern. |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolHerdableTest.cpp` | CREATE | `KrowdKontrol.Unit.Herdable` — constructs the test actor via `NewObject` (no `UWorld` needed, pure accessors), confirms `Implements<UHerdable>()` and `Cast<IHerdable>()` both work, toggles controlled state and colour tag, asserts through both the concrete actor and the interface pointer. |
 
@@ -24,9 +24,7 @@ already covered by the module's existing `PublicDependencyModuleNames`.
 ## Acceptance criteria
 
 - [x] **`IHerdable` compiles as a standard Unreal `UINTERFACE`, declared at
-      `Source/KrowdKontrol/Herdable.h`** (module root, not the issue body's literal
-      `Public/` wording — follows `KrowdKontrol.Build.cs`'s documented, already-working
-      convention per `CLAUDE.md`'s "code convention wins on code style" precedence).
+      `Source/KrowdKontrol/Public/Herdable.h`**, per the issue's acceptance criteria.
       Confirmed via `harness/ci.py` full-mode gate (module builds successfully as part
       of `UE_AUTOMATION_OK`).
 - [x] **`KrowdKontrol.Unit.Herdable` Automation Framework test exists**, provides a

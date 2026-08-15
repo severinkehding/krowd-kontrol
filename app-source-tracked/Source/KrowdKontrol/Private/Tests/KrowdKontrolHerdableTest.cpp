@@ -39,7 +39,7 @@ bool FKrowdKontrolHerdableTest::RunTest(const FString& Parameters)
 	}
 
 	TestFalse(TEXT("Default IsControlled should be false"), Actor->IsControlled());
-	TestEqual(TEXT("Default GetHerdColourTag should be NAME_None"), Actor->GetHerdColourTag(), FName(NAME_None));
+	TestEqual(TEXT("Default GetHerdColourTag should be NAME_None"), Actor->GetHerdColourTag(), NAME_None);
 
 	Actor->SetControlled(true);
 	Actor->SetHerdColourTag(FName(TEXT("Purple")));
