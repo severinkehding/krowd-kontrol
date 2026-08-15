@@ -29,13 +29,20 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 
 	// (2) Each real slot's Get(Slot).Ability matches the slot requested, and appears
 	// exactly once in GetAll() - catches a copy-paste row-order mistake in the .cpp table.
+	// Also asserts GetAll() returns entries in EAbilitySlot declaration order, backing the
+	// ordering guarantee documented on AbilityData::GetAll()'s doc comment.
 	const TArray<EAbilitySlot> AllSlots = { EAbilitySlot::Stun, EAbilitySlot::Sleep,
 		EAbilitySlot::Root, EAbilitySlot::Fear, EAbilitySlot::Snare };
 
-	for (EAbilitySlot Slot : AllSlots)
+	for (int32 Index = 0; Index < AllSlots.Num(); ++Index)
 	{
+		const EAbilitySlot Slot = AllSlots[Index];
+
 		TestEqual(*FString::Printf(TEXT("Get(%d).Ability should equal the requested slot"), static_cast<int32>(Slot)),
 			static_cast<uint8>(AbilityData::Get(Slot).Ability), static_cast<uint8>(Slot));
+
+		TestEqual(*FString::Printf(TEXT("GetAll()[%d] should be slot %d (declaration order)"), Index, static_cast<int32>(Slot)),
+			static_cast<uint8>(AllAbilities[Index].Ability), static_cast<uint8>(Slot));
 
 		int32 MatchCount = 0;
 		for (const FAbilityData& Entry : AllAbilities)
