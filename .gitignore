@@ -26,3 +26,20 @@ harness/.artifacts/
 
 # local Claude Code session runtime state
 .claude/scheduled_tasks.lock
+
+# Unreal Engine (app/) — transient/regenerable, never commit. Real content
+# (app/Config/, app/Content/, app/Source/, app/*.uproject) is tracked; everything
+# below is machine-local build/cache state the engine recreates on open/build.
+app/Binaries/
+app/Build/
+app/DerivedDataCache/
+app/Intermediate/
+app/Saved/
+app/.vs/
+app/*.sln
+app/*.xcodeproj
+app/*.VC.db
+app/*.opensdf
+app/*.sdf
+app/*.opendb
+app/*.suo
