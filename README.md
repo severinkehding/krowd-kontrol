@@ -16,6 +16,21 @@ deployment, guidance layer, validation harness) and `FACTORY_RULES.md` for the f
 operating rules — triage criteria, quality gates, protected files, the stop button.
 `MISSION.md` will define what krowd-kontrol actually is once that's decided.
 
+## Skills
+
+`.claude/skills/` has 68 game-dev skills from
+[gamedev-skills/awesome-gamedev-agent-skills](https://github.com/gamedev-skills/awesome-gamedev-agent-skills)
+(Godot, Unity, Unreal, Bevy, Phaser, PixiJS, three.js, LÖVE, pygame, Roblox, plus
+engine-neutral disciplines, genres, and shipping workflows), on top of `archon` and
+`agent-browser`. A `router` skill auto-detects engine + task and loads only what's
+relevant — you don't name skills yourself, in this session or in factory-dispatched
+workflows.
+
+```bash
+npx skills update gamedev-skills/awesome-gamedev-agent-skills   # pull latest
+npx skills remove gamedev-skills/awesome-gamedev-agent-skills   # uninstall
+```
+
 ## Contributing
 
 Once `MISSION.md` is filled in for real: file an issue. Don't open a PR — the factory
