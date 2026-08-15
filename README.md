@@ -43,6 +43,17 @@ npx agentic-awesome-skills audit --skills <skill-id>
 npx agentic-awesome-skills --path "$(pwd)/.claude/skills" --skills <skill-id>
 ```
 
+**`unreal-agent-harness`** — Unreal MCP troubleshooting (`"Unable to connect"`, editor
+crashes/hangs, stuck camera captures, port conflicts), the capture/QA loop, and a
+Python/toolset-sandbox reference, curated from
+[per-simmons/unreal-agent-harness](https://github.com/per-simmons/unreal-agent-harness)
+(used with permission — that repo has no license, so this is a hand-picked subset, not
+a mirror; its city-building demo content stays in the source repo). Real limitation
+worth knowing: this needs an actual Unreal Editor 5.8 running with the MCP plugin
+enabled — nothing this repo's headless cron/Archon automation can drive on its own.
+It's knowledge available to whoever *is* driving Unreal Editor interactively, same
+discovery mechanism as every other skill here.
+
 ## Contributing
 
 Once `MISSION.md` is filled in for real: file an issue. Don't open a PR — the factory
