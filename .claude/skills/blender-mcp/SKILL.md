@@ -104,4 +104,14 @@ which is how asset generation/editing actually happens (there's no dedicated
 
 Blender builds/edits the asset → export FBX/OBJ → `unreal-agent-harness`'s
 `StaticMeshTools.import_file` on the Unreal side (glTF/GLB are rejected — FBX/OBJ only,
-per that skill's troubleshooting notes).
+per that skill's troubleshooting notes). Two things confirmed the hard way, both in that
+skill's `references/troubleshooting.md`, worth repeating here since this is exactly
+where the export happens:
+
+- **Export with `bpy.ops.export_scene.fbx(..., mesh_smooth_type='FACE')`.** The default
+  (`'OFF'`) omits smoothing data entirely and Unreal warns on every import.
+- **Export to a staging path *outside* the Unreal project's `Content/` folder**, then
+  hand that path to `StaticMeshTools.import_file` as `source_file` (it doesn't need to
+  live inside the project). Writing straight into `Content/` triggers Unreal's own
+  file-watcher import dialog — a second, separate mechanism from the MCP tool's own
+  `AssetImportTask.automated = True` — and that one genuinely needs a manual click.
