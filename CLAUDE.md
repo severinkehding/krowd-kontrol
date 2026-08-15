@@ -8,11 +8,39 @@ This file covers **how the code is written**. For *what* to build, see `MISSION.
 this file and those conflict, `MISSION.md` wins on scope, `FACTORY_RULES.md` wins on
 process, and `CLAUDE.md` wins on code style.
 
-> 🚧 **PLACEHOLDER.** No app exists yet, so there's no real stack or layout to document.
-> Fill this in - tech stack, repo layout, conventions, protected-path specifics - in the
-> same commit that adds the first app skeleton.
+> 🚧 **PLACEHOLDER.** No app is tracked in this repo yet, so most of this file is still
+> TBD. One real fact is known and recorded below (Environment) — fill in the rest (repo
+> layout, conventions, protected-path specifics) in the same commit that wires the
+> Unreal project into this repo's factory loop.
 
 ---
+
+## Environment
+
+Claude Code (this repo's interactive + factory-dispatched sessions) runs in **WSL2
+(Linux)**. **Unreal Engine itself runs on the Windows host**, not in WSL — the editor,
+GPU, and MCP plugin all live on the Windows side.
+
+**The Unreal project** (`KrowdKontrol.uproject`, fresh — `ModelingToolsEditorMode`
+enabled, MCP plugin not yet enabled) lives on the Windows filesystem:
+
+```
+Windows path: C:\Users\Admin\OneDrive\Dokumente\Unreal Projects\KrowdKontrol
+WSL path:     /mnt/c/Users/Admin/OneDrive/Dokumente/Unreal Projects/KrowdKontrol
+```
+
+It is **not currently tracked in this git repo** — it's a separate directory on the
+Windows host, reachable from this WSL session read/write via the `/mnt/c/...` mount.
+Whether/how it becomes part of `krowd-kontrol`'s git history (submodule, separate repo
+entirely, symlink, or left as-is with this repo only holding the factory harness) is an
+open question, not yet decided — don't assume one without asking.
+
+See the `unreal-agent-harness` skill (`.claude/skills/unreal-agent-harness/`) for MCP
+connection setup and troubleshooting. Its `scripts/ue_launch.sh` and `ue_crashlog.sh`
+are **macOS-specific templates** from the original author's machine (hardcoded
+`/Users/...` paths, `sips`/`open`/macOS crash-log locations) — they need a Windows
+rewrite (PowerShell or a WSL-side script invoking `.exe` paths under `/mnt/c/...`)
+before they're usable here. Not done yet.
 
 ## Project Overview
 
@@ -20,7 +48,8 @@ process, and `CLAUDE.md` wins on code style.
 
 ## Tech Stack
 
-**TBD.**
+**Unreal Engine** (confirmed — see Environment above). Version/plugins/gameplay
+architecture: **TBD** beyond what's already in `KrowdKontrol.uproject`.
 
 ## Repo Layout
 
