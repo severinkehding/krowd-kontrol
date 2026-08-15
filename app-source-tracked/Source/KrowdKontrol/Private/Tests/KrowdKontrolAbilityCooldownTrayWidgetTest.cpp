@@ -14,9 +14,11 @@
 // harness/run_ue_automation.sh). Needs a real UWorld (CreateWidget's first argument).
 // The Initialize()-guard and unbuilt-tree cases use a bare NewObject() instead (no
 // World needed) via this test class's friend-class access, matching
-// KrowdKontrolPostRunSummaryWidgetTest.cpp's precedent. AdvanceCooldowns() is called
-// directly rather than via NativeTick(), since NativeTick needs live Slate ticking the
-// -nullrhi headless environment doesn't provide.
+// KrowdKontrolPostRunSummaryWidgetTest.cpp's precedent. Most of this test calls
+// AdvanceCooldowns() directly, since NativeTick's usual driver - live Slate ticking -
+// isn't available under -nullrhi; the NativeTick() override itself is still called
+// directly once (via friend-class access, bypassing Slate) to cover the real per-frame
+// call site rather than relying solely on the AdvanceCooldowns() proxy.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -28,6 +30,8 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Border.h"
+#include "Components/TextBlock.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -51,14 +55,30 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		return false;
 	}
 
-	// (a) All 5 icon slots render simultaneously immediately on construction.
+	// (a) All 5 icon slots render simultaneously immediately on construction, each
+	// labelled in the same order as EAbilitySlot (Stun, Sleep, Root, Fear, Snare) - the
+	// label text isn't compiler-linked to the enum, so this loop also guards against a
+	// future independent reorder of either silently mislabelling a slot.
 	TestEqual(TEXT("SlotIconBorders should have exactly 5 entries"), Widget->SlotIconBorders.Num(), UAbilityCooldownTrayWidget::NumAbilitySlots);
 	TestEqual(TEXT("SlotCooldownTexts should have exactly 5 entries"), Widget->SlotCooldownTexts.Num(), UAbilityCooldownTrayWidget::NumAbilitySlots);
+	const TCHAR* ExpectedSlotLabels[] = { TEXT("STN"), TEXT("SLP"), TEXT("ROT"), TEXT("FER"), TEXT("SNR") };
 	for (int32 Index = 0; Index < UAbilityCooldownTrayWidget::NumAbilitySlots; ++Index)
 	{
 		TestNotNull(*FString::Printf(TEXT("SlotIconBorders[%d] should be non-null"), Index), ToRawPtr(Widget->SlotIconBorders[Index]));
 		TestNotNull(*FString::Printf(TEXT("SlotCooldownTexts[%d] should be non-null"), Index), ToRawPtr(Widget->SlotCooldownTexts[Index]));
+
+		UTextBlock* IconLabel = Cast<UTextBlock>(Widget->SlotIconBorders[Index]->GetContent());
+		if (TestNotNull(*FString::Printf(TEXT("SlotIconBorders[%d] content should be a UTextBlock"), Index), IconLabel))
+		{
+			TestEqual(*FString::Printf(TEXT("Slot %d label text"), Index), IconLabel->GetText().ToString(), FString(ExpectedSlotLabels[Index]));
+		}
 	}
+
+	// (a2) Chrome palette compliance - MISSION.md Hard Invariant 3 reserves
+	// Purple/Teal/Orange/Blue/White for gameplay information; the tray's background
+	// must not drift onto one of those values.
+	TestEqual(TEXT("Icon border background should match the reserved-colour-safe chrome constant"),
+		Widget->SlotIconBorders[0]->GetBrushColor(), FLinearColor(0.05f, 0.05f, 0.05f, 0.92f));
 
 	// (b) Initial placeholder state - all 5 slots seeded on cooldown, with distinct
 	// durations, immediately after construction.
@@ -87,6 +107,8 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	Widget->AdvanceCooldowns(1.0f);
 	TestFalse(TEXT("Stun should have cleared"), Widget->IsSlotOnCooldown(EAbilitySlot::Stun));
 	TestTrue(TEXT("Sleep should still be on cooldown"), Widget->IsSlotOnCooldown(EAbilitySlot::Sleep));
+	TestTrue(TEXT("Stun display text should be empty once cleared, not stale"),
+		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Stun).IsEmpty());
 
 	// (e) A large delta clears every slot, and remaining never goes negative.
 	Widget->AdvanceCooldowns(100.0f);
@@ -111,6 +133,12 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		TestFalse(*FString::Printf(TEXT("Slot %d should be unaffected by StartCooldown(Fear, ...)"), Index), Widget->IsSlotOnCooldown((EAbilitySlot)Index));
 		TestEqual(*FString::Printf(TEXT("Slot %d remaining should be unaffected by StartCooldown(Fear, ...)"), Index), Widget->GetSlotRemainingSeconds((EAbilitySlot)Index), 0.0f);
 	}
+
+	// (f2) Negative duration clamps to 0 rather than leaving the slot on an
+	// effectively-infinite or negative-time cooldown.
+	Widget->StartCooldown(EAbilitySlot::Root, -5.0f);
+	TestFalse(TEXT("Negative StartCooldown duration should clamp to not-on-cooldown"), Widget->IsSlotOnCooldown(EAbilitySlot::Root));
+	TestEqual(TEXT("Negative StartCooldown duration should clamp remaining to 0"), Widget->GetSlotRemainingSeconds(EAbilitySlot::Root), 0.0f);
 
 	// (g) Corner anchoring - the tray's single canvas child is actually anchored
 	// bottom-right, not just visually eyeballed.
@@ -148,7 +176,7 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("Initialize() must not rebuild the tree when already built"),
 		ToRawPtr(GuardWidget->SlotIconBorders[0]), FirstIconBorder);
 
-	// (h) Unbuilt-tree safety - a widget whose tree was never built (bare
+	// (i) Unbuilt-tree safety - a widget whose tree was never built (bare
 	// NewObject(), neither NativeOnInitialized() nor Initialize() called) should
 	// degrade safely rather than crashing.
 	UAbilityCooldownTrayWidget* UnbuiltWidget = NewObject<UAbilityCooldownTrayWidget>();
@@ -162,6 +190,16 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	UnbuiltWidget->AdvanceCooldowns(1.0f);
 	UnbuiltWidget->StartCooldown(EAbilitySlot::Stun, 2.0f);
 	TestTrue(TEXT("AdvanceCooldowns()/StartCooldown() on an unbuilt tree should not crash"), true);
+
+	// (j) NativeTick actually drives AdvanceCooldowns() - the real per-frame code path a
+	// live game session ticks, not just the direct AdvanceCooldowns() calls used above.
+	// Calling the protected override directly (via friend-class access) sidesteps the
+	// -nullrhi headless run's inability to drive live Slate ticking, while still
+	// exercising the real call site rather than only its AdvanceCooldowns() proxy.
+	Widget->StartCooldown(EAbilitySlot::Stun, 3.0f);
+	Widget->NativeTick(FGeometry(), 1.0f);
+	TestEqual(TEXT("NativeTick should advance cooldowns via AdvanceCooldowns()"),
+		Widget->GetSlotRemainingSeconds(EAbilitySlot::Stun), 2.0f);
 
 	return true;
 }

@@ -81,6 +81,7 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 	UHorizontalBox* SlotsBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("TraySlotsBox"));
 
 	UCanvasPanelSlot* TraySlot = RootCanvas->AddChildToCanvas(SlotsBox);
+	checkf(TraySlot, TEXT("AbilityCooldownTrayWidget: AddChildToCanvas(SlotsBox) returned null"));
 	// Bottom-right corner anchoring - see TrayMarginPx's doc-comment in the header for
 	// why bottom-right is this plan's explicit choice (the energy meter, issue #64,
 	// hasn't landed yet, so there's no corner to be literally "opposite" of).
@@ -98,6 +99,7 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 	{
 		UOverlay* SlotOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), *FString::Printf(TEXT("SlotOverlay_%d"), Index));
 		UHorizontalBoxSlot* SlotsBoxSlot = SlotsBox->AddChildToHorizontalBox(SlotOverlay);
+		checkf(SlotsBoxSlot, TEXT("AbilityCooldownTrayWidget: AddChildToHorizontalBox(SlotOverlay) returned null"));
 		SlotsBoxSlot->SetPadding(FMargin(4.0f));
 
 		UBorder* IconBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), *FString::Printf(TEXT("SlotIconBorder_%d"), Index));
@@ -125,15 +127,18 @@ void UAbilityCooldownTrayWidget::SeedPlaceholderCooldowns()
 	{
 		SlotCooldownDuration[Index] = PlaceholderCooldownDurations[Index];
 		SlotCooldownRemaining[Index] = SlotCooldownDuration[Index];
-		UpdateSlotVisual((EAbilitySlot)Index);
+		UpdateSlotVisual(static_cast<EAbilitySlot>(Index));
 	}
 }
 
 void UAbilityCooldownTrayWidget::StartCooldown(EAbilitySlot AbilitySlot, float DurationSeconds)
 {
-	const int32 Index = (int32)AbilitySlot;
+	const int32 Index = static_cast<int32>(AbilitySlot);
 	if (!SlotCooldownDuration.IsValidIndex(Index))
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityCooldownTrayWidget::StartCooldown: index %d invalid on '%s' (tray not yet built?) - cooldown dropped."),
+			Index, *GetNameSafe(this));
 		return;
 	}
 	SlotCooldownDuration[Index] = FMath::Max(0.0f, DurationSeconds);
@@ -148,14 +153,14 @@ void UAbilityCooldownTrayWidget::AdvanceCooldowns(float DeltaSeconds)
 		if (SlotCooldownRemaining[Index] > 0.0f)
 		{
 			SlotCooldownRemaining[Index] = FMath::Max(0.0f, SlotCooldownRemaining[Index] - DeltaSeconds);
-			UpdateSlotVisual((EAbilitySlot)Index);
+			UpdateSlotVisual(static_cast<EAbilitySlot>(Index));
 		}
 	}
 }
 
 void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 {
-	const int32 Index = (int32)AbilitySlot;
+	const int32 Index = static_cast<int32>(AbilitySlot);
 	if (!SlotCooldownTexts.IsValidIndex(Index) || !SlotCooldownRemaining.IsValidIndex(Index))
 	{
 		return;
@@ -177,25 +182,26 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 	}
 	else
 	{
+		CooldownText->SetText(FText::GetEmpty());
 		CooldownText->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 
 float UAbilityCooldownTrayWidget::GetSlotRemainingSeconds(EAbilitySlot AbilitySlot) const
 {
-	const int32 Index = (int32)AbilitySlot;
+	const int32 Index = static_cast<int32>(AbilitySlot);
 	return SlotCooldownRemaining.IsValidIndex(Index) ? SlotCooldownRemaining[Index] : 0.0f;
 }
 
 bool UAbilityCooldownTrayWidget::IsSlotOnCooldown(EAbilitySlot AbilitySlot) const
 {
-	const int32 Index = (int32)AbilitySlot;
+	const int32 Index = static_cast<int32>(AbilitySlot);
 	return SlotCooldownRemaining.IsValidIndex(Index) && SlotCooldownRemaining[Index] > 0.0f;
 }
 
 FText UAbilityCooldownTrayWidget::GetSlotCooldownDisplayText(EAbilitySlot AbilitySlot) const
 {
-	const int32 Index = (int32)AbilitySlot;
+	const int32 Index = static_cast<int32>(AbilitySlot);
 	if (!SlotCooldownTexts.IsValidIndex(Index) || !SlotCooldownTexts[Index])
 	{
 		return FText::GetEmpty();
