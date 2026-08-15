@@ -8,7 +8,7 @@
     "smoke_contains": "UE_CMD_PRESENT"
   },
   "static": "",
-  "unit": "",
+  "unit": "harness/run_ue_automation.sh KrowdKontrol.Unit.",
   "unit_count_pattern": "UE_AUTOMATION_RESULT passed=\\d+ total=(\\d+)",
   "e2e_timeout_s": 300,
 
