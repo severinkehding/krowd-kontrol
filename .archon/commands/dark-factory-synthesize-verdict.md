@@ -1,6 +1,6 @@
 ---
 description: Final arbiter for Dark Factory PR validation. Aggregates behavioral, security, code review, and harness gate results into an approve/request_changes/reject verdict.
-argument-hint: (no arguments — reads $checkout-pr, $run-harness, $behavioral-validation, $behavioral-e2e, $security-check, $code-review, $fetch-base-governance)
+argument-hint: (no arguments — reads $checkout-pr, $run-harness-p1, $behavioral-validation-p1, $behavioral-e2e-p1, $security-check-p1, $code-review-p1, $fetch-base-governance)
 ---
 
 # Dark Factory Validation — Synthesize Verdict
@@ -33,12 +33,12 @@ Same rules as the upstream reviewers: you do not read implementation plans, code
 $checkout-pr.output
 
 ### Harness Gate (static + unit + app boot + e2e floor + holdout + mutations, whichever are configured — see harness/README.md)
-$run-harness.output
+$run-harness-p1.output
 
 ### Behavioral Validation (the holdout verdict)
 $behavioral-validation-p1.output
 
-### E2E Behavioral Validation (agent-browser)
+### E2E Behavioral Validation (the E2E holdout)
 $behavioral-e2e-p1.output
 
 ### Security Check
@@ -59,9 +59,9 @@ $fetch-base-governance.output
 If the validator's own infrastructure did not complete, you CANNOT render a substantive verdict. Check the Infrastructure inputs above:
 
 - `$checkout-pr.output` must contain the literal string `Checked out PR #`. If empty, missing, or lacking that marker → infrastructure failure.
-- `$run-harness.output` must contain the literal string `GATE_OK` for an approve-eligible run. If it's empty, or contains `GATE_FAILED`/a Python traceback ending in `AppDidNotStart`/`APP_START_REFUSED`, that means either a real failure OR — in this repo's current bootstrap state — that no app exists yet (see `harness/README.md`). Both cases are treated the same way here: not approve-eligible.
+- `$run-harness-p1.output` must contain the literal string `GATE_OK` for an approve-eligible run. If it's empty, or contains `GATE_FAILED`/a Python traceback ending in `AppDidNotStart`/`APP_START_REFUSED`, that means either a real failure OR — in this repo's current bootstrap state — that no app exists yet (see `harness/README.md`). Both cases are treated the same way here: not approve-eligible.
 
-**FORBIDDEN escape hatch — read carefully.** `not_e2e_testable` is a legitimate enum value in the output schema for `e2e_status` and `behavioral_status`, but it means one specific thing: *the PR diff legitimately cannot be exercised through the browser* (e.g., a pure internal refactor, a docs-only change). It does NOT mean "the E2E node didn't produce output" or "the app failed to start." If `$run-harness.output` lacks `APP_STARTED`, or if `$checkout-pr.output` lacks `Checked out PR #`, or if `$behavioral-e2e-p1.output` is empty because its upstream dependency failed — you are **FORBIDDEN** from returning `e2e_status: "not_e2e_testable"` or `behavioral_status: "not_e2e_testable"` for that reason. Those cases are infrastructure/bootstrap gaps, not untestable diffs, and you MUST fire rule 0 below with `e2e_status: "no"` and `behavioral_status: "no"`.
+**FORBIDDEN escape hatch — read carefully.** `not_e2e_testable` is a legitimate enum value in the output schema for `e2e_status` and `behavioral_status`, but it means one specific thing: *the PR diff legitimately cannot be exercised through the browser* (e.g., a pure internal refactor, a docs-only change). It does NOT mean "the E2E node didn't produce output" or "the app failed to start." If `$run-harness-p1.output` lacks `APP_STARTED`, or if `$checkout-pr.output` lacks `Checked out PR #`, or if `$behavioral-e2e-p1.output` is empty because its upstream dependency failed — you are **FORBIDDEN** from returning `e2e_status: "not_e2e_testable"` or `behavioral_status: "not_e2e_testable"` for that reason. Those cases are infrastructure/bootstrap gaps, not untestable diffs, and you MUST fire rule 0 below with `e2e_status: "no"` and `behavioral_status: "no"`.
 
 Additionally, if `$behavioral-validation-p1.output`, `$security-check-p1.output`, `$code-review-p1.output`, or `$behavioral-e2e-p1.output` is empty (no content at all — meaning the node was skipped because its upstream dependency failed), that is also an infrastructure failure even if `checkout-pr.output` looks fine.
 
@@ -99,9 +99,9 @@ A rejected PR has its issue re-queued (label flipped back to `factory:accepted`)
 
 Approve if ALL of:
 
-1. `$run-harness.output` contains `GATE_OK` (mode=full) — the single harness gate covers static, unit, app boot, and whatever else `harness.config.json` has configured
+1. `$run-harness-p1.output` contains `GATE_OK` (mode=full) — the single harness gate covers static, unit, app boot, and whatever else `harness.config.json` has configured
 2. `behavioral-validation.solves_issue == "yes"` AND `scope_appropriate == "yes"` AND `regressions_detected` is empty
-3. **Agent-browser E2E gate (mandatory per FACTORY_RULES §3 + §4)**: EITHER `behavioral-e2e.solves_issue == "yes"` AND `behavioral-e2e.app_booted == true` AND `regressions_observed` is empty, OR `behavioral-e2e.solves_issue == "not_e2e_testable"` AND `behavioral-e2e.app_booted == true` (used only when the diff legitimately has no UI surface — pure internal refactor, docs, background-job tweak). `app_booted == false` is never approve-compatible; if it's false, rule 0 already fired.
+3. **Behavioral E2E gate (mandatory per FACTORY_RULES §3 + §4)**: EITHER `behavioral-e2e.solves_issue == "yes"` AND `behavioral-e2e.app_booted == true` AND `regressions_observed` is empty, OR `behavioral-e2e.solves_issue == "not_e2e_testable"` AND `behavioral-e2e.app_booted == true` (used only when the diff legitimately has no UI surface — pure internal refactor, docs, background-job tweak). `app_booted == false` is never approve-compatible; if it's false, rule 0 already fired.
 4. `security-check.verdict == "pass"` AND `governance_files_modified == false`
 5. `code-review` finds no critical or high severity issues (medium and low are acceptable and documented for follow-up)
 6. `behavioral-validation.confidence != "low"` — low confidence behavioral verdicts never auto-approve, they become request_changes

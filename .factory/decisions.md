@@ -298,3 +298,70 @@ guess at while also trying to close out a documentation pass. Until decided:
 `behavioral-e2e` stays at `not_e2e_testable`, `run-harness`'s real `GATE_OK` and the
 other pass-1/pass-2 reviewers remain what actually gates a PR, and that is a correct,
 intentional state - not a regression.
+
+## D-006: Three live autopilot bugs found and fixed, first cron cycle after "full autopilot"
+
+**Found 2026-08-15, ~30 min after enabling unattended cron dispatch (§8), while
+investigating why PR #84 (the canary build) was rejected+escalated despite the harness
+gate genuinely passing (`GATE_OK mode=full`, `APP_STARTED driver=cli`).**
+
+1. **`dark-factory-synthesize-verdict.md` referenced a node that doesn't exist.** The
+   pass-1 synthesizer read `$run-harness.output`, but the actual workflow node id is
+   `run-harness-p1` — there is no node literally named `run-harness`. The variable never
+   resolved, so the synthesizer saw an empty Harness Gate section and correctly (per its
+   own rule 0) treated that as an infrastructure failure — even though the real harness
+   run had passed cleanly. The pass-2 file (`dark-factory-synthesize-verdict-p2.md`)
+   had the correct `run-harness-p2` naming throughout, confirming this was a pass-1-only
+   typo, not a design choice. Fixed: all `$run-harness.output` references (arg-hint,
+   input section, rule 0, the FORBIDDEN-escape-hatch paragraph, approve rule 1) now read
+   `$run-harness-p1.output`. Also cleaned up the stale "(agent-browser)" section header
+   and "Agent-browser E2E gate" rule name left over from the pre-D-004 rewrite — genuine
+   leftover naming, but confirmed NOT the actual cause of this rejection (ruled out by
+   checking `checkout-pr`'s node script, which does echo `Checked out PR #$N...`; a log
+   grep that appeared to show it missing was a red herring — the raw JSONL log only
+   records `bash_node_stderr` events, not stdout, so absence from that log proves
+   nothing about the node's actual output).
+
+2. **`orchestrator.sh`'s `MAX_PARALLEL=1` didn't hold within a single cron cycle.** At
+   08:10 UTC, one cycle dispatched `validate/pr-84`, then `fix/issue-2`, then
+   `triage/...` within 3 seconds of each other. `in_flight_count()` polls `pgrep`
+   immediately after backgrounding the previous `archon workflow run` process — which
+   hasn't shown up in the process table yet at fork+exec speed — so `capacity_left()`
+   kept reading 0 in-flight and let every queue's dispatch through in the same cycle.
+   The losers crashed instantly with `Permission denied accessing repository` from
+   Archon's own internal worktree-creation lock (not a real filesystem permission
+   issue). This is what the session's earlier "manual dispatch racing with cron"
+   incident actually was too — not a one-off coincidence, a structural race that fires
+   every cycle with >1 eligible target. Fixed: added `total_in_flight()` = pgrep count +
+   `DISPATCHED_THIS_CYCLE`, and switched both `dispatch()`'s capacity check and
+   `capacity_left()` to use it instead of the raw pgrep count.
+
+3. **Issues with an open, unmerged PR could get redispatched to `fix-github-issue`
+   again.** `cleanup-issue-label` clears `factory:in-progress` from an issue once its PR
+   is opened (correct — the issue itself is no longer "in progress"). But
+   `orchestrator.sh`'s `issue_queue()` only filtered on that label, with no check for an
+   existing open PR — so the moment the label cleared, the issue looked idle again and
+   got redispatched on top of its own still-open PR. Confirmed live: issue #2 got a
+   second, duplicate `fix-github-issue` run at 08:10 UTC despite PR #84 already existing
+   for it; that duplicate run did real (redundant) work and then failed at its last node
+   (`cleanup-issue-label: bash executable not found at 'bash'... Set ARCHON_BASH_PATH`),
+   leaving issue #2 stuck with both `factory:in-progress` and `factory:needs-human`
+   simultaneously. Fixed: `orchestrator.sh` now fetches all open PRs' `headRefName`s,
+   extracts issue numbers from the `archon/task-fix-issue-<N>` convention
+   (`fix-github-issue` always branches this way — confirmed via PR #84's own
+   `headRefName`), and skips any issue already covered by an open PR. Manually cleared
+   issue #2's stuck labels back to just `factory:accepted` and reset PR #84 from
+   `factory:needs-human` to `factory:needs-review` so the fixed loop retries it cleanly.
+
+**Not investigated further, flagged for observation only:** the
+`ARCHON_BASH_PATH`/Windows-flavored bash-resolution error on `cleanup-issue-label`
+during the duplicate run. Plausibly a downstream symptom of the same same-cycle race
+(#2 above) rather than an independent bug — every other run's `cleanup-issue-label`,
+including the canary's, completed fine. Worth a second look only if it recurs now that
+the race is fixed; not chased further here since it would need Archon-internals access
+this repo doesn't have.
+
+**Process note:** all three were caught by actually reading the cron log and per-run
+logs after the user asked "is there something running?", not by assuming the "full
+autopilot" cycle that had already run twice was clean. The loop was paused via the
+local kill file (`.factory-stop`) for the ~15 minutes these fixes took, then resumed.

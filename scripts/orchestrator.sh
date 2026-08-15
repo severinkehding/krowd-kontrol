@@ -87,11 +87,24 @@ is_locked() {
 
 DISPATCHED_THIS_CYCLE=0
 
+# A process backgrounded via `nohup ... &` doesn't reliably show up in `pgrep`
+# output by the time the very next dispatch() call runs a fraction of a second
+# later (fork+exec latency) — so in_flight_count() alone under-counts within a
+# single cycle. Confirmed live 2026-08-15: three dispatches (validate/pr-84,
+# fix/issue-2, triage) all fired within 3 seconds of each other despite
+# MAX_PARALLEL=1, and the losers crashed with "Permission denied accessing
+# repository" from Archon's own internal worktree lock — not a real permission
+# problem, just this race. Total in-flight = what pgrep can already see, plus
+# what this cycle has dispatched but pgrep hasn't caught up to yet.
+total_in_flight() {
+  echo $(( $(in_flight_count) + DISPATCHED_THIS_CYCLE ))
+}
+
 dispatch() {
   local workflow="$1" branch="$2" message="$3"
 
   local n
-  n=$(in_flight_count)
+  n=$(total_in_flight)
   if [ "$n" -ge "$MAX_PARALLEL" ]; then
     log "SKIP (MAX_PARALLEL=$MAX_PARALLEL reached, $n in flight): $workflow $branch"
     return 1
@@ -111,7 +124,7 @@ dispatch() {
 }
 
 capacity_left() {
-  [ "$(in_flight_count)" -lt "$MAX_PARALLEL" ]
+  [ "$(total_in_flight)" -lt "$MAX_PARALLEL" ]
 }
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -152,11 +165,31 @@ issue_queue() {
     '
 }
 
+# A completed fix-github-issue run clears `factory:in-progress` from the issue
+# once it opens a PR (cleanup-issue-label node) — that's correct, the issue
+# itself is no longer "in progress", the PR is now the live unit of work. But
+# issue_queue() above only filters on that label, so once it clears, an issue
+# with an open, unmerged PR looks idle again and gets redispatched — spawning
+# a duplicate fix-github-issue run on top of a PR still awaiting review/merge.
+# Confirmed live 2026-08-15 on issue #2 / PR #84. fix-github-issue always
+# branches as archon/task-fix-issue-<N> (confirmed via PR #84's headRefName),
+# so an open PR on that branch name is the real "already has a PR" signal.
+open_pr_issue_numbers() {
+  gh pr list -R "$REPO" --state open --json headRefName --jq \
+    '.[].headRefName | select(startswith("archon/task-fix-issue-")) | ltrimstr("archon/task-fix-issue-")' \
+    2>/dev/null
+}
+OPEN_PR_ISSUE_NUMBERS=$'\n'"$(open_pr_issue_numbers)"$'\n'
+
 while IFS= read -r issue_number; do
   [ -z "$issue_number" ] && continue
   capacity_left || break
   if is_locked "fix/issue-$issue_number"; then
     log "SKIP (locked, already in flight): dark-factory-fix-github-issue fix/issue-$issue_number"
+    continue
+  fi
+  if [[ "$OPEN_PR_ISSUE_NUMBERS" == *$'\n'"$issue_number"$'\n'* ]]; then
+    log "SKIP (open PR already exists for this issue): dark-factory-fix-github-issue fix/issue-$issue_number"
     continue
   fi
   gh issue edit "$issue_number" -R "$REPO" --add-label "factory:in-progress" 2>/dev/null || true
