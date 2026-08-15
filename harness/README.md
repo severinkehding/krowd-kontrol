@@ -42,20 +42,35 @@ There is no app, so:
 
 ## What to fill in first
 
-In the same commit that adds `app/`:
+**There is no `app/` for this project.** krowd-kontrol is an Unreal Engine project
+that lives outside this git repo entirely (`MISSION.md` Hard Invariant 8; path in
+`CLAUDE.md`'s Environment section) — "adding `app/`" here means wiring the harness to
+reach that external project, not creating an in-repo directory.
 
-1. `harness.config.json` - set `http.start` (and `http.health_path` /
-   `http.health_contains` if the default `/health` doesn't fit), `static`, `unit`, and
-   `unit_count_pattern`.
-2. `harness/serve.py` - the real boot script `http.start` invokes.
-3. `harness/e2e.py` - real assertions once MISSION.md defines what the app is supposed
-   to do. Follow dark-factory-experiment's `e2e.py` for the shape: assert hard
-   invariants from MISSION.md against the live process, not implementation details.
-4. Update `.archon/workflows/dark-factory-validate-pr.yaml`'s `dark-factory-behavioral-e2e`
-   command if there's a real user journey worth walking with `agent-browser` (see
-   `.claude/skills/agent-browser/SKILL.md`) - that layer has authority over a merge the
-   same way it does in dark-factory-experiment; `harness/e2e.py` is a floor under it, not
-   a replacement for it.
+1. `harness.config.json` - set **`driver: "cli"`, not `"http"`**. This project has no
+   HTTP server to boot and poll; `driver: "http"` will never be the right shape for it
+   (see `.factory/decisions.md` D-004). The `cli` driver fits Unreal's built-in
+   Automation Testing Framework run headlessly: `cli.invoke` pointed at
+   `UnrealEditor-Cmd.exe` (via `wslpath -w` for the external project path) with
+   `-ExecCmds="Automation RunTests {args}" -unattended -nopause
+   -testexit="Automation Test Queue Empty"`, once real automated tests exist for the
+   game's systems. Fill in `static`/`unit`/`unit_count_pattern` once there's a real
+   check command for whatever build/lint step the Unreal project ends up using.
+2. `harness/serve.py` - not applicable under the `cli` driver; can stay a placeholder,
+   or be repurposed as the invocation wrapper `cli.invoke` calls if that's cleaner than
+   a raw command line.
+3. `harness/e2e.py` - real assertions once MISSION.md's core loop (`01`) has playable
+   content to assert against. Follow dark-factory-experiment's `e2e.py` for the shape:
+   assert hard invariants from MISSION.md against the live process, not implementation
+   details.
+4. Rewrite `.archon/commands/dark-factory-behavioral-e2e.md` and the corresponding
+   `.archon/workflows/dark-factory-validate-pr.yaml` node — both still literally invoke
+   `agent-browser` as of this writing, which has nothing to drive here (no browser, no
+   web UI). Replace with the Unreal MCP visual-QA approach (`unreal-agent-harness`
+   skill's `ue_qa.py`) described in `FACTORY_RULES.md` §4. That layer has authority
+   over a merge the same way it does in dark-factory-experiment; `harness/e2e.py` is a
+   floor under it, not a replacement for it. See `.factory/decisions.md` D-004 — this
+   is tracked, known-incomplete follow-up, not solved by this commit.
 
 Nothing here needs a `.factory/holdout/` or `.factory/locks/floor.json` yet - both
 encode a *measured baseline* (dark-factory-experiment's are DynaChat's real numbers).

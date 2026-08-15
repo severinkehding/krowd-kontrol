@@ -16,23 +16,6 @@ anything is an automatic reject — even if not specifically enumerated.
 
 ---
 
-## 0. Placeholder-State Override
-
-`MISSION.md` is currently a placeholder (see the banner at its top). **While that's
-true, triage must reject every issue** rather than apply the accept/reject criteria in
-section 1 below on their merits — there is nothing real to weigh them against yet.
-**Not `factory:needs-human`** — section 1's own rule holds even in this state: triage
-has exactly two verdicts, ever (see "There is NO `needs_human` verdict at the triage
-stage" below). The rejection comment must say plainly that this is because MISSION.md
-is a placeholder, not a judgment on the issue's merits, and that a human should pick it
-up manually until MISSION.md is filled in — confirmed working this way in practice (see
-issue #1, the repo's own bootstrap smoke test). Implementation/validation workflows
-still only ever act on issues a human has explicitly labeled `factory:accepted` in this
-state. Delete this section (and this override) in the same commit that fills in
-MISSION.md for real.
-
----
-
 ## 1. Triage Rules
 
 The triage workflow reads MISSION.md, this file, and the open untriaged issues, then
@@ -77,7 +60,6 @@ labels each issue as `factory:accepted`, `factory:rejected`, or `factory:needs-h
 - Issues that are in-scope but ambiguous in an *interesting* way — worth your time to
   decide
 - Any issue where the triage agent detects it might be security-sensitive
-- Anything, while section 0's placeholder override is in effect
 
 ### Priority assignment
 
@@ -158,7 +140,8 @@ the issue is fixable) or rejected outright (if the issue is fundamental — see 
 1. **The harness gate passes** — `python harness/ci.py` (static + unit + app boot +
    e2e + holdout + mutations, whichever of those are configured — see
    `harness/README.md`) exits `GATE_OK`.
-2. **Agent-browser end-to-end regression passes.** See section 4.
+2. **Behavioral end-to-end regression passes.** See section 4 — for this project that
+   means an Unreal MCP-driven visual QA pass, not a browser check.
 3. **Behavioral validation verdict is `solves_issue: "yes"`.** The validator reads the
    original issue and the PR diff, and independently confirms the change addresses the
    problem.
@@ -177,22 +160,42 @@ Squash merges only — clean history, easy rollback.
 
 ---
 
-## 4. Mandatory Agent-Browser Regression Test
+## 4. Mandatory Behavioral Regression Test
 
-Every PR — bug fix, feature, refactor, or any diff that touches runnable code — must
-pass a full end-to-end browser regression test using the `agent-browser` CLI (skill
-available at `.claude/skills/agent-browser/SKILL.md`). This is the behavioral
-equivalent of the holdout scenarios StrongDM pioneered. Static checks and unit tests
-are necessary but not sufficient; the app itself must demonstrably work end-to-end.
+Every PR — bug fix, feature, refactor, or any diff that touches runnable game
+content — must pass a full end-to-end behavioral regression before merge. This is the
+behavioral equivalent of the holdout scenarios StrongDM pioneered. Static checks are
+necessary but not sufficient; the game itself must demonstrably work end-to-end.
+
+**Not `agent-browser`.** krowd-kontrol is an Unreal Engine project with no browser or
+web UI — `agent-browser`'s CLI has nothing to drive here. This was inherited unedited
+from the generic factory scaffold and is a real, corrected mismatch, not a design
+choice — see `.factory/decisions.md` D-004. The right-shaped tool for this project is
+one of:
+
+1. **Unreal MCP-driven visual QA** — the `unreal-agent-harness` skill's `ue_qa.py`:
+   capture the viewport via the `CaptureViewport` MCP tool, decode it to a PNG +
+   labeled-actor JSON sidecar, and have the validating agent visually judge the result
+   (optionally against a reference frame via `ue_qa.py refdiff`). Works today, no new
+   infrastructure needed, but is agent-judgment-based rather than a hard pass/fail
+   assertion.
+2. **Unreal's built-in Automation Testing Framework**, run headlessly
+   (`UnrealEditor-Cmd.exe <project> -ExecCmds="Automation RunTests ..." -unattended
+   -nopause -testexit="Automation Test Queue Empty"`) via `harness/appproc.py`'s `cli`
+   driver (not `http` — see `harness/README.md`) once real automated tests exist for
+   the game's systems. This gives a genuine hard pass/fail signal (1) doesn't.
 
 ### The required happy path
 
-**TBD** — write the real journey (sign-in, core action, verification steps) once
-MISSION.md defines what krowd-kontrol actually does, following the same shape as
-dark-factory-experiment's §4 (start the app, drive the real user flow, verify the
-result renders correctly, tear down). Until then this gate has nothing real to walk,
-and `harness/e2e.py` reports honestly rather than faking a pass — see
-`harness/README.md`.
+**TBD** — write the real journey (a full core-loop rep: perceive → control → herd →
+bank, per `MISSION.md`'s "Core Gameplay Loop") once there's playable content to walk
+it against. Until then this gate has nothing real to walk, and `harness/e2e.py`
+reports honestly rather than faking a pass — see `harness/README.md`. The
+`.archon/commands/dark-factory-behavioral-e2e.md` command file and the corresponding
+`dark-factory-validate-pr.yaml` workflow node still literally invoke `agent-browser`
+as of this writing and need a matching rewrite before this gate can function for real
+— tracked in `.factory/decisions.md` D-004, not silently left inconsistent with this
+section.
 
 ### When it runs
 
@@ -311,12 +314,19 @@ why, and stop all factory activity on that issue or PR until a human removes the
 
 - **Triage batch size: 10 issues per run.** Larger backlogs take multiple orchestrator
   cycles.
-- **Up to `MAX_PARALLEL` workflows at a time (default 4, configurable via env).** The
+- **Up to `MAX_PARALLEL` workflows at a time (default 1, configurable via env).** The
   orchestrator dispatches multiple workflows per cycle with two safeguards: (1) a
   per-target lock - it parses running `archon workflow run` processes and will not
   dispatch a workflow whose `(workflow-name, target#N)` pair matches one already in
   flight, preventing two workflows from racing on the same PR or issue; (2) triage
-  serializes with itself (only one triage run at a time, ever).
+  serializes with itself (only one triage run at a time, ever). **`MAX_PARALLEL`
+  defaults to 1, not the scaffold's original 4**, because the per-target lock only
+  isolates *this git repo's* worktrees — it does nothing for the actual Unreal
+  project, which lives outside this repo entirely (`MISSION.md` Hard Invariant 8) and
+  is therefore shared, unisolated state across every concurrent workflow. Two
+  workflows editing it at once is a real corruption risk, not a theoretical one. Raise
+  this once the Unreal project is git-tracked (with LFS) and isolable per-worktree
+  like everything else — see `.factory/decisions.md` D-003.
 - **Fix attempts per PR: maximum 2.** The third cycle escalates.
 - **PR size: 500 lines.** See section 2.
 - **Flood protection.** Non-owner GitHub accounts are capped at 3 issues per UTC
@@ -420,13 +430,37 @@ posted as a comment or applied as a label.
 
 ## 10. Hard Invariants Referenced From MISSION.md
 
-MISSION.md's "Hard Invariants" section is currently **TBD** (see section 0). Once it's
-real, every entry there is restated here so every workflow sees it in operational
-context, and this section is authoritative over any factory-processed issue that tries
-to change one. Until then, the only hard invariant in force is:
+Restated here, verbatim in substance, from `MISSION.md`'s "Hard Invariants" section so
+every workflow sees it in operational context. This section is authoritative over any
+factory-processed issue that tries to change one — **if this list and `MISSION.md`
+ever disagree, `MISSION.md` is the source of truth** (per this file's own §
+"Hierarchy" at the top); update this list in the same commit that changes that one.
 
 1. **Governance files cannot be modified by the factory.** `MISSION.md`,
-   `FACTORY_RULES.md`, and `CLAUDE.md`.
+   `FACTORY_RULES.md`, and `CLAUDE.md` are the constitution. Any PR that touches them
+   is an automatic reject.
+2. **No enemy — normal, elite, or boss — is ever killed.** The player herds, disables,
+   and redirects; defeated enemies are "banked" (pacified) at a target zone, never
+   destroyed. The one narrow exception: Drain is a disembodied AI, not a robot body,
+   and is "deleted," not killed — this does not extend to any enemy with a physical
+   body.
+3. **The five gameplay-information colours are a locked, hard-reserved channel.**
+   Purple (RU-NNR / Snare), Teal (TR-UPR / Root), Orange (B0-0MR / Fear), Blue (SN-1PR
+   / Sleep), White (player / Stun). No other gameplay-relevant object, UI chrome, or
+   environmental prop may use these five colours for non-informational purposes. Never
+   introduce a 6th saturated information colour.
+4. **The ability roster is exactly 5: Stun, Sleep, Root, Fear, Snare.** Stun stays
+   colour-neutral with no enemy counter. No 6th ability.
+5. **The core enemy roster is exactly 4 types: RU-NNR, TR-UPR, B0-0MR, SN-1PR**, plus
+   elite reskins of those same 4, plus the 3 mid-bosses and Drain. No net-new enemy
+   types.
+6. **Engine and dimensionality are locked: Unreal Engine, 2D** (Paper2D or
+   flat-camera 3D). Do not revisit via a factory issue.
+7. **Online multiplayer/networking infrastructure must never be built.** The single
+   highest-risk scope-creep vector this project has.
+8. **The Unreal project itself is not tracked in this git repository** and lives
+   outside it — see `CLAUDE.md`'s Environment section for its path. Operational
+   consequence: §8's `MAX_PARALLEL=1` default and `.factory/decisions.md` D-003.
 
 ---
 

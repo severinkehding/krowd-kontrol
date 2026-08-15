@@ -6,28 +6,33 @@
   with nobody watching.
 -->
 
-**Current autonomy level: 0 (bootstrap)** — the harness, governance files, and
-workflows are wired up and verified, but MISSION.md is a placeholder, so triage
-rejects every issue with a placeholder-state reason (see `FACTORY_RULES.md` §0 — not
-`factory:needs-human`, since triage never emits that verdict, by design) instead of
-actually building anything. This is intentional: the loop runs for real, but has
-nothing real to decide yet. Level jumps to **4** — untriaged issue classified, planned,
-built, reviewed, independently validated, and **merged** with no human in the chain —
-the commit MISSION.md is filled in for real.
+**Current autonomy level: 1–2, climbing toward 4** — as of 2026-08-15, `MISSION.md` is
+real (derived from the Krowd Kontrol PRD set, see below), so triage now evaluates
+issues on their actual merits instead of rejecting everything with a placeholder-state
+reason. Implementation can run for real too. **Auto-merge is still not live** —
+two tracked gaps block it, both honestly documented rather than papered over:
+`.factory/decisions.md` D-001 (no running app for the holdout/E2E layer to connect to)
+and D-004 (the mandatory behavioral-regression gate still literally invokes
+`agent-browser`, a browser tool this browser-less Unreal project has no use for — the
+replacement mechanism is designed in `FACTORY_RULES.md` §4 but the workflow command
+file itself isn't rewritten yet). Until both close, validated PRs land on
+`factory:needs-human` for the merge decision rather than merging themselves. Filling
+in MISSION.md was necessary to reach level 4, not sufficient by itself.
 **Level 5 is deliberately not the goal.** The factory will not write its own issues.
 **Stop button:** `.factory-stop` in the orchestrator's working copy (works with the
 network down) **and** the `factory:stop` label on any open issue (reachable from a
 phone). Both fail closed. Checked by `scripts/factory-stop.sh` before anything else is
 read.
-**Built from PRD:** none yet — `MISSION.md` is a placeholder. **Change one, change
-both**, in the same commit, once a PRD exists.
+**Built from PRD:** the Krowd Kontrol PRD set (`/home/severin/krowd-kontrol-prds/`, 16
+PRDs decomposed from the original GDD). **Change one, change both** — `MISSION.md` and
+the PRDs — in the same commit, whenever the product changes.
 
 ## The five components, as built here
 
 | # | Component | This repo's version |
 |---|---|---|
 | 1 | Workflow-driven repo | **Archon**, five YAML workflows in `.archon/workflows/` (triage, fix-github-issue, validate-pr, comprehensive-test [parked], prd-to-issues). State in GitHub labels |
-| 2 | The trigger | Pure-bash orchestrator, **in this repo** at `scripts/orchestrator.sh`, cron every **10 min**, `MAX_PARALLEL=4` with per-target locks |
+| 2 | The trigger | Pure-bash orchestrator, **in this repo** at `scripts/orchestrator.sh`, cron every **10 min**, `MAX_PARALLEL=1` with per-target locks (kept at 1, not the scaffold's original 4, until the Unreal project is git-tracked — see `.factory/decisions.md` D-003) |
 | 3 | Deployment | **Decided:** local, not blue/green — see below. Not built yet, nothing to package until there's real game content |
 | 4 | Guidance layer | `MISSION.md` (placeholder) · `FACTORY_RULES.md` · `CLAUDE.md` (placeholder), all three protected |
 | 5 | Validation harness | `harness/ci.py` + `appproc.py` (verbatim, generic) + repo-specific `harness.config.json`/`serve.py`/`e2e.py` (currently empty placeholders — see `harness/README.md`) |

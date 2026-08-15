@@ -36,7 +36,12 @@ else
 fi
 
 REPO="${FACTORY_REPO:-severinkehding/krowd-kontrol}"
-MAX_PARALLEL="${MAX_PARALLEL:-4}"
+# Default 1, not the scaffold's original 4: per-target locking only isolates this
+# repo's own git worktrees, not the actual Unreal project (lives outside this repo —
+# MISSION.md Hard Invariant 8), which is shared, unisolated state across any
+# concurrent dispatch. Raise once that project is git-tracked and isolable per
+# worktree — see FACTORY_RULES.md §8 and .factory/decisions.md D-003.
+MAX_PARALLEL="${MAX_PARALLEL:-1}"
 LOG_DIR="${FACTORY_LOG_DIR:-$HOME/.archon/logs/krowd-kontrol}"
 mkdir -p "$LOG_DIR"
 

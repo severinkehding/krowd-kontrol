@@ -94,3 +94,86 @@ now-monitored failure mode) accepted by the human operator, not a judgement valu
 factory chose on its own - recorded here for the same transparency reason as D-001, and
 because a future session hitting `STOPPED: CLAUDE_API_KEY not set` again should find
 this instead of re-deriving the fix.
+
+---
+
+## D-003 · The Unreal project is external and unisolated — `MAX_PARALLEL` held at 1
+
+**Status:** open · **Raised:** 2026-08-15 (MISSION.md bootstrap) · **Blocks:** parallel dispatch above 1
+
+krowd-kontrol's actual game content is an Unreal Engine project that lives outside
+this git repository, on the Windows filesystem (see `CLAUDE.md`'s Environment
+section), reachable read/write from WSL via `/mnt/c/...`. This was already decided
+before MISSION.md existed (Git LFS would be needed before the first binary asset
+lands, and that tradeoff hasn't been taken - see `CLAUDE.md`), but it has a
+consequence for the factory's dispatch model that wasn't worked through until now.
+
+Every `archon workflow run ... --branch <name>` dispatch isolates its work in its own
+git worktree of *this* repo - that's the whole point of `--branch` (`README.md`: "it
+isolates the run in its own git worktree so it can't collide with anything else").
+That isolation only covers what's tracked in this repo's git history. The Unreal
+project isn't tracked here at all, so it isn't duplicated per-worktree - every
+concurrent dispatch that touches it would be reading and writing the exact same files
+at the exact same external path, simultaneously, with none of the collision
+protection the worktree model is supposed to provide. Two workflows both saving the
+same `.umap` at once, or one editing an asset via Unreal MCP while another rebuilds
+the same content via Blender MCP, is a real corruption risk - not a hypothetical one -
+and nothing in the current orchestrator (`is_locked()`/`in_flight_count()`, keyed on
+git branch name) has any way to detect or prevent it, because branch identity has
+nothing to do with "does this issue touch the Unreal project."
+
+**Decision:** `MAX_PARALLEL` defaults to **1**, not the scaffold's original 4 (see
+`FACTORY_RULES.md` §8, `scripts/orchestrator.sh`). This serializes *all* factory
+dispatch - not just Unreal-touching work - which is the blunt, cheap, correct-for-now
+answer: at bootstrap issue volume there is no throughput cost to serializing
+everything, and a coarse but definitely-safe rule beats a precise rule that requires
+classifying each issue's content before dispatch (which the orchestrator has no cheap
+way to do - it reads labels, not issue bodies).
+
+**Recommendation, not yet done:** revisit once either (a) the Unreal project is
+git-tracked (with LFS set up first, not retrofitted - see `CLAUDE.md`) and therefore
+copied fresh per-worktree like everything else, making it safe to isolate the same way
+code changes already are, or (b) there's enough of a mix between Unreal-touching and
+purely-infra/docs issues that a smarter per-target lock (classify at triage time,
+carry a label like `factory:touches-unreal`, only serialize those) is worth the added
+complexity. Until one of those happens, do not raise `MAX_PARALLEL` above 1 - a factory
+issue proposing that change, on its own, should be rejected per `MISSION.md`'s
+technical-architecture hard invariant (the project stays where `CLAUDE.md` says it is
+until a human decides otherwise).
+
+---
+
+## D-004 · `agent-browser` is the wrong regression tool for a browser-less game
+
+**Status:** open · **Raised:** 2026-08-15 (MISSION.md bootstrap) · **Blocks:** auto-merge (already blocked by D-001; this is a second, independent reason)
+
+The generic factory scaffold's mandatory end-to-end regression gate
+(`FACTORY_RULES.md` §3/§4, `.archon/commands/dark-factory-behavioral-e2e.md`, the
+`dark-factory-validate-pr.yaml` workflow node) was ported from dark-factory-experiment
+unedited and hard-requires `agent-browser` - a browser-automation CLI - for every
+PR. krowd-kontrol has no browser and no web UI; it's a 2D Unreal Engine game. As
+written, that gate could never pass, for any PR, ever - not a bootstrap gap that
+closes once an app exists (like D-001), but a structural mismatch that would still be
+wrong even with a finished game.
+
+**Decision:** `FACTORY_RULES.md` §3/§4 and `harness/README.md` now describe the
+correct-shaped tool instead: Unreal MCP-driven visual QA (the `unreal-agent-harness`
+skill's `ue_qa.py` - viewport capture, decode, and agent judgment, optionally against
+a reference frame via `refdiff`), with Unreal's built-in Automation Testing Framework
+(via `harness/appproc.py`'s `cli` driver, not `http`) as the harder-pass/fail-signal
+option once real automated tests exist for the game's systems. `MISSION.md`'s Quality
+Standards section and `FACTORY.md`'s status both point here instead of at
+`agent-browser`.
+
+**Not yet done, tracked honestly rather than silently left broken:**
+`.archon/commands/dark-factory-behavioral-e2e.md` (164 lines) and the corresponding
+`dark-factory-validate-pr.yaml` node still literally invoke `agent-browser` as of this
+commit - the governance *text* is fixed, the workflow *implementation* isn't yet. A
+real PR reaching that validation step today would still try the old mechanism. This is
+deliberately scoped out of the same session that filled in MISSION.md: rewriting a
+164-line command file for a tool (`ue_qa.py`) whose actual "required happy path" can't
+be written until there's playable core-loop content to walk (see `FACTORY_RULES.md`
+§4) deserves its own dedicated pass, not a rushed edit alongside a governance-file
+fill-in. Do this before the first real PR reaches validation, or expect it to stall
+there in a confusing way rather than cleanly report `not_e2e_testable` the way
+`harness/e2e.py` currently does for the D-001 gap.

@@ -74,7 +74,7 @@ runs, and a model never decides the merge — deterministic bash does:
 | ✅ yes — below the line | static / unit / integration | `harness/ci.py --quick` |
 | ❌ validator-only — above the line | deterministic gate | `apply-verdict` — pure bash reads a verdict file, never a model |
 | ❌ validator-only — above the line | holdout scenarios | not built yet — no app to write scenarios against (`.factory/decisions.md` D-001) |
-| ❌ validator-only — above the line | visual / E2E judging | wired (`agent-browser`), not live yet — same D-001 gap |
+| ❌ validator-only — above the line | visual / E2E judging | `agent-browser` doesn't fit a browser-less Unreal project — being replaced with an Unreal MCP visual-QA gate (`FACTORY_RULES.md` §4), not live yet — see D-004 |
 
 ### Does this actually match the original Dark Factory pattern?
 
@@ -86,15 +86,17 @@ from memory:
 | 1 | Workflow-driven repo | 4 Archon workflows, headless agent per step, same "take a prompt, edit files, exit code" contract | ✅ live |
 | 2 | The automation | `scripts/orchestrator.sh`; **identical label state machine** (`accepted → in-progress → needs-review → approved/needs-fix/needs-human`) and identical priority order (fix/check a PR → build an issue → triage last); interval is 10 min here vs. 30 in the video (deliberate choice) | ✅ live |
 | 3 | Deployment | Scoped differently on purpose | ⚠️ decided, not built — a local Unreal project has no live traffic to blue/green between; "deployment" here means packaging a local build once there's real content, see `FACTORY.md` |
-| 4 | Guidance layer | Same three files, same roles, same protection | ✅ live (`MISSION.md`'s *content* is still a placeholder — see `FACTORY_RULES.md` §0) |
+| 4 | Guidance layer | Same three files, same roles, same protection | ✅ live — `MISSION.md` has real content as of 2026-08-15, derived from the Krowd Kontrol PRD set |
 | 5 | Validation harness | Builder/validator split, deterministic gate, independence line — all structurally in place | ⚠️ partial — deterministic gate is live; holdout + visual/E2E are wired but not yet functional, see the table above |
 
 Two honest gaps, both already tracked (`FACTORY.md`, `.factory/decisions.md`), not
 hidden: no deployment step, and the two validator-only checks that need a real running
-app don't have one yet. Everything else is a faithful, verified port — read `FACTORY.md`
-for the full component breakdown and `FACTORY_RULES.md` for the complete operating
-rules (triage criteria, quality gates, protected files, the stop button). `MISSION.md`
-will define what krowd-kontrol actually *is* once that's decided.
+app (and, for the visual/E2E check, a real replacement for the browser-only
+`agent-browser` tool — see D-004) don't have one yet. Everything else is a faithful,
+verified port — read `FACTORY.md` for the full component breakdown and
+`FACTORY_RULES.md` for the complete operating rules (triage criteria, quality gates,
+protected files, the stop button). `MISSION.md` now defines what krowd-kontrol
+actually *is* — see there for the product itself.
 
 ## Skills
 
