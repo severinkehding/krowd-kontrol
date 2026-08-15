@@ -1,0 +1,27 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GizmoBark.generated.h"
+
+// One narrative "bark" (PRD 07): a one-sided Gizmo remote-call line delivered exactly
+// once and never replayed. See issue #57 - this struct is the plain data definition;
+// UGizmoNarrativeSubsystem owns the registry and the trigger-once logic that flips
+// bHasBeenTriggered.
+USTRUCT(BlueprintType)
+struct FGizmoBark
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gizmo Bark")
+	FName BarkID;
+
+	// 2-4 lines of display text (issue #57's acceptance criteria). No enforced
+	// min/max count here - see GizmoNarrativeSubsystem.cpp Notes.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gizmo Bark")
+	TArray<FString> Lines;
+
+	// Prevents replay - flipped by UGizmoNarrativeSubsystem::TriggerBark, never
+	// meant to be set directly by a caller.
+	UPROPERTY(BlueprintReadOnly, Category = "Gizmo Bark")
+	bool bHasBeenTriggered = false;
+};
