@@ -65,29 +65,25 @@ void UPostRunSummaryWidget::SetSummaryValues(float ClearTimeSeconds, int32 Crowd
 		NSLOCTEXT("PostRunSummaryWidget", "ClearTimeFormat", "Clear Time: {0}:{1}"),
 		FText::AsNumber(Minutes),
 		FText::FromString(FString::Printf(TEXT("%02d"), Seconds)));
-	if (ClearTimeText)
-	{
-		ClearTimeText->SetText(ClearTimeDisplay);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("UPostRunSummaryWidget: ClearTimeText is null on '%s' - clear time will render blank."),
-			*GetNameSafe(this));
-	}
+	SetTextBlockSafe(ClearTimeText, ClearTimeDisplay, TEXT("ClearTimeText"));
 
 	const FText CrowdMasteryDisplay = FText::Format(
 		NSLOCTEXT("PostRunSummaryWidget", "CrowdMasteryFormat", "Crowd Mastery: {0}"),
 		FText::AsNumber(FMath::Max(0, CrowdMasteryCount)));
-	if (CrowdMasteryText)
+	SetTextBlockSafe(CrowdMasteryText, CrowdMasteryDisplay, TEXT("CrowdMasteryText"));
+}
+
+void UPostRunSummaryWidget::SetTextBlockSafe(UTextBlock* TextBlock, const FText& Text, const TCHAR* FieldName) const
+{
+	if (TextBlock)
 	{
-		CrowdMasteryText->SetText(CrowdMasteryDisplay);
+		TextBlock->SetText(Text);
 	}
 	else
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("UPostRunSummaryWidget: CrowdMasteryText is null on '%s' - Crowd Mastery will render blank."),
-			*GetNameSafe(this));
+			TEXT("UPostRunSummaryWidget: %s is null on '%s' - field will render blank."),
+			FieldName, *GetNameSafe(this));
 	}
 }
 

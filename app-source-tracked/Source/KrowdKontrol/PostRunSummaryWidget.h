@@ -69,6 +69,10 @@ private:
 	// only place that checks ClearTimeText.
 	void EnsureWidgetTreeBuilt();
 
+	// Shared by both fields in SetSummaryValues(): sets Text on TextBlock if it exists,
+	// otherwise logs which field is rendering blank and why.
+	void SetTextBlockSafe(UTextBlock* TextBlock, const FText& Text, const TCHAR* FieldName) const;
+
 	UPROPERTY()
 	TObjectPtr<UTextBlock> ClearTimeText;
 
