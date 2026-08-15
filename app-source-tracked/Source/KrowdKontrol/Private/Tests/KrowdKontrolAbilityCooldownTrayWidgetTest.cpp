@@ -114,7 +114,7 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	Widget->AdvanceCooldowns(100.0f);
 	for (int32 Index = 0; Index < UAbilityCooldownTrayWidget::NumAbilitySlots; ++Index)
 	{
-		const EAbilitySlot Slot = (EAbilitySlot)Index;
+		const EAbilitySlot Slot = static_cast<EAbilitySlot>(Index);
 		TestFalse(*FString::Printf(TEXT("Slot %d should have cleared after a large delta"), Index), Widget->IsSlotOnCooldown(Slot));
 		TestEqual(*FString::Printf(TEXT("Slot %d remaining should clamp at 0"), Index), Widget->GetSlotRemainingSeconds(Slot), 0.0f);
 	}
@@ -126,12 +126,13 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("Fear remaining should equal the StartCooldown() duration"), Widget->GetSlotRemainingSeconds(EAbilitySlot::Fear), 5.0f);
 	for (int32 Index = 0; Index < UAbilityCooldownTrayWidget::NumAbilitySlots; ++Index)
 	{
-		if ((EAbilitySlot)Index == EAbilitySlot::Fear)
+		const EAbilitySlot Slot = static_cast<EAbilitySlot>(Index);
+		if (Slot == EAbilitySlot::Fear)
 		{
 			continue;
 		}
-		TestFalse(*FString::Printf(TEXT("Slot %d should be unaffected by StartCooldown(Fear, ...)"), Index), Widget->IsSlotOnCooldown((EAbilitySlot)Index));
-		TestEqual(*FString::Printf(TEXT("Slot %d remaining should be unaffected by StartCooldown(Fear, ...)"), Index), Widget->GetSlotRemainingSeconds((EAbilitySlot)Index), 0.0f);
+		TestFalse(*FString::Printf(TEXT("Slot %d should be unaffected by StartCooldown(Fear, ...)"), Index), Widget->IsSlotOnCooldown(Slot));
+		TestEqual(*FString::Printf(TEXT("Slot %d remaining should be unaffected by StartCooldown(Fear, ...)"), Index), Widget->GetSlotRemainingSeconds(Slot), 0.0f);
 	}
 
 	// (f2) Negative duration clamps to 0 rather than leaving the slot on an
