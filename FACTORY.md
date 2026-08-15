@@ -26,9 +26,9 @@ both**, in the same commit, once a PRD exists.
 
 | # | Component | This repo's version |
 |---|---|---|
-| 1 | Workflow-driven repo | **Archon**, four YAML workflows in `.archon/workflows/`. State in GitHub labels |
+| 1 | Workflow-driven repo | **Archon**, five YAML workflows in `.archon/workflows/` (triage, fix-github-issue, validate-pr, comprehensive-test [parked], prd-to-issues). State in GitHub labels |
 | 2 | The trigger | Pure-bash orchestrator, **in this repo** at `scripts/orchestrator.sh`, cron every **10 min**, `MAX_PARALLEL=4` with per-target locks |
-| 3 | Deployment | Not built yet — there's no app to deploy. Add once `app/` exists, following the blue/green pattern from dark-factory-experiment's `deploy/` if it still fits |
+| 3 | Deployment | **Decided:** local, not blue/green — see below. Not built yet, nothing to package until there's real game content |
 | 4 | Guidance layer | `MISSION.md` (placeholder) · `FACTORY_RULES.md` · `CLAUDE.md` (placeholder), all three protected |
 | 5 | Validation harness | `harness/ci.py` + `appproc.py` (verbatim, generic) + repo-specific `harness.config.json`/`serve.py`/`e2e.py` (currently empty placeholders — see `harness/README.md`) |
 
@@ -36,6 +36,35 @@ Unlike dark-factory-experiment, the orchestrator lives **inside this repo** rath
 on a separate VPS — this machine is both the operator's machine and the dispatch host,
 so there's no reason to hide it outside version control. `scripts/factory-stop.sh` still
 calls it out as protected (section 5 of `FACTORY_RULES.md`) the same way.
+
+## Component 3, decided but not built
+
+krowd-kontrol is a local Unreal Engine project, not a web service — there's no live
+traffic to route between a blue and a green instance, so dark-factory-experiment's
+blue/green pattern doesn't map here. "Deployment" for this project means **packaging a
+local Windows build** (`UnrealEditor-Cmd.exe -run=BuildCookRun`, or equivalent) once
+there's real game content worth packaging. Not built yet — there's nothing to package.
+When it is, it belongs in `scripts/` alongside the orchestrator, on the protected-files
+list the same way (`FACTORY_RULES.md` §5, "any file under `deploy/`, `infra/`,
+`scripts/deploy/`, or equivalent").
+
+The Unreal project itself is **not tracked in this repo** — see `CLAUDE.md`'s
+Environment section for why (Git LFS would be required before the first binary asset
+lands, and that tradeoff hasn't been taken).
+
+## Getting real work into the loop
+
+Two ways an issue enters the queue:
+
+- **A human files one directly** — the original path, always available.
+- **`dark-factory-prd-to-issues`** — feed it a PRD (pasted text, or `file:docs/prd.md`)
+  and it decomposes it into discrete, independently-buildable issues and files them.
+  It does not decide what to build (a human wrote the PRD) and it does not triage what
+  it files — every issue it creates goes through the exact same `dark-factory-triage`
+  gate as a human-filed one. This does not conflict with "the factory will not write
+  its own issues" above: decomposing a human-authored PRD into issue-sized units is
+  mechanical, not ideation. Manual trigger only — not part of the cron dispatch
+  rotation, since a PRD lands whenever a human decides it does, not on a schedule.
 
 ## The gates that are actually code
 

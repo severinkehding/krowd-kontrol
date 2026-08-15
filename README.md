@@ -11,13 +11,18 @@ state. There's no app yet.
 
 ## How this works
 
-The only human input is a GitHub issue. Everything from there — triage, implementation,
-review, merge — runs as headless agent workflows dispatched by a cron script reading
-GitHub labels as its only state.
+The only human input is a GitHub issue — or a PRD, which gets mechanically decomposed
+*into* GitHub issues. Everything from there — triage, implementation, review, merge —
+runs as headless agent workflows dispatched by a cron script reading GitHub labels as
+its only state.
 
 ```mermaid
 flowchart TD
-    ISSUE["GitHub Issue<br>(the only human input)"] --> ORCH{{"orchestrator.sh<br>cron, every 10 min"}}
+    PRD["A PRD you feed in<br>(pasted text, or file:docs/prd.md)"] -->|"manual trigger,<br>not on the cron"| PTOI["dark-factory-prd-to-issues<br>(decompose → file issues, ≤15/run)"]
+    PTOI -.-> ISSUE
+    HUMANISSUE["...or a human files one directly"] --> ISSUE
+
+    ISSUE["GitHub Issue"] --> ORCH{{"orchestrator.sh<br>cron, every 10 min"}}
 
     ORCH -->|"1: PR needs-review<br>or needs-fix"| VALIDATE["dark-factory-validate-pr<br>(fresh-context holdout run)"]
     ORCH -->|"2: issue accepted,<br>not in-progress"| BUILD["dark-factory-fix-github-issue<br>(classify → plan → implement → draft PR)"]
@@ -35,13 +40,18 @@ flowchart TD
     NEEDSFIX -. next cycle .-> VALIDATE
     VALIDATE -->|"reject, or 2nd<br>pass still failing"| HUMAN(["factory:needs-human"])
 
-    MERGE -.-> DEPLOY["blue/green deploy<br>— not built yet, no app to deploy"]
+    MERGE -.-> DEPLOY["local Unreal packaging<br>— decided, not built yet"]
 ```
 
 Every node in the diagram is a **headless** agent run (`archon workflow run`, no chat
 window) — the coding agent is the interchangeable part; the loop around it is what's
 durable. Priority order (fix/validate a PR, then build an accepted issue, then triage
-last) means in-flight work always finishes before new work starts.
+last) means in-flight work always finishes before new work starts. `dark-factory-prd-to-issues`
+is the one node that isn't on the cron — it runs when you decide a PRD is ready, not
+on a schedule, and it only *files* issues; deciding what to build stays entirely with
+whoever wrote the PRD, and every issue it creates still passes through the same
+`dark-factory-triage` gate as one you'd file by hand. See `docs/README.md` for the
+exact invocation.
 
 **The guidance layer** — three files every workflow reads before touching anything, one
 job each, all three on the protected-files list so the factory can propose changes to
@@ -75,7 +85,7 @@ from memory:
 |---|---|---|---|
 | 1 | Workflow-driven repo | 4 Archon workflows, headless agent per step, same "take a prompt, edit files, exit code" contract | ✅ live |
 | 2 | The automation | `scripts/orchestrator.sh`; **identical label state machine** (`accepted → in-progress → needs-review → approved/needs-fix/needs-human`) and identical priority order (fix/check a PR → build an issue → triage last); interval is 10 min here vs. 30 in the video (deliberate choice) | ✅ live |
-| 3 | Deployment | — | ❌ not built — no app exists yet to blue/green deploy |
+| 3 | Deployment | Scoped differently on purpose | ⚠️ decided, not built — a local Unreal project has no live traffic to blue/green between; "deployment" here means packaging a local build once there's real content, see `FACTORY.md` |
 | 4 | Guidance layer | Same three files, same roles, same protection | ✅ live (`MISSION.md`'s *content* is still a placeholder — see `FACTORY_RULES.md` §0) |
 | 5 | Validation harness | Builder/validator split, deterministic gate, independence line — all structurally in place | ⚠️ partial — deterministic gate is live; holdout + visual/E2E are wired but not yet functional, see the table above |
 
@@ -244,10 +254,11 @@ uses — no separate download.
 ```bash
 cd krowd-kontrol
 
-archon workflow list                                              # see all 4 factory workflows + Archon's bundled defaults
+archon workflow list                                              # see all 5 factory workflows + Archon's bundled defaults
 archon workflow run dark-factory-triage --branch triage/$(date +%s) "Triage open issues"
 archon workflow run dark-factory-fix-github-issue --branch fix/issue-42 "Fix issue #42"
 archon workflow run dark-factory-validate-pr --branch validate/pr-17 "Validate PR #17"
+archon workflow run dark-factory-prd-to-issues --branch prd/my-feature "file:docs/prd.md"
 ```
 
 Always use `--branch` — it isolates the run in its own git worktree so it can't collide

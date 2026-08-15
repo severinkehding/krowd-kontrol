@@ -30,11 +30,13 @@ Windows path: C:\Users\Admin\OneDrive\Dokumente\Unreal Projects\KrowdKontrol
 WSL path:     /mnt/c/Users/Admin/OneDrive/Dokumente/Unreal Projects/KrowdKontrol
 ```
 
-It is **not currently tracked in this git repo** — it's a separate directory on the
-Windows host, reachable from this WSL session read/write via the `/mnt/c/...` mount.
-Whether/how it becomes part of `krowd-kontrol`'s git history (submodule, separate repo
-entirely, symlink, or left as-is with this repo only holding the factory harness) is an
-open question, not yet decided — don't assume one without asking.
+**Decided: it stays out of this git repo.** It's a separate directory on the Windows
+host, reachable from this WSL session read/write via the `/mnt/c/...` mount, and this
+repo only holds the factory harness — not the Unreal project itself. Considered and
+rejected: committing it as a subfolder here, because Unreal's binary asset files
+(`.uasset`, `.umap`) routinely exceed GitHub's 100MB hard limit and doing this properly
+needs Git LFS set up *before* the first binary lands, not retrofitted after (that means
+a history rewrite). Revisit if that tradeoff changes.
 
 See the `unreal-agent-harness` skill (`.claude/skills/unreal-agent-harness/`) for MCP
 connection setup and troubleshooting. Its `scripts/ue_launch.sh` and `ue_crashlog.sh`
@@ -107,17 +109,24 @@ krowd-kontrol/
 ├── FACTORY_RULES.md         # Factory operational rules - every workflow reads this
 ├── CLAUDE.md                # This file - code conventions (placeholder)
 ├── FACTORY.md                # Factory status: autonomy level, components, stop button
-├── README.md                 # Human-facing overview
+├── README.md                 # Human-facing overview + workflow diagrams
+├── docs/                     # PRD drop point for dark-factory-prd-to-issues
 ├── harness/                  # Validation gate - see harness/README.md
 ├── .factory/                 # Factory-internal state (decisions log; holdout + locks
 │                              #   added once there's a real baseline to floor)
 ├── .archon/
-│   ├── workflows/            # dark-factory-*.yaml - the four factory workflows
-│   └── commands/              # dark-factory-*.md - prompt files those workflows load
-├── .claude/skills/            # archon + agent-browser skills
+│   ├── workflows/            # dark-factory-*.yaml - the five factory workflows
+│   │                          #   (triage, fix-github-issue, validate-pr,
+│   │                          #   comprehensive-test [parked], prd-to-issues)
+│   ├── commands/              # dark-factory-*.md - prompt files those workflows load
+│   └── mcp/                   # blender.json / unreal.json - MCP server configs for
+│                              #   factory workflow nodes (mcp: field)
+├── .claude/skills/            # archon, agent-browser, blender-mcp, unreal-agent-harness,
+│                              #   68 gamedev skills, unreal-engine-cpp-pro
+├── .mcp.json                  # MCP servers for this interactive session
 └── scripts/
     ├── factory-stop.sh        # the stop button check
-    └── orchestrator.sh        # cron dispatcher (added once the loop goes live)
+    └── orchestrator.sh        # cron dispatcher, live, every 10 min
 ```
 
 `app/` does not exist yet - added by the first app-skeleton work, at which point this

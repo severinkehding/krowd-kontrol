@@ -49,6 +49,8 @@ labels each issue as `factory:accepted`, `factory:rejected`, or `factory:needs-h
   scope
 - Issues auto-filed by the `dark-factory-comprehensive-test` workflow (these flow
   through normal triage)
+- Issues filed by `dark-factory-prd-to-issues` (PRD decomposition) — no special
+  treatment; triage evaluates them exactly like a human-filed issue, on their merits
 - Test additions for existing uncovered behavior
 
 ### Reject (label `factory:rejected`, close with comment)

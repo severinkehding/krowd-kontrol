@@ -1,0 +1,125 @@
+name: dark-factory-prd-to-issues
+description: |
+  Use when: a human has a PRD ready and wants it broken into GitHub issues that
+            then flow through the normal triage -> build -> validate -> merge loop.
+  Triggers: manual invocation only —
+            archon workflow run dark-factory-prd-to-issues --branch prd/<name> "<PRD text>"
+            or, for a file already in the repo:
+            archon workflow run dark-factory-prd-to-issues --branch prd/<name> "file:docs/prd.md"
+            Not part of scripts/orchestrator.sh's dispatch rotation — a PRD lands
+            whenever a human decides it does, not on a label-driven schedule.
+  Does: Reads the PRD (inline text, or a file:<path> reference resolved relative to
+        the repo root) -> decomposes it into discrete, independently-buildable
+        issues against MISSION.md scope and existing open issues (no duplicates,
+        capped at 15 per run) -> files them as normal open GitHub issues.
+        Nothing more. It does NOT triage them and does NOT decide what to build.
+        Every generated issue goes through the exact same dark-factory-triage
+        gate a human-filed one would.
+  NOT for: Autonomous ideation. This workflow decomposes a human-authored PRD; it
+           never invents scope. FACTORY.md's "the factory will not write its own
+           issues" still holds — a human wrote the PRD, this just mechanically
+           turns it into issue-sized units. If you want the factory to decide
+           what to build next on its own, that's a different (and deliberately
+           unbuilt) thing.
+
+provider: claude
+model: sonnet
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: FETCH CONTEXT (no AI)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: fetch-prd
+    bash: |
+      set -euo pipefail
+      RAW="$ARGUMENTS"
+      if [ -z "$RAW" ]; then
+        echo "ERROR: no PRD provided. Pass PRD text directly, or 'file:path/to/prd.md'." >&2
+        exit 1
+      fi
+      if [[ "$RAW" == file:* ]]; then
+        FILE="${RAW#file:}"
+        if [ ! -f "$FILE" ]; then
+          echo "ERROR: PRD file not found: $FILE (relative to repo root)" >&2
+          exit 1
+        fi
+        cat "$FILE"
+      else
+        echo "$RAW"
+      fi
+    timeout: 10000
+
+  - id: fetch-rules
+    bash: |
+      set -euo pipefail
+      echo "=== MISSION.md ==="
+      cat MISSION.md
+      echo ""
+      echo "=== FACTORY_RULES.md ==="
+      cat FACTORY_RULES.md
+    timeout: 10000
+
+  - id: fetch-existing-issues
+    bash: |
+      set -euo pipefail
+      # Open issues only, title+truncated body — enough for the decomposer to
+      # dedupe against without flooding its context with full issue threads.
+      gh issue list --state open --limit 200 --json number,title,body \
+        | jq 'map(.body = (.body // "" | .[0:500]))'
+    timeout: 20000
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: DECOMPOSE (single AI call)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: decompose
+    command: dark-factory-prd-decompose
+    depends_on: [fetch-prd, fetch-rules, fetch-existing-issues]
+    model: sonnet
+    allowed_tools: [Write]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: FILE THE ISSUES (deterministic)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: create-issues
+    depends_on: [decompose]
+    bash: |
+      set -euo pipefail
+
+      ISSUES_FILE="$ARTIFACTS_DIR/issues.json"
+      if [ ! -f "$ISSUES_FILE" ]; then
+        echo "ERROR: issues.json not found at $ISSUES_FILE" >&2
+        exit 1
+      fi
+      if ! jq -e '.issues | type == "array"' "$ISSUES_FILE" > /dev/null; then
+        echo "ERROR: issues.json does not contain an 'issues' array" >&2
+        cat "$ISSUES_FILE" >&2
+        exit 1
+      fi
+
+      COUNT=$(jq '.issues | length' "$ISSUES_FILE")
+      if [ "$COUNT" -gt 15 ]; then
+        echo "ERROR: decompose produced $COUNT issues, over the 15-per-run cap. This should not happen (the command file caps itself) — refusing to file any to avoid a flood." >&2
+        exit 1
+      fi
+      echo "Filing $COUNT issue(s) from PRD decomposition..."
+
+      i=0
+      while [ "$i" -lt "$COUNT" ]; do
+        title=$(jq -r ".issues[$i].title" "$ISSUES_FILE")
+        body=$(jq -r ".issues[$i].body" "$ISSUES_FILE")
+        echo ""
+        echo "--- Filing: $title ---"
+        url=$(gh issue create --title "$title" --body "$body")
+        echo "$url"
+        i=$((i + 1))
+      done
+
+      echo ""
+      DUPES=$(jq -r '.skipped_duplicates // [] | length' "$ISSUES_FILE")
+      OOS=$(jq -r '.skipped_out_of_scope // [] | length' "$ISSUES_FILE")
+      echo "PRD_TO_ISSUES_COMPLETE filed=$COUNT skipped_duplicates=$DUPES skipped_out_of_scope=$OOS"
+      jq -r '.reasoning // empty' "$ISSUES_FILE"
+    timeout: 300000
