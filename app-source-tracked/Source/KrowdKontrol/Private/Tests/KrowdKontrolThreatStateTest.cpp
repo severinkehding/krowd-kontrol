@@ -29,16 +29,24 @@ bool FKrowdKontrolThreatStateTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	TestTrue(TEXT("Default threat state should be Idle"),
-		Actor->GetThreatState() == EThreatState::Idle);
+	IThreatState* Interface = Cast<IThreatState>(Actor);
+	if (!TestNotNull(TEXT("AThreatStateTestActor should be castable to IThreatState"), Interface))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Default threat state should be Idle"),
+		static_cast<uint8>(Actor->GetThreatState()), static_cast<uint8>(EThreatState::Idle));
 
 	Actor->SetThreatState(EThreatState::Hot);
-	TestTrue(TEXT("GetThreatState should report Hot after toggling"),
-		Actor->GetThreatState() == EThreatState::Hot);
+	TestEqual(TEXT("GetThreatState should report Hot after toggling"),
+		static_cast<uint8>(Actor->GetThreatState()), static_cast<uint8>(EThreatState::Hot));
+	TestEqual(TEXT("Interface pointer should see the same Hot state as the concrete type"),
+		static_cast<uint8>(Interface->GetThreatState()), static_cast<uint8>(EThreatState::Hot));
 
 	Actor->SetThreatState(EThreatState::Idle);
-	TestTrue(TEXT("GetThreatState should report Idle after toggling back"),
-		Actor->GetThreatState() == EThreatState::Idle);
+	TestEqual(TEXT("GetThreatState should report Idle after toggling back"),
+		static_cast<uint8>(Actor->GetThreatState()), static_cast<uint8>(EThreatState::Idle));
 
 	return true;
 }

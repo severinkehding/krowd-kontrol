@@ -15,7 +15,7 @@ record of that change, see the closing note below)
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/ThreatState.h` | CREATE | `EThreatState` enum (`Idle`, `Hot`, `BlueprintType`) + `IThreatState` `UINTERFACE(MinimalAPI)` exposing pure-virtual `GetThreatState() const`. Header-only (no `.cpp` — nothing to implement). Lives at module root, not `Public/`, matching this module's actual layout (`KrowdKontrol.Build.cs`, no `Public/` folder exists). |
 | `app/Source/KrowdKontrol/Private/Tests/ThreatStateTestActor.h`/`.cpp` | CREATE | Minimal test-only `AActor` implementing `IThreatState`, with a `SetThreatState()` setter for the test to drive. Mirrors the `RoomClearedTestListener` test-helper pattern — needs its own header because `UCLASS` is UHT-parsed from headers only. |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolThreatStateTest.cpp` | CREATE | `KrowdKontrol.Unit.ThreatState` — constructs the test actor via `NewObject` (no `UWorld` needed, pure accessor), toggles state Idle→Hot→Idle, asserts `GetThreatState()` reports correctly at each step. |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolThreatStateTest.cpp` | CREATE | `KrowdKontrol.Unit.ThreatState` — constructs the test actor via `NewObject` (no `UWorld` needed, pure accessor), `Cast<IThreatState>()`s it to prove the interface dispatches polymorphically (not just through the concrete type), toggles state Idle→Hot→Idle, asserts `GetThreatState()` reports correctly at each step through both the concrete actor and the interface pointer. |
 
 No `.Build.cs` change needed — `UObject/Interface.h` ships with the module's existing
 `CoreUObject` dependency, and this test needs no `UWorld`/`UnrealEd`.
@@ -28,7 +28,9 @@ No `.Build.cs` change needed — `UObject/Interface.h` ships with the module's e
 - [x] **`KrowdKontrol.Unit.ThreatState` Automation Framework test exists**, provides a
       minimal test-only actor implementing `IThreatState`, toggles its underlying
       state, and confirms `GetThreatState()` reports `Hot`/`Idle` correctly. Covers
-      default state (`Idle`), toggle to `Hot`, and toggle back to `Idle`.
+      default state (`Idle`), toggle to `Hot`, and toggle back to `Idle`, and asserts
+      through a `Cast<IThreatState>()`-obtained interface pointer (not just the
+      concrete actor type) to prove polymorphic dispatch actually works.
 - [x] **No AI, animation, or HUD rendering logic included anywhere in this change.**
       Reviewed by inspection — pure enum/interface data contract only.
 
