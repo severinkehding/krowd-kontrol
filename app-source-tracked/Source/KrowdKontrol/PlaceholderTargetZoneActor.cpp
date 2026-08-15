@@ -30,7 +30,12 @@ APlaceholderTargetZoneActor::APlaceholderTargetZoneActor()
 	// Invariant 3's five reserved gameplay-information colours (Purple/Teal/Orange/
 	// Blue/White - PRD 13 REQ-4 extends that reservation to world-space UI, not just
 	// screen-space HUD chrome).
+	// PLACEHOLDER COLOUR - see issue #72 review: this saturated green may itself
+	// constitute a "6th saturated information colour" under Hard Invariant 3, since the
+	// beacon's purpose is to carry gameplay information (target-zone location). Needs a
+	// human design ruling before this placeholder is replaced with the real visual.
 	BeaconLightComponent->SetLightColor(FLinearColor(0.2f, 1.0f, 0.3f));
+	// Placeholder brightness/radius - not tuned against any real room scale yet.
 	BeaconLightComponent->SetIntensity(3000.0f);
 	BeaconLightComponent->SetAttenuationRadius(300.0f);
 }

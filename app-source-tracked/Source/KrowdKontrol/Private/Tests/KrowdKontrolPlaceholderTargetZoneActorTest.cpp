@@ -53,9 +53,13 @@ bool FKrowdKontrolPlaceholderTargetZoneActorTest::RunTest(const FString& Paramet
 	{
 		return false;
 	}
+	TestEqual(TEXT("BeaconMeshComponent should use the engine's cylinder mesh"),
+		StaticMesh->GetPathName(), FString(TEXT("/Engine/BasicShapes/Cylinder.Cylinder")));
 	TestTrue(TEXT("BeaconMeshComponent should be visible"), Mesh->IsVisible());
 	TestEqual(TEXT("BeaconMeshComponent should be the actor's root component"),
 		Actor->GetRootComponent(), static_cast<USceneComponent*>(Mesh));
+	TestEqual(TEXT("BeaconMeshComponent should be flattened into a floor-marker disc"),
+		Mesh->GetRelativeScale3D(), FVector(1.5f, 1.5f, 0.05f));
 
 	UPointLightComponent* Light = Actor->BeaconLightComponent;
 	if (!TestNotNull(TEXT("PlaceholderTargetZoneActor should have a BeaconLightComponent"), Light))
@@ -63,9 +67,17 @@ bool FKrowdKontrolPlaceholderTargetZoneActorTest::RunTest(const FString& Paramet
 		return false;
 	}
 	TestTrue(TEXT("BeaconLightComponent should be visible"), Light->IsVisible());
-	TestTrue(TEXT("BeaconLightComponent should have nonzero intensity"), Light->Intensity > 0.0f);
-	TestEqual(TEXT("Beacon colour should be the chosen non-reserved green"),
-		Light->GetLightColor(), FLinearColor(0.2f, 1.0f, 0.3f));
+	TestEqual(TEXT("BeaconLightComponent should be attached to BeaconMeshComponent"),
+		Light->GetAttachParent(), static_cast<USceneComponent*>(Mesh));
+	TestEqual(TEXT("BeaconLightComponent should use the planned beacon intensity"),
+		Light->Intensity, 3000.0f);
+	TestEqual(TEXT("BeaconLightComponent should use the planned attenuation radius"),
+		Light->AttenuationRadius, 300.0f);
+	// Colour goes through an 8-bit FColor round-trip inside ULightComponentBase, so an
+	// exact TestEqual would depend on incidental quantization rather than a designed
+	// guarantee - use a tolerance instead.
+	TestTrue(TEXT("Beacon colour should be the chosen non-reserved green"),
+		Light->GetLightColor().Equals(FLinearColor(0.2f, 1.0f, 0.3f), 0.01f));
 
 	return true;
 }

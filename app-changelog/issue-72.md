@@ -18,7 +18,7 @@ record of that change, see the closing note below)
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/PlaceholderTargetZoneActor.h` | CREATE | Declares `APlaceholderTargetZoneActor` with `BeaconMeshComponent` (`UStaticMeshComponent`) and `BeaconLightComponent` (`UPointLightComponent`), mirroring `APlaceholderCubeActor`'s shape |
 | `app/Source/KrowdKontrol/PlaceholderTargetZoneActor.cpp` | CREATE | Constructor wires a flattened `/Engine/BasicShapes/Cylinder.Cylinder` mesh as the root component and a point light attached to it, coloured a non-reserved green |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolPlaceholderTargetZoneActorTest.cpp` | CREATE | `KrowdKontrol.Unit.PlaceholderTargetZoneActorHasVisibleBeacon` — spawns the actor into a real test map (`FAutomationEditorCommonUtils::CreateNewMap()`) and asserts the mesh and light components are present, visible, and correctly coloured |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolPlaceholderTargetZoneActorTest.cpp` | CREATE | `KrowdKontrol.Unit.PlaceholderTargetZoneActorHasVisibleBeacon` — spawns the actor into a real test map (`FAutomationEditorCommonUtils::CreateNewMap()`) and asserts the mesh and light components are present, visible, correctly coloured, correctly attached, and match the plan's exact mesh/scale/intensity/attenuation literals |
 
 No existing file needed an UPDATE — `KrowdKontrol.Build.cs` already has the conditional
 `UnrealEd` dependency this test's `CreateNewMap()` call needs (added for issue #82).
@@ -35,10 +35,32 @@ No existing file needed an UPDATE — `KrowdKontrol.Build.cs` already has the co
 - [x] **The beacon visual does not use any of the five reserved
       gameplay-information colours.** Satisfied by the chosen
       `FLinearColor(0.2f, 1.0f, 0.3f)` green, documented in-code and locked in by the
-      test's `TestEqual` assertion.
+      test's tolerance-based colour assertion (see Review follow-ups below).
 - [x] **An Automation Framework test confirms a beacon-bearing actor is present and
       visible in a test map.** Satisfied by
       `KrowdKontrol.Unit.PlaceholderTargetZoneActorHasVisibleBeacon`.
+
+## Review follow-ups (2026-08-16)
+
+Applied from the PR #90 review (`code-review`, `test-coverage`, `comment-quality`
+agents):
+
+- Test now asserts the mesh↔light attachment (`Light->GetAttachParent() == Mesh`),
+  exact mesh asset path (`/Engine/BasicShapes/Cylinder.Cylinder`), the disc-flattening
+  scale (`FVector(1.5f, 1.5f, 0.05f)`), and the exact intensity/attenuation literals
+  (`3000.0f`/`300.0f`) — previously only presence/visibility/loose-positivity were
+  checked for these.
+- Colour assertion switched from exact `TestEqual` to a tolerance-based `TestTrue(...
+  Equals(..., 0.01f))`, since `SetLightColor`/`GetLightColor` round-trips through an
+  8-bit `FColor` and exact equality was relying on incidental quantization, not a
+  designed guarantee.
+- Added an in-code comment flagging the beacon's saturated green as a placeholder that
+  may itself constitute a "6th saturated information colour" under MISSION.md Hard
+  Invariant 3 (the invariant bans introducing any new saturated informational colour,
+  not just reusing the five reserved ones) — **this is a human design decision, not
+  resolved by this change**. See Suggested Follow-up in the PR review.
+- Added a one-line comment on the intensity/attenuation literals noting they're
+  untuned placeholder values, closing a minor asymmetry with the scale/colour comments.
 
 ## Validation
 
