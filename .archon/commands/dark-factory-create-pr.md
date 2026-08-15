@@ -14,6 +14,18 @@ Create a draft pull request for the current branch.
 ## Instructions
 
 1. Check git status — ensure all changes are committed. If uncommitted changes exist, stage and commit them with a conventional-commits prefix (`feat:`, `fix:`, `chore:`, etc. per CLAUDE.md §Commit and PR Conventions, once that section exists).
+
+   **app/-only changes (no tracked-repo diff) — write a changelog entry instead of skipping.** `app/` is a gitignored symlink to the Windows-hosted Unreal project (CLAUDE.md's Environment section, `.factory/decisions.md` D-003) — most real gameplay work lands entirely there with zero files changed in this git repo. Check `git status --porcelain` and `git diff main...HEAD --stat` (or the equivalent against `$BASE_BRANCH`) **before** deciding there's nothing to commit. If both are empty:
+   - Read `$ARTIFACTS_DIR/implementation.md` and `$ARTIFACTS_DIR/validation.md` (already required reading per step 3 below — do this check first).
+   - Determine the issue number (from `$ARGUMENTS`, `$classify-issue.output`, or the current branch name `archon/task-fix-issue-N`) and write `app-changelog/issue-{N}.md` (create the `app-changelog/` directory if it doesn't exist yet) containing:
+     - Issue number, title, one-paragraph summary of what was built and why.
+     - A table of every file added/changed under `app/`, each with a one-line description of what it contains — this is the only diff-visible record of what actually changed, so be specific (class names, method signatures, key fields), not vague.
+     - An explicit checklist mapping each of the issue's stated acceptance criteria to how it's satisfied (quote or closely paraphrase the criterion, then say what code satisfies it).
+     - The validation evidence verbatim from `validation.md` (harness gate result, test names, pass/fail).
+     - A closing line: "Source lives under `app/` (gitignored, D-003) — this file is the tracked-repo record of that change, not a substitute for reading the actual code."
+   - `git add app-changelog/issue-{N}.md && git commit -m "..."` — this becomes the (only, and intentionally minimal) tracked-repo diff for this PR. Use a real conventional-commits message describing the underlying `app/` change, not "add changelog entry" — the changelog file is infrastructure for the PR to exist, not what the commit is actually about.
+   - This does **not** replace `implementation.md`/`validation.md` as the fuller record — those stay in `$ARTIFACTS_DIR/` as always. This file is specifically the thing GitHub and the downstream reviewers can see in the diff.
+
 2. Push the branch: `git push -u origin HEAD`
 3. Read implementation artifacts from `$ARTIFACTS_DIR/` for context:
    - `$ARTIFACTS_DIR/investigation.md` or `$ARTIFACTS_DIR/plan.md`

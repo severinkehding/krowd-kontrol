@@ -75,14 +75,25 @@ fi
 # Parses running `archon workflow run ... --branch <name>` processes. The
 # branch name IS the target identity (fix/issue-N, validate/pr-N, triage/*),
 # so grepping ps output for it is a cheap, dependency-free lock.
+#
+# Confirmed live 2026-08-15 (.factory/decisions.md D-008): the actual process
+# command line is `bun .../archon/packages/cli/src/cli.ts workflow run ...` —
+# "archon" is a path segment with no following space, so the pattern
+# "archon .*workflow run" NEVER matched anything, ever. in_flight_count()
+# silently returned 0 always, so MAX_PARALLEL was never actually enforced
+# across cron cycles (only within a single cycle, via DISPATCHED_THIS_CYCLE) —
+# two real fix-github-issue builds ran concurrently against the same shared,
+# unisolated app/ Unreal project as a direct result. "workflow run dark-factory"
+# is present verbatim in every dispatch this script makes (archon "$workflow"
+# is always one of the dark-factory-* workflows) and isn't a path fragment.
 
 in_flight_count() {
-  pgrep -f "archon .*workflow run" 2>/dev/null | wc -l | tr -d ' '
+  pgrep -f "workflow run dark-factory" 2>/dev/null | wc -l | tr -d ' '
 }
 
 is_locked() {
   local branch="$1"
-  pgrep -af "archon .*workflow run" 2>/dev/null | grep -qF -- "$branch"
+  pgrep -af "workflow run dark-factory" 2>/dev/null | grep -qF -- "$branch"
 }
 
 DISPATCHED_THIS_CYCLE=0
@@ -155,9 +166,17 @@ done < <(pr_queue)
 # ─────────────────────────────────────────────────────────────────────────
 
 issue_queue() {
+  # Excludes factory:needs-human too, not just factory:in-progress — an issue
+  # escalated for human attention must never be silently auto-redispatched;
+  # that defeats the entire point of escalating it. Found missing 2026-08-15
+  # (D-009): issues #82/#78 finished real, validated work but couldn't produce
+  # a PR (see D-009), so their fix-github-issue run cleared factory:in-progress
+  # on exit same as a normal completion — with no needs-human exclusion here,
+  # they'd have looked "accepted and idle" again and been redispatched forever.
   gh issue list -R "$REPO" --state open --label "factory:accepted" \
     --json number,labels 2>/dev/null | jq -r '
       map(select((.labels | map(.name) | index("factory:in-progress")) == null))
+      | map(select((.labels | map(.name) | index("factory:needs-human")) == null))
       | map({number, prio: ((.labels | map(.name) | map(select(startswith("priority:"))) | .[0]) // "priority:low")})
       | map(. + {rank: ({"priority:critical":0,"priority:high":1,"priority:medium":2,"priority:low":3}[.prio] // 3)})
       | sort_by(.rank)
@@ -208,7 +227,7 @@ untriaged_count() {
 }
 
 if capacity_left; then
-  if pgrep -af "archon .*workflow run" 2>/dev/null | grep -qF "triage/"; then
+  if pgrep -af "workflow run dark-factory" 2>/dev/null | grep -qF "triage/"; then
     log "SKIP (triage already in flight — triage serializes with itself)"
   else
     N=$(untriaged_count)

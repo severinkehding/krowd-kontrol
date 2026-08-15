@@ -409,3 +409,146 @@ to commit or push for this one; logged here for the record and because it explai
 real ~1-hour stall in the "full autopilot" loop that wasn't visible from GitHub's side
 (no failed PRs, no error labels — the failures never got far enough to touch GitHub at
 all, they only ever showed up in the cron log).
+
+## D-008: orchestrator.sh's pgrep pattern never matched a real archon process — MAX_PARALLEL was never actually enforced
+
+**Found 2026-08-15, ~2 hours into "full autopilot"** (after D-007's SSH fix let real work
+start flowing), while checking status and noticing `fix/issue-78` got dispatched at
+11:30 UTC while `fix/issue-82` (dispatched 11:20 UTC, a full cron cycle earlier) was
+still actively running — both real `dark-factory-fix-github-issue` builds, running
+concurrently against the same shared, unisolated `app/` Unreal project. Confirmed via
+`ps aux`: both processes (PIDs 132367 and 136059) were genuinely alive at the same
+moment.
+
+Root cause: `in_flight_count()` and `is_locked()` grepped for the literal pattern
+`"archon .*workflow run"` — a space directly after "archon". But the actual process
+command line is `bun /home/severin/tools/archon/packages/cli/src/cli.ts workflow run
+...` — "archon" only ever appears as a path segment (`tools/archon/packages/...`),
+never followed by a space. This pattern has **never matched a single real archon
+process**, confirmed by piping the exact live command line through
+`grep -q "archon .*workflow run"` and getting no match. `in_flight_count()` has been
+silently returning 0 for the entire "full autopilot" period.
+
+This is why D-006's `total_in_flight()` fix (adding `DISPATCHED_THIS_CYCLE` to the
+pgrep count) looked like it worked in the one live test right after it shipped — it
+genuinely does fix the *within-one-cron-cycle* race, since that fix doesn't depend on
+pgrep matching anything. But it does nothing for the cross-cycle case: a process
+dispatched in one 10-minute cycle that's still running when the *next* cycle starts —
+which is exactly D-008's failure mode, and exactly the scenario `MAX_PARALLEL=1` and
+[[D-003]]'s per-target-locking design exist to prevent for a repo whose real product
+(the Unreal project) can't be worktree-isolated.
+
+Fixed: switched all three `pgrep` call sites (`in_flight_count`, `is_locked`, and the
+triage self-serialization check) to match `"workflow run dark-factory"` instead —
+present verbatim in every dispatch this script makes (`archon workflow run
+"$workflow" ...` where `$workflow` is always a `dark-factory-*` name), and not a path
+fragment, so it can't silently break the same way again. Confirmed fixed by piping
+both currently-running processes' real command lines through the new pattern and
+getting a match for both.
+
+**Not retroactively fixable**: `fix/issue-82` and `fix/issue-78` were already in
+flight when this was found. Chose not to kill either — an abrupt kill mid-`implement`
+risks leaving `app/` in a worse, harder-to-diagnose partial state than letting them
+finish; at the time of this note they were working on different new files (not
+editing the same file), and UnrealBuildTool's own build-time locking (observed
+earlier this session as the "Live Coding is active" error) bounds the realistic
+worst case to one of them hitting a loud build-lock failure rather than silent
+corruption. Watched both through to completion rather than guessing at the outcome.
+
+## D-009: app/ being untracked doesn't just block review — it blocks creating a PR at all
+
+**Found 2026-08-15**, watching the first two real post-D-007/D-008 build dispatches
+(issue #82 `URoomEnemyBudgetController`, issue #78 `UPlayerEnergyComponent`) run to
+completion. Both did genuinely good, validated work — real C++ files on disk under
+`app/`, both passing `harness/ci.py`'s full gate (`GATE_OK`, real Automation Framework
+tests). Neither produced a PR. Not a bug in either run — `create-pr` correctly detected
+that this repo's git diff was completely empty (all the real work lives under the
+gitignored `app/` symlink, per [[D-003]]) and explicitly refused to fabricate an empty
+commit to paper over that, exactly as it should. GitHub itself then hard-refused PR
+creation: `GraphQL: No commits between main and archon/task-fix-issue-82
+(createPullRequest)`.
+
+This is a sharper, more consequential version of what PR #84 (issue #2) surfaced. That
+PR *did* get created and merged only because issue #2's fix happened to also touch
+`harness/harness.config.json` — one real in-repo line, enough for GitHub to hang a PR
+on. That was incidental to that issue's scope, not a repeatable pattern: most future
+PRD-derived issues are pure Unreal C++ gameplay work with **zero** in-repo footprint,
+so most of them will hit this exact wall, every time.
+
+**What actually happens when this fires, confirmed by watching both runs to their real
+end-state (not guessed):** the downstream nodes (review-scope, code-review synthesis)
+correctly refuse to review a nonexistent PR #0 rather than fabricate findings, the
+workflow completes "successfully" (`anyFailed:false`) anyway, posts an honest
+completion report as an issue comment explaining there's no PR, and
+`cleanup-issue-label` clears `factory:in-progress` — the same cleanup step a normal
+completed-and-PR'd issue gets. Net result: the issue lands back at exactly
+`factory:accepted` with real work already done but **invisible to git and to every
+review/merge mechanism**, indistinguishable from an issue nobody has touched yet.
+Confirmed via `scripts/orchestrator.sh`'s `issue_queue()` that this is not just cosmetic:
+with no `factory:needs-human` exclusion in that function (a separate, smaller gap fixed
+alongside this — see the script's own inline comment), the very next cron cycle would
+redispatch the exact same "impossible to land" work indefinitely, burning real API
+usage on repeat attempts with no possible different outcome, forever, until someone
+noticed. Applied `factory:needs-human` to #82 and #78 manually and added the
+`issue_queue()` exclusion so this can't silently loop while the real question below
+gets decided.
+
+**The real question, not decided here — this is the user's call, not the factory's:**
+`create-pr`'s own reasoning (quoted from its issue #82 run) laid out three shapes of
+fix, and there's arguably a fourth:
+
+1. **Empty commit per app/-only PR** — cheap, keeps the existing PR-based
+   review/merge/audit-trail model working unchanged, but every merge adds a
+   content-free commit to `main`'s history purely to satisfy GitHub's API, and reviewers
+   still can't see the actual diff (same blindness [[D-004]]/[[D-005]] already flagged) —
+   only papers over the "can't open a PR" half of the problem, not the "can't review it
+   properly" half.
+2. **Skip PRs for app/-only issues; resolve via issue comment directly** — matches what
+   already organically happened here, formalizes it instead of leaving it an accidental
+   dead-end. Loses git-based review gating, audit trail, and revert-ability for what
+   will likely be the *majority* of this factory's actual output.
+3. **Structural fix: require some in-repo marker file per completed app/-only issue**
+   (e.g., a generated manifest/changelog entry) — keeps a real, non-empty diff and a
+   real review target without needing to fake a commit, but is new design/implementation
+   work, not a config change.
+4. **Revisit whether `app/` needs to be entirely git-opaque**, now that the stakes are
+   clearer than when [[D-003]] was decided. The original revert was about the Unreal
+   *Editor* failing to open a `.uproject` file living on a WSL-hosted path — but that
+   doesn't obviously require the *entire* project to be untracked; e.g. `app/Source/`
+   (small C++ text files, no `.uasset`/LFS concerns at all) tracked directly in this
+   repo, with the real Unreal project's `Source/` folder itself made into a symlink
+   pointing *back* into this repo's tracked copy (the reverse direction from today's
+   symlink), might sidestep the original failure entirely — only `Source/` would ever
+   need to reach across the WSL/Windows boundary, not the whole project. Untested
+   speculation, not a verified fix — the original failure mode was specific enough
+   (`LogProjectManager` failing on the `.uproject` descriptor itself) that this needs a
+   real trial, not an assumption, before treating it as viable.
+
+Every option changes either the review guarantees, the git history shape, or requires
+new implementation work — a product/process decision, not something to resolve
+unilaterally while also trying to keep the loop from wasting cycles. Loop paused
+(`.factory-stop`) pending that decision.
+
+**Resolved 2026-08-15: marker-file/changelog approach chosen and implemented.**
+Updated `.archon/commands/dark-factory-create-pr.md` — when the git diff is empty
+(app/-only change), it now writes `app-changelog/issue-N.md` (file-added/changed
+table, acceptance-criteria checklist, validation evidence, a closing note pointing
+back at `app/`) from the already-produced `implementation.md`/`validation.md`
+artifacts, commits *that*, and proceeds with the normal push+PR flow. Validated live,
+not just in theory: manually applied the same pattern to unblock issues #82 and #78
+(the real work both already had validated — `GATE_OK mode=full` on each — just
+couldn't reach a PR), producing PR #85 and PR #86. Both real draft PRs, each with a
+genuine non-empty diff a reviewer can actually read and cross-check against the
+issue's acceptance criteria, `factory:needs-review` labeled for the next validate-pr
+cycle. `factory:needs-human` cleared from both issues now that they're progressing
+normally through a real PR.
+
+Chose this over option 4 (tracking `app/Source/` directly) because it's immediately
+implementable and testable within this session, doesn't touch the already-hard-won,
+confirmed-working `app/` symlink setup, and doesn't add empty commits to `main`'s
+history. It's an explicit compromise, not a full fix for [[D-004]]/[[D-005]]'s
+reviewer-blindness gap — `behavioral-validation`/`code-review` still can't see the
+actual C++, only this changelog's claims about it — but it at least gives reviewers a
+concrete, specific, checkable artifact instead of an empty diff, and unblocks the
+"can't even open a PR" half of the problem completely. Option 4 remains worth
+revisiting later if the changelog-review gap turns out to matter in practice.
