@@ -50,6 +50,8 @@ bool FKrowdKontrolHerdableTest::RunTest(const FString& Parameters)
 
 	Actor->SetControlled(false);
 	TestFalse(TEXT("IsControlled should report false after toggling back"), Actor->IsControlled());
+	TestEqual(TEXT("GetHerdColourTag should be unaffected by IsControlled toggling back"),
+		Actor->GetHerdColourTag(), FName(TEXT("Purple")));
 
 	return true;
 }

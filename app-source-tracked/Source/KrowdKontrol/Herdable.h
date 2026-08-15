@@ -23,5 +23,9 @@ class KROWDKONTROL_API IHerdable
 
 public:
 	virtual bool IsControlled() const = 0;
+
+	// Plain FName, not a UENUM over MISSION.md's five locked colours (Purple/Teal/
+	// Orange/Blue/White) - deferred until a real colour source exists to draw from;
+	// see issue #79 data-contract scope.
 	virtual FName GetHerdColourTag() const = 0;
 };
