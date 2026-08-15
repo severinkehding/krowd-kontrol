@@ -28,7 +28,7 @@ Commands:
         Compose reference + capture side-by-side -> /tmp/ue_qa/NAME_diff.png
         (Critic Reads one frame to compare intent vs result.)
 """
-import sys, os, base64, re, glob, json, subprocess
+import sys, os, base64, re, glob, json, subprocess, shutil
 
 OUT = "/tmp/ue_qa"
 MAXDIM = 1600
@@ -37,7 +37,9 @@ os.makedirs(OUT, exist_ok=True)
 
 
 def newest_capture():
-    pats = glob.glob(os.path.join(PROJECTS, "**", "tool-results", "mcp-unreal-call_tool-*.txt"), recursive=True)
+    # Matches whatever the MCP server is named in .mcp.json (e.g. "unreal-mcp" here,
+    # vs. the original harness's "unreal") - glob broadly rather than hardcode a name.
+    pats = glob.glob(os.path.join(PROJECTS, "**", "tool-results", "mcp-*call_tool-*.txt"), recursive=True)
     return max(pats, key=os.path.getmtime) if pats else None
 
 
@@ -54,7 +56,15 @@ def decode(path, name):
     png = os.path.join(OUT, name + ".png")
     with open(png, "wb") as f:
         f.write(base64.b64decode(m.group(1)))
-    subprocess.run(["sips", "-Z", str(MAXDIM), png], capture_output=True)
+    # sips is macOS-only. Fall back to ImageMagick if present; otherwise skip the
+    # downscale (the PNG is still valid, just not shrunk to MAXDIM) rather than
+    # crashing the whole decode over a missing resize tool.
+    if shutil.which("sips"):
+        subprocess.run(["sips", "-Z", str(MAXDIM), png], capture_output=True)
+    elif shutil.which("magick"):
+        subprocess.run(["magick", png, "-resize", f"{MAXDIM}x{MAXDIM}>", png], capture_output=True)
+    elif shutil.which("convert"):
+        subprocess.run(["convert", png, "-resize", f"{MAXDIM}x{MAXDIM}>", png], capture_output=True)
 
     # Build a compact spatial sidecar: camera pose + labeled actors (world XYZ, meters).
     sidecar = {"png": png, "source": os.path.basename(path), "camera": {}, "actors": []}
