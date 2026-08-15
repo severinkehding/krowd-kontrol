@@ -1,6 +1,6 @@
 ---
 description: Holdout-pattern E2E validator. Independently judges the PR's user-facing behavior against the linked issue — for this Unreal Engine project, via Unreal MCP screenshot capture and independent visual inspection, not a browser. See FACTORY_RULES.md §4 and .factory/decisions.md D-004/D-005.
-argument-hint: (no arguments — reads $fetch-linked-issue.output, $fetch-pr.output, and $run-harness.output for whether the harness gate passed)
+argument-hint: (no arguments — reads $fetch-linked-issue.output, $fetch-pr.output, and $run-harness-p1.output/$run-harness-p2.output for whether the harness gate passed)
 ---
 
 # Dark Factory Behavioral E2E (Holdout)
@@ -31,7 +31,7 @@ You are forbidden from reading ANY of the following:
 6. **Any application source file** — the source code is out of bounds. You observe the running game only.
 
 Your `allowed_tools` is `[Bash]` — no MCP tool access is wired to this node (see the "Known design gap" note under Inputs for why, and what would need to change). Bash is for:
-- Reading whatever report/log path the harness wrote (see `harness.config.json` and `$run-harness.output`)
+- Reading whatever report/log path the harness wrote (see `harness.config.json` and the Harness Output input below)
 - Writing evidence to `$ARTIFACTS_DIR/e2e-*`
 - Sanity-checking file existence/timestamps
 
@@ -50,7 +50,16 @@ $fetch-linked-issue.output
 $fetch-pr.output
 
 ### Harness Output (whether the app/game CAN boot and its own Automation tests pass — not independent verification)
-$run-harness.output
+This node runs as both `behavioral-e2e-p1` (depends on `run-harness-p1`) and
+`behavioral-e2e-p2` (depends on `run-harness-p2`) from the same command file — only
+the one that's an actual upstream dependency for THIS run will resolve to real
+content below; the other renders empty/unresolved. Use whichever one is non-empty.
+
+pass-1 harness output:
+$run-harness-p1.output
+
+pass-2 harness output:
+$run-harness-p2.output
 
 **Known design gap — read before assuming you can independently verify anything today.**
 This node has no MCP tool access (`allowed_tools: [Bash]` only), so it cannot drive
@@ -76,8 +85,9 @@ and follow Phase 0 below rather than attempting to invent a substitute check.
 ### Phase 0: No independent verification mechanism yet (current state of this repo)
 
 Return `solves_issue: "not_e2e_testable"`, `app_booted: <copy the harness's own
-APP_STARTED/GATE_OK result from $run-harness.output — this is the harness's claim,
-not something you verified>`, `flows_tested: []`, and explain in `reasoning`: *"This
+APP_STARTED/GATE_OK result from whichever of $run-harness-p1.output /
+$run-harness-p2.output is non-empty for this run (see Inputs above) — this is the
+harness's claim, not something you verified>`, `flows_tested: []`, and explain in `reasoning`: *"This
 node has no MCP tool access and no live Unreal Editor session to independently observe
 the game — see `.factory/decisions.md` D-005. Re-running the builder's own Automation
 Framework tests would not be a genuine holdout (see 'Your Sole Purpose' above), so this
@@ -154,7 +164,7 @@ inspection). Do NOT shut down the app/session — the workflow manages its lifec
 Return structured JSON matching the schema enforced by the workflow node:
 
 - `solves_issue`: `"yes"` | `"partially"` | `"no"` | `"not_e2e_testable"`
-- `app_booted`: boolean — did the game boot (per `$run-harness.output`, or your own Phase 1 check once wired)
+- `app_booted`: boolean — did the game boot (per whichever of `$run-harness-p1.output`/`$run-harness-p2.output` is non-empty for this run, or your own Phase 1 check once wired)
 - `flows_tested`: array of strings — names of gameplay behaviors you exercised
 - `criteria_results`: array of objects `{criterion: string, result: "pass" | "fail" | "skip", evidence: string}`
 - `regressions_observed`: array of strings — any broken behavior in adjacent systems you noticed (empty if none)
