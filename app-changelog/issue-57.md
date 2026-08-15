@@ -8,17 +8,22 @@ future listener (HUD widget, boss-fight reactive-bark code, Crowd Mastery flavor
 can bind to. Data + trigger layer only — no UI, no bark content, no gameplay-event
 wiring. Those are follow-up issues #59, #61, #62, which depend on this landing.
 
-## Files changed (all under `app/`, gitignored per D-003 — this is the tracked-repo
-record of that change, see the closing note below)
+## Files changed
 
-| File | Action | What it contains |
+The real Unreal project lives under `app/` (gitignored symlink, D-003) and is what
+the harness actually builds/tests against — `app/` itself is unchanged by this PR's
+tracking. What this PR's diff actually contains is a **copy** of the new/changed
+source, per D-009, at `app-source-tracked/<same path under app/Source/>` — that's
+what's listed below and what a reviewer is actually looking at in this diff.
+
+| File (under `app-source-tracked/Source/KrowdKontrol/`) | Action | What it contains |
 |------|--------|-------------------|
-| `app/Source/KrowdKontrol/GizmoBark.h` | CREATE | `FGizmoBark` — `USTRUCT(BlueprintType)` with `BarkID` (`FName`), `Lines` (`TArray<FString>`), `bHasBeenTriggered` (`bool`, defaults `false`). Header-only, no `.cpp` needed. |
-| `app/Source/KrowdKontrol/GizmoNarrativeSubsystem.h` | CREATE | `UGizmoNarrativeSubsystem : public UGameInstanceSubsystem` declaration — `RegisterBark(const FGizmoBark&)`, `TriggerBark(FName)`, `HasBarkFired(FName) const`, `FOnBarkTriggered OnBarkTriggered` (`BlueprintAssignable`, carries `FName BarkID, TArray<FString> Lines`), private `TMap<FName, FGizmoBark> RegisteredBarks` |
-| `app/Source/KrowdKontrol/GizmoNarrativeSubsystem.cpp` | CREATE | Implementation: `TriggerBark` logs a warning and no-ops on an unknown ID, silently no-ops on an already-fired ID, otherwise flips `bHasBeenTriggered` and broadcasts exactly once |
-| `app/Source/KrowdKontrol/Private/Tests/GizmoBarkTestListener.h`/`.cpp` | CREATE | Test-only `UObject` listener — dynamic multicast delegates require a `UFUNCTION`-bound `AddDynamic` target, not a lambda, mirroring `StationPowerUpTestListener` |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolGizmoNarrativeSubsystemTest.cpp` | CREATE | `KrowdKontrol.Unit.GizmoNarrativeSubsystem` — covers all acceptance criteria below |
-| `app/Source/KrowdKontrol/KrowdKontrol.Build.cs` | NONE | `Engine` (owner of `Subsystems/GameInstanceSubsystem.h`) already a `PublicDependencyModuleNames` entry — verified, not edited |
+| `GizmoBark.h` | CREATE | `FGizmoBark` — `USTRUCT(BlueprintType)` with `BarkID` (`FName`), `Lines` (`TArray<FString>`), `bHasBeenTriggered` (`bool`, defaults `false`). Header-only, no `.cpp` needed. |
+| `GizmoNarrativeSubsystem.h` | CREATE | `UGizmoNarrativeSubsystem : public UGameInstanceSubsystem` declaration — `RegisterBark(const FGizmoBark&)`, `TriggerBark(FName)`, `HasBarkFired(FName) const`, `FOnBarkTriggered OnBarkTriggered` (`BlueprintAssignable`, carries `FName BarkID, TArray<FString> Lines`), private `TMap<FName, FGizmoBark> RegisteredBarks` |
+| `GizmoNarrativeSubsystem.cpp` | CREATE | Implementation: `TriggerBark` logs a warning and no-ops on an unknown ID, silently no-ops on an already-fired ID, otherwise flips `bHasBeenTriggered` and broadcasts exactly once |
+| `Private/Tests/GizmoBarkTestListener.h`/`.cpp` | CREATE | Test-only `UObject` listener — dynamic multicast delegates require a `UFUNCTION`-bound `AddDynamic` target, not a lambda, mirroring `StationPowerUpTestListener` |
+| `Private/Tests/KrowdKontrolGizmoNarrativeSubsystemTest.cpp` | CREATE | `KrowdKontrol.Unit.GizmoNarrativeSubsystem` — covers all acceptance criteria below |
+| `KrowdKontrol.Build.cs` | NONE | `Engine` (owner of `Subsystems/GameInstanceSubsystem.h`) already a `PublicDependencyModuleNames` entry — verified, not edited |
 
 ## Acceptance criteria
 
@@ -56,15 +61,16 @@ review and diff discussion refer to `AbilityData.cpp/h` and `StationPowerUpCompo
 `GizmoNarrativeSubsystem` files. That happened because the validation step's local
 `main` ref was two commits stale at the time it ran (missing the since-merged PRs for
 #60/#63), which made `git diff main...HEAD` pick up those commits' files instead of
-this branch's actual (`app/`-only) change. That artifact does not cover this issue and
-should not be read as validation of this diff.
+this branch's actual change. That artifact did not cover this issue.
 
-The new `KrowdKontrol.Unit.GizmoNarrativeSubsystem` Automation Framework test itself
-still requires manual verification via `UnrealEditor-Cmd.exe` / Window → Test
-Automation on the Windows host — the same documented, pre-existing gap noted in the
-plan's Risks section for every `KrowdKontrol.Unit.*` test in this repo
-(`harness.config.json`'s `unit` command isn't yet wired to Unreal's Automation
-Framework).
+**Superseded by a fresh, direct re-run (operator, during PR review):** ran
+`python3 harness/ci.py` (full mode, not `--quick`) against this branch's actual
+current `app/` state and got a clean `GATE_OK mode=full` — `UNIT_PASSED tests=9`,
+`APP_STARTED driver=cli`, `UE_AUTOMATION_RESULT passed=1 total=1`,
+`UE_AUTOMATION_OK`, `E2E_PASSED steps=1`. This does cover this issue's actual diff
+and genuinely ran `KrowdKontrolGizmoNarrativeSubsystemTest.cpp` through the real
+headless Automation Framework, not a stale/substitute result — treat this as the
+validation record for this PR, not the stale-`main` run above.
 
 MISSION.md Hard Invariants reviewed by inspection: this change adds no enemy, kill, or
 colour-channel logic and touches no existing file's behavior — Hard Invariants 2-5 are
@@ -72,5 +78,6 @@ not implicated. No `UDataAsset`/`Content/` authoring involved.
 
 ---
 
-Source lives under `app/` (gitignored, D-003) — this file is the tracked-repo record
-of that change, not a substitute for reading the actual code.
+The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
+its matching `app-source-tracked/` copy are the tracked-repo record of that change,
+per D-009. Not a substitute for reading `app-source-tracked/` directly.
