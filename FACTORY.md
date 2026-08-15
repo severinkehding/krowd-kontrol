@@ -9,15 +9,20 @@
 **Current autonomy level: 1–2, climbing toward 4** — as of 2026-08-15, `MISSION.md` is
 real (derived from the Krowd Kontrol PRD set, see below), so triage now evaluates
 issues on their actual merits instead of rejecting everything with a placeholder-state
-reason. Implementation can run for real too. **Auto-merge is still not live** —
-two tracked gaps block it, both honestly documented rather than papered over:
-`.factory/decisions.md` D-001 (no running app for the holdout/E2E layer to connect to)
-and D-004 (the mandatory behavioral-regression gate still literally invokes
-`agent-browser`, a browser tool this browser-less Unreal project has no use for — the
-replacement mechanism is designed in `FACTORY_RULES.md` §4 but the workflow command
-file itself isn't rewritten yet). Until both close, validated PRs land on
-`factory:needs-human` for the merge decision rather than merging themselves. Filling
-in MISSION.md was necessary to reach level 4, not sufficient by itself.
+reason. Implementation can run for real too. **`python harness/ci.py` (full mode)
+genuinely passes now** — `app/`'s Unreal project has C++ enabled, a real Automation
+Framework test (`KrowdKontrol.Smoke.PipelineIsAlive`), and `harness/e2e.py` runs it
+for real via the `cli` driver: `APP_STARTED driver=cli`, `E2E_PASSED steps=1`,
+`GATE_OK mode=full` — not stubs. See `.factory/decisions.md` D-001 and D-004 for the
+full story (two real toolchain gaps hit and fixed along the way: missing Windows SDK,
+missing NetFxSDK). **Auto-merge is still not live**, narrower than before: the Archon
+*workflow* layer (`.archon/commands/dark-factory-behavioral-e2e.md`,
+`dark-factory-validate-pr.yaml`) still invokes `agent-browser` — a browser tool this
+browser-less project has no use for — and hasn't been rewritten to call the new
+mechanism yet (D-004), and `.factory/holdout/run.py` still doesn't exist. Until both
+close, validated PRs land on `factory:needs-human` for the merge decision rather than
+merging themselves. Filling in MISSION.md was necessary to reach level 4, not
+sufficient by itself.
 **Level 5 is deliberately not the goal.** The factory will not write its own issues.
 **Stop button:** `.factory-stop` in the orchestrator's working copy (works with the
 network down) **and** the `factory:stop` label on any open issue (reachable from a

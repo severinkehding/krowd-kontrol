@@ -49,6 +49,19 @@ running is a product-neutral engineering task any human (or a factory issue, onc
 MISSION.md is real and this stops being infrastructure-shaped work reserved for humans
 per `FACTORY_RULES.md` §1) can pick up.
 
+**Update 2026-08-15: the "no live app to connect to" half of this is now resolved -
+the "browser" half was always the wrong plan anyway (see D-004).** `harness.config.json`
+now runs `driver: "cli"` against `app/`'s real Unreal project, and `harness/e2e.py`
+runs a real, passing Automation Framework test through it
+(`harness/run_ue_automation.sh`). `python harness/ci.py` (full mode) genuinely reports
+`GATE_OK` end to end now - `APP_STARTED driver=cli`, a real `E2E_PASSED steps=1`, not a
+stub. What's still open, narrower than before: `.archon/commands/
+dark-factory-behavioral-e2e.md` and the `dark-factory-validate-pr.yaml` workflow node
+still assume a browser-driven journey (D-004) rather than this new mechanism, and
+`.factory/holdout/run.py` still doesn't exist (`HOLDOUT_ABSENT` in the gate output).
+Auto-merge is still blocked - correctly - but the remaining blocker is D-004's
+workflow-file rewrite plus a real holdout, not "nothing to test against" anymore.
+
 ---
 
 ## D-002 · Orchestrator cron auth: subscription login, not a dedicated API key
@@ -181,15 +194,43 @@ option once real automated tests exist for the game's systems. `MISSION.md`'s Qu
 Standards section and `FACTORY.md`'s status both point here instead of at
 `agent-browser`.
 
-**Not yet done, tracked honestly rather than silently left broken:**
-`.archon/commands/dark-factory-behavioral-e2e.md` (164 lines) and the corresponding
-`dark-factory-validate-pr.yaml` node still literally invoke `agent-browser` as of this
-commit - the governance *text* is fixed, the workflow *implementation* isn't yet. A
-real PR reaching that validation step today would still try the old mechanism. This is
-deliberately scoped out of the same session that filled in MISSION.md: rewriting a
-164-line command file for a tool (`ue_qa.py`) whose actual "required happy path" can't
-be written until there's playable core-loop content to walk (see `FACTORY_RULES.md`
-§4) deserves its own dedicated pass, not a rushed edit alongside a governance-file
-fill-in. Do this before the first real PR reaches validation, or expect it to stall
-there in a confusing way rather than cleanly report `not_e2e_testable` the way
-`harness/e2e.py` currently does for the D-001 gap.
+**Update 2026-08-15, same day: the Automation Testing Framework option is no longer
+hypothetical - it's built, and it's the one actually wired in, not `ue_qa.py`.**
+Sequence: enabled C++ on the project (Tools → New C++ Class in the Editor - the
+`unreal-agent-harness` MCP toolset confirmed it cannot do this itself, a real
+build-time task); wrote a first real test,
+`app/Source/KrowdKontrol/Private/Tests/KrowdKontrolSmokeTest.cpp`
+(`KrowdKontrol.Smoke.PipelineIsAlive`, `#if WITH_DEV_AUTOMATION_TESTS`-guarded); hit
+and resolved two real toolchain gaps in turn (Windows 10 SDK 10.0.19041.0 missing
+entirely, then NetFxSDK missing - both fixed by the human operator via Visual Studio
+Installer, not by the factory); built the module for real via `dotnet.exe` +
+`UnrealBuildTool.dll` invoked directly (three earlier attempts via `Build.bat` failed
+on WSL/`cmd.exe` batch-file quoting and UNC-cwd quirks - direct `.exe` invocation
+sidesteps all of it); ran the test headlessly and got a real, structured JSON report
+(`succeeded`/`failed`/`notRun` counts, per-test `state`) - not a guessed schema, the
+actual UE 5.8 output.
+
+That report format is what `harness/run_ue_automation.sh` now parses for real
+(`UE_AUTOMATION_RESULT passed=N total=N`, `UE_AUTOMATION_OK` on a clean pass). One
+constraint shaped the wiring: `harness/appproc.py`'s `cli` driver hardcodes a 60s
+timeout on its boot-time smoke check with no config override (that file stays
+untouched, per `harness/README.md`), and a real Editor boot does not reliably fit that
+window - confirmed empirically (a bare `-version` invocation alone had to be killed
+after hanging past 30s). So `harness.config.json`'s `cli.smoke_args` does a fast,
+launch-free `--check-exe-only` file-existence check instead, and the real Automation
+Framework run happens in `harness/e2e.py` via `app.run(..., timeout=240)`, governed by
+`e2e_timeout_s` (300s) like any other e2e journey. `python harness/ci.py` (full mode)
+now reports `GATE_OK` genuinely - `APP_STARTED driver=cli`, `E2E_PASSED steps=1` - not
+a stub.
+
+**Still open, narrower than before:** `.archon/commands/dark-factory-behavioral-e2e.md`
+(164 lines) and the `dark-factory-validate-pr.yaml` node still literally invoke
+`agent-browser` as of this commit - `harness/ci.py`'s gate is real now, but the Archon
+*workflow* layer above it hasn't been rewritten to match. This is still deliberately
+scoped out: rewriting that command file is a dedicated pass in its own right, not a
+rushed addition here. Do this before the first real PR reaches validation. Also still
+open: `app/Source/`'s test code is **not git-tracked** (it lives inside the gitignored
+`app/` symlink target - see D-003) - it exists only on this machine's Unreal project
+folder (OneDrive-synced, but not versioned by this repo's git history). A future
+"real unit tests" pass should note this when it happens, not assume test code is
+backed up the way everything else in this repo is.

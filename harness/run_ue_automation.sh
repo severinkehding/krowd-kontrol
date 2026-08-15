@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Runs Unreal's Automation Framework headlessly against app/KrowdKontrol.uproject and
+# reports pass/fail — on stdout (for appproc.py's smoke_contains / a future
+# unit_count_pattern) and via exit code (0 = every matched test passed).
+#
+# Usage:
+#   harness/run_ue_automation.sh --check-exe-only
+#       Fast path (<1s, no engine launch): just confirms UnrealEditor-Cmd.exe exists.
+#       This is what harness.config.json's cli.smoke_args uses — appproc.py's CliApp
+#       hardcodes a 60s timeout on its smoke check with no way to configure it (that
+#       file stays untouched, per harness/README.md), and a real Editor boot does not
+#       reliably fit inside that window. Verified empirically: a bare `-version`
+#       invocation alone took long enough to need killing — see
+#       .factory/decisions.md D-004.
+#   harness/run_ue_automation.sh <TestNameFilter>
+#       Real path: boots the Editor headlessly, runs every Automation test whose name
+#       starts with <TestNameFilter> (e.g. "KrowdKontrol.Smoke.", later
+#       "KrowdKontrol.Unit."), and reports the result. This is what harness/e2e.py
+#       calls, with its own generous, configurable timeout — not the smoke_args path.
+#
+# Paths resolve dynamically (wslpath, following app/'s symlink) rather than hardcoding
+# this machine's personal path into a committed config file — see
+# scripts/link-unreal-project.sh, CLAUDE.md's Environment section, and
+# .factory/decisions.md D-003/D-004.
+
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FILTER="${1:?usage: $0 <--check-exe-only | TestNameFilter>}"
+UE_CMD="${KROWD_KONTROL_UE_CMD_EXE:-/mnt/c/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe}"
+
+if [ "$FILTER" = "--check-exe-only" ]; then
+  if [ -f "$UE_CMD" ]; then
+    echo "UE_CMD_PRESENT $UE_CMD"
+    exit 0
+  fi
+  echo "UE_CMD_MISSING $UE_CMD" >&2
+  echo "Set KROWD_KONTROL_UE_CMD_EXE if the engine is installed elsewhere." >&2
+  exit 1
+fi
+
+if [ ! -L "$REPO_ROOT/app" ]; then
+  echo "UE_AUTOMATION_ERROR app/ is not a symlink — run scripts/link-unreal-project.sh first" >&2
+  exit 1
+fi
+if [ ! -f "$UE_CMD" ]; then
+  echo "UE_AUTOMATION_ERROR UnrealEditor-Cmd.exe not found at: $UE_CMD" >&2
+  echo "Set KROWD_KONTROL_UE_CMD_EXE if the engine is installed elsewhere." >&2
+  exit 1
+fi
+
+UPROJECT_WIN="$(wslpath -w "$REPO_ROOT/app/KrowdKontrol.uproject")"
+REPORT_DIR="$(mktemp -d)"
+trap 'rm -rf "$REPORT_DIR"' EXIT
+REPORT_DIR_WIN="$(wslpath -w "$REPORT_DIR")"
+
+# -nullrhi: no rendering, fine for Smoke/Unit tests (pure logic, no world). A future
+# Screenshot.* test group needs real rendering and must NOT pass -nullrhi — branch on
+# $FILTER here once that group exists rather than editing this unconditionally.
+"$UE_CMD" "$UPROJECT_WIN" \
+  -ExecCmds="Automation RunTests $FILTER; Quit" \
+  -unattended -nopause -nosplash -nullrhi \
+  -testexit="Automation Test Queue Empty" \
+  -ReportOutputPath="$REPORT_DIR_WIN" \
+  -log >/dev/null 2>&1
+
+REPORT="$REPORT_DIR/index.json"
+if [ ! -f "$REPORT" ]; then
+  echo "UE_AUTOMATION_ERROR no report produced at $REPORT_DIR_WIN — the editor likely failed to launch or crashed before completing. Check app/Saved/Logs/ for the real log (see CLAUDE.md's Environment section for why that's a symlinked external path)." >&2
+  exit 1
+fi
+
+python3 - "$REPORT" "$FILTER" <<'PYEOF'
+import json, sys
+
+report_path, filt = sys.argv[1], sys.argv[2]
+data = json.load(open(report_path, encoding="utf-8-sig"))  # UE writes a UTF-8 BOM
+succeeded = data.get("succeeded", 0)
+failed = data.get("failed", 0)
+not_run = data.get("notRun", 0)
+total = succeeded + failed + not_run
+
+if total == 0:
+    print(f"UE_AUTOMATION_RESULT passed=0 total=0 filter={filt!r} — no tests matched this filter")
+    sys.exit(1)
+
+print(f"UE_AUTOMATION_RESULT passed={succeeded} total={total}")
+if failed or not_run:
+    for t in data.get("tests", []):
+        if t.get("state") != "Success":
+            print(f"UE_AUTOMATION_FAILED {t.get('fullTestPath')}: state={t.get('state')}")
+    sys.exit(1)
+
+print("UE_AUTOMATION_OK")
+sys.exit(0)
+PYEOF

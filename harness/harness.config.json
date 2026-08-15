@@ -1,12 +1,16 @@
 {
   "_what_this_is": "Every command this repo's validation gate runs. ci.py and appproc.py are the ladder + driver (never edited per-repo, verbatim from the build-dark-factory skill); this file is the only thing that changes when the stack changes. Every command here must match .archon/workflows/dark-factory-validate-pr.yaml's harness invocation - one definition of a green build, not two.",
 
-  "driver": "http",
-  "http": {},
+  "driver": "cli",
+  "cli": {
+    "invoke": "harness/run_ue_automation.sh {args}",
+    "smoke_args": "--check-exe-only",
+    "smoke_contains": "UE_CMD_PRESENT"
+  },
   "static": "",
   "unit": "",
-  "unit_count_pattern": "",
+  "unit_count_pattern": "UE_AUTOMATION_RESULT passed=\\d+ total=(\\d+)",
   "e2e_timeout_s": 300,
 
-  "_bootstrap_state": "No app exists yet. `http` is deliberately empty, so appproc.py's HttpApp raises AppDidNotStart('driver=http but http.start is empty') the moment ci.py's full run tries to boot the app - loud, not silent, with zero custom code. `static`/`unit` are empty too, so ci.py --quick prints STATIC_SKIPPED/UNIT_SKIPPED and still exits GATE_OK. Fill these in the same commit that adds app/: set http.start to the real boot command (e.g. 'python harness/serve.py --port {port}'), http.health_path, and static/unit to the real check commands. See harness/README.md and harness/serve.py."
+  "_bootstrap_state": "app/ is a local symlink to the real Unreal project (scripts/link-unreal-project.sh), not repo content - see .factory/decisions.md D-003/D-004 and CLAUDE.md's Environment section for why. driver=cli with smoke_args=--check-exe-only is a deliberately fast, launch-free check (appproc.py's CliApp hardcodes a 60s timeout on the smoke step with no way to configure it, and a real Editor boot does not reliably fit that window - verified empirically). The real Automation Framework run happens in harness/e2e.py instead, via app.run() with its own generous timeout. `static`/`unit` stay empty (honest SKIPPED, not a fabricated pass) until there is at least one real KrowdKontrol.Unit.* test - once one exists, set unit to: harness/run_ue_automation.sh KrowdKontrol.Unit. (unit_count_pattern above already matches its output). See harness/README.md and harness/run_ue_automation.sh."
 }
