@@ -85,6 +85,12 @@ void UEnergyMeterWidget::BuildWidgetTree()
 		TextSlot->SetHorizontalAlignment(HAlign_Center);
 		TextSlot->SetVerticalAlignment(VAlign_Center);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UEnergyMeterWidget: AddChildToOverlay(ValueText) returned null slot on '%s' - value text will render unaligned."),
+			*GetNameSafe(this));
+	}
 }
 
 void UEnergyMeterWidget::SetEnergy(float CurrentEnergy, float MaxEnergy)

@@ -42,8 +42,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player Energy", meta = (ClampMin = "0.0"))
 	float MaxDamagePerHit = 10.0f;
 
-	// Fires whenever ApplyContactDamage actually changes CurrentEnergy. Ready for a
-	// future HUD to consume; nothing subscribes to it yet.
+	// Fires whenever ApplyContactDamage actually changes CurrentEnergy.
+	// UEnergyMeterWidget::BindToEnergyComponent() (issue #64) is the first consumer;
+	// nothing in a live game path calls that binding method yet.
 	UPROPERTY(BlueprintAssignable, Category = "Player Energy")
 	FOnEnergyChanged OnEnergyChanged;
 

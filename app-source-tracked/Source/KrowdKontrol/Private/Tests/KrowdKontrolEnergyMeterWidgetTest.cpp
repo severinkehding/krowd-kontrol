@@ -75,12 +75,15 @@ bool FKrowdKontrolEnergyMeterWidgetTest::RunTest(const FString& Parameters)
 	// (4) Clamping - above max and below zero.
 	Widget->SetEnergy(150.0f, 100.0f);
 	TestEqual(TEXT("Fraction should clamp to 1.0 when CurrentEnergy exceeds MaxEnergy"), Widget->GetDisplayedFraction(), 1.0f);
+	TestEqual(TEXT("Display text should clamp to 100/100"), Widget->GetEnergyDisplayText().ToString(), FString(TEXT("100/100")));
 	Widget->SetEnergy(-20.0f, 100.0f);
 	TestEqual(TEXT("Fraction should clamp to 0.0 when CurrentEnergy is negative"), Widget->GetDisplayedFraction(), 0.0f);
+	TestEqual(TEXT("Display text should clamp to 0/100"), Widget->GetEnergyDisplayText().ToString(), FString(TEXT("0/100")));
 
 	// (5) Divide-by-zero guard.
 	Widget->SetEnergy(10.0f, 0.0f);
 	TestEqual(TEXT("Fraction should be 0.0 when MaxEnergy <= 0, not a crash or NaN"), Widget->GetDisplayedFraction(), 0.0f);
+	TestEqual(TEXT("Display text should be 0/0 when MaxEnergy <= 0"), Widget->GetEnergyDisplayText().ToString(), FString(TEXT("0/0")));
 
 	// (6) BindToEnergyComponent() syncs immediately to the bound component's state.
 	UPlayerEnergyComponent* EnergyComponent = NewObject<UPlayerEnergyComponent>();
@@ -116,6 +119,14 @@ bool FKrowdKontrolEnergyMeterWidgetTest::RunTest(const FString& Parameters)
 
 	EnergyComponent->ApplyContactDamage(50.0f, nullptr);
 	TestEqual(TEXT("Fraction should NOT move when the now-unbound first component takes damage"), Widget->GetDisplayedFraction(), 0.4f);
+
+	// (8b) Unbind via nullptr from an actively-bound component actually unsubscribes -
+	// the null-check/pointer-equality ordering in BindToEnergyComponent() must still
+	// call RemoveDynamic() on the previously-bound component, not just skip re-subscribing.
+	Widget->BindToEnergyComponent(nullptr);
+	SecondEnergyComponent->ApplyContactDamage(10.0f, nullptr);
+	TestEqual(TEXT("Fraction should NOT move when unbound via nullptr and the old component takes damage"),
+		Widget->GetDisplayedFraction(), 0.4f);
 
 	// (9) Corner anchoring - the meter's single canvas child is actually anchored
 	// top-left, not just visually eyeballed. Diagonally opposite the tray's

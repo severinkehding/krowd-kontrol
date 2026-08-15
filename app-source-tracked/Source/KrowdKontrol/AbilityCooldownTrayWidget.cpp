@@ -82,9 +82,9 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 
 	UCanvasPanelSlot* TraySlot = RootCanvas->AddChildToCanvas(SlotsBox);
 	checkf(TraySlot, TEXT("AbilityCooldownTrayWidget: AddChildToCanvas(SlotsBox) returned null"));
-	// Bottom-right corner anchoring - see TrayMarginPx's doc-comment in the header for
-	// why bottom-right is this plan's explicit choice (the energy meter, issue #64,
-	// hasn't landed yet, so there's no corner to be literally "opposite" of).
+	// Bottom-right corner anchoring - diagonally opposite UEnergyMeterWidget's
+	// top-left anchor (issue #64, landed). See TrayMarginPx's doc-comment in the
+	// header for why bottom-right (not top-right) was picked before the meter existed.
 	TraySlot->SetAnchors(FAnchors(1.0f, 1.0f, 1.0f, 1.0f));
 	TraySlot->SetAlignment(FVector2D(1.0f, 1.0f));
 	TraySlot->SetAutoSize(true);

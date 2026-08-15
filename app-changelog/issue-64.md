@@ -48,8 +48,13 @@ run (both blocked validation for the whole project, not just this issue — see
       fill, not chrome. Confirmed by inspection in validation Phase 3.
 - [x] **An Automation Framework test confirms the widget is added to the viewport
       and its fill visually responds to the backing value changing.**
-      `KrowdKontrol.Unit.EnergyMeterWidget` covers this plus clamping, rebind
-      isolation, and lifecycle safety.
+      `KrowdKontrol.Unit.EnergyMeterWidget` covers fill/text response to live
+      `OnEnergyChanged` updates, plus clamping, rebind isolation, and lifecycle
+      safety. Viewport-addition itself is only no-crash-verified here (this
+      project's `-nullrhi` `EditorContext` test environment has no PIE session /
+      `UGameViewportSubsystem` target for `AddToViewport()` to attach to); a
+      PIE-driven Smoke-tier test asserting `IsInViewport() == true` is tracked as
+      a follow-up rather than forced into this issue.
 
 ## Validation evidence
 

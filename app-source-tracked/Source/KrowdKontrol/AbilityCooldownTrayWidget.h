@@ -115,8 +115,8 @@ private:
 	static constexpr float PlaceholderCooldownDurations[NumAbilitySlots] = { 2.0f, 3.0f, 4.0f, 5.0f, 6.0f };
 
 	// Inward margin, in pixels, from the viewport's bottom-right corner. Bottom-right
-	// is this plan's explicit choice: the energy meter (issue #64) - which this issue
-	// calls out as being "opposite" of - hasn't landed yet, so there's no corner to be
-	// literally opposite of yet. See issue #66's plan Risks section.
+	// is diagonally opposite the energy meter's top-left anchor (issue #64, landed),
+	// per PRD 13 REQ-2's "opposite" requirement. See issue #66's plan Risks section
+	// for why bottom-right (not top-right) was picked before the meter existed.
 	static constexpr float TrayMarginPx = 24.0f;
 };
