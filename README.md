@@ -75,6 +75,34 @@ mkdir -p ~/.archon && echo "CLAUDE_USE_GLOBAL_AUTH=true" > ~/.archon/.env
 
 Verify: `archon doctor` and, from this repo, `archon validate workflows && archon validate commands`.
 
+## Web dashboard
+
+Archon ships a web UI — conversations, live workflow-run progress, and a
+drag-and-drop workflow builder. It's **machine-level, not repo-level**: one
+instance covers every Archon project registered on this machine (krowd-kontrol
+included, auto-registered the first time a workflow runs against it), the same
+way the CLI is.
+
+**Always on**: a small wrapper script (`~/.local/bin/archon-ui`, not part of
+this repo — it's Archon-level, not krowd-kontrol-level) starts it, and cron
+keeps it up — `@reboot` for a cold machine start, plus a `*/10 * * * *` check
+that's a no-op if it's already running (same self-heal pattern as
+`scripts/orchestrator.sh`).
+
+```text
+http://localhost:5173
+```
+
+```bash
+archon-ui status   # is it up right now
+archon-ui start    # start it (safe to run if already running)
+archon-ui stop     # stop both processes
+```
+
+Logs: `~/.archon/logs/archon-server.log` and `archon-web.log`. Built from
+source (`~/tools/archon`), so it's the same install this whole setup already
+uses — no separate download.
+
 ## Run something right now (no cron needed)
 
 ```bash
