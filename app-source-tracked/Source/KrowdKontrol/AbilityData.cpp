@@ -1,0 +1,67 @@
+#include "AbilityData.h"
+#include "ReservedGameplayColours.h"
+
+namespace
+{
+	const FAbilityData& GetStun()
+	{
+		static const FAbilityData Data = { EAbilitySlot::Stun, 3.0f, EAbilityRange::Short,
+			EAbilityTargetType::Single, ReservedGameplayColours::GetWhite(), true };
+		return Data;
+	}
+
+	const FAbilityData& GetSleep()
+	{
+		static const FAbilityData Data = { EAbilitySlot::Sleep, 5.0f, EAbilityRange::Long,
+			EAbilityTargetType::Single, ReservedGameplayColours::GetBlue(), false };
+		return Data;
+	}
+
+	const FAbilityData& GetRoot()
+	{
+		static const FAbilityData Data = { EAbilitySlot::Root, 5.0f, EAbilityRange::Long,
+			EAbilityTargetType::Single, ReservedGameplayColours::GetTeal(), false };
+		return Data;
+	}
+
+	const FAbilityData& GetFear()
+	{
+		static const FAbilityData Data = { EAbilitySlot::Fear, 5.0f, EAbilityRange::Short,
+			EAbilityTargetType::Area, ReservedGameplayColours::GetOrange(), false };
+		return Data;
+	}
+
+	const FAbilityData& GetSnare()
+	{
+		static const FAbilityData Data = { EAbilitySlot::Snare, 4.0f, EAbilityRange::Medium,
+			EAbilityTargetType::Cone, ReservedGameplayColours::GetPurple(), false };
+		return Data;
+	}
+}
+
+const FAbilityData& AbilityData::Get(EAbilitySlot Ability)
+{
+	switch (Ability)
+	{
+	case EAbilitySlot::Stun:
+		return GetStun();
+	case EAbilitySlot::Sleep:
+		return GetSleep();
+	case EAbilitySlot::Root:
+		return GetRoot();
+	case EAbilitySlot::Fear:
+		return GetFear();
+	case EAbilitySlot::Snare:
+		return GetSnare();
+	default:
+		// EAbilitySlot::Count is a hidden sentinel, never a valid input - a caller
+		// reaching here is a programming error, not a normal runtime case.
+		checkNoEntry();
+		return GetStun();
+	}
+}
+
+TArray<FAbilityData> AbilityData::GetAll()
+{
+	return { GetStun(), GetSleep(), GetRoot(), GetFear(), GetSnare() };
+}
