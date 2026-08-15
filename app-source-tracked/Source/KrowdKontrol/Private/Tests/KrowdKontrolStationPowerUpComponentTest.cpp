@@ -1,18 +1,6 @@
 // Confirms UStationPowerUpComponent (issue #60) reveals OrderedLights one at a time,
 // strictly in order, only in response to NotifyPowerUpStageTriggered() - never all
-// at once, never out of order - fires OnPowerUpSequenceComplete exactly once, and
-// never touches player input (PRD 07 REQ-1: player input must remain enabled
-// throughout the sequence).
-//
-// No Pawn/Character/PlayerController class exists in this codebase yet (confirmed
-// via full-tree search), so "player input remains enabled" is proven using the
-// engine's own AActor::EnableInput()/InputEnabled() on a plain stand-in actor: if
-// the component ever called DisableInput on anything, it structurally cannot be
-// this stand-in actor (the component holds no reference to it at all) - this test
-// instead demonstrates the stronger fact that the component never disables input on
-// ANY actor, by never calling any Disable/SetInputMode API anywhere in its
-// implementation, and confirms the stand-in's input stays enabled across every
-// stage of a full sequence run as a concrete, executable witness of that.
+// at once, never out of order - and fires OnPowerUpSequenceComplete exactly once.
 //
 // Needs a real UWorld to spawn actors into (SetActorHiddenInGame requires a real
 // actor), so - like KrowdKontrolRoomEnemyBudgetControllerTest.cpp -
@@ -27,7 +15,6 @@
 #include "StationPowerUpTestListener.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
-#include "Components/InputComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -63,19 +50,6 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	AActor* LightC = World->SpawnActor<AActor>();
 	Component->OrderedLights = { LightA, LightB, LightC };
 
-	// Player-input stand-in: no Pawn class exists in this codebase yet (see file
-	// header comment), so a plain actor with input explicitly enabled stands in for
-	// "the player" - if the component ever called DisableInput anywhere, its
-	// InputComponent presence below would be the concrete signal to catch a
-	// regression even though this actor isn't referenced by the component at all.
-	// AActor has no InputEnabled() query and AActor::EnableInput(nullptr) is a no-op
-	// (it only creates an InputComponent when given a real PlayerController), so the
-	// InputComponent is constructed directly here as the enabled/disabled proxy.
-	AActor* PlayerStandIn = World->SpawnActor<AActor>();
-	PlayerStandIn->InputComponent = NewObject<UInputComponent>(PlayerStandIn);
-	PlayerStandIn->InputComponent->RegisterComponent();
-	TestTrue(TEXT("Player stand-in input should start enabled"), PlayerStandIn->InputComponent != nullptr);
-
 	UStationPowerUpTestListener* Listener = NewObject<UStationPowerUpTestListener>();
 	Component->OnLightEnabled.AddDynamic(Listener, &UStationPowerUpTestListener::HandleLightEnabled);
 	Component->OnPowerUpSequenceComplete.AddDynamic(Listener, &UStationPowerUpTestListener::HandleSequenceComplete);
@@ -97,7 +71,6 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("OnLightEnabled should report index 0"), Listener->LastEnabledLightIndex, 0);
 	TestEqual(TEXT("OnLightEnabled should report LightA"), static_cast<AActor*>(Listener->LastEnabledLightActor), static_cast<AActor*>(LightA));
 	TestEqual(TEXT("GetEnabledLightCount should be 1 after the first trigger"), Component->GetEnabledLightCount(), 1);
-	TestTrue(TEXT("Player input must remain enabled after the first stage"), PlayerStandIn->InputComponent != nullptr);
 
 	// (b2) Regression: calling InitializeSequence() again mid-sequence must no-op,
 	// not reset progress or re-hide already-revealed lights - the idempotency guard
@@ -115,7 +88,6 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	TestTrue(TEXT("LightC should remain hidden after the second trigger"), LightC->IsHidden());
 	TestEqual(TEXT("GetEnabledLightCount should be 2 after the second trigger"), Component->GetEnabledLightCount(), 2);
 	TestEqual(TEXT("OnPowerUpSequenceComplete should not have fired yet"), Listener->SequenceCompleteCallCount, 0);
-	TestTrue(TEXT("Player input must remain enabled after the second stage"), PlayerStandIn->InputComponent != nullptr);
 
 	// (d) Third trigger reveals the last light and fires completion exactly once.
 	Component->NotifyPowerUpStageTriggered();
@@ -124,7 +96,6 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("OnPowerUpSequenceComplete should have fired exactly once"), Listener->SequenceCompleteCallCount, 1);
 	TestEqual(TEXT("GetEnabledLightCount should be 3 after the third trigger"), Component->GetEnabledLightCount(), 3);
 	TestTrue(TEXT("IsSequenceComplete should report true"), Component->IsSequenceComplete());
-	TestTrue(TEXT("Player input must remain enabled after the final stage"), PlayerStandIn->InputComponent != nullptr);
 
 	// (e) Further triggers after completion are no-ops - no re-fire, no crash from
 	// indexing past the array.
