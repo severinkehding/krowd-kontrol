@@ -5,9 +5,10 @@
 //
 // Needs a real UWorld to spawn into (SpringArmComponent attachment/registration is
 // safer exercised inside a spawned actor in a real world than via bare NewObject), so
-// like KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp this uses
-// FAutomationEditorCommonUtils::CreateNewMap() rather than the NewObject-only approach
-// KrowdKontrolPlaceholderCubeActorTest.cpp uses.
+// like the flat-camera-3D prototype's own smoke test (issue #56; note: #56's PR was
+// not merged, so that file isn't in this tracked repo - see docs/paper2d-prototype-
+// notes.md) this uses FAutomationEditorCommonUtils::CreateNewMap() rather than the
+// NewObject-only approach KrowdKontrolPlaceholderCubeActorTest.cpp uses.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -75,16 +76,23 @@ bool FKrowdKontrolPaper2DPipelineSmokeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("CameraBoom pitch should be genuinely top-down (<= -45 degrees), not side-on"),
 		Pawn->CameraBoom->GetRelativeRotation().Pitch <= -45.0f);
 
+	TestTrue(TEXT("SpriteComponent should be rotated into the ground plane (<= -45 degrees pitch), not edge-on"),
+		SpriteComponent->GetRelativeRotation().Pitch <= -45.0f);
+
 	TestEqual(TEXT("TopDownCamera should use orthographic projection"),
 		TopDownCameraComponent->ProjectionMode, ECameraProjectionMode::Orthographic);
+
+	TestTrue(TEXT("TopDownCamera OrthoWidth should be a positive, non-degenerate value"),
+		TopDownCameraComponent->OrthoWidth > 0.0f);
 
 	TestFalse(TEXT("CameraBoom rotation should be locked, not player-controlled"),
 		Pawn->CameraBoom->bUsePawnControlRotation);
 
 	// Confirms SetupPlayerInputComponent's BindAxis calls actually register, not just
-	// that the pawn has an InputComponent - same concrete signal
-	// KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp uses for its own
-	// Enhanced-Input-vs-legacy-BindAxis compatibility question.
+	// that the pawn has an InputComponent - same concrete signal the flat-camera-3D
+	// prototype's own smoke test (issue #56, unmerged - see docs/paper2d-prototype-
+	// notes.md) uses for its own Enhanced-Input-vs-legacy-BindAxis compatibility
+	// question.
 	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn);
 	InputComponent->RegisterComponent();
 	Pawn->SetupPlayerInputComponent(InputComponent);

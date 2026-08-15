@@ -21,12 +21,6 @@ public class KrowdKontrol : ModuleRules
 		// module dependency, to make UPaperSpriteComponent/UPaperSprite visible to C++.
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "Paper2D" });
 
-		// UMG for UPostRunSummaryWidget (issue #74) - the project's first UMG widget. No
-		// Widget Blueprint asset involved; the class builds its own tree in C++ via
-		// WidgetTree->ConstructWidget<T>(), which still requires the UMG module on the
-		// include/link path.
-		PrivateDependencyModuleNames.AddRange(new string[] { "UMG", "Slate", "SlateCore" });
-
 		if (Target.bBuildEditor)
 		{
 			// Needed only for FAutomationEditorCommonUtils::CreateNewMap() in

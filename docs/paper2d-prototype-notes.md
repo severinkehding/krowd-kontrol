@@ -1,8 +1,14 @@
 # Paper2D Prototype Notes (Issue #55)
 
+> 🚧 **PARTIAL.** `docs/flat-camera-3d-prototype-notes.md`, referenced throughout this
+> doc, does not yet exist on `main` - issue #56's PR (#99) was closed, not merged. Same
+> for the `MoveForward`/`MoveRight` `DefaultInput.ini` axis mappings this prototype's
+> input binding assumes are already present. Treat every "same as flat-camera-3D"
+> comparison below as provisional until #56 is redone and actually merged.
+
 Friction/iteration-speed notes from building the Paper2D half of PRD 14 REQ-1's
 Paper2D-vs-flat-camera-3D pipeline comparison. For side-by-side reading against
-`docs/flat-camera-3d-prototype-notes.md` (issue #56).
+`docs/flat-camera-3d-prototype-notes.md` (issue #56) — see caveat above.
 
 ## What was built, and how long it took
 
@@ -14,7 +20,9 @@ Paper2D-vs-flat-camera-3D pipeline comparison. For side-by-side reading against
   projection setup, sprite-plane rotation) roughly offset not needing a
   `ConstructorHelpers::FObjectFinder` call at all (see asset-pipeline gap below).
 - Input mapping (`DefaultInput.ini`): no change needed - the `MoveForward`/`MoveRight`
-  `+AxisMappings=` entries issue #56 already added are reused verbatim.
+  `+AxisMappings=` entries issue #56 added are reused verbatim. **Unverified from
+  tracked state** - #56's PR was closed, not merged, so these mappings aren't
+  confirmable from this repo alone; see caveat at the top of this doc.
 - Automation test: ~10 minutes, entirely mechanical, mirroring
   `KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp`'s `CreateNewMap()` + `SpawnActor`
   pattern almost line-for-line, plus one new assertion for orthographic projection.
