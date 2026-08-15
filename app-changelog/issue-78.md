@@ -69,5 +69,6 @@ component, unrelated to enemy banking.
 
 ---
 
-Source lives under `app/` (gitignored, D-003) — this file is the tracked-repo record
-of that change, not a substitute for reading the actual code.
+The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
+its matching `app-source-tracked/` copy are the tracked-repo record of that change,
+per D-009. Not a substitute for reading `app-source-tracked/` directly.

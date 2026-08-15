@@ -50,6 +50,24 @@ for the full account, including why this closes off git-tracking as a fix for th
 factory's concurrency isolation problem (`FACTORY_RULES.md` §8) rather than deferring
 it.
 
+**One narrow, deliberate exception, added 2026-08-15: `app-source-tracked/`.**
+`app/` itself is unchanged by this — still the untracked, gitignored symlink above,
+still what the Editor/UnrealBuildTool/harness actually build and run against. But
+`app/` being entirely git-opaque turned out to break the PR-based factory pipeline
+outright for ordinary gameplay C++ work, not just make it harder to review: GitHub
+refuses to open a PR with zero commits ahead of `main`, so any issue whose fix lives
+solely under `app/` (i.e., almost all of them) couldn't produce a PR at all — proven
+live, not theoretical, see `.factory/decisions.md` D-009. The fix: `create-pr` now
+copies the real content of new/changed `.h`/`.cpp`/`.Build.cs` source files (never
+`.uasset`/`.umap`/anything under `Content/`/`Binaries/`/`Intermediate/`) into a
+tracked mirror at `app-source-tracked/<same-relative-path-under-app/Source/>`, so
+GitHub has something to hang a PR on and reviewers have real code to check, not a
+prose summary of it. This is a plain-text **copy** made at PR-creation time — never a
+live link — so it carries none of the binary-asset/LFS/size concerns above, and
+cannot reopen the WSL↔Editor failure this section describes (Unreal itself never
+touches `app-source-tracked/`). Hard Invariant #8 in `MISSION.md` has the matching
+carve-out; read both together, don't treat either as the whole picture on its own.
+
 See the `unreal-agent-harness` skill (`.claude/skills/unreal-agent-harness/`) for MCP
 connection setup and troubleshooting. Its `scripts/ue_launch.sh` and `ue_crashlog.sh`
 are **macOS-specific templates** from the original author's machine (hardcoded

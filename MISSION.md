@@ -170,7 +170,15 @@ offers:
 8. **The Unreal project itself is not tracked in this git repository** and lives
    outside it (see `CLAUDE.md`'s Environment section for its path and why). See
    `FACTORY_RULES.md` §8 for the operational consequence (serialized dispatch) this
-   requires until that changes.
+   requires until that changes. **Narrow exception (2026-08-15, D-009):**
+   `app-source-tracked/` is a plain-text *copy* of specific new/changed `.h`/`.cpp`/
+   `.Build.cs` source files, written by `create-pr` at PR-creation time so GitHub can
+   open a PR and reviewers can see real code — this is not the project (no
+   `.uasset`/`.umap`/`Content/`/`Binaries/`/`Intermediate/`, no live link, `app/`
+   itself stays exactly as untracked as before). A PR containing only
+   `app-source-tracked/` + `app-changelog/` entries matching its own linked issue is
+   compliant with this invariant, not a violation of it — see `CLAUDE.md`'s Environment
+   section for the full rationale before flagging one.
 
 ## Quality Standards (Definition of Done)
 

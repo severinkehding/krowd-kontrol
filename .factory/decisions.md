@@ -576,3 +576,35 @@ works on a real diff now — no new pre-fetch node, no per-reviewer special-casi
 Manually applied to both already-rejected/pending PRs (#85, #86), confirmed via `gh pr
 view --json files` that both diffs now contain the real source, reopened #85 and
 re-labeled both `factory:needs-review` for the loop to re-validate for real.
+
+## D-010: Same $run-harness naming bug from D-006, unfixed in a second file
+
+**Found 2026-08-15**, checking PR #86's status after it landed on `factory:needs-human`
+with the exact same verbatim boilerplate rejection text D-006 fixed for PR #84
+("Validator prerequisites failed or no app exists yet; cannot render a substantive
+verdict"). D-006 fixed `dark-factory-synthesize-verdict.md`'s stale
+`$run-harness.output` reference, but `dark-factory-behavioral-e2e.md` had the exact
+same bug (I'd actually already noticed and written down the stale reference while
+investigating D-006, but only fixed the file I was looking at, not the one the note
+itself pointed at). Confirmed live: PR #86's log shows 5
+`dag_node_output_ref_unknown_node` warnings for `$run-harness.output`, and that run's
+`behavioral-e2e-p1` reported `app_booted: false` with reasoning citing no harness
+result being provided — despite the harness gate genuinely passing
+(`GATE_OK mode=full`, `UNIT_PASSED tests=3`, per the PR body). `app_booted == false`
+is unconditionally not approve-compatible per `synthesize-verdict`'s own rules, so
+this alone routes to the same infrastructure-failure rejection.
+
+Unlike `synthesize-verdict-p1`/`synthesize-verdict-p2` (genuinely separate files),
+`behavioral-e2e-p1` and `behavioral-e2e-p2` share one command file
+(`dark-factory-behavioral-e2e.md`) — depends_on `run-harness-p1` and `run-harness-p2`
+respectively. A single hardcoded suffix can't be correct for both, so this file now
+references both `$run-harness-p1.output` and `$run-harness-p2.output` and instructs
+the reviewer to use whichever one actually resolves for that pass — the same pattern
+`apply-verdict`'s bash node already uses correctly for this exact shared-file problem.
+
+**Standing lesson, not just this one bug**: when a fix touches one AI command file
+because of a variable-reference bug, grep the entire `.archon/commands/` directory for
+the same broken pattern before considering it closed — this is the second time the
+identical typo class caused a real rejection because only one of two affected files
+got fixed. Reset PR #86 from `factory:needs-human` back to `factory:needs-review` so
+the fixed pipeline retries it.
