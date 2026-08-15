@@ -280,22 +280,34 @@ is still a placeholder (see the diagram above, and `FACTORY_RULES.md` §0). To g
 1. **Fill in `MISSION.md` for real** — what krowd-kontrol is, in/out of scope, hard
    invariants. This is the one step that isn't yours-to-automate; a human decides scope.
    Delete `FACTORY_RULES.md` §0 in the same commit.
-2. **Set the API key** (below) — no key, no unattended dispatches.
-3. **Confirm the cron is active**: `crontab -l` should show the `*/10 * * * *` line.
-4. **File a GitHub issue.** That's the entire "getting data in" step — every issue is a
+2. **Confirm the cron is active**: `crontab -l` should show the `*/10 * * * *` line.
+3. **File a GitHub issue.** That's the entire "getting data in" step — every issue is a
    spec. Within 10 minutes the orchestrator triages it; if accepted, the next cycle
    builds it; the cycle after that validates and merges (or kicks it back) — no further
    input from you unless it lands on `factory:needs-human`.
 
-**Turn it on**: it needs a real Anthropic API key — put one in `~/.archon/orchestrator.env`:
+**Auth — nothing to set by default.** The orchestrator rides the machine's Claude Code
+subscription login (`CLAUDE_USE_GLOBAL_AUTH=true` in `~/.archon/.env`, already
+configured) — the same credential interactive `archon`/`claude` use rides. No separate
+Anthropic Console account, API key, or metered billing needed for unattended dispatches;
+confirmed to work for headless, no-TTY invocations. Every `cron.log` line is prefixed
+`Auth: subscription login (global auth)` so you can see at a glance it's still using
+this path. See `.factory/decisions.md` D-002 for the tradeoff this accepts (subscription
+OAuth can eventually need an interactive re-login; if that happens the orchestrator
+starts failing silently until someone checks the log — there's no expiry alert).
+
+**Optional: switch to a dedicated API key instead** — e.g. to put unattended spend on
+its own bill, separate from your subscription. Get one from
+[console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys),
+then:
 
 ```bash
 echo "CLAUDE_API_KEY=sk-ant-..." > ~/.archon/orchestrator.env
 chmod 600 ~/.archon/orchestrator.env
 ```
 
-Without a key it exits safely every cycle (`STOPPED: CLAUDE_API_KEY not set`) — no key,
-no dispatches, no cost.
+This overrides global auth for cron runs only (`cron.log` switches to `Auth: dedicated
+API key`) — interactive use is unaffected.
 
 **Watch it**:
 

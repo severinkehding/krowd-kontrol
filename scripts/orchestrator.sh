@@ -15,9 +15,13 @@ set -uo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
 
-# Unattended auth: a dedicated Anthropic API key, separate from interactive
-# CLAUDE_USE_GLOBAL_AUTH use in ~/.archon/.env. Lives outside the repo — see
-# ~/.archon/orchestrator.env's own header for why.
+# Unattended auth: rides the machine's Claude Code subscription login by
+# default (CLAUDE_USE_GLOBAL_AUTH=true in ~/.archon/.env — the same
+# credential interactive use rides). Confirmed to work headless with no TTY
+# and no ANTHROPIC_API_KEY set (2026-08-15) — see .factory/decisions.md D-002.
+# Optional override below for anyone who wants a dedicated, metered Anthropic
+# API key instead of subscription auth — see ~/.archon/orchestrator.env's own
+# header for how.
 ORCHESTRATOR_ENV="${FACTORY_ORCHESTRATOR_ENV:-$HOME/.archon/orchestrator.env}"
 if [ -f "$ORCHESTRATOR_ENV" ]; then
   set -a
@@ -25,9 +29,10 @@ if [ -f "$ORCHESTRATOR_ENV" ]; then
   . "$ORCHESTRATOR_ENV"
   set +a
 fi
-if [ -z "${CLAUDE_API_KEY:-}" ]; then
-  echo "STOPPED: CLAUDE_API_KEY not set. Populate $ORCHESTRATOR_ENV and retry." >&2
-  exit 1
+if [ -n "${CLAUDE_API_KEY:-}" ]; then
+  AUTH_MODE="dedicated API key ($ORCHESTRATOR_ENV)"
+else
+  AUTH_MODE="subscription login (global auth)"
 fi
 
 REPO="${FACTORY_REPO:-severinkehding/krowd-kontrol}"
@@ -36,6 +41,8 @@ LOG_DIR="${FACTORY_LOG_DIR:-$HOME/.archon/logs/krowd-kontrol}"
 mkdir -p "$LOG_DIR"
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
+
+log "Auth: $AUTH_MODE"
 
 # ─────────────────────────────────────────────────────────────────────────
 # 1. THE STOP BUTTON — checked before anything else is read, fails closed.

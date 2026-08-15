@@ -48,3 +48,44 @@ the real journey" cannot be decided by the factory - but the *mechanism* to leav
 running is a product-neutral engineering task any human (or a factory issue, once
 MISSION.md is real and this stops being infrastructure-shaped work reserved for humans
 per `FACTORY_RULES.md` §1) can pick up.
+
+---
+
+## D-002 · Orchestrator cron auth: subscription login, not a dedicated API key
+
+**Status:** resolved · **Raised:** 2026-08-15 (repo bootstrap, discovered live) · **Blocks:** nothing
+
+`scripts/orchestrator.sh` originally hard-required `CLAUDE_API_KEY` in
+`~/.archon/orchestrator.env` and exited (`STOPPED: CLAUDE_API_KEY not set`) every cycle
+without it, on the assumption that headless/cron invocations needed a dedicated,
+metered Anthropic API key separate from the machine's interactive Claude Code
+subscription login. That assumption was never verified, and the key was never
+populated - every 10-minute cron firing since initial setup exited immediately without
+dispatching anything (confirmed via `~/.archon/logs/krowd-kontrol/cron.log`: dozens of
+consecutive `STOPPED` lines, zero dispatches).
+
+Tested directly: a headless `claude -p` invocation with `ANTHROPIC_API_KEY` and
+`ANTHROPIC_AUTH_TOKEN` unset and no stdin attached (`< /dev/null` — simulating exactly
+how cron spawns a process) authenticated and responded successfully, using the
+subscription login credential already on disk from `claude login`
+(`CLAUDE_USE_GLOBAL_AUTH=true` in `~/.archon/.env`, set at bootstrap for interactive
+use). No API key is required for unattended dispatch after all.
+
+**Decision:** `scripts/orchestrator.sh` now defaults to subscription login (global
+auth) for cron runs, identically to interactive use - no separate Anthropic Console
+account or billing setup. `~/.archon/orchestrator.env` becomes an optional override for
+anyone who later wants unattended spend on its own dedicated, metered bill; unset, it
+changes nothing. Every orchestrator cycle logs which auth mode is active
+(`Auth: subscription login (global auth)` or `Auth: dedicated API key (...)`) so a
+silent switch - or a silent break - is visible in `cron.log` without having to inspect
+the env file.
+
+**Accepted risk, not solved:** subscription OAuth logins can eventually need an
+interactive browser re-login. Unlike an API key, there's no hard expiry the factory can
+detect and alert on ahead of time - if the credential lapses, the orchestrator simply
+starts failing every cycle again until a human notices in `cron.log` or `crontab`'s
+mail output. This is a **product**-shaped tradeoff (convenience and zero billing setup,
+traded for a monitoring gap) accepted by the human operator, not a judgement value the
+factory chose on its own - recorded here for the same transparency reason as D-001, and
+because a future session hitting `STOPPED: CLAUDE_API_KEY not set` again should find
+this instead of re-deriving the fix.
