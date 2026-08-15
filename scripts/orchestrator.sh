@@ -44,6 +44,18 @@ log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
 log "Auth: $AUTH_MODE"
 
+# Prove the auth mode above actually works right now, not just that it was
+# selected — catches a lapsed subscription login (or a bad key override)
+# before wasting a dispatch on work that would fail at its first Claude
+# call anyway. Fails closed, same shape as the stop button below.
+if AUTH_CHECK_OUTPUT=$(bash scripts/check-auth.sh 2>&1); then
+  log "Auth check: OK"
+else
+  log "Auth check FAILED — exiting without dispatching."
+  while IFS= read -r line; do log "  $line"; done <<< "$AUTH_CHECK_OUTPUT"
+  exit 0
+fi
+
 # ─────────────────────────────────────────────────────────────────────────
 # 1. THE STOP BUTTON — checked before anything else is read, fails closed.
 # ─────────────────────────────────────────────────────────────────────────

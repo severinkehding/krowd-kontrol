@@ -80,12 +80,17 @@ changes nothing. Every orchestrator cycle logs which auth mode is active
 silent switch - or a silent break - is visible in `cron.log` without having to inspect
 the env file.
 
-**Accepted risk, not solved:** subscription OAuth logins can eventually need an
-interactive browser re-login. Unlike an API key, there's no hard expiry the factory can
-detect and alert on ahead of time - if the credential lapses, the orchestrator simply
-starts failing every cycle again until a human notices in `cron.log` or `crontab`'s
-mail output. This is a **product**-shaped tradeoff (convenience and zero billing setup,
-traded for a monitoring gap) accepted by the human operator, not a judgement value the
+**Accepted risk, actively monitored:** subscription OAuth logins can eventually need an
+interactive browser re-login, and unlike an API key there's no hard expiry the factory
+can predict ahead of time. Rather than leave that as a silent gap, `scripts/orchestrator.sh`
+now runs `scripts/check-auth.sh` (one cheap headless Haiku call) at the start of every
+cycle, before dispatching anything - it fails closed the same way the stop button does
+(logs `Auth check FAILED` with the CLI's own error detail, skips the cycle, dispatches
+nothing) rather than letting a lapsed login silently waste dispatches that would fail at
+their first Claude call anyway. A lapse is now visible in `cron.log` within 10 minutes
+instead of only being noticed whenever a human happens to check. This is a
+**product**-shaped tradeoff (convenience and zero billing setup, traded for a real but
+now-monitored failure mode) accepted by the human operator, not a judgement value the
 factory chose on its own - recorded here for the same transparency reason as D-001, and
 because a future session hitting `STOPPED: CLAUDE_API_KEY not set` again should find
 this instead of re-deriving the fix.

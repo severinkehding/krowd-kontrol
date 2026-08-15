@@ -293,8 +293,7 @@ Anthropic Console account, API key, or metered billing needed for unattended dis
 confirmed to work for headless, no-TTY invocations. Every `cron.log` line is prefixed
 `Auth: subscription login (global auth)` so you can see at a glance it's still using
 this path. See `.factory/decisions.md` D-002 for the tradeoff this accepts (subscription
-OAuth can eventually need an interactive re-login; if that happens the orchestrator
-starts failing silently until someone checks the log — there's no expiry alert).
+OAuth can eventually need an interactive re-login) and how it's monitored (below).
 
 **Optional: switch to a dedicated API key instead** — e.g. to put unattended spend on
 its own bill, separate from your subscription. Get one from
@@ -308,6 +307,25 @@ chmod 600 ~/.archon/orchestrator.env
 
 This overrides global auth for cron runs only (`cron.log` switches to `Auth: dedicated
 API key`) — interactive use is unaffected.
+
+**How to check the subscription login is actually still working** — not just which mode
+was selected, but whether headless auth genuinely succeeds right now:
+
+```bash
+bash scripts/check-auth.sh                            # one cheap Haiku call; AUTH_OK or AUTH_FAILED
+```
+
+You shouldn't normally need to run this yourself — `scripts/orchestrator.sh` runs it
+automatically at the start of every 10-minute cycle, *before* dispatching anything, and
+skips the cycle (no wasted work) if it fails. So the passive check is just:
+
+```bash
+grep "Auth check" ~/.archon/logs/krowd-kontrol/cron.log | tail -5   # should all say OK
+```
+
+A run of `Auth check FAILED` lines means the subscription login lapsed — `claude /login`
+interactively to refresh it (see the full error detail logged right below each
+`FAILED` line), or switch to a dedicated API key above as a workaround.
 
 **Watch it**:
 
