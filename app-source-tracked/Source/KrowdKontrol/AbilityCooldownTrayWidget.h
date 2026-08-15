@@ -2,22 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "AbilitySlot.h"
 #include "AbilityCooldownTrayWidget.generated.h"
 
 class UBorder;
 class UTextBlock;
 class UCanvasPanel;
-
-// Matches the issue's exact ordering (Stun, Sleep, Root, Fear, Snare).
-UENUM(BlueprintType)
-enum class EAbilitySlot : uint8
-{
-	Stun,
-	Sleep,
-	Root,
-	Fear,
-	Snare
-};
 
 // Ability/cooldown tray HUD widget (PRD 13 REQ-2): shows all 5 crowd-control ability
 // icon slots simultaneously, corner-anchored, each with a cooldown-remaining overlay,
@@ -36,7 +26,7 @@ class KROWDKONTROL_API UAbilityCooldownTrayWidget : public UUserWidget
 	friend class FKrowdKontrolAbilityCooldownTrayWidgetTest;
 
 public:
-	static constexpr int32 NumAbilitySlots = 5;
+	static constexpr int32 NumAbilitySlots = static_cast<int32>(EAbilitySlot::Count);
 
 	// The wiring point a future real ability-cast system (issue #71) calls to
 	// (re)trigger a slot's cooldown. Also used internally by the placeholder seeding.
@@ -115,8 +105,8 @@ private:
 	static constexpr float PlaceholderCooldownDurations[NumAbilitySlots] = { 2.0f, 3.0f, 4.0f, 5.0f, 6.0f };
 
 	// Inward margin, in pixels, from the viewport's bottom-right corner. Bottom-right
-	// is this plan's explicit choice: the energy meter (issue #64) - which this issue
-	// calls out as being "opposite" of - hasn't landed yet, so there's no corner to be
-	// literally opposite of yet. See issue #66's plan Risks section.
+	// is diagonally opposite the energy meter's top-left anchor (issue #64, landed),
+	// per PRD 13 REQ-2's "opposite" requirement. See issue #66's plan Risks section
+	// for why bottom-right (not top-right) was picked before the meter existed.
 	static constexpr float TrayMarginPx = 24.0f;
 };
