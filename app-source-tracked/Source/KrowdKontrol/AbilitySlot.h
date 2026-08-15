@@ -12,5 +12,10 @@ enum class EAbilitySlot : uint8
 	Sleep,
 	Root,
 	Fear,
-	Snare
+	Snare,
+
+	// Sentinel, not a real slot - lets NumAbilitySlots constants derive their count
+	// from this enum instead of hand-maintaining a separate "= 5" elsewhere. Hidden so
+	// it never shows up in a Blueprint dropdown.
+	Count UMETA(Hidden)
 };

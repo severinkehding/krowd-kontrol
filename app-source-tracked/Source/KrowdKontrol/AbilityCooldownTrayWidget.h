@@ -26,7 +26,7 @@ class KROWDKONTROL_API UAbilityCooldownTrayWidget : public UUserWidget
 	friend class FKrowdKontrolAbilityCooldownTrayWidgetTest;
 
 public:
-	static constexpr int32 NumAbilitySlots = 5;
+	static constexpr int32 NumAbilitySlots = static_cast<int32>(EAbilitySlot::Count);
 
 	// The wiring point a future real ability-cast system (issue #71) calls to
 	// (re)trigger a slot's cooldown. Also used internally by the placeholder seeding.

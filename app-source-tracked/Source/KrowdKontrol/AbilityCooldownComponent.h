@@ -20,10 +20,14 @@ class KROWDKONTROL_API UAbilityCooldownComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+	// Grants the Automation Framework test direct access to AdvanceCooldowns below,
+	// which isn't part of the public API - see the comment on AdvanceCooldowns for why.
+	friend class FKrowdKontrolAbilityCooldownTest;
+
 public:
 	UAbilityCooldownComponent();
 
-	static constexpr int32 NumAbilitySlots = 5;
+	static constexpr int32 NumAbilitySlots = static_cast<int32>(EAbilitySlot::Count);
 
 	// Placeholder cooldown duration, in seconds, seeded into AbilityCooldownDurations at
 	// construction - not a locked design value, per the issue's Notes real per-ability
@@ -42,12 +46,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown")
 	bool TryStartCooldown(EAbilitySlot AbilitySlot);
 
-	// Decrements every slot's remaining time. Called every frame from TickComponent()
-	// in real gameplay, and directly by the Automation test (which can't drive a live
-	// tick loop under the -nullrhi headless run).
-	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown")
-	void AdvanceCooldowns(float DeltaSeconds);
-
 	UFUNCTION(BlueprintPure, Category = "Ability Cooldown")
 	bool IsOnCooldown(EAbilitySlot AbilitySlot) const;
 
@@ -56,6 +54,16 @@ public:
 
 protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+	// Decrements every slot's remaining time. Called every frame from TickComponent()
+	// in real gameplay, and directly by the Automation test (via friend, since it can't
+	// drive a live tick loop under the -nullrhi headless run). Deliberately not public
+	// or BlueprintCallable - TryStartCooldown must stay the only way a Blueprint graph
+	// can influence cooldown state, otherwise any graph could call
+	// AdvanceCooldowns(9999.f) to clear a cooldown early. DeltaSeconds must be
+	// non-negative; TickComponent's DeltaTime always is, and the only other caller
+	// (the test) respects that too.
+	void AdvanceCooldowns(float DeltaSeconds);
 
 private:
 	// Runtime state, not designer config - hence no EditDefaultsOnly/EditAnywhere, and

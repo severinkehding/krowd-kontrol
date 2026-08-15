@@ -17,9 +17,9 @@ record of that change, see the closing note below)
 
 | File | Action | What it contains |
 |------|--------|-------------------|
-| `app/Source/KrowdKontrol/AbilitySlot.h` | CREATE | `EAbilitySlot` UENUM extracted out of `AbilityCooldownTrayWidget.h`, unchanged name/values/order |
-| `app/Source/KrowdKontrol/AbilityCooldownTrayWidget.h` | UPDATE | Removes the inline `EAbilitySlot` enum; includes `AbilitySlot.h` instead. No behavior change |
-| `app/Source/KrowdKontrol/AbilityCooldownComponent.h` | CREATE | Component declaration: `AbilityCooldownDurations` (`EditDefaultsOnly`, one entry per slot), sole mutator `TryStartCooldown()`, `AdvanceCooldowns()`, cooldown-only queries `IsOnCooldown()`/`GetRemainingCooldownSeconds()`, `DefaultAbilityCooldownSeconds = 3.0f` placeholder constant |
+| `app/Source/KrowdKontrol/AbilitySlot.h` | CREATE | `EAbilitySlot` UENUM extracted out of `AbilityCooldownTrayWidget.h`, unchanged name/values/order, plus a hidden `Count` sentinel so `NumAbilitySlots` constants can derive their count from the enum instead of a hand-maintained literal (code review Finding 1) |
+| `app/Source/KrowdKontrol/AbilityCooldownTrayWidget.h` | UPDATE | Removes the inline `EAbilitySlot` enum; includes `AbilitySlot.h` instead. `NumAbilitySlots` now derives from `EAbilitySlot::Count` instead of a hardcoded `5`. No behavior change |
+| `app/Source/KrowdKontrol/AbilityCooldownComponent.h` | CREATE | Component declaration: `AbilityCooldownDurations` (`EditDefaultsOnly`, one entry per slot), sole public mutator `TryStartCooldown()`, `protected` `AdvanceCooldowns()` (not `BlueprintCallable` - only `TickComponent()` and the Automation test, via `friend class`, may call it; code review Finding 2), cooldown-only queries `IsOnCooldown()`/`GetRemainingCooldownSeconds()`, `DefaultAbilityCooldownSeconds = 3.0f` placeholder constant, `NumAbilitySlots` derived from `EAbilitySlot::Count` |
 | `app/Source/KrowdKontrol/AbilityCooldownComponent.cpp` | CREATE | Manual remaining-time/duration-array implementation (mirrors `AbilityCooldownTrayWidget`'s own pattern, not `FTimerManager` — no `UWorld` needed, testable via bare `NewObject()`), `IsValidIndex` guards + `FMath::Max` clamps throughout |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolAbilityCooldownTest.cpp` | CREATE | `KrowdKontrol.Unit.AbilityCooldown` — covers acceptance criteria (a)-(g) below |
 
@@ -76,6 +76,17 @@ a suspected report/log race from concurrent factory worktrees sharing the same o
 `app/` project (see `implementation.md`'s Deviations section for the full account) —
 not a real failure, per the per-test log evidence. Full `harness/ci.py` (non-`--quick`)
 validation is deferred to the `dark-factory-validate` node per this workflow's stages.
+
+### Re-validation after code review fixes
+
+Re-ran after applying the code review's two MEDIUM fixes (`NumAbilitySlots` derivation,
+`AdvanceCooldowns` visibility) - same `UNIT_PASSED tests=7` / `GATE_OK` harness output,
+same suspected log-race undercount. Directly inspecting
+`app/Saved/Logs/KrowdKontrol.log` for this run confirms all 10
+`Test Completed. Result={Success}` lines (zero `Result={Fail...}`), including
+`KrowdKontrol.Unit.AbilityCooldown` — the friend-class change did not break the
+Automation test's direct `AdvanceCooldowns()` calls, and the `Count`-sentinel-derived
+`NumAbilitySlots` still matches the previous hardcoded `5` exactly.
 
 ---
 
