@@ -75,7 +75,12 @@ import json, sys
 
 report_path, filt = sys.argv[1], sys.argv[2]
 data = json.load(open(report_path, encoding="utf-8-sig"))  # UE writes a UTF-8 BOM
-succeeded = data.get("succeeded", 0)
+# A test that logs a Warning (e.g. a deliberate null-safety code path) lands in
+# succeededWithWarnings, not succeeded - it's still a pass, not a failure or a
+# not-run. Omitting it here undercounts passing tests down to 0 whenever a test's
+# intentionally-exercised warning-logging path fires, which silently looks
+# identical to "no tests matched this filter".
+succeeded = data.get("succeeded", 0) + data.get("succeededWithWarnings", 0)
 failed = data.get("failed", 0)
 not_run = data.get("notRun", 0)
 total = succeeded + failed + not_run
