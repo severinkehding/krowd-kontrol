@@ -24,9 +24,11 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	}
 
 	MovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("MovementComponent"));
-	// UFloatingPawnMovement does not default its UpdatedComponent to the pawn's root -
-	// it must be set explicitly or the pawn will silently fail to move under input.
-	MovementComponent->UpdatedComponent = MeshComponent;
+	// Goes through the engine's setter rather than a raw field assignment so
+	// UpdatedPrimitive gets populated and the physics-volume-changed delegate gets bound -
+	// both are side effects OnRegister()'s auto-detection wouldn't have skipped, but a
+	// direct field write would.
+	MovementComponent->SetUpdatedComponent(MeshComponent);
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);

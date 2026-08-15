@@ -16,12 +16,13 @@ record of that change, see the closing note below)
 | File | Action | What it contains |
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/FlatCamera3DPrototypePawn.h` | CREATE | `AFlatCamera3DPrototypePawn : public APawn` declaration — `MeshComponent`/`MovementComponent`/`CameraBoom`/`TopDownCamera`, `SetupPlayerInputComponent` override, private `MoveForward`/`MoveRight` handlers |
-| `app/Source/KrowdKontrol/FlatCamera3DPrototypePawn.cpp` | CREATE | Constructor wiring (mesh root via `ConstructorHelpers::FObjectFinder`, spring arm with fixed relative rotation and `bDoCollisionTest=false`, `UpdatedComponent` set explicitly on the movement component) and axis-bound movement handlers |
+| `app/Source/KrowdKontrol/FlatCamera3DPrototypePawn.cpp` | CREATE | Constructor wiring (mesh root via `ConstructorHelpers::FObjectFinder`, spring arm with fixed relative rotation and `bDoCollisionTest=false`, movement component wired to the mesh root via `SetUpdatedComponent()`) and axis-bound movement handlers |
 | `app/Config/DefaultInput.ini` | UPDATE | `MoveForward`/`MoveRight` `AxisMappings=` entries under `[/Script/Engine.InputSettings]` |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | CREATE | `KrowdKontrol.Unit.FlatCamera3DPipelineSmoke` — spawns the pawn in a fresh map, asserts all four components exist and `MovementComponent->UpdatedComponent == MeshComponent` |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | CREATE | `KrowdKontrol.Unit.FlatCamera3DPipelineSmoke` — spawns the pawn in a fresh map, asserts all four components exist, `MovementComponent->UpdatedComponent == MeshComponent`, camera pitch/lock, and that `SetupPlayerInputComponent` actually registers `MoveForward`/`MoveRight` axis bindings |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolStationPowerUpComponentTest.cpp` | UPDATE (out-of-plan fix) | Pre-existing test (issue #60) called `AActor::InputEnabled()`/`EnableInput(nullptr)`, neither of which do what the test needed under UE 5.8 on a bare `AActor`; replaced with a directly-constructed `InputComponent` as the enabled/disabled proxy. Also fixed `AddExpectedError(TEXT("OrderedLights[1] is null"), ...)`, which was silently failing to match because `IsRegex` defaults to `true` and `[1]` was being parsed as a regex character class |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolGizmoNarrativeSubsystemTest.cpp` | UPDATE (out-of-plan fix) | Pre-existing test (issue #57) constructed `UGizmoNarrativeSubsystem` (`UCLASS(Within = GameInstance)`) via a bare `NewObject<>()` with no Outer, failing Outer-class validation at runtime; fixed by constructing a `NewObject<UGameInstance>()` and passing it as the Outer |
 | `docs/flat-camera-3d-prototype-notes.md` | CREATE (tracked directly, not under `app/`) | Friction/iteration-speed notes: ~1hr for the headless-buildable portion, Enhanced-Input-vs-legacy-`BindAxis` finding still unconfirmed in PIE, camera-lock setup easier than expected |
+
+**Not carried into this branch's `app-source-tracked/` mirror**: `KrowdKontrolGizmoNarrativeSubsystemTest.cpp` (issue #57 fix — `NewObject<>()` with no Outer failing Outer-class validation for a `UCLASS(Within = GameInstance)` subsystem) was originally bundled here as an out-of-plan fix, but its subject (`GizmoNarrativeSubsystem.h/.cpp`, `GizmoBark.h`, `GizmoBarkTestListener.h/.cpp`) only exists on the separate, unmerged `archon/task-fix-issue-57` branch — not in this branch's tracked history or on `main`. Review caught that carrying just the test file here would leave `app-source-tracked/` referencing headers absent from git, so the fix stays on `app/` (where issue #57's other work already lives) and will land as part of issue #57's own PR instead.
 
 `app/Content/Maps/L_FlatCamera3DPrototype.umap` was **not** created — see Acceptance
 Criteria below, environment-blocked, not mirrored here (binary Content assets are
@@ -73,12 +74,28 @@ GATE_OK mode=full
 ```
 
 `UNIT_PASSED tests=12` covers all pre-existing `KrowdKontrol.Unit.*` tests plus this
-issue's new `FlatCamera3DPipelineSmoke` test. Getting a trustworthy build required
-fixing two pre-existing, unrelated test bugs first (see the two UPDATE rows above) —
-the harness's `cli` driver had been silently reporting a stale pass count against an
-out-of-date `.dll` rather than actually compiling changed source; flagged as a
-repo-level harness gap for a follow-up issue, not fixed in this pass (outside this
-issue's scope).
+issue's new `FlatCamera3DPipelineSmoke` test (now including the axis-binding
+assertions added during review — see the smoke-test row above). Getting a
+trustworthy build required fixing a pre-existing, unrelated test bug first (see
+the UPDATE row above) — the harness's `cli` driver can silently report a stale
+pass count against an out-of-date `.dll` rather than actually compiling changed
+source (confirmed directly during this review pass: `harness/ci.py` returned
+`tests=12` in under a second from a `.dll` timestamped *before* this pass's
+source edits; only running `Build.bat KrowdKontrolEditor Win64 Development`
+directly forced a real recompile, after which `run_ue_automation.sh
+"KrowdKontrol.Unit."` was re-run against the fresh `.dll` for the evidence
+above). This is a real repo-level harness gap, flagged as a follow-up issue,
+not fixed in this pass (outside this issue's scope) — but this pass's own
+validation evidence above was double-checked against a confirmed-fresh binary.
+
+**Provenance caveat**: this run was executed against the shared, gitignored `app/`
+working copy, which also has issue #57's `GizmoNarrativeSubsystem` source present
+on disk (from other in-progress work) — that's why `tests=12` includes
+`KrowdKontrol.Unit.GizmoNarrativeSubsystem` even though this branch's
+`app-source-tracked/` mirror no longer carries that test (see the "Not carried
+into this branch's mirror" note above). This output is not reproducible from this
+branch's tracked git history alone; a from-scratch build of just this branch would
+show one fewer passing test until issue #57 lands separately.
 
 ---
 

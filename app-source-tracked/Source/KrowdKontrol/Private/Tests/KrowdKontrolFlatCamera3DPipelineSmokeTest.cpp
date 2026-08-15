@@ -18,6 +18,7 @@
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
+#include "Components/InputComponent.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 
@@ -76,6 +77,25 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 
 	TestFalse(TEXT("CameraBoom rotation should be locked, not player-controlled"),
 		Pawn->CameraBoom->bUsePawnControlRotation);
+
+	// Confirms SetupPlayerInputComponent's BindAxis calls actually register, not just
+	// that the pawn has an InputComponent - this is the concrete signal for the
+	// Enhanced-Input-vs-legacy-BindAxis compatibility question docs/flat-camera-3d-prototype-notes.md
+	// leaves open.
+	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn);
+	InputComponent->RegisterComponent();
+	Pawn->SetupPlayerInputComponent(InputComponent);
+
+	bool bHasMoveForwardBinding = false;
+	bool bHasMoveRightBinding = false;
+	for (const FInputAxisBinding& Binding : InputComponent->AxisBindings)
+	{
+		bHasMoveForwardBinding |= (Binding.AxisName == TEXT("MoveForward"));
+		bHasMoveRightBinding |= (Binding.AxisName == TEXT("MoveRight"));
+	}
+
+	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveForward axis"), bHasMoveForwardBinding);
+	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveRight axis"), bHasMoveRightBinding);
 
 	return true;
 }
