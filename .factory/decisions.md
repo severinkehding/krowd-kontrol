@@ -170,6 +170,19 @@ and non-Unreal work to make it pay for itself. Until then: do not raise
 `app/` without a genuinely new plan for the WSL<->Windows open failure above - it has
 now been tried once and confirmed not to work.
 
+**Follow-up 2026-08-15: the symlink being gitignored has a mechanical consequence
+worth spelling out.** A fresh git worktree - exactly what every `archon workflow run
+... --branch <name>` dispatch creates - does not have `app/` at all until something
+creates it there; the symlink only ever existed in the one working copy
+`scripts/link-unreal-project.sh` was run in. Without a fix, every dispatched
+`dark-factory-fix-github-issue` and `dark-factory-validate-pr` run would silently find
+no Unreal project to touch (or `harness/run_ue_automation.sh`'s own explicit check
+would catch it and fail loudly - better than silent, but still a broken run). Fixed:
+both workflows now have a `link-unreal-project` node (running `scripts/
+link-unreal-project.sh` fresh in that worktree, right after checkout) that every
+Unreal-touching downstream node depends on. Idempotent and near-instant, so wiring it
+broadly rather than narrowly cost nothing.
+
 ---
 
 ## D-004 · `agent-browser` is the wrong regression tool for a browser-less game

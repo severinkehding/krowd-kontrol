@@ -66,6 +66,18 @@ nodes:
           type: string
       required: [issue_type, title, reasoning]
 
+  # app/ is a machine-local symlink (gitignored — see CLAUDE.md's Environment section
+  # and .factory/decisions.md D-003), so a fresh worktree for THIS dispatch does not
+  # have it yet. Cheap, idempotent, no reason to gate it behind anything else — runs
+  # in parallel with the fetch/classify chain above. Every node below that might read
+  # or write the Unreal project depends on this one so app/ is guaranteed to exist by
+  # the time they run.
+  - id: link-unreal-project
+    bash: |
+      set -euo pipefail
+      bash scripts/link-unreal-project.sh
+    timeout: 10000
+
   # ═══════════════════════════════════════════════════════════════
   # PHASE 2: RESEARCH
   # ═══════════════════════════════════════════════════════════════
@@ -81,13 +93,13 @@ nodes:
 
   - id: investigate
     command: archon-investigate-issue
-    depends_on: [classify-issue, web-research]
+    depends_on: [classify-issue, web-research, link-unreal-project]
     when: "$classify-issue.output.issue_type == 'bug'"
     context: fresh
 
   - id: plan
     command: archon-create-plan
-    depends_on: [classify-issue, web-research]
+    depends_on: [classify-issue, web-research, link-unreal-project]
     when: "$classify-issue.output.issue_type != 'bug'"
     context: fresh
 
@@ -116,7 +128,7 @@ nodes:
 
   - id: implement
     command: dark-factory-fix-issue
-    depends_on: [bridge-artifacts]
+    depends_on: [bridge-artifacts, link-unreal-project]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
@@ -125,7 +137,7 @@ nodes:
 
   - id: validate
     command: dark-factory-validate
-    depends_on: [implement]
+    depends_on: [implement, link-unreal-project]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════

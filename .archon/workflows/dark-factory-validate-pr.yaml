@@ -194,6 +194,16 @@ nodes:
     depends_on: [fetch-pr, verify-holdout-clean, fetch-base-governance]
     timeout: 60000
 
+  # app/ is a machine-local symlink (gitignored — CLAUDE.md's Environment section,
+  # .factory/decisions.md D-003), so checkout-pr's fresh worktree doesn't have it.
+  # Cheap and idempotent; every node touching the Unreal project depends on it.
+  - id: link-unreal-project
+    bash: |
+      set -euo pipefail
+      bash scripts/link-unreal-project.sh
+    depends_on: [checkout-pr]
+    timeout: 10000
+
   # ═══════════════════════════════════════════════════════════════
   # PHASE 2: THE HARNESS GATE (single entrypoint — see harness/README.md)
   # ═══════════════════════════════════════════════════════════════
@@ -213,7 +223,7 @@ nodes:
       echo ""
       echo "RUN_HARNESS_EXIT=$RC"
       exit $RC
-    depends_on: [checkout-pr]
+    depends_on: [checkout-pr, link-unreal-project]
     # static + unit + app boot + e2e floor + holdout + mutations, whichever are
     # configured in harness.config.json — give it real headroom.
     timeout: 600000
@@ -412,7 +422,9 @@ nodes:
       echo ""
       echo "RUN_HARNESS_EXIT=$RC"
       exit $RC
-    depends_on: [fix-issues]
+    # Same worktree pass-1 already linked app/ in, but idempotent and cheap — no
+    # reason to rely on that continuity holding.
+    depends_on: [fix-issues, link-unreal-project]
     timeout: 600000
 
   - id: behavioral-validation-p2
