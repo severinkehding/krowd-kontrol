@@ -20,11 +20,15 @@ class KROWDKONTROL_API UPlayerEnergyComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-	// Grants the Automation Framework test direct access to the private CurrentEnergy
+	// Grants the Automation Framework tests direct access to the private CurrentEnergy
 	// field below, purely to seed deterministic starting values for each scenario.
 	// Friendship isn't part of the public API, so this can't be used by gameplay code
-	// to bypass ApplyContactDamage the way a public setter could.
+	// to bypass ApplyContactDamage the way a public setter could. Two test classes now
+	// use this access: this component's own test, and UEnergyMeterWidget's (issue
+	// #64), which needs to seed a non-zero CurrentEnergy without a live BeginPlay()
+	// pass to prove out its BindToEnergyComponent() sync.
 	friend class FKrowdKontrolPlayerEnergyComponentTest;
+	friend class FKrowdKontrolEnergyMeterWidgetTest;
 
 public:
 	UPlayerEnergyComponent();
