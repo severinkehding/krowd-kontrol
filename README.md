@@ -31,6 +31,18 @@ npx skills update gamedev-skills/awesome-gamedev-agent-skills   # pull latest
 npx skills remove gamedev-skills/awesome-gamedev-agent-skills   # uninstall
 ```
 
+Also installed: `unreal-engine-cpp-pro` (UObject hygiene, GC, reflection macros, performance
+patterns) from [sickn33/agentic-awesome-skills](https://github.com/sickn33/agentic-awesome-skills)
+— one exact skill pulled from their 2,000+ catalog, not a bulk install. That catalog's own
+maintainers warn against installing it wholesale (it includes skills flagged `critical`/
+`offensive`-use-only); this one audited clean (`risk: safe`, zero command/network/credential/
+filesystem/privilege signals). Pull another skill the same way, always audit first:
+
+```bash
+npx agentic-awesome-skills audit --skills <skill-id>
+npx agentic-awesome-skills --path "$(pwd)/.claude/skills" --skills <skill-id>
+```
+
 ## Contributing
 
 Once `MISSION.md` is filled in for real: file an issue. Don't open a PR — the factory
