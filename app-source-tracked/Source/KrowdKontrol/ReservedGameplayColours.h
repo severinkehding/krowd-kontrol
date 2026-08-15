@@ -16,9 +16,11 @@
 // codebase to source final values from (see APlaceholderTargetZoneActor's beacon
 // colour for the same caveat pattern elsewhere in this module).
 //
-// No UENUM/UCLASS/.generated.h - nothing here needs UHT reflection or Blueprint
-// visibility yet (mirrors Public/Herdable.h's same reasoning), so this is a plain
-// C++-only header living at the module root alongside AbilitySlot.h.
+// No UENUM/UCLASS/.generated.h - a plain namespace of free functions doesn't need
+// UHT reflection or Blueprint visibility, and nothing here has asked for it yet.
+// This is the module's first UHT-reflection-free header at the root level (compare
+// Public/Herdable.h and AbilitySlot.h, which both use .generated.h for their
+// UINTERFACE/UENUM needs) - revisit if a Blueprint consumer ever needs these values.
 namespace ReservedGameplayColours
 {
 	// RU-NNR enemy / Snare ability.

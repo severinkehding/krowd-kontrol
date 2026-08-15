@@ -1,25 +1,30 @@
 // Confirms ReservedGameplayColours (issue #70) is internally consistent - GetAll()
 // has exactly 5 entries matching the 5 named accessors, all mutually distinct - and
-// then audits UEnergyMeterWidget's and UAbilityCooldownTrayWidget's known chrome
-// colours against it, asserting none collide with a reserved value. The audit checks
-// all 5 of the tray's slots, not just index 0 like KrowdKontrolAbilityCooldownTrayWidgetTest.cpp's
-// own precedent check, since this test's entire purpose is the audit's completeness.
+// then audits UAbilityCooldownTrayWidget's known chrome colours against it, asserting
+// none collide with a reserved value. The audit checks all 5 of the tray's slots, not
+// just index 0 like KrowdKontrolAbilityCooldownTrayWidgetTest.cpp's own precedent
+// check, since this test's entire purpose is the audit's completeness. Also covers
+// SlotCooldownTexts[i] (not just SlotIconBorders[i]) since the widget's own
+// BuildWidgetTree() comment claims text colour is reserved-colour-safe chrome too.
 //
-// Needs friend-class access to both widgets' private BackgroundBorder/SlotIconBorders
-// members (see FKrowdKontrolReservedGameplayColoursTest friend declarations in
-// EnergyMeterWidget.h/AbilityCooldownTrayWidget.h) rather than widening either
-// widget's public API.
+// Widgets currently audited here: UAbilityCooldownTrayWidget only. UEnergyMeterWidget
+// is issue #64/PR #92's deliverable and isn't part of this branch yet - its audit is a
+// follow-up once that PR merges. Add any future HUD widget's chrome to this list.
+//
+// Needs friend-class access to the widget's private SlotIconBorders/SlotCooldownTexts
+// members (see FKrowdKontrolReservedGameplayColoursTest friend declaration in
+// AbilityCooldownTrayWidget.h) rather than widening its public API.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
 
 #include "Misc/AutomationTest.h"
 #include "ReservedGameplayColours.h"
-#include "EnergyMeterWidget.h"
 #include "AbilityCooldownTrayWidget.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Components/Border.h"
+#include "Components/TextBlock.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -63,16 +68,9 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 		return false;
 	}
 
-	// (2) Energy meter audit.
-	UEnergyMeterWidget* EnergyMeterWidget = CreateWidget<UEnergyMeterWidget>(World, UEnergyMeterWidget::StaticClass());
-	if (TestNotNull(TEXT("UEnergyMeterWidget should construct"), EnergyMeterWidget)
-		&& TestNotNull(TEXT("EnergyMeterWidget->BackgroundBorder should be non-null"), ToRawPtr(EnergyMeterWidget->BackgroundBorder)))
-	{
-		TestFalse(TEXT("EnergyMeterWidget background border colour should not collide with a reserved gameplay colour"),
-			AllReserved.Contains(EnergyMeterWidget->BackgroundBorder->GetBrushColor()));
-	}
-
-	// (3) Ability tray audit - all 5 slots, not just index 0.
+	// (2) Ability tray audit - all 5 slots, not just index 0. Covers both the slot
+	// icon borders and the slot cooldown text, since BuildWidgetTree()'s own comment
+	// claims text colour is reserved-colour-safe chrome too, not just the borders.
 	UAbilityCooldownTrayWidget* TrayWidget =
 		CreateWidget<UAbilityCooldownTrayWidget>(World, UAbilityCooldownTrayWidget::StaticClass());
 	if (TestNotNull(TEXT("UAbilityCooldownTrayWidget should construct"), TrayWidget))
@@ -85,8 +83,23 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 				TestFalse(*FString::Printf(TEXT("TrayWidget slot %d border colour should not collide with a reserved gameplay colour"), Index),
 					AllReserved.Contains(TrayWidget->SlotIconBorders[Index]->GetBrushColor()));
 			}
+
+			if (TestNotNull(*FString::Printf(TEXT("TrayWidget->SlotCooldownTexts[%d] should be non-null"), Index),
+				ToRawPtr(TrayWidget->SlotCooldownTexts[Index])))
+			{
+				TestFalse(*FString::Printf(TEXT("TrayWidget slot %d cooldown text colour should not collide with a reserved gameplay colour"), Index),
+					AllReserved.Contains(TrayWidget->SlotCooldownTexts[Index]->GetColorAndOpacity().GetSpecifiedColor()));
+			}
 		}
 	}
+
+	// (3) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
+	// genuine collision, not just on the (never-colliding) real widget colours above -
+	// guards against an inverted/typo'd assertion silently passing forever.
+	UBorder* CollidingBorder = NewObject<UBorder>(GetTransientPackage());
+	CollidingBorder->SetBrushColor(ReservedGameplayColours::GetPurple());
+	TestTrue(TEXT("A border deliberately set to a reserved colour should be detected as colliding"),
+		AllReserved.Contains(CollidingBorder->GetBrushColor()));
 
 	return true;
 }
