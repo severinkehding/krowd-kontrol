@@ -71,6 +71,11 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 	// (2) Ability tray audit - all 5 slots, not just index 0. Covers both the slot
 	// icon borders and the slot cooldown text, since BuildWidgetTree()'s own comment
 	// claims text colour is reserved-colour-safe chrome too, not just the borders.
+	// Deliberately does not audit each slot's IconLabel UTextBlock (SlotIconBorders[i]'s
+	// content): it shares SlotCooldownTexts[i]'s TextColor at construction today but
+	// isn't independently tracked by this widget, so there is no member to assert
+	// against without widening UAbilityCooldownTrayWidget's private surface - an
+	// intentional scope boundary, not an oversight.
 	UAbilityCooldownTrayWidget* TrayWidget =
 		CreateWidget<UAbilityCooldownTrayWidget>(World, UAbilityCooldownTrayWidget::StaticClass());
 	if (TestNotNull(TEXT("UAbilityCooldownTrayWidget should construct"), TrayWidget))
