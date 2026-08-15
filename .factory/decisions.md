@@ -608,3 +608,44 @@ the same broken pattern before considering it closed — this is the second time
 identical typo class caused a real rejection because only one of two affected files
 got fixed. Reset PR #86 from `factory:needs-human` back to `factory:needs-review` so
 the fixed pipeline retries it.
+
+## D-011: Best-effort MCP wiring for the automated loop (closes part of D-005)
+
+**2026-08-16.** Wired `mcp:` config into the workflow nodes that can actually use it,
+now that D-005's "Editor open + headless build collide" question has a real answer
+(tested live: they do collide — `Unable to perform hot reload with multiple targets`
+— even with Live Coding disabled; not resolved, just now confirmed rather than
+assumed). Given that, the operator's own call: keep the Editor open when doing
+interactive/MCP work, pause the loop (`.factory-stop`, now self-expiring — see below)
+while it's open, resume when done. This makes MCP **best-effort** for automated
+dispatches specifically — reachable only when the operator happens to have left it
+open — not a guaranteed capability. That's an accepted tradeoff, not a gap to close
+further right now.
+
+Wired:
+- `implement` (`dark-factory-fix-github-issue.yaml`) — `.archon/mcp/unreal-and-blender.json`
+  (new, merges both existing per-tool configs). For issues needing Editor-only content
+  (levels, scene/actor placement, imported assets) that can't be produced as text.
+  `dark-factory-fix-issue.md` now has an explicit "attempt first, report honestly if
+  unreachable" procedure (§5.2a) — codifies the exact good behavior issue #56/PR #99
+  already demonstrated on its own (self-reporting the missing level as
+  "environment-blocked" rather than faking one) as the standing pattern, not
+  something to leave to chance each time.
+- `behavioral-e2e-p1`/`behavioral-e2e-p2` (`dark-factory-validate-pr.yaml`) —
+  `.archon/mcp/unreal.json`. `dark-factory-behavioral-e2e.md` rewritten so Phase 1
+  (real MCP visual verification) is attempted first on every run, with Phase 0 (the
+  honest "not independently verified" report) now explicitly the fallback for a
+  failed connection attempt, not the default path.
+
+**Related, same day: `scripts/factory-stop.sh` now self-expires a local kill file
+after 4 hours** (`FACTORY_KILL_FILE_MAX_AGE_S`) — directly motivated by this pattern
+(pause the loop, leave the Editor open, resume when done) needing a guarantee that a
+forgotten/crashed pause can't silently halt the loop indefinitely. See
+`FACTORY_RULES.md`'s stop-button section for the full account; tested all three code
+paths (fresh stop, expired stop, no stop) directly before trusting it.
+
+**Not attempted**: a self-managing mechanism where the workflow itself launches/closes
+the Editor around MCP-needing steps. Given the confirmed build collision, that would
+also need to coordinate against concurrent headless builds — real orchestration work,
+not something to build reactively while chasing a single PR's blocker. Left as a
+bigger future option if best-effort turns out to be too unreliable in practice.
