@@ -75,11 +75,19 @@ the same thing on both sides, no per-port forwarding to rely on, so it fixes thi
 category of problem for any future port too, not just these two. Requires Windows 11
 with a build supporting mirrored mode (confirmed here: build 26200, well above the
 ~22621.2428 minimum) and **a full WSL restart to take effect** (`wsl --shutdown` from a
-Windows-side terminal — not from inside WSL — then reopen). **Applied but not yet
-verified** as of this commit — restarting WSL ends the session that made this change;
-verify connectivity fresh after the restart (`curl http://127.0.0.1:8000/mcp` from WSL
-should get a response instead of hanging/refusing, and likewise a raw TCP connect to
-`127.0.0.1:9876` once Blender's bridge is started).
+Windows-side terminal — not from inside WSL — then reopen).
+
+**Confirmed working 2026-08-15.** The first two restart attempts didn't actually take —
+`uptime -s` kept showing the *original* boot time, proving the WSL2 VM itself never
+stopped (closing/reopening a terminal window reconnects to the same still-running VM;
+only `wsl --shutdown` from a genuine Windows-side shell, followed by confirming
+`Get-Process vmmem` errors out before reopening, actually restarts it). Once a real
+restart happened: WSL's `eth0` came up as `192.168.0.26` — the Windows host's actual
+LAN IP, not a `172.x` NAT address — and both `mcp__blender__get_blendfile_summary_path_info`
+and `mcp__unreal-mcp__list_toolsets` returned real live data through the MCP connection.
+If this ever regresses (e.g. after a Windows update resets `.wslconfig` handling),
+check `ip addr show eth0` against the Windows host's real IP first — a mismatch means
+mirrored mode isn't actually active, whatever the config file says.
 
 ## Project Overview
 
