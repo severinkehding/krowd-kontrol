@@ -365,3 +365,47 @@ this repo doesn't have.
 logs after the user asked "is there something running?", not by assuming the "full
 autopilot" cycle that had already run twice was clean. The loop was paused via the
 local kill file (`.factory-stop`) for the ~15 minutes these fixes took, then resumed.
+
+## D-007: Cron's every triage dispatch was failing silently — SSH remote, no agent under cron
+
+**Found 2026-08-15, ~1 hour into "full autopilot"**, while checking on status: every single
+triage dispatch since 08:10 UTC (15 consecutive attempts, one per 10-minute cycle) had
+been failing at `worktree_creating` with `Error: Permission denied accessing repository`
+— the orchestrator kept trying, correctly, every cycle; the repo's untriaged-issue count
+just never moved (stuck at 81/81) because nothing ever got past that first step.
+
+Root cause, isolated by bisecting the environment cron gives a script against what an
+interactive shell has (confirmed `git worktree add` itself works fine outside Archon,
+proving this wasn't a repo/filesystem/permissions problem in the literal sense): this
+repo's `origin` remote was SSH (`git@github.com:...`). Interactive shells inherit
+`SSH_AUTH_SOCK` from the desktop/WSLg session's running `ssh-agent`; a cron job is not
+attached to that session and never gets it, so any git operation Archon's worktree setup
+performs against the SSH remote fails auth — surfaced by Archon as the generic
+"Permission denied" wrapper text, not anything indicating SSH specifically. This is why
+it looked identical to (and was initially misdiagnosed alongside) D-006's same-cycle
+race — same error string, unrelated cause. It didn't show up in the original canary test
+or the manual dispatches earlier this session because those all ran from an interactive
+shell with the desktop's agent already in the environment.
+
+Fixed by switching the remote to HTTPS and using `gh` as the git credential helper
+(`gh auth setup-git`) instead — this doesn't depend on any live agent process at all, so
+it's cron-safe by construction rather than by coincidence:
+```
+git remote set-url origin https://github.com/severinkehding/krowd-kontrol.git
+gh auth setup-git
+```
+Confirmed fixed by reproducing the exact failure under a stripped, cron-equivalent
+environment (`env -i` with only what the crontab's own PATH sets), then confirming
+`worktree_creating` → `worktree_created` succeeds the same way once the remote is HTTPS
+— with `SSH_AUTH_SOCK` still absent. Rejected hardcoding `SSH_AUTH_SOCK` in
+`orchestrator.sh`/crontab as a fix: that socket path is randomized per agent
+instance and changes on every reboot/new session, so it would silently break again
+rather than durably fixing the class of problem.
+
+**Not a repo-file change** — this is local git config (`.git/config`'s remote URL) plus
+account-level `gh` credential-helper setup, both of which apply automatically to every
+existing and future worktree (worktrees share the parent repo's `.git/config`). Nothing
+to commit or push for this one; logged here for the record and because it explains a
+real ~1-hour stall in the "full autopilot" loop that wasn't visible from GitHub's side
+(no failed PRs, no error labels — the failures never got far enough to touch GitHub at
+all, they only ever showed up in the cron log).
