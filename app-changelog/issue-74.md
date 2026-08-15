@@ -84,6 +84,41 @@ initialization if it wasn't already built. Everything else (file placement,
 comment style, colour choice, M:SS formatting, test structure) matches the
 plan as written.
 
+## Review fixes (post-review self-fix pass)
+
+The PR review flagged the `Initialize()`/`NativeOnInitialized()` double-build guard as
+its main risk: its correctness rested on an unverified assumption about which hook
+fires first, and the guard's own "already built, skip" branch had zero test coverage.
+Both concerns are resolved together:
+
+- Extracted `EnsureWidgetTreeBuilt()`, called unconditionally from both
+  `NativeOnInitialized()` and `Initialize()`. Correctness no longer depends on engine
+  call order between the two hooks — whichever fires first builds the tree via the one
+  shared `!ClearTimeText` check, the other becomes a no-op.
+- Added a friend-class (`FKrowdKontrolPostRunSummaryWidgetTest`, matching
+  `PlayerEnergyComponentTest`'s existing precedent) test case that calls
+  `NativeOnInitialized()` then `Initialize()` directly on a bare `NewObject()` widget,
+  asserting the tree is *not* rebuilt the second time — the guard-skip branch that
+  previously had no coverage.
+- Added a negative-input test (`SetSummaryValues(-5.0f, -3)` floors to `0:00`/`0`) and
+  a bare-construction test (getters return empty text, `SetSummaryValues()` doesn't
+  crash, before any tree exists).
+- Added `UE_LOG(LogTemp, Warning, ...)` to `SetSummaryValues()`'s null-text-block
+  branches, matching `RoomEnemyBudgetController.cpp`'s existing precedent for
+  diagnosable-but-silent failure paths.
+- Fixed two stale `plan.md` comment references (that file doesn't exist in this repo)
+  to point at this changelog's Deviations section instead.
+
+`KrowdKontrol.Unit.*` still reports `UNIT_PASSED tests=6` (same 6 automation test
+*cases* — the new coverage is additional assertions inside the existing
+`KrowdKontrol.Unit.PostRunSummaryWidget` case, not a new case).
+
+Two docs-impact findings (CLAUDE.md's Tech Stack section now understating this PR's
+`UMG`/`Slate`/`SlateCore` deps; Repo Layout omitting `app-source-tracked/`/
+`app-changelog/`) were **not** fixed here — `CLAUDE.md` is a protected path
+(`FACTORY_RULES.md` §5, restated in `CLAUDE.md`) the factory cannot modify; flagged for
+manual edit.
+
 ---
 
 Source lives under `app/` (gitignored, D-003) — this file is the tracked-repo

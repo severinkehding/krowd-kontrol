@@ -7,21 +7,28 @@
 void UPostRunSummaryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	BuildWidgetTree();
-	SetSummaryValues(PlaceholderClearTimeSeconds, PlaceholderCrowdMasteryCount);
+	EnsureWidgetTreeBuilt();
 }
 
 bool UPostRunSummaryWidget::Initialize()
 {
 	const bool bNewlyInitialized = Super::Initialize();
-	// If NativeOnInitialized() already ran (real gameplay usage with a valid player),
-	// ClearTimeText is already set - skip rebuilding the tree a second time.
-	if (bNewlyInitialized && !ClearTimeText)
+	if (bNewlyInitialized)
+	{
+		EnsureWidgetTreeBuilt();
+	}
+	return bNewlyInitialized;
+}
+
+void UPostRunSummaryWidget::EnsureWidgetTreeBuilt()
+{
+	// Whichever of NativeOnInitialized()/Initialize() fires first builds the tree;
+	// the other is then a no-op, regardless of engine call order between the two.
+	if (!ClearTimeText)
 	{
 		BuildWidgetTree();
 		SetSummaryValues(PlaceholderClearTimeSeconds, PlaceholderCrowdMasteryCount);
 	}
-	return bNewlyInitialized;
 }
 
 void UPostRunSummaryWidget::BuildWidgetTree()
@@ -62,6 +69,12 @@ void UPostRunSummaryWidget::SetSummaryValues(float ClearTimeSeconds, int32 Crowd
 	{
 		ClearTimeText->SetText(ClearTimeDisplay);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPostRunSummaryWidget: ClearTimeText is null on '%s' - clear time will render blank."),
+			*GetNameSafe(this));
+	}
 
 	const FText CrowdMasteryDisplay = FText::Format(
 		NSLOCTEXT("PostRunSummaryWidget", "CrowdMasteryFormat", "Crowd Mastery: {0}"),
@@ -69,6 +82,12 @@ void UPostRunSummaryWidget::SetSummaryValues(float ClearTimeSeconds, int32 Crowd
 	if (CrowdMasteryText)
 	{
 		CrowdMasteryText->SetText(CrowdMasteryDisplay);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPostRunSummaryWidget: CrowdMasteryText is null on '%s' - Crowd Mastery will render blank."),
+			*GetNameSafe(this));
 	}
 }
 

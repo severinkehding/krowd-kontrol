@@ -9,11 +9,11 @@ class UTextBlock;
 // Post-run summary screen (PRD 13 REQ-5): displays clear time and the "Crowd
 // Mastery" stat after a level/run clears. Real clear-time and Crowd Mastery
 // tracking don't exist yet (PRD 06 REQ-2/REQ-3, tracked separately) - this widget
-// builds its own UI tree in C++ (no Widget Blueprint asset - see plan.md Approach
-// Decisions for issue #74) and seeds itself with placeholder values on
-// construction, purely to prove out the screen's layout and both fields rendering.
-// SetSummaryValues() is the wiring point a future real tracking system replaces
-// the placeholder call with.
+// builds its own UI tree in C++ (no Widget Blueprint asset - see
+// app-changelog/issue-74.md Deviations from plan) and seeds itself with placeholder
+// values on construction, purely to prove out the screen's layout and both fields
+// rendering. SetSummaryValues() is the wiring point a future real tracking system
+// replaces the placeholder call with.
 UCLASS()
 class KROWDKONTROL_API UPostRunSummaryWidget : public UUserWidget
 {
@@ -42,7 +42,7 @@ protected:
 	// Fires synchronously from CreateWidget(), before any Slate/viewport realization
 	// - unlike NativeConstruct(), this doesn't depend on TakeWidget()/AddToViewport(),
 	// which matters for the -nullrhi headless Automation run this project's tests use
-	// (harness/run_ue_automation.sh). See plan.md Approach Decisions for issue #74.
+	// (harness/run_ue_automation.sh). See app-changelog/issue-74.md Deviations from plan.
 	virtual void NativeOnInitialized() override;
 
 	// Safety net: UUserWidget::Initialize() only calls NativeOnInitialized() when the
@@ -59,7 +59,15 @@ protected:
 	virtual bool Initialize() override;
 
 private:
+	friend class FKrowdKontrolPostRunSummaryWidgetTest;
+
 	void BuildWidgetTree();
+
+	// Builds the widget tree exactly once, regardless of which of NativeOnInitialized()
+	// or Initialize() fires first - correctness no longer depends on either hook's call
+	// order relative to the other, since both call this unconditionally and it's the
+	// only place that checks ClearTimeText.
+	void EnsureWidgetTreeBuilt();
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> ClearTimeText;
