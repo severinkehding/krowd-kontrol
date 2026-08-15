@@ -50,6 +50,12 @@ void UStationPowerUpComponent::NotifyPowerUpStageTriggered()
 	{
 		Light->SetActorHiddenInGame(false);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UStationPowerUpComponent: OrderedLights[%d] is null on '%s' - stage will advance with no light revealed."),
+			NextLightIndex, *GetNameSafe(GetOwner()));
+	}
 
 	OnLightEnabled.Broadcast(NextLightIndex, Light);
 	++NextLightIndex;

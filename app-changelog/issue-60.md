@@ -19,7 +19,7 @@ record of that change, see the closing note below)
 | File | Action | What it contains |
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/StationPowerUpComponent.h` | CREATE | Component declaration: `OrderedLights` (`EditInstanceOnly` — level-actor references, not Blueprint defaults), `FOnLightEnabled`/`FOnPowerUpSequenceComplete` dynamic multicast delegates, public `InitializeSequence()`/`NotifyPowerUpStageTriggered()`, read-only accessors `GetEnabledLightCount()`/`IsSequenceComplete()` |
-| `app/Source/KrowdKontrol/StationPowerUpComponent.cpp` | CREATE | Implementation: `InitializeSequence()` idempotently hides every configured light (warns if `OrderedLights` is empty); `NotifyPowerUpStageTriggered()` reveals the next light in order, broadcasts `OnLightEnabled`, and fires `OnPowerUpSequenceComplete` exactly once after the last light |
+| `app/Source/KrowdKontrol/StationPowerUpComponent.cpp` | CREATE | Implementation: `InitializeSequence()` idempotently hides every configured light (warns if `OrderedLights` is empty); `NotifyPowerUpStageTriggered()` reveals the next light in order, broadcasts `OnLightEnabled`, and fires `OnPowerUpSequenceComplete` exactly once after the last light. A `nullptr` entry in `OrderedLights` (e.g. a placed light actor deleted from the level after being wired up) still advances the sequence — matching `RoomEnemyBudgetController::SpawnEnemy()`'s "counters advance regardless" precedent — but now logs a warning instead of failing silently |
 | `app/Source/KrowdKontrol/Private/Tests/StationPowerUpTestListener.h`/`.cpp` | CREATE | Small `UObject` test helper — dynamic delegates require a `UFUNCTION`-bound `AddDynamic` target, not a lambda |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolStationPowerUpComponentTest.cpp` | CREATE | `KrowdKontrol.Unit.StationPowerUpComponent` — covers all 4 acceptance criteria below |
 
@@ -46,7 +46,9 @@ the test's `FAutomationEditorCommonUtils::CreateNewMap()`.
       stand-in remains enabled throughout; lights enable strictly in order in response
       to `NotifyPowerUpStageTriggered()` calls; the completion delegate fires exactly
       once; further triggers past completion are no-ops; an empty `OrderedLights` warns
-      (not crashes) and never fires completion.
+      (not crashes) and never fires completion; a `nullptr` entry inside `OrderedLights`
+      warns, still advances the index, and the sequence still completes; a redundant
+      `InitializeSequence()` call mid-sequence no-ops rather than resetting progress.
 
 ## Validation
 

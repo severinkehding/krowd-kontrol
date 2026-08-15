@@ -91,13 +91,24 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("OnLightEnabled should have fired once"), Listener->LightEnabledCallCount, 1);
 	TestEqual(TEXT("OnLightEnabled should report index 0"), Listener->LastEnabledLightIndex, 0);
 	TestEqual(TEXT("OnLightEnabled should report LightA"), Listener->LastEnabledLightActor, static_cast<AActor*>(LightA));
+	TestEqual(TEXT("GetEnabledLightCount should be 1 after the first trigger"), Component->GetEnabledLightCount(), 1);
 	TestTrue(TEXT("Player input must remain enabled after the first stage"), PlayerStandIn->InputEnabled());
+
+	// (b2) Regression: calling InitializeSequence() again mid-sequence must no-op,
+	// not reset progress or re-hide already-revealed lights - the idempotency guard
+	// (bHasInitializedSequence) exists specifically so BeginPlay() and any other
+	// caller can call it more than once safely.
+	Component->InitializeSequence();
+	TestFalse(TEXT("LightA should remain visible after a redundant InitializeSequence call"), LightA->IsHidden());
+	TestEqual(TEXT("GetEnabledLightCount should be unchanged after a redundant InitializeSequence call"), Component->GetEnabledLightCount(), 1);
+	TestFalse(TEXT("IsSequenceComplete should be unchanged after a redundant InitializeSequence call"), Component->IsSequenceComplete());
 
 	// (c) Second trigger reveals the second light; the first stays revealed.
 	Component->NotifyPowerUpStageTriggered();
 	TestFalse(TEXT("LightA should remain visible after the second trigger"), LightA->IsHidden());
 	TestFalse(TEXT("LightB should become visible after the second trigger"), LightB->IsHidden());
 	TestTrue(TEXT("LightC should remain hidden after the second trigger"), LightC->IsHidden());
+	TestEqual(TEXT("GetEnabledLightCount should be 2 after the second trigger"), Component->GetEnabledLightCount(), 2);
 	TestEqual(TEXT("OnPowerUpSequenceComplete should not have fired yet"), Listener->SequenceCompleteCallCount, 0);
 	TestTrue(TEXT("Player input must remain enabled after the second stage"), PlayerStandIn->InputEnabled());
 
@@ -106,6 +117,7 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	TestFalse(TEXT("LightC should become visible after the third trigger"), LightC->IsHidden());
 	TestEqual(TEXT("OnLightEnabled should have fired 3 times total"), Listener->LightEnabledCallCount, 3);
 	TestEqual(TEXT("OnPowerUpSequenceComplete should have fired exactly once"), Listener->SequenceCompleteCallCount, 1);
+	TestEqual(TEXT("GetEnabledLightCount should be 3 after the third trigger"), Component->GetEnabledLightCount(), 3);
 	TestTrue(TEXT("IsSequenceComplete should report true"), Component->IsSequenceComplete());
 	TestTrue(TEXT("Player input must remain enabled after the final stage"), PlayerStandIn->InputEnabled());
 
@@ -131,6 +143,41 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	EmptyComponent->NotifyPowerUpStageTriggered();
 	TestEqual(TEXT("Empty config should never enable a light"), EmptyComponent->GetEnabledLightCount(), 0);
 	TestFalse(TEXT("Empty config should never report sequence complete"), EmptyComponent->IsSequenceComplete());
+
+	// (g) Regression: a nullptr entry inside OrderedLights (e.g. a placed light actor
+	// deleted from the level after being wired into the array - a routine editor
+	// workflow) must not crash, must still advance the sequence past it, and must
+	// warn once so a level designer can see their config is broken.
+	UStationPowerUpComponent* NullEntryComponent =
+		NewObject<UStationPowerUpComponent>(OwnerActor);
+	if (!TestNotNull(TEXT("Null-entry component should construct"), NullEntryComponent))
+	{
+		return false;
+	}
+	NullEntryComponent->RegisterComponent();
+
+	AActor* LightX = World->SpawnActor<AActor>();
+	AActor* LightZ = World->SpawnActor<AActor>();
+	NullEntryComponent->OrderedLights = { LightX, nullptr, LightZ };
+
+	UStationPowerUpTestListener* NullEntryListener = NewObject<UStationPowerUpTestListener>();
+	NullEntryComponent->OnLightEnabled.AddDynamic(NullEntryListener, &UStationPowerUpTestListener::HandleLightEnabled);
+	NullEntryComponent->OnPowerUpSequenceComplete.AddDynamic(NullEntryListener, &UStationPowerUpTestListener::HandleSequenceComplete);
+
+	NullEntryComponent->InitializeSequence();
+
+	NullEntryComponent->NotifyPowerUpStageTriggered();
+	TestFalse(TEXT("LightX should become visible after the first trigger"), LightX->IsHidden());
+
+	AddExpectedError(TEXT("OrderedLights[1] is null"), EAutomationExpectedErrorFlags::Contains, 1);
+	NullEntryComponent->NotifyPowerUpStageTriggered();
+	TestEqual(TEXT("Null entry should still advance the index"), NullEntryComponent->GetEnabledLightCount(), 2);
+	TestEqual(TEXT("OnLightEnabled should fire even for the null entry"), NullEntryListener->LightEnabledCallCount, 2);
+	TestNull(TEXT("OnLightEnabled should report a null actor for the null entry"), NullEntryListener->LastEnabledLightActor);
+
+	NullEntryComponent->NotifyPowerUpStageTriggered();
+	TestFalse(TEXT("LightZ should become visible after the third trigger"), LightZ->IsHidden());
+	TestEqual(TEXT("Sequence should still complete despite the null entry"), NullEntryListener->SequenceCompleteCallCount, 1);
 
 	return true;
 }
