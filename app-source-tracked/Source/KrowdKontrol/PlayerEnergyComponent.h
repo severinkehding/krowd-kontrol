@@ -20,6 +20,12 @@ class KROWDKONTROL_API UPlayerEnergyComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+	// Grants the Automation Framework test direct access to the private CurrentEnergy
+	// field below, purely to seed deterministic starting values for each scenario.
+	// Friendship isn't part of the public API, so this can't be used by gameplay code
+	// to bypass ApplyContactDamage the way a public setter could.
+	friend class FKrowdKontrolPlayerEnergyComponentTest;
+
 public:
 	UPlayerEnergyComponent();
 
@@ -31,12 +37,6 @@ public:
 	// raw amount passed in.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player Energy", meta = (ClampMin = "0.0"))
 	float MaxDamagePerHit = 10.0f;
-
-	// Runtime state, not designer config - hence no EditDefaultsOnly/EditAnywhere.
-	// BlueprintReadOnly (not BlueprintReadWrite) so no Blueprint graph can wire a
-	// settable pin that would bypass ApplyContactDamage.
-	UPROPERTY(BlueprintReadOnly, Category = "Player Energy")
-	float CurrentEnergy = 0.0f;
 
 	// Fires whenever ApplyContactDamage actually changes CurrentEnergy. Ready for a
 	// future HUD to consume; nothing subscribes to it yet.
@@ -50,6 +50,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Player Energy")
 	float ApplyContactDamage(float RawAmount, AActor* DamageSource);
 
+	// Read-only accessor for CurrentEnergy - a future HUD can either bind
+	// OnEnergyChanged or poll this. No corresponding setter exists on purpose.
+	float GetCurrentEnergy() const { return CurrentEnergy; }
+
 protected:
 	virtual void BeginPlay() override;
+
+private:
+	// Runtime state, not designer config - hence no EditDefaultsOnly/EditAnywhere, and
+	// private (not BlueprintReadOnly) so no code path - Blueprint or C++ - can mutate
+	// it except through ApplyContactDamage.
+	UPROPERTY()
+	float CurrentEnergy = 0.0f;
 };

@@ -8,7 +8,11 @@ UPlayerEnergyComponent::UPlayerEnergyComponent()
 void UPlayerEnergyComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	CurrentEnergy = MaxEnergy;
+	// SafeMaxEnergy guards against a negative MaxEnergy (e.g. a bad editor value)
+	// seeding CurrentEnergy negative - the same bug class SafeMaxDamagePerHit below
+	// guards against for MaxDamagePerHit.
+	const float SafeMaxEnergy = FMath::Max(0.0f, MaxEnergy);
+	CurrentEnergy = SafeMaxEnergy;
 }
 
 float UPlayerEnergyComponent::ApplyContactDamage(float RawAmount, AActor* DamageSource)
@@ -20,11 +24,13 @@ float UPlayerEnergyComponent::ApplyContactDamage(float RawAmount, AActor* Damage
 	// legal way CurrentEnergy moves is downward, via this method. SafeMaxDamagePerHit
 	// applies the same guard to MaxDamagePerHit itself: FMath::Clamp doesn't assume
 	// Min <= Max, so a negative MaxDamagePerHit (e.g. a bad editor/DataTable value)
-	// would otherwise flip this into a heal too.
+	// would otherwise flip this into a heal too. SafeMaxEnergy applies the identical
+	// guard to MaxEnergy, used as the clamp's upper bound below.
 	const float SafeMaxDamagePerHit = FMath::Max(0.0f, MaxDamagePerHit);
+	const float SafeMaxEnergy = FMath::Max(0.0f, MaxEnergy);
 	const float ClampedDamage = FMath::Clamp(RawAmount, 0.0f, SafeMaxDamagePerHit);
 	const float PreviousEnergy = CurrentEnergy;
-	CurrentEnergy = FMath::Clamp(CurrentEnergy - ClampedDamage, 0.0f, MaxEnergy);
+	CurrentEnergy = FMath::Clamp(CurrentEnergy - ClampedDamage, 0.0f, SafeMaxEnergy);
 
 	if (CurrentEnergy != PreviousEnergy)
 	{

@@ -61,6 +61,16 @@ bool FKrowdKontrolPlayerEnergyComponentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A negative MaxDamagePerHit should apply zero damage, never negative"), Applied, 0.0f);
 	TestEqual(TEXT("CurrentEnergy should not increase from a negative MaxDamagePerHit"), Component->CurrentEnergy, 50.0f);
 
+	// (e) A negative RawAmount must not heal the player - ApplyContactDamage clamps
+	// RawAmount's lower bound to 0 before it ever reaches MaxDamagePerHit's own clamp,
+	// so a negative raw amount applies zero damage rather than negative damage (which
+	// would increase CurrentEnergy).
+	Component->MaxDamagePerHit = 10.0f;
+	Component->CurrentEnergy = 50.0f;
+	Applied = Component->ApplyContactDamage(-20.0f, nullptr);
+	TestEqual(TEXT("A negative RawAmount should apply zero damage, never negative"), Applied, 0.0f);
+	TestEqual(TEXT("CurrentEnergy should not increase from a negative RawAmount"), Component->GetCurrentEnergy(), 50.0f);
+
 	return true;
 }
 
