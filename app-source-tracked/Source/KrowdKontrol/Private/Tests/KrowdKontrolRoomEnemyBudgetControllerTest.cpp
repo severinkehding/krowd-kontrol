@@ -105,6 +105,28 @@ bool FKrowdKontrolRoomEnemyBudgetControllerTest::RunTest(const FString& Paramete
 	Controller->NotifyEnemyBanked();
 	TestEqual(TEXT("OnRoomCleared should still have fired exactly once"), Listener->CallCount, 1);
 
+	// Regression: MaxConcurrentDensity left at 0 (its default) with a nonzero budget
+	// must not silently soft-lock the room - InitializeRoom() should warn and leave
+	// the budget untouched rather than spinning or spawning nothing without a trace.
+	URoomEnemyBudgetController* ZeroDensityController =
+		NewObject<URoomEnemyBudgetController>(OwnerActor);
+	if (!TestNotNull(TEXT("Zero-density controller should construct"), ZeroDensityController))
+	{
+		return false;
+	}
+	ZeroDensityController->RegisterComponent();
+	ZeroDensityController->TotalRoomBudget = 3;
+	ZeroDensityController->MaxConcurrentDensity = 0;
+	ZeroDensityController->EnemyClassToSpawn = APlaceholderCubeActor::StaticClass();
+
+	AddExpectedError(TEXT("MaxConcurrentDensity is 0"), EAutomationExpectedErrorFlags::Contains, 1);
+	ZeroDensityController->InitializeRoom();
+
+	TestEqual(TEXT("Zero density should spawn no enemies"),
+		ZeroDensityController->GetActiveEnemyCount(), 0);
+	TestEqual(TEXT("Zero density should leave the budget untouched"),
+		ZeroDensityController->GetRemainingBudget(), 3);
+
 	return true;
 }
 

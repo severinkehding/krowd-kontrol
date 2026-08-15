@@ -29,8 +29,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Room Budget")
 	int32 TotalRoomBudget = 0;
 
-	// Cap on simultaneously active enemies - spawning never exceeds this.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Room Budget")
+	// Cap on simultaneously active enemies - spawning never exceeds this. Must be at
+	// least 1: a value of 0 permanently soft-locks the room (nothing ever spawns, so
+	// OnRoomCleared never fires either).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Room Budget", meta = (ClampMin = "1"))
 	int32 MaxConcurrentDensity = 0;
 
 	// Placeholder-actor-first (MISSION.md): no real enemy class exists yet.

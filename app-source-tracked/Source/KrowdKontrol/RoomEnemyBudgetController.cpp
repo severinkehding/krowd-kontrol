@@ -20,6 +20,13 @@ void URoomEnemyBudgetController::InitializeRoom()
 	}
 	bHasInitializedRoom = true;
 
+	if (MaxConcurrentDensity <= 0 && TotalRoomBudget > 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("URoomEnemyBudgetController: MaxConcurrentDensity is %d on '%s' with TotalRoomBudget %d - room will never spawn or clear."),
+			MaxConcurrentDensity, *GetNameSafe(GetOwner()), TotalRoomBudget);
+	}
+
 	RemainingBudget = TotalRoomBudget;
 	ActiveEnemyCount = 0;
 
