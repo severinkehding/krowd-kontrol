@@ -23,3 +23,6 @@ harness/.artifacts/
 
 # OS
 .DS_Store
+
+# local Claude Code session runtime state
+.claude/scheduled_tasks.lock
