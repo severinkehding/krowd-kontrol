@@ -223,14 +223,65 @@ Framework run happens in `harness/e2e.py` via `app.run(..., timeout=240)`, gover
 now reports `GATE_OK` genuinely - `APP_STARTED driver=cli`, `E2E_PASSED steps=1` - not
 a stub.
 
-**Still open, narrower than before:** `.archon/commands/dark-factory-behavioral-e2e.md`
-(164 lines) and the `dark-factory-validate-pr.yaml` node still literally invoke
-`agent-browser` as of this commit - `harness/ci.py`'s gate is real now, but the Archon
-*workflow* layer above it hasn't been rewritten to match. This is still deliberately
-scoped out: rewriting that command file is a dedicated pass in its own right, not a
-rushed addition here. Do this before the first real PR reaches validation. Also still
-open: `app/Source/`'s test code is **not git-tracked** (it lives inside the gitignored
-`app/` symlink target - see D-003) - it exists only on this machine's Unreal project
-folder (OneDrive-synced, but not versioned by this repo's git history). A future
-"real unit tests" pass should note this when it happens, not assume test code is
-backed up the way everything else in this repo is.
+**Update 2026-08-15, same day: `dark-factory-behavioral-e2e.md` and the
+`dark-factory-validate-pr.yaml` node are rewritten - `agent-browser` is gone from
+both.** But this surfaced a sharper problem than "wrong tool," worth its own entry:
+see D-005 for why the node still can't do genuine independent verification even now,
+and stays honestly at `not_e2e_testable` until that's resolved.
+
+Also still open: `app/Source/`'s test code is **not git-tracked** (it lives inside the
+gitignored `app/` symlink target - see D-003) - it exists only on this machine's
+Unreal project folder (OneDrive-synced, but not versioned by this repo's git
+history). A future "real unit tests" pass should note this when it happens, not
+assume test code is backed up the way everything else in this repo is.
+
+---
+
+## D-005 · The E2E holdout has no independent verification mechanism, even now
+
+**Status:** open · **Raised:** 2026-08-15 (behavioral-e2e rewrite) · **Blocks:** auto-merge (narrower reason than D-001/D-004 now — see below)
+
+Rewriting `dark-factory-behavioral-e2e.md` away from `agent-browser` (D-004) surfaced
+a sharper question than "which tool": what would a **genuine** holdout for this
+project even look like, and is it something unattended dispatch can actually run?
+
+**Re-running the Automation Framework tests in this node would not be a real
+holdout.** The whole point of the original browser-driven design is that the
+validator forms its *own* judgment from observable behavior, independent of anything
+the builder wrote or claimed - a gamed unit test can't fool a human (or AI) actually
+looking at the screen. If this node just re-ran `harness/run_ue_automation.sh` with
+the same test filter `run-harness` already ran upstream, it would be re-executing the
+builder's own test code and calling that "independent" - the exact failure mode the
+holdout pattern exists to prevent. So the rewritten command explicitly refuses to do
+this (see its "Your Sole Purpose" and `NOT_A_SUBSTITUTE_CHECK` success criterion)
+rather than quietly substituting a weaker check that would look like progress but
+isn't.
+
+**The genuine equivalent would be visual: Unreal MCP screenshot capture
+(`CaptureViewport` + the `unreal-agent-harness` skill's `ue_qa.py`), independently
+inspected against the issue's stated behavior** - the same spirit as a browser
+screenshot, adapted to a game viewport. Building this for real needs two things,
+neither of which exists yet:
+
+1. **MCP tool access on the workflow node** - an `mcp:` config pointing at
+   `.archon/mcp/unreal.json`, which this node currently doesn't have
+   (`allowed_tools: [Bash]` only).
+2. **A live Unreal Editor GUI session reachable at the moment this node runs.** The
+   MCP server is hosted *inside* the GUI Editor process, not `UnrealEditor-Cmd.exe`
+   (confirmed directly this session - closing the GUI Editor for an unrelated Live
+   Coding lock immediately took down `http://127.0.0.1:8000/mcp`). The GUI Editor is
+   not left running by default (`CLAUDE.md`'s Environment section), and this repo's
+   unattended dispatch model (cron, `MAX_PARALLEL=1`, nobody watching) has no
+   mechanism to guarantee one is up when a validate-pr run fires.
+
+**Open question, not decided here:** should the factory require a live Editor session
+for validation to fully clear (i.e., PRs simply wait / land on `factory:needs-human`
+whenever nobody's left the Editor open), or is there a lighter-weight independent
+signal worth designing instead (e.g., a second, *differently-scoped* Automation test
+group that the validator writes itself from the issue, blind to the builder's tests -
+closer to the original holdout spirit without needing a live GUI at all)? Both are
+legitimate; this is a product/process judgment call for a human, not something to
+guess at while also trying to close out a documentation pass. Until decided:
+`behavioral-e2e` stays at `not_e2e_testable`, `run-harness`'s real `GATE_OK` and the
+other pass-1/pass-2 reviewers remain what actually gates a PR, and that is a correct,
+intentional state - not a regression.

@@ -4,14 +4,13 @@ Instructions for AI coding agents working in this repository. Read this before m
 any code changes.
 
 This file covers **how the code is written**. For *what* to build, see `MISSION.md`
-(currently a placeholder). For *how the factory operates*, see `FACTORY_RULES.md`. When
+(real as of 2026-08-15). For *how the factory operates*, see `FACTORY_RULES.md`. When
 this file and those conflict, `MISSION.md` wins on scope, `FACTORY_RULES.md` wins on
 process, and `CLAUDE.md` wins on code style.
 
-> 🚧 **PLACEHOLDER.** No app is tracked in this repo yet, so most of this file is still
-> TBD. One real fact is known and recorded below (Environment) — fill in the rest (repo
-> layout, conventions, protected-path specifics) in the same commit that wires the
-> Unreal project into this repo's factory loop.
+> 🚧 **PARTIAL.** Environment and Repo Layout below are real. Conventions is still TBD
+> — no real C++ coding-style decisions have been made yet beyond what the project
+> wizard generated; fill in as patterns emerge from actual gameplay code.
 
 ---
 
@@ -110,21 +109,31 @@ mirrored mode isn't actually active, whatever the config file says.
 
 ## Tech Stack
 
-**Unreal Engine** (confirmed — see Environment above), asset pipeline through
-**Blender 5.2** via `blender-mcp`. Version/plugins/gameplay architecture: **TBD** beyond
-what's already in `KrowdKontrol.uproject`.
+**Unreal Engine 5.8**, C++ enabled (module `KrowdKontrol`, `Source/KrowdKontrol/` —
+`Core`/`CoreUObject`/`Engine`/`InputCore` dependencies, nothing else added yet), asset
+pipeline through **Blender 5.2** via `blender-mcp`. Automation tests live under
+`Source/KrowdKontrol/Private/Tests/`, `#if WITH_DEV_AUTOMATION_TESTS`-guarded, named
+`KrowdKontrol.<Smoke|Unit>.<Name>` — see `harness/README.md` and
+`.factory/decisions.md` D-004 for how the validation gate runs them. Gameplay
+architecture beyond that: **TBD**, tracks `MISSION.md`'s Core Capabilities as they get
+built.
 
 ## Repo Layout
 
 ```
 krowd-kontrol/
-├── MISSION.md               # Product scope (placeholder) - factory reads this at triage
+├── MISSION.md               # Product scope (real) - factory reads this at triage
 ├── FACTORY_RULES.md         # Factory operational rules - every workflow reads this
-├── CLAUDE.md                # This file - code conventions (placeholder)
+├── CLAUDE.md                # This file - code conventions
 ├── FACTORY.md                # Factory status: autonomy level, components, stop button
 ├── README.md                 # Human-facing overview + workflow diagrams
 ├── docs/                     # PRD drop point for dark-factory-prd-to-issues
-├── harness/                  # Validation gate - see harness/README.md
+├── app/                       # LOCAL SYMLINK (gitignored, not repo content) to the
+│                              #   real Unreal project - scripts/link-unreal-project.sh
+│                              #   creates it; see Environment above and D-003/D-004
+├── harness/                  # Validation gate - see harness/README.md (real: harness/
+│                              #   ci.py full mode passes against app/'s Automation
+│                              #   Framework test via run_ue_automation.sh)
 ├── .factory/                 # Factory-internal state (decisions log; holdout + locks
 │                              #   added once there's a real baseline to floor)
 ├── .archon/
@@ -139,11 +148,10 @@ krowd-kontrol/
 ├── .mcp.json                  # MCP servers for this interactive session
 └── scripts/
     ├── factory-stop.sh        # the stop button check
-    └── orchestrator.sh        # cron dispatcher, live, every 10 min
+    ├── orchestrator.sh        # cron dispatcher, live, every 10 min (MAX_PARALLEL=1)
+    ├── check-auth.sh          # per-cycle subscription-login healthcheck
+    └── link-unreal-project.sh # creates the app/ symlink, run once per machine/clone
 ```
-
-`app/` does not exist yet - added by the first app-skeleton work, at which point this
-section and Tech Stack above must be filled in for real, in the same commit.
 
 ## Conventions
 

@@ -54,11 +54,14 @@ description: |
      pass-2's validators re-run, they ALSO run in fresh contexts. The fixer's
      reasoning never leaks into the second validation pass.
 
-  KNOWN GAP (see .factory/decisions.md D-001): the agent-browser E2E holdout has no
-  persistent app to connect to yet — harness/ci.py starts and tears down the app
-  within one process. `behavioral-e2e` reports this honestly rather than faking a
-  pass, and the synthesizer's approve rules require `app_booted == true`
-  unconditionally, so this gap blocks auto-merge rather than silently bypassing it.
+  KNOWN GAP (see .factory/decisions.md D-005; D-001's original "no app to connect to"
+  half is resolved — harness/ci.py full mode genuinely passes now, GATE_OK against a
+  real Unreal Automation Framework test): the E2E holdout node has no MCP tool access
+  and no guaranteed live Editor session for unattended dispatch, so it cannot
+  independently observe the game the way a browser-driven holdout could for a web
+  app. `behavioral-e2e` reports this honestly rather than faking a pass, and the
+  synthesizer's approve rules require `app_booted == true` unconditionally, so this
+  gap blocks auto-merge rather than silently bypassing it.
 
 provider: claude
 model: sonnet
@@ -248,15 +251,15 @@ nodes:
         - confidence
         - reasoning
 
-  # E2E behavioral: currently unreachable pending .factory/decisions.md D-001 —
-  # reports not_e2e_testable/app_booted:false honestly. Kept wired (not deleted)
+  # E2E behavioral: currently unreachable pending .factory/decisions.md D-005 (no MCP
+  # tool access on this node, no guaranteed live Editor session for unattended
+  # dispatch) — reports not_e2e_testable/app_booted honestly. Kept wired (not deleted)
   # so completing D-001 is a small change, not a rebuild.
   - id: behavioral-e2e-p1
     command: dark-factory-behavioral-e2e
     depends_on: [fetch-pr, fetch-linked-issue, run-harness-p1]
     context: fresh
     allowed_tools: [Bash]
-    skills: [agent-browser]
     output_format:
       type: object
       properties:
@@ -445,7 +448,6 @@ nodes:
     depends_on: [fix-issues, fetch-pr, fetch-linked-issue, run-harness-p2]
     context: fresh
     allowed_tools: [Bash]
-    skills: [agent-browser]
     output_format:
       type: object
       properties:
