@@ -15,8 +15,9 @@ struct FGizmoBark
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gizmo Bark")
 	FName BarkID;
 
-	// 2-4 lines of display text (issue #57's acceptance criteria). No enforced
-	// min/max count here - see GizmoNarrativeSubsystem.cpp Notes.
+	// 2-4 lines of display text (issue #57's acceptance criteria). This is a content
+	// guideline, not a runtime-enforced bound - UGizmoNarrativeSubsystem never
+	// validates Lines.Num(), it broadcasts whatever's registered.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gizmo Bark")
 	TArray<FString> Lines;
 

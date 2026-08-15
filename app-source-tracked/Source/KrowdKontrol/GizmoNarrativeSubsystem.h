@@ -18,6 +18,8 @@ class KROWDKONTROL_API UGizmoNarrativeSubsystem : public UGameInstanceSubsystem
 public:
 	// Registers (or overwrites) a bark definition. A future bark-content issue calls
 	// this once per bark at startup; nothing in this issue calls it from a live path.
+	// Note: re-registering an already-fired BarkID resets bHasBeenTriggered to false,
+	// since overwrite is a plain TMap::Add - no merge-in of prior fired state.
 	UFUNCTION(BlueprintCallable, Category = "Gizmo Narrative")
 	void RegisterBark(const FGizmoBark& BarkDefinition);
 

@@ -39,6 +39,17 @@ bool FKrowdKontrolGizmoNarrativeSubsystemTest::RunTest(const FString& Parameters
 	Bark.Lines = { TEXT("Line one."), TEXT("Line two.") };
 	Subsystem->RegisterBark(Bark);
 
+	TestFalse(TEXT("HasBarkFired should be false for a registered-but-not-yet-triggered bark"),
+		Subsystem->HasBarkFired(KnownID));
+
+	// A second, distinct bark registered alongside the first - stays untouched by
+	// everything the first bark's ID does below.
+	const FName SecondID = TEXT("TestBark.SecondContact");
+	FGizmoBark SecondBark;
+	SecondBark.BarkID = SecondID;
+	SecondBark.Lines = { TEXT("Should never fire in this test.") };
+	Subsystem->RegisterBark(SecondBark);
+
 	// (1) Triggering a known, unfired bark ID broadcasts once with the registered text
 	// and marks it as fired.
 	Subsystem->TriggerBark(KnownID);
@@ -46,6 +57,8 @@ bool FKrowdKontrolGizmoNarrativeSubsystemTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("LastBarkID should be the triggered bark's ID"), Listener->LastBarkID, KnownID);
 	TestEqual(TEXT("LastLines should match the registered lines"), Listener->LastLines, Bark.Lines);
 	TestTrue(TEXT("HasBarkFired should be true after triggering"), Subsystem->HasBarkFired(KnownID));
+	TestFalse(TEXT("A second, untriggered bark must not be affected by triggering the first"),
+		Subsystem->HasBarkFired(SecondID));
 
 	// (2) Triggering the same bark ID a second time must not re-broadcast.
 	Subsystem->TriggerBark(KnownID);
@@ -58,6 +71,25 @@ bool FKrowdKontrolGizmoNarrativeSubsystemTest::RunTest(const FString& Parameters
 	Subsystem->TriggerBark(UnknownID);
 	TestEqual(TEXT("CallCount should still be 1 after triggering an unknown ID"), Listener->CallCount, 1);
 	TestFalse(TEXT("HasBarkFired should be false for an unknown ID"), Subsystem->HasBarkFired(UnknownID));
+
+	// (4) Regression: a listener that re-enters TriggerBark on the same ID from inside
+	// the broadcast must not re-fire. This pins down TriggerBark's flip-before-broadcast
+	// ordering (bHasBeenTriggered = true precedes OnBarkTriggered.Broadcast) - the
+	// property that makes same-ID re-entrancy safe instead of unbounded recursion.
+	const FName ReentrantID = TEXT("TestBark.Reentrant");
+	FGizmoBark ReentrantBark;
+	ReentrantBark.BarkID = ReentrantID;
+	ReentrantBark.Lines = { TEXT("Only fires once even if re-entered.") };
+	Subsystem->RegisterBark(ReentrantBark);
+
+	UGizmoBarkTestListener* ReentrantListener = NewObject<UGizmoBarkTestListener>();
+	ReentrantListener->SubsystemToReenter = Subsystem;
+	ReentrantListener->ReentrantBarkID = ReentrantID;
+	Subsystem->OnBarkTriggered.AddDynamic(ReentrantListener, &UGizmoBarkTestListener::HandleBarkTriggered);
+
+	Subsystem->TriggerBark(ReentrantID);
+	TestEqual(TEXT("Re-entrant TriggerBark on the same ID during broadcast must not re-fire"),
+		ReentrantListener->CallCount, 1);
 
 	return true;
 }
