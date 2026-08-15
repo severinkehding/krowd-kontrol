@@ -7,12 +7,13 @@
 -->
 
 **Current autonomy level: 0 (bootstrap)** — the harness, governance files, and
-workflows are wired up and verified, but MISSION.md is a placeholder, so triage routes
-every issue to `factory:needs-human` (see `FACTORY_RULES.md` §0) instead of actually
-building anything. This is intentional: the loop runs for real, but has nothing real to
-decide yet. Level jumps to **4** — untriaged issue classified, planned, built,
-reviewed, independently validated, and **merged** with no human in the chain — the
-commit MISSION.md is filled in for real.
+workflows are wired up and verified, but MISSION.md is a placeholder, so triage
+rejects every issue with a placeholder-state reason (see `FACTORY_RULES.md` §0 — not
+`factory:needs-human`, since triage never emits that verdict, by design) instead of
+actually building anything. This is intentional: the loop runs for real, but has
+nothing real to decide yet. Level jumps to **4** — untriaged issue classified, planned,
+built, reviewed, independently validated, and **merged** with no human in the chain —
+the commit MISSION.md is filled in for real.
 **Level 5 is deliberately not the goal.** The factory will not write its own issues.
 **Stop button:** `.factory-stop` in the orchestrator's working copy (works with the
 network down) **and** the `factory:stop` label on any open issue (reachable from a
@@ -69,9 +70,10 @@ regression-testing.
 - `harness/ci.py --quick` → `GATE_OK`.
 - `scripts/factory-stop.sh` fails closed when it can't reach GitHub (confirmed before
   the repo existed on GitHub — see the repo's initial setup).
-- A real issue filed on this repo gets triaged live and lands on
-  `factory:needs-human` — proving the full chain (Archon → Claude Code → `gh` labels
-  and comments) fires end to end, even with nothing real to decide yet.
+- A real issue filed on this repo gets triaged live and lands on `factory:rejected`
+  with a placeholder-state reason (confirmed: issue #1, 2026-08-15) — proving the full
+  chain (Archon → Claude Code → `gh` labels and comments) fires end to end, even with
+  nothing real to decide yet.
 - The cron orchestrator fires on schedule and its dispatch logic is exercised at least
   once against real repo state.
 

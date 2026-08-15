@@ -19,12 +19,17 @@ anything is an automatic reject — even if not specifically enumerated.
 ## 0. Placeholder-State Override
 
 `MISSION.md` is currently a placeholder (see the banner at its top). **While that's
-true, triage must label every issue `factory:needs-human` regardless of what section 1
-below says**, and implementation/validation workflows must refuse to proceed on any
-issue that isn't already `factory:accepted` by a human. The criteria in this file
-describe the rules the factory will operate under once MISSION.md is real — they are
-not yet load-bearing. Delete this section (and this override) in the same commit that
-fills in MISSION.md for real.
+true, triage must reject every issue** rather than apply the accept/reject criteria in
+section 1 below on their merits — there is nothing real to weigh them against yet.
+**Not `factory:needs-human`** — section 1's own rule holds even in this state: triage
+has exactly two verdicts, ever (see "There is NO `needs_human` verdict at the triage
+stage" below). The rejection comment must say plainly that this is because MISSION.md
+is a placeholder, not a judgment on the issue's merits, and that a human should pick it
+up manually until MISSION.md is filled in — confirmed working this way in practice (see
+issue #1, the repo's own bootstrap smoke test). Implementation/validation workflows
+still only ever act on issues a human has explicitly labeled `factory:accepted` in this
+state. Delete this section (and this override) in the same commit that fills in
+MISSION.md for real.
 
 ---
 

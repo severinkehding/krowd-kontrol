@@ -19,5 +19,5 @@ operating rules — triage criteria, quality gates, protected files, the stop bu
 ## Contributing
 
 Once `MISSION.md` is filled in for real: file an issue. Don't open a PR — the factory
-will. Until then, every issue lands on `factory:needs-human` regardless of content — see
-`FACTORY_RULES.md` §0.
+will. Until then, every issue gets rejected with a placeholder-state reason regardless
+of content — see `FACTORY_RULES.md` §0.
