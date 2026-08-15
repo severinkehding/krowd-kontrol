@@ -48,11 +48,18 @@ crashes/hangs, stuck camera captures, port conflicts), the capture/QA loop, and 
 Python/toolset-sandbox reference, curated from
 [per-simmons/unreal-agent-harness](https://github.com/per-simmons/unreal-agent-harness)
 (used with permission — that repo has no license, so this is a hand-picked subset, not
-a mirror; its city-building demo content stays in the source repo). Real limitation
-worth knowing: this needs an actual Unreal Editor 5.8 running with the MCP plugin
-enabled — nothing this repo's headless cron/Archon automation can drive on its own.
-It's knowledge available to whoever *is* driving Unreal Editor interactively, same
-discovery mechanism as every other skill here.
+a mirror; its city-building demo content stays in the source repo).
+
+**Unreal MCP itself** — per Epic's [official docs](https://dev.epicgames.com/documentation/unreal-engine/unreal-mcp-in-unreal-editor),
+wired up against the real `KrowdKontrol.uproject`: `ModelContextProtocol` + `AllToolsets`
+plugins are enabled, and the client side is registered in `.mcp.json` (this session) and
+`.archon/mcp/unreal.json` (factory workflow nodes) — plain HTTP at
+`http://127.0.0.1:8000/mcp`, no relay process needed (WSL2 reaches the Windows host's
+loopback directly). **The server itself isn't started** — that's a one-command manual
+step (`ModelContextProtocol.StartServer` in the Editor's console) left to whoever has
+the Editor open, same reasoning as Blender below. Nothing this repo's headless
+cron/Archon automation can drive on its own — it's live for whoever *is* driving Unreal
+Editor interactively.
 
 **`blender-mcp`** — a *live* MCP connection (not a static knowledge skill) to Blender's
 own official [MCP server](https://www.blender.org/lab/mcp-server/), installed and

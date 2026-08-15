@@ -21,8 +21,9 @@ Claude Code (this repo's interactive + factory-dispatched sessions) runs in **WS
 (Linux)**. **Unreal Engine itself runs on the Windows host**, not in WSL — the editor,
 GPU, and MCP plugin all live on the Windows side.
 
-**The Unreal project** (`KrowdKontrol.uproject`, fresh — `ModelingToolsEditorMode`
-enabled, MCP plugin not yet enabled) lives on the Windows filesystem:
+**The Unreal project** (`KrowdKontrol.uproject` — `ModelingToolsEditorMode`,
+`ModelContextProtocol`, `AllToolsets`, `MCPClientToolset` all enabled; MCP server not
+yet started — see the `unreal-agent-harness` skill) lives on the Windows filesystem:
 
 ```
 Windows path: C:\Users\Admin\OneDrive\Dokumente\Unreal Projects\KrowdKontrol
