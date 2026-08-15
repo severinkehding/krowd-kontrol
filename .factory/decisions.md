@@ -552,3 +552,27 @@ actual C++, only this changelog's claims about it — but it at least gives revi
 concrete, specific, checkable artifact instead of an empty diff, and unblocks the
 "can't even open a PR" half of the problem completely. Option 4 remains worth
 revisiting later if the changelog-review gap turns out to matter in practice.
+
+**Correction to the above, same day:** the changelog-only approach was proven
+insufficient the very first time it ran for real, not just theoretically weaker.
+`behavioral-validation` is a pure diff-reader by design (`allowed_tools: []`, holdout
+discipline) — PR #85's diff contained only `app-changelog/issue-82.md`'s prose, which
+from that reviewer's perspective is indistinguishable from a coder claiming work was
+done with nothing to back it up. It correctly returned `solves_issue: "no"` with high
+confidence and PR #85 was rejected and closed. Worse: `synthesize-verdict`'s reject
+path re-queues the issue back to plain `factory:accepted` with no escalation, so left
+running the loop would have redispatched the identical, doomed-to-repeat work
+indefinitely.
+
+**Actual fix, same day:** `create-pr` now copies the real `.h`/`.cpp`/`.Build.cs` file
+*contents* (per `implementation.md`'s Files Changed table) into a tracked
+`app-source-tracked/` mirror, alongside the (now secondary, context-only) changelog.
+`app/` itself is untouched — still a symlink, still what the Editor/harness build
+against — this is a plain-text copy for review purposes, not a live link, so it can't
+reopen the WSL/Editor cross-boundary failure that made `app/` untracked in the first
+place, and it never touches `.uasset`/`.umap`/`Content/`/`Binaries/`/`Intermediate/`,
+so none of the original size/LFS concerns apply either. Every existing reviewer just
+works on a real diff now — no new pre-fetch node, no per-reviewer special-casing.
+Manually applied to both already-rejected/pending PRs (#85, #86), confirmed via `gh pr
+view --json files` that both diffs now contain the real source, reopened #85 and
+re-labeled both `factory:needs-review` for the loop to re-validate for real.
