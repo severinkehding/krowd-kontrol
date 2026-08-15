@@ -66,6 +66,8 @@ Group the `issues_to_fix` entries by file. For each file, understand what change
 For each issue:
 
 1. **Read the relevant file.** Use the `Read` tool, not `cat` — the Archon harness tracks file state.
+
+   **If this PR has an `app-source-tracked/` directory (D-009): edit BOTH copies, never just one.** `app/` is a gitignored symlink to the real, physical Unreal project — Phase 4's harness gate builds and tests against `app/`, not the tracked mirror, so a fix that only touches `app-source-tracked/` will pass review while shipping the original bug unfixed. A fix that only touches `app/` will build/test correctly but leave the diff (what the reviewer re-checks in pass-2) stale and inconsistent with what actually shipped. For every file you fix that has a corresponding entry under `app-source-tracked/`, edit the real file at `app/<same-relative-path>` first (that's what Phase 4 validates against), then copy its exact resulting content over the `app-source-tracked/<same-relative-path>` copy (`cp "app/<path>" "app-source-tracked/<path>"`) so both are byte-identical before committing. Verify with `diff` before Phase 5 — if it isn't empty, the fix isn't done.
 2. **Make the minimal change that addresses the specific issue.** Leave adjacent code untouched.
 3. **Follow CLAUDE.md's conventions** for whatever this repo's actual stack is (once that section exists) for how to run a targeted check on just the file(s) you touched.
 
