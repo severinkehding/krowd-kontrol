@@ -50,7 +50,7 @@ bool FKrowdKontrolRoomActorTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Recorded target zone's enemy type should match the requested tag"),
 		static_cast<uint8>(Room->GetTargetZones()[0].EnemyType), static_cast<uint8>(EEnemyType::RU_NNR));
 	TestEqual(TEXT("Recorded target zone's marker actor should be the one AddTargetZone returned"),
-		Room->GetTargetZones()[0].MarkerActor, MarkerActor);
+		Room->GetTargetZones()[0].MarkerActor.Get(), MarkerActor);
 	TestTrue(TEXT("Marker actor should genuinely be attached to the room, not just tracked in the array"),
 		MarkerActor->IsAttachedTo(Room));
 

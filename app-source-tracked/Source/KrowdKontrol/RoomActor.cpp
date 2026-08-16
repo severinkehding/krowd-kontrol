@@ -19,7 +19,7 @@ AActor* ARoomActor::AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> Mark
 		return nullptr;
 	}
 
-	TSubclassOf<AActor> ClassToSpawn = MarkerClass ? MarkerClass : APlaceholderTargetZoneActor::StaticClass();
+	TSubclassOf<AActor> ClassToSpawn = MarkerClass ? MarkerClass : TSubclassOf<AActor>(APlaceholderTargetZoneActor::StaticClass());
 	AActor* MarkerActor = World->SpawnActor<AActor>(ClassToSpawn);
 	if (!MarkerActor)
 	{

@@ -45,6 +45,6 @@ public:
 	const TArray<FRoomTargetZone>& GetTargetZones() const { return TargetZones; }
 
 private:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room", meta = (AllowPrivateAccess = "true"))
 	TArray<FRoomTargetZone> TargetZones;
 };
