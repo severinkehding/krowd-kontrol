@@ -4,6 +4,9 @@
 #include "Components/PanelSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 
 void UPostRunSummaryWidget::NativeOnInitialized()
 {
@@ -111,4 +114,32 @@ FText UPostRunSummaryWidget::GetClearTimeDisplayText() const
 FText UPostRunSummaryWidget::GetCrowdMasteryDisplayText() const
 {
 	return CrowdMasteryText ? CrowdMasteryText->GetText() : FText::GetEmpty();
+}
+
+namespace
+{
+	// Dev-only trigger (issue #74 E2E gap): the widget was previously only ever
+	// constructed directly by test code (CreateWidget/NewObject in
+	// KrowdKontrolPostRunSummaryWidgetTest.cpp), leaving no in-game path an E2E pass
+	// could use to visually confirm the rendered clear-time/Crowd-Mastery text or
+	// chrome colours. Adds the widget to the local player's viewport with its
+	// existing placeholder values - this is an observation path only, not a real
+	// gameplay trigger (a future real "run cleared" event replaces this call site).
+	void ShowPostRunSummary(const TArray<FString>& Args, UWorld* World)
+	{
+		APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+		if (!PlayerController)
+		{
+			return;
+		}
+		if (UPostRunSummaryWidget* Widget = CreateWidget<UPostRunSummaryWidget>(PlayerController, UPostRunSummaryWidget::StaticClass()))
+		{
+			Widget->AddToViewport();
+		}
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs ShowPostRunSummaryCommand(
+		TEXT("KrowdKontrol.ShowPostRunSummary"),
+		TEXT("Dev-only: adds UPostRunSummaryWidget to the local player's viewport with its placeholder clear-time/Crowd-Mastery values, so it can be visually confirmed through a real player-observable path rather than only direct construction in test code."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&ShowPostRunSummary));
 }
