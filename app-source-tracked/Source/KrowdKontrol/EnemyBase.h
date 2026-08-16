@@ -45,11 +45,11 @@ class KROWDKONTROL_API AEnemyBase : public AActor
 	// below, so a headless test can drive deterministic proximity checks without a
 	// real per-frame Tick() loop - same rationale UAbilityCooldownComponent's
 	// FKrowdKontrolAbilityCooldownTest friendship documents. Friendship isn't
-	// inherited, so FKrowdKontrolSniperEnemyTest needs its own grant here (not just
-	// on ASniperEnemy) to drive a concrete subclass instance through Idle->Alert->
-	// Attack the same deterministic way.
+	// inherited, so each concrete subclass's own test (Sniper, Bomber) needs its own
+	// grant here to drive an instance through Idle->Alert->Attack deterministically.
 	friend class FKrowdKontrolEnemyBaseTest;
 	friend class FKrowdKontrolSniperEnemyTest;
+	friend class FKrowdKontrolBomberEnemyTest;
 
 public:
 	AEnemyBase();
