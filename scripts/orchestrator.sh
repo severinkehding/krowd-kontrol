@@ -200,8 +200,37 @@ pr_queue() {
   } | sort -u | sort -k1,1 | cut -f2
 }
 
+# Docs-only fast path (2026-08-16 operator decision): a PR whose every changed
+# file lives under docs/ or app-changelog/ merges directly, skipping the
+# validate-pr gauntlet entirely. Those PRs are follow-up splits from the
+# 500-line cap (e.g. #108/#111) and would only waste a full validation run to
+# get rejected - the behavioral reviewer correctly refuses prose-only diffs as
+# unverifiable (exactly PR #109's rejection). Deliberately narrow: ONLY those
+# two directories qualify. Root-level .md files (CLAUDE.md, MISSION.md,
+# FACTORY_RULES.md, README.md...) do NOT - governance goes through the full
+# gate, always. Any single non-qualifying file disqualifies the whole PR.
+docs_only_pr() {
+  local files
+  files=$(gh pr view "$1" -R "$REPO" --json files --jq '.files[].path' 2>/dev/null)
+  [ -z "$files" ] && return 1
+  while IFS= read -r f; do
+    case "$f" in
+      docs/*|app-changelog/*) ;;
+      *) return 1 ;;
+    esac
+  done <<< "$files"
+  return 0
+}
+
 while IFS= read -r pr_number; do
   [ -z "$pr_number" ] && continue
+  if docs_only_pr "$pr_number"; then
+    log "DOCS-ONLY MERGE: PR #$pr_number touches only docs/ and app-changelog/ - merging directly"
+    if gh pr merge "$pr_number" -R "$REPO" --merge --delete-branch 2>&1 | while IFS= read -r l; do log "  $l"; done; then
+      gh pr edit "$pr_number" -R "$REPO" --remove-label "factory:needs-review" --remove-label "factory:needs-fix" 2>/dev/null || true
+    fi
+    continue
+  fi
   capacity_left || break
   dispatch "dark-factory-validate-pr" "validate/pr-$pr_number" "Validate PR #$pr_number"
 done < <(pr_queue)
