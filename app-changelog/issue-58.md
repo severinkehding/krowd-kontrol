@@ -28,17 +28,48 @@ D-009's precedent for `app/`-only, non-source issues.
 ## Acceptance criteria
 
 - [x] **`app/Content/_Placeholder/` exists with subfolders `Characters/`,
-      `Enemies/`, `Abilities/`, `TargetZones/`.** Confirmed via `ls -la`.
-- [x] **README documents (a) the placeholder-first policy.** Quotes
-      `MISSION.md`'s Definition-of-Done near-verbatim.
+      `Enemies/`, `Abilities/`, `TargetZones/`.** Verified via `ls -la
+      app/Content/_Placeholder/`:
+      ```
+      app/Content/_Placeholder/Abilities/
+      app/Content/_Placeholder/Characters/
+      app/Content/_Placeholder/Enemies/
+      app/Content/_Placeholder/README.md
+      app/Content/_Placeholder/TargetZones/
+      ```
+- [x] **README documents (a) the placeholder-first policy.** Verbatim from
+      `app/Content/_Placeholder/README.md`, "## The policy" section:
+      > Per `MISSION.md`'s Definition-of-Done:
+      >
+      > > Placeholder-first: new gameplay elements are built and functional with
+      > > primitive/placeholder art before any marketplace (Fab.com/Unreal Store)
+      > > asset sourcing happens for them.
+      >
+      > In practice: get the gameplay element working with a primitive (cube,
+      > sphere, flat sprite, whatever reads clearly) before spending any time
+      > sourcing or importing a real asset for it. Placeholder art lives here,
+      > under `_Placeholder/<Category>/`, so it's never mistaken for a shipping
+      > asset and never blocks gameplay work on marketplace sourcing.
 - [x] **README documents (b) that marketplace assets replace placeholder content
       only after the core loop is validated as fun, per REQ-3's sequencing.**
+      Verbatim, same section:
+      > Marketplace/Fab.com assets replace placeholder content only after the
+      > core loop is validated as fun — this is PRD 14 (Technical
+      > Architecture)'s REQ-2/REQ-3 sequencing, as referenced in issue #58.
+      > Don't source or import final art ahead of that milestone.
+
       Attributed to PRD 14 (Technical Architecture) as referenced in issue #58 —
       no fabricated PRD 14 file link, since no PRD 14 file exists in this repo.
 - [x] **README documents (c) where final, non-placeholder assets should land
-      instead.** Parallel non-`_Placeholder` folder structure, e.g.
-      `Content/Characters/`, `Content/Enemies/`, `Content/Abilities/`,
-      `Content/TargetZones/` — documented as a destination, not created now.
+      instead.** Verbatim from the "## Where final assets land instead"
+      section:
+      > When a category's placeholder art is ready to be replaced, the final
+      > asset goes into a parallel, non-`_Placeholder` folder structure at the
+      > same level as this one, e.g. `Content/Characters/`,
+      > `Content/Enemies/`, `Content/Abilities/`, `Content/TargetZones/`.
+      > Those folders don't exist yet — they get created when the first final
+      > asset for that category actually lands, not speculatively ahead of
+      > that.
 - [x] **No gameplay assets (meshes, sprites, blueprints) created by this change.**
       Verified — only directories and one Markdown file.
 - [x] **`harness/ci.py` still reports `GATE_OK` (unaffected baseline).** Full mode
