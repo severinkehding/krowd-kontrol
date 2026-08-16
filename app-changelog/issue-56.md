@@ -28,10 +28,10 @@ record of that change, see the closing note below)
 | File | Action | What it contains |
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/FlatCamera3DPrototypePawn.h` | CREATE | Pawn declaration: `MeshComponent` (root), `MovementComponent` (`UFloatingPawnMovement`), `CameraBoom` (`USpringArmComponent`), `TopDownCamera` (`UCameraComponent`), `SetupPlayerInputComponent()` override |
-| `app/Source/KrowdKontrol/FlatCamera3DPrototypePawn.cpp` | CREATE | Implementation: default cube mesh via `ConstructorHelpers::FObjectFinder` (placeholder-first pattern), `MovementComponent->SetUpdatedComponent(MeshComponent)` (goes through the engine setter so `UpdatedPrimitive` and the physics-volume-changed delegate are populated/bound, not just a raw field write), `CameraBoom` at `-80°` pitch/`800` arm length/no collision test/no pawn-control rotation, `MoveForward`/`MoveRight` bound to world-space `AddMovementInput` |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | CREATE | `KrowdKontrol.Unit.FlatCamera3DPipelineSmoke` — spawns the pawn via `FAutomationEditorCommonUtils::CreateNewMap()`, asserts all 4 components are non-null, mesh is root, movement component drives the mesh root (not just references it), camera boom pitch `<= -45°`, boom rotation locked (`bUsePawnControlRotation == false`), and that `SetupPlayerInputComponent` actually registers both `MoveForward`/`MoveRight` axis bindings |
+| `app/Source/KrowdKontrol/FlatCamera3DPrototypePawn.cpp` | CREATE | Implementation: default cube mesh via `ConstructorHelpers::FObjectFinder` (placeholder-first pattern), `MovementComponent->SetUpdatedComponent(MeshComponent)` (defensive explicit call — verified against UE 5.8 engine source that `OnRegister()`'s auto-detection would reach the same state via the same setter either way), `CameraBoom` at `-80°` pitch/`800` arm length/no collision test/no pawn-control rotation, `MoveForward`/`MoveRight` bound to world-space `AddMovementInput` |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | CREATE/UPDATE (this pass) | `KrowdKontrol.Unit.FlatCamera3DPipelineSmoke` — spawns the pawn via `FAutomationEditorCommonUtils::CreateNewMap()`, asserts all 4 components are non-null, mesh non-null with the correct default-cube asset path, mesh is root, movement component drives the mesh root, camera boom pitch `<= -45°` with rotation/collision-test locked, camera's own rotation lock, that `SetupPlayerInputComponent` registers both axis bindings against the project's actual configured input component class (`UInputSettings::GetDefaultInputComponentClass()`, resolving to `UEnhancedInputComponent`) rather than a bare `UInputComponent`, and that invoking the bound delegates accumulates world-space movement input, not actor-relative. Also adds `KrowdKontrol.Unit.FlatCamera3DPipelineLevelHasConfiguredPawn`, which loads the actual shipped `L_FlatCamera3DPrototype.umap` and re-asserts the camera lock against the placed instance rather than a throwaway spawn |
 | `app/Config/DefaultInput.ini` | app/-only, not mirrored (`.ini`, not `.h`/`.cpp`/`.Build.cs`, and outside `app/Source/` — falls outside the `app-source-tracked/` carve-out CLAUDE.md documents) | 8 `AxisMappings` entries binding `MoveForward`/`MoveRight` to WASD and arrow keys |
-| `app/Content/Maps/L_FlatCamera3DPrototype.umap` | app/-only, not mirrored (binary, not text-diffable) | Test level; verified via live Unreal MCP to contain a placed `FlatCamera3DPrototypePawn_0` instance with the expected `-80°` boom pitch |
+| `app/Content/Maps/L_FlatCamera3DPrototype.umap` | app/-only, not mirrored (binary, not text-diffable) | Test level; verified via live Unreal MCP to contain a placed `FlatCamera3DPrototypePawn_0` instance with the expected `-80°` boom pitch; now also covered by the automation test above |
 
 No `app/Source/KrowdKontrol/KrowdKontrol.Build.cs` change was needed —
 `UFloatingPawnMovement`, `USpringArmComponent`, and `UCameraComponent` are all
@@ -54,11 +54,19 @@ already-covered `Engine`-module types.
 
 ## Validation
 
+Re-run after a self-fix pass addressing review findings on PR #102 (extended smoke-test
+coverage, added the level-load test, closed the OnRegister/InitializeComponent doc
+inaccuracy — see below). `scripts/ue_editor_close.sh` closed the live Editor session
+first so `Build.bat KrowdKontrolEditor Win64 Development -waitmutex` was a genuine
+recompile, not a stale-`.dll` reuse (`[1/5] Compile FlatCamera3DPrototypePawn.cpp`,
+`[2/5] Compile KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp`, `Result: Succeeded`),
+before `harness/ci.py` ran:
+
 ```
 $ python harness/ci.py
 HARNESS_START mode=full driver=cli
 STATIC_SKIPPED no 'static' command in harness.config.json
-UNIT_PASSED tests=16
+UNIT_PASSED tests=18
 APP_STARTED driver=cli
 UE_AUTOMATION_RESULT passed=1 total=1
 UE_AUTOMATION_OK
@@ -68,9 +76,47 @@ MUTATIONS_ABSENT no harness/mutations/run.py - this gate has never been shown to
 GATE_OK mode=full
 ```
 
-`UNIT_PASSED tests=16` covers `KrowdKontrol.Unit.FlatCamera3DPipelineSmoke` alongside
-every other pre-existing `KrowdKontrol.Unit.*`/`KrowdKontrol.Smoke.*` test — no
-regression.
+`UNIT_PASSED tests=18` covers `KrowdKontrol.Unit.FlatCamera3DPipelineSmoke` and the new
+`KrowdKontrol.Unit.FlatCamera3DPipelineLevelHasConfiguredPawn` (the two flat-camera-3D
+tests) alongside every other pre-existing `KrowdKontrol.Unit.*`/`KrowdKontrol.Smoke.*`
+test — no regression. This number is one higher than the 17 previously reported in this
+PR's description because that run predated this changelog's own second test; both
+numbers are now reconciled against this single fresh run rather than living in two
+places that could drift.
+
+### Findings addressed in this self-fix pass (PR #102 review)
+
+- **Enhanced Input compatibility, previously untested (CRITICAL)**: the smoke test now
+  constructs against `UInputSettings::GetDefaultInputComponentClass()` (resolves to
+  `UEnhancedInputComponent` per `DefaultInput.ini`) instead of a bare `UInputComponent`,
+  mirroring `APawn::CreatePlayerInputComponent()`'s own construction pattern
+  (`Engine/Private/Pawn.cpp`). The friction-notes doc's "it works" claim is reworded to
+  reflect what's now actually verified vs. still open.
+- **`OnRegister()` vs. `InitializeComponent()` comment conflict (MEDIUM)**: resolved by
+  reading UE 5.8's actual `MovementComponent.cpp` — `OnRegister()` does call
+  `SetUpdatedComponent()` again unconditionally in a game world (even correcting a
+  prior raw field write), so the explicit constructor call is defensive, not required.
+  Comment and doc corrected accordingly.
+- **Missing mesh-asset assertion (HIGH)**: added, mirroring
+  `KrowdKontrolPlaceholderCubeActorTest.cpp`'s non-null + path-equality pattern.
+- **No coverage of the real `.umap` (HIGH)**: added
+  `KrowdKontrol.Unit.FlatCamera3DPipelineLevelHasConfiguredPawn`, which loads
+  `/Game/Maps/L_FlatCamera3DPrototype` via `FAutomationEditorCommonUtils::LoadMap()` and
+  re-asserts the camera lock against the actually-placed pawn instance.
+- **Partial camera-lock assertions (MEDIUM)**: added `bDoCollisionTest` and the camera's
+  own `bUsePawnControlRotation` checks (previously only the boom's flags were checked).
+- **Movement bindings untested for behavior (MEDIUM)**: added a check that invoking the
+  bound `MoveForward`/`MoveRight` delegates accumulates world-space
+  `ForwardVector`+`RightVector` into the pawn's pending movement input, not an
+  actor-relative equivalent — the deliberate design a source comment already called out.
+- **Not addressed (protected paths)**: `app-changelog/` missing from `CLAUDE.md`'s Repo
+  Layout tree, and the Conventions section's stale `TBD` banner — both require editing
+  `CLAUDE.md`, a protected path this PR cannot touch (see `CLAUDE.md`'s own Protected
+  Paths section). Left as follow-up issues.
+- **Not addressed (structural, not this PR's defect)**: axis-name strings having no
+  single tracked source of truth against `DefaultInput.ini` — inherent to `app/Config/`
+  being outside the `app-source-tracked/` carve-out (D-009), not fixable without
+  mirroring `.ini` files.
 
 ---
 

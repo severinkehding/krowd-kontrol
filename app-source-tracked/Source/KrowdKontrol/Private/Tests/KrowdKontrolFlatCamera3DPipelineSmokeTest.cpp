@@ -15,12 +15,16 @@
 #include "Misc/AutomationTest.h"
 #include "FlatCamera3DPrototypePawn.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
+#include "GameFramework/InputSettings.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Editor.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -68,6 +72,14 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("MeshComponent should be the pawn's root component"),
 		Pawn->GetRootComponent(), static_cast<USceneComponent*>(MeshComponent));
 
+	UStaticMesh* StaticMesh = MeshComponent->GetStaticMesh();
+	if (!TestNotNull(TEXT("MeshComponent should have a static mesh assigned"), StaticMesh))
+	{
+		return false;
+	}
+	TestEqual(TEXT("MeshComponent should use the engine's default cube mesh"),
+		StaticMesh->GetPathName(), FString(TEXT("/Engine/BasicShapes/Cube.Cube")));
+
 	TestEqual(TEXT("MovementComponent should drive the mesh root component"),
 		static_cast<USceneComponent*>(MovementComponent->UpdatedComponent),
 		static_cast<USceneComponent*>(MeshComponent));
@@ -77,26 +89,107 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 
 	TestFalse(TEXT("CameraBoom rotation should be locked, not player-controlled"),
 		Pawn->CameraBoom->bUsePawnControlRotation);
+	TestFalse(TEXT("CameraBoom should not collision-test, to avoid zooming through geometry"),
+		Pawn->CameraBoom->bDoCollisionTest);
+	TestFalse(TEXT("TopDownCamera rotation should also be locked, not player-controlled"),
+		Pawn->TopDownCamera->bUsePawnControlRotation);
 
-	// Confirms SetupPlayerInputComponent's BindAxis calls actually register, not just
-	// that the pawn has an InputComponent - but this exercises a plain UInputComponent,
-	// not the project's configured UEnhancedInputComponent (DefaultInput.ini). The
-	// Enhanced-Input-vs-legacy-BindAxis compatibility question
-	// docs/flat-camera-3d-prototype-notes.md raises is still open pending a live PIE check.
-	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn);
+	// Constructs against the project's actual configured input component class
+	// (UInputSettings::GetDefaultInputComponentClass(), resolving to
+	// UEnhancedInputComponent per DefaultInput.ini) rather than a bare UInputComponent,
+	// mirroring exactly how APawn::CreatePlayerInputComponent() constructs the real one
+	// (Engine/Private/Pawn.cpp). This closes the gap the previous version of this test
+	// left open: legacy BindAxis() is now proven to register against the same concrete
+	// class the project actually uses at runtime, not just the legacy base class.
+	UClass* InputComponentClass = UInputSettings::GetDefaultInputComponentClass();
+	if (!TestNotNull(TEXT("Project should have a configured default InputComponent class"), InputComponentClass))
+	{
+		return false;
+	}
+
+	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn, InputComponentClass);
 	InputComponent->RegisterComponent();
 	Pawn->SetupPlayerInputComponent(InputComponent);
 
 	bool bHasMoveForwardBinding = false;
 	bool bHasMoveRightBinding = false;
-	for (const FInputAxisBinding& Binding : InputComponent->AxisBindings)
+	FInputAxisBinding* MoveForwardBinding = nullptr;
+	FInputAxisBinding* MoveRightBinding = nullptr;
+	for (FInputAxisBinding& Binding : InputComponent->AxisBindings)
 	{
-		bHasMoveForwardBinding |= (Binding.AxisName == TEXT("MoveForward"));
-		bHasMoveRightBinding |= (Binding.AxisName == TEXT("MoveRight"));
+		if (Binding.AxisName == TEXT("MoveForward"))
+		{
+			bHasMoveForwardBinding = true;
+			MoveForwardBinding = &Binding;
+		}
+		else if (Binding.AxisName == TEXT("MoveRight"))
+		{
+			bHasMoveRightBinding = true;
+			MoveRightBinding = &Binding;
+		}
 	}
 
 	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveForward axis"), bHasMoveForwardBinding);
 	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveRight axis"), bHasMoveRightBinding);
+
+	// Invokes the bound delegates directly (as UPlayerInput::ProcessInputStack would
+	// each frame) and checks the deliberate world-space-vs-actor-relative design
+	// FlatCamera3DPrototypePawn.cpp's MoveForward()/MoveRight() call out in their own
+	// comment: AddMovementInput(FVector::ForwardVector/RightVector, Value) accumulates
+	// into the pawn's pending movement input in world space, so a plausible-looking
+	// "fix" to actor-relative movement (GetActorForwardVector()) would change this
+	// result and fail here.
+	if (MoveForwardBinding && MoveRightBinding)
+	{
+		Pawn->ConsumeMovementInputVector();
+		MoveForwardBinding->AxisDelegate.Execute(1.0f);
+		MoveRightBinding->AxisDelegate.Execute(1.0f);
+
+		const FVector PendingInput = Pawn->GetPendingMovementInputVector();
+		TestEqual(TEXT("MoveForward/MoveRight should accumulate world-space ForwardVector + RightVector, not actor-relative"),
+			PendingInput, FVector::ForwardVector + FVector::RightVector);
+	}
+
+	return true;
+}
+
+// Regression coverage for the acceptance criterion that
+// L_FlatCamera3DPrototype.umap itself (not just the pawn class in a throwaway map)
+// contains a correctly-configured placed pawn instance. CreateNewMap()-based tests
+// above prove the class works but can't catch a future edit to the shipped level
+// (e.g. an instance-level override resetting the boom pitch) - only opening the real
+// map can.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolFlatCamera3DPipelineLevelTest,
+	"KrowdKontrol.Unit.FlatCamera3DPipelineLevelHasConfiguredPawn",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolFlatCamera3DPipelineLevelTest::RunTest(const FString& Parameters)
+{
+	FAutomationEditorCommonUtils::LoadMap(TEXT("/Game/Maps/L_FlatCamera3DPrototype"));
+
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("L_FlatCamera3DPrototype should load into a valid World"), World))
+	{
+		return false;
+	}
+
+	AFlatCamera3DPrototypePawn* PlacedPawn = nullptr;
+	for (TActorIterator<AFlatCamera3DPrototypePawn> It(World); It; ++It)
+	{
+		PlacedPawn = *It;
+		break;
+	}
+
+	if (!TestNotNull(TEXT("L_FlatCamera3DPrototype should contain a placed AFlatCamera3DPrototypePawn"), PlacedPawn))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("Placed pawn's CameraBoom pitch should be genuinely top-down (<= -45 degrees)"),
+		PlacedPawn->CameraBoom->GetRelativeRotation().Pitch <= -45.0f);
+	TestFalse(TEXT("Placed pawn's CameraBoom rotation should be locked, not player-controlled"),
+		PlacedPawn->CameraBoom->bUsePawnControlRotation);
 
 	return true;
 }

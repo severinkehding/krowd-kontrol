@@ -24,10 +24,9 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	}
 
 	MovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("MovementComponent"));
-	// Goes through the engine's setter rather than a raw field assignment so
-	// UpdatedPrimitive gets populated and the physics-volume-changed delegate gets bound -
-	// both are side effects OnRegister()'s auto-detection wouldn't have skipped, but a
-	// direct field write would.
+	// MeshComponent is already RootComponent, so OnRegister()'s auto-detection would
+	// reach the same UpdatedComponent via the same setter either way. Set explicitly
+	// here anyway so the wiring is visible at the call site rather than implicit.
 	MovementComponent->SetUpdatedComponent(MeshComponent);
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));

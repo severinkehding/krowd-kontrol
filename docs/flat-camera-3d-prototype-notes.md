@@ -8,20 +8,24 @@ it's raw input for it.
 
 ## Friction encountered
 
-- **`UFloatingPawnMovement` needs `SetUpdatedComponent()`, not a raw field assignment.**
-  Setting `MovementComponent->UpdatedComponent = MeshComponent` directly compiles and
-  looks correct, but skips side effects `OnRegister()`'s auto-detection would otherwise
-  have handled: `UpdatedPrimitive` doesn't get populated, and the physics-volume-changed
-  delegate doesn't get bound. Going through the engine's `SetUpdatedComponent()` setter
-  avoids both. Easy to get wrong silently — the pawn still moves in a quick PIE check,
-  the gap only shows up in physics-volume-dependent behavior.
+- **`UFloatingPawnMovement`'s explicit `SetUpdatedComponent()` call is defensive, not
+  strictly required.** `MeshComponent` is already `RootComponent`, so
+  `OnRegister()`'s auto-detection reaches the same `UpdatedComponent` via the same
+  setter either way — verified against UE 5.8 engine source
+  (`Engine/Source/Runtime/Engine/Private/Components/MovementComponent.cpp`):
+  `OnRegister()` unconditionally calls `SetUpdatedComponent()` again in a game world,
+  even correcting a prior raw field write. Kept the explicit call anyway so the wiring
+  is visible at the call site rather than implicit.
 - **Legacy `BindAxis` vs. Enhanced Input.** `DefaultInput.ini` already sets
   `DefaultPlayerInputClass`/`DefaultInputComponentClass` to the Enhanced Input classes
   project-wide, but this pawn's `SetupPlayerInputComponent` uses the legacy
   `PlayerInputComponent->BindAxis()` API against classic `AxisMappings` entries in
-  `DefaultInput.ini`, and it works — Enhanced Input's classes are backward-compatible
-  with legacy axis binding. Left as an open question below rather than resolved here,
-  since resolving it isn't in scope for a pipeline-comparison prototype.
+  `DefaultInput.ini`. It appears to work in a quick PIE check, and Enhanced Input's
+  classes are documented as backward-compatible with legacy axis binding — but this
+  wasn't verified against the project's actual `UEnhancedInputComponent` until the
+  smoke test was extended to construct against `UInputSettings::GetDefaultInputComponentClass()`
+  instead of a hardcoded `UInputComponent`; see "Open questions" below for what that
+  still doesn't cover.
 - **MCP reachability was the actual blocker across all three attempts at this issue,
   not the gameplay code.** The pawn, test, and input mappings were already correct
   after the first attempt. The first two attempts couldn't verify or author the level
@@ -44,6 +48,13 @@ it's raw input for it.
 
 ## Open questions for the Paper2D comparison
 
+- Is legacy `BindAxis` against `UEnhancedInputComponent` actually reliable in a live PIE
+  session, or did this prototype get lucky in a quick manual check? The smoke test now
+  constructs the same input component class the project actually configures
+  (`UInputSettings::GetDefaultInputComponentClass()`) and confirms the axis bindings
+  register against it, which is stronger evidence than the original bare-`UInputComponent`
+  check — but it still doesn't invoke the bound delegates through a live PIE input event,
+  only through the automation test's direct delegate call.
 - Does the Paper2D prototype hit the same legacy-`BindAxis`-vs-Enhanced-Input question,
   or does 2D sprite/tile tooling push toward Enhanced Input more directly?
 - Is a `USpringArmComponent` pitch lock (`-80°`, no collision test, no pawn-control
