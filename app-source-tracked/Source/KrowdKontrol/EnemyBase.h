@@ -5,6 +5,8 @@
 #include "AbilitySlot.h"
 #include "EnemyBase.generated.h"
 
+class UPlayerEnergyComponent;
+
 // Idle -> Alert -> Attack -> Controlled -> Banked, with Banked as the only reachable
 // "defeated" state. Transition table (no other edges exist):
 //   Idle -> Alert: player enters DetectionRangeUnits (proximity check, no perception
@@ -45,11 +47,11 @@ class KROWDKONTROL_API AEnemyBase : public AActor
 	// below, so a headless test can drive deterministic proximity checks without a
 	// real per-frame Tick() loop - same rationale UAbilityCooldownComponent's
 	// FKrowdKontrolAbilityCooldownTest friendship documents. Friendship isn't
-	// inherited, so FKrowdKontrolSniperEnemyTest needs its own grant here (not just
-	// on ASniperEnemy) to drive a concrete subclass instance through Idle->Alert->
-	// Attack the same deterministic way.
+	// inherited, so each concrete subclass's own test (Sniper, Bomber) needs its own
+	// grant here to drive an instance through Idle->Alert->Attack deterministically.
 	friend class FKrowdKontrolEnemyBaseTest;
 	friend class FKrowdKontrolSniperEnemyTest;
+	friend class FKrowdKontrolBomberEnemyTest;
 
 public:
 	AEnemyBase();
@@ -81,6 +83,14 @@ protected:
 	// Per-type attack range, in units. Base default is 0.0f (never reaches Attack on
 	// its own); a concrete subclass overrides this per issue #12's AC.
 	virtual float GetAttackRangeUnits() const { return 0.0f; }
+
+	// TActorIterator, not UGameplayStatics::GetPlayerPawn() - the latter needs a
+	// driven World->BeginPlay() pass this module's Automation tests never run.
+	// Assumes exactly one live APawn carries UPlayerEnergyComponent (true today;
+	// revisit if local co-op/split-screen or a debug dummy pawn is ever added).
+	// Returns nullptr (and logs a warning) if no such pawn is found. See issue #15,
+	// the first enemy-attack code path to actually touch player state.
+	UPlayerEnergyComponent* FindPlayerEnergyComponent() const;
 
 	// C++-only (not BlueprintNativeEvent) until a real concrete subclass exists to
 	// inform whether these hooks need Blueprint override - same rationale
