@@ -50,6 +50,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber")
 	float ExplosionDamageAmount = 999.0f;
 
+	// "Slow movement" AC sub-clause (issue #15, PRD 03's table). The Enemy AI state
+	// machine is proximity-only today (see EnemyBase.h's TickCheckDetection) - no
+	// movement/pathing component exists anywhere yet, so this isn't wired to a live
+	// nav system. Exposed as a plain tunable, well below UCharacterMovementComponent's
+	// engine default MaxWalkSpeed (600.0f) - the closest "normal" reference point
+	// available, since ASniperEnemy (long-range; never needs to close distance) has no
+	// comparable property of its own - so the clause is at least testably addressed
+	// pending that integration.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0"))
+	float MovementSpeed = 200.0f;
+
 	// Fires once the attack telegraph elapses.
 	UPROPERTY(BlueprintAssignable, Category = "Bomber")
 	FOnBomberExploded OnBomberExploded;
