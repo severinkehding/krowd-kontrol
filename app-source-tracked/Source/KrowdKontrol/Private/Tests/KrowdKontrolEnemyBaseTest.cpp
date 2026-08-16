@@ -17,6 +17,8 @@
 #include "EnemyBase.h"
 #include "EnemyBaseTestActor.h"
 #include "EnemyBankedTestListener.h"
+#include "Tests/AutomationEditorCommon.h"
+#include "Engine/World.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -139,6 +141,24 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	// killed).
 	TestFalse(TEXT("Enemy actor should not be destroyed by reaching Banked"),
 		AlertControlled->IsActorBeingDestroyed());
+
+	// (k) the real Tick() override, not just the friend-called TickCheckDetection
+	// helper, must not crash when GetPlayerPawn returns nullptr (a headless test map
+	// with no PlayerController spawned) - proves the null-pawn guard actually wires
+	// into the per-frame loop, not just that it reads correctly in isolation.
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		AEnemyBaseTestActor* TickedEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), TickedEnemy))
+		{
+			// No PlayerController/pawn spawned - exercises the GetPlayerPawn-returns-
+			// nullptr branch instead of a real detection check.
+			TickedEnemy->Tick(0.1f);
+			TestEqual(TEXT("Tick() with no player pawn present should leave state at Idle"),
+				static_cast<uint8>(TickedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Idle));
+		}
+	}
 
 	return true;
 }

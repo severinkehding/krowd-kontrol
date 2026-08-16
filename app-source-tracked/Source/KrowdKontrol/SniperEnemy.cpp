@@ -58,6 +58,13 @@ float ASniperEnemy::GetAttackRangeUnits() const
 
 void ASniperEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
+	// ReceiveControl only calls this from Alert/Attack, so any in-progress attack
+	// telegraph is aborted the moment Controlled is entered - clear the tell
+	// regardless of which ability triggered this, so a sniper put to sleep/rooted/
+	// etc. mid-telegraph doesn't keep showing a shot that AdvanceAttackTelegraph now
+	// guarantees will never fire.
+	AttackTellLightComponent->SetIntensity(0.0f);
+
 	if (Ability != EAbilitySlot::Sleep)
 	{
 		return;

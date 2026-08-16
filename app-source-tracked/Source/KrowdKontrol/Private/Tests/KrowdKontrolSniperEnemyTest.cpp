@@ -135,6 +135,32 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Sniper's long attack range should reach Attack well beyond a short-range distance"),
 		static_cast<uint8>(LongRangeSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 
+	// (k) the attack tell colour must not collide with any of MISSION.md Hard
+	// Invariant 3's five reserved gameplay-information colours - the placeholder was
+	// hand-verified against ReservedGameplayColours.cpp's current values, but this
+	// assertion is the automated backstop against a future colour tweak silently
+	// reusing one of them.
+	TestFalse(TEXT("Attack tell colour should not collide with a reserved gameplay-information colour"),
+		ReservedGameplayColours::GetAll().ContainsByPredicate(
+			[TellLight](const FLinearColor& Reserved) { return Reserved.Equals(TellLight->GetLightColor(), 0.01f); }));
+
+	// (l) ReceiveControl interrupting an in-progress attack telegraph clears the tell
+	// light, so a sniper put to sleep mid-telegraph doesn't keep showing a shot that
+	// will never fire (the state guard in AdvanceAttackTelegraph already stops the
+	// shot itself - this proves the visual is cleared too).
+	ASniperEnemy* InterruptedSniper = NewObject<ASniperEnemy>();
+	InterruptedSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	InterruptedSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	TestTrue(TEXT("Attack tell should be visibly on before the interrupt"),
+		InterruptedSniper->AttackTellLightComponent->Intensity > 0.0f);
+	InterruptedSniper->ReceiveControl(EAbilitySlot::Sleep);
+	TestEqual(TEXT("Attack tell should be cleared once Controlled interrupts the attack"),
+		InterruptedSniper->AttackTellLightComponent->Intensity, 0.0f);
+	USniperShotFiredTestListener* InterruptedListener = NewObject<USniperShotFiredTestListener>();
+	InterruptedSniper->OnSniperShotFired.AddDynamic(InterruptedListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+	InterruptedSniper->AdvanceAttackTelegraph(InterruptedSniper->AttackTelegraphSeconds);
+	TestEqual(TEXT("The interrupted shot should never fire"), InterruptedListener->CallCount, 0);
+
 	return true;
 }
 
