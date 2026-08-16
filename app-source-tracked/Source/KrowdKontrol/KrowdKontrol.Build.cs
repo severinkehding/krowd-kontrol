@@ -21,7 +21,12 @@ public class KrowdKontrol : ModuleRules
 		// array entry.
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "Paper2D" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+		// UMG for UPostRunSummaryWidget (issue #74). No Widget Blueprint asset involved;
+		// the class builds its own tree in C++ via WidgetTree->ConstructWidget<T>(), which
+		// still requires the UMG module on the include/link path - same pattern as
+		// UAbilityCooldownTrayWidget/UEnergyMeterWidget, whose own app-source-tracked/
+		// Build.cs mirror was never updated for it until now.
+		PrivateDependencyModuleNames.AddRange(new string[] { "UMG", "Slate", "SlateCore" });
 
 		if (Target.bBuildEditor)
 		{
@@ -31,9 +36,6 @@ public class KrowdKontrol : ModuleRules
 			PrivateDependencyModuleNames.Add("UnrealEd");
 		}
 
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 

@@ -1,19 +1,22 @@
 // Confirms ReservedGameplayColours (issue #70) is internally consistent - GetAll()
 // has exactly 5 entries matching the 5 named accessors, all mutually distinct - and
-// then audits UAbilityCooldownTrayWidget's known chrome colours against it, asserting
-// none collide with a reserved value. The audit checks all 5 of the tray's slots, not
-// just index 0 like KrowdKontrolAbilityCooldownTrayWidgetTest.cpp's own precedent
-// check, since this test's entire purpose is the audit's completeness. Also covers
-// SlotCooldownTexts[i] (not just SlotIconBorders[i]) since the widget's own
-// BuildWidgetTree() comment claims text colour is reserved-colour-safe chrome too.
+// then audits each tracked widget's known chrome colours against it, asserting none
+// collide with a reserved value. The tray audit checks all 5 slots, not just index 0
+// like KrowdKontrolAbilityCooldownTrayWidgetTest.cpp's own precedent check, since this
+// test's entire purpose is the audit's completeness. Also covers SlotCooldownTexts[i]
+// (not just SlotIconBorders[i]) since the widget's own BuildWidgetTree() comment
+// claims text colour is reserved-colour-safe chrome too.
 //
-// Widgets currently audited here: UAbilityCooldownTrayWidget only. UEnergyMeterWidget
-// is issue #64/PR #92's deliverable and isn't part of this branch yet - its audit is a
-// follow-up once that PR merges. Add any future HUD widget's chrome to this list.
+// Widgets currently audited here: UAbilityCooldownTrayWidget and
+// UPostRunSummaryWidget (issue #74). UEnergyMeterWidget is issue #64/PR #92's
+// deliverable and still isn't audited here - a pre-existing gap, not introduced by
+// issue #74, tracked as a separate follow-up. Add any future HUD widget's chrome to
+// this list.
 //
-// Needs friend-class access to the widget's private SlotIconBorders/SlotCooldownTexts
-// members (see FKrowdKontrolReservedGameplayColoursTest friend declaration in
-// AbilityCooldownTrayWidget.h) rather than widening its public API.
+// Needs friend-class access to each widget's private chrome members (e.g.
+// SlotIconBorders/SlotCooldownTexts, RootBorder) - see each widget's own
+// FKrowdKontrolReservedGameplayColoursTest friend declaration - rather than widening
+// their public API.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -21,6 +24,7 @@
 #include "Misc/AutomationTest.h"
 #include "ReservedGameplayColours.h"
 #include "AbilityCooldownTrayWidget.h"
+#include "PostRunSummaryWidget.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Components/Border.h"
@@ -98,7 +102,21 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 		}
 	}
 
-	// (3) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
+	// (3) Post-run summary screen audit (issue #74) - background border and both text
+	// fields, mirroring the tray widget's audit above.
+	UPostRunSummaryWidget* SummaryWidget =
+		CreateWidget<UPostRunSummaryWidget>(World, UPostRunSummaryWidget::StaticClass());
+	if (TestNotNull(TEXT("UPostRunSummaryWidget should construct"), SummaryWidget))
+	{
+		TestFalse(TEXT("Summary root border colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(SummaryWidget->RootBorder->GetBrushColor()));
+		TestFalse(TEXT("Clear time text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(SummaryWidget->ClearTimeText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Crowd Mastery text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(SummaryWidget->CrowdMasteryText->GetColorAndOpacity().GetSpecifiedColor()));
+	}
+
+	// (4) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
 	// genuine collision, not just on the (never-colliding) real widget colours above -
 	// guards against an inverted/typo'd assertion silently passing forever.
 	UBorder* CollidingBorder = NewObject<UBorder>(GetTransientPackage());
