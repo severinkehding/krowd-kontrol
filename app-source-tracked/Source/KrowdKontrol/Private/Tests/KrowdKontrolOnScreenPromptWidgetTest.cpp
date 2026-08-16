@@ -14,9 +14,10 @@
 // unbuilt-tree cases use a bare NewObject() instead (no World needed) via this test
 // class's friend-class access. Most of this test calls AdvanceDismissTimer() directly,
 // since NativeTick's usual driver - live Slate ticking - isn't available under
-// -nullrhi; the NativeTick() override itself is still called directly once (via
-// friend-class access, bypassing Slate) to cover the real per-frame call site rather
-// than relying solely on the AdvanceDismissTimer() proxy.
+// -nullrhi; the NativeTick() override itself is still called directly twice (via
+// friend-class access, bypassing Slate) - once to prove it advances the timer via
+// AdvanceDismissTimer(), once to prove it's a no-op while idle - rather than
+// relying solely on the AdvanceDismissTimer() proxy.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.

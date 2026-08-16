@@ -28,7 +28,7 @@ prompt; that's explicitly deferred to future onboarding work (e.g. PRD 09 REQ-5)
 - [x] **Showing a prompt never pauses the game or blocks player input.** The widget's
       chrome only ever uses `ESlateVisibility::Collapsed` (idle) or
       `HitTestInvisible` (showing) — never `Visible` — which structurally guarantees it
-      can't intercept input. Verified by test case (c).
+      can't intercept input. Verified by test cases (c)/(e).
 - [x] **Each prompt auto-dismisses at the ~2 second cap; no caller can make it persist
       or stack past it.** `ShowPrompt()` clamps `DurationSeconds` to
       `[0, MaxPromptDurationSeconds]` (2.0f) unconditionally, and re-triggering while a

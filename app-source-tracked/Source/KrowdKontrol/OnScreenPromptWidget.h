@@ -56,7 +56,7 @@ public:
 
 	// Read-only accessor for what's currently displayed - used by the Automation
 	// Framework test, also generally useful to anything that wants to confirm the
-	// prompt's state without re-deriving formatting.
+	// prompt's current text.
 	UFUNCTION(BlueprintPure, Category = "On-Screen Prompt")
 	FText GetPromptDisplayText() const;
 
