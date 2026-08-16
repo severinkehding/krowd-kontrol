@@ -15,7 +15,18 @@
 
 set -uo pipefail
 
-PIDS=$(tasklist.exe 2>/dev/null | grep -iE "^UnrealEditor(-Cmd)?\.exe|^CrashReportClientEditor" | awk '{print $2}')
+# Absolute paths, not bare "tasklist.exe"/"taskkill.exe" - cron's PATH (set explicitly
+# in the crontab entry to fix bun/gh resolution) has no Windows System32 dir, so the
+# bare form silently resolves to "command not found" (exit 127, swallowed by
+# 2>/dev/null) under real automated dispatch, making this whole script a no-op that
+# still reports UE_EDITOR_CLOSE_OK. Found live 2026-08-16: two concurrent
+# UnrealEditor.exe processes coexisted through several ensure-editor-closed
+# "successes" in a row because of exactly this. Matches the UE_EXE absolute-path
+# convention already used in ue_editor_launch_and_wait.sh.
+TASKLIST="${KROWD_KONTROL_TASKLIST_EXE:-/mnt/c/Windows/System32/tasklist.exe}"
+TASKKILL="${KROWD_KONTROL_TASKKILL_EXE:-/mnt/c/Windows/System32/taskkill.exe}"
+
+PIDS=$("$TASKLIST" 2>/dev/null | grep -iE "^UnrealEditor(-Cmd)?\.exe|^CrashReportClientEditor" | awk '{print $2}')
 
 if [ -z "$PIDS" ]; then
   echo "UE_EDITOR_CLOSE_OK already closed"
@@ -23,11 +34,11 @@ if [ -z "$PIDS" ]; then
 fi
 
 for PID in $PIDS; do
-  taskkill.exe /F /PID "$PID" >/dev/null 2>&1 || true
+  "$TASKKILL" /F /PID "$PID" >/dev/null 2>&1 || true
 done
 
 sleep 1
-REMAINING=$(tasklist.exe 2>/dev/null | grep -iE "^UnrealEditor(-Cmd)?\.exe|^CrashReportClientEditor" | wc -l)
+REMAINING=$("$TASKLIST" 2>/dev/null | grep -iE "^UnrealEditor(-Cmd)?\.exe|^CrashReportClientEditor" | wc -l)
 if [ "$REMAINING" -eq 0 ]; then
   echo "UE_EDITOR_CLOSE_OK closed $(echo "$PIDS" | wc -w) process(es)"
   exit 0
