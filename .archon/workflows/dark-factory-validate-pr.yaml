@@ -270,6 +270,11 @@ nodes:
     depends_on: [fetch-pr, fetch-linked-issue, run-harness-p1]
     context: fresh
     allowed_tools: [Bash]
+    # Best-effort MCP access (2026-08-16, closes part of D-005) — only reachable if
+    # the operator happens to have the Editor open with the MCP server started at
+    # dispatch time; the command's Phase 0 fallback (honest "not independently
+    # verified") still applies whenever it isn't. See CLAUDE.md's Environment section.
+    mcp: .archon/mcp/unreal.json
     output_format:
       type: object
       properties:
@@ -460,6 +465,8 @@ nodes:
     depends_on: [fix-issues, fetch-pr, fetch-linked-issue, run-harness-p2]
     context: fresh
     allowed_tools: [Bash]
+    # Best-effort MCP access — see behavioral-e2e-p1's identical comment above.
+    mcp: .archon/mcp/unreal.json
     output_format:
       type: object
       properties:

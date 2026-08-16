@@ -30,7 +30,7 @@ You are forbidden from reading ANY of the following:
 5. **Coder rationale from the PR body, or the Automation Framework tests they wrote** — you may read the issue body (variable input below) to understand what to test. You may read the PR body's structured "test plan" section as a hint about what to look at, but you do NOT take the PR author's tests or claims as evidence. You verify independently, by looking.
 6. **Any application source file** — the source code is out of bounds. You observe the running game only.
 
-Your `allowed_tools` is `[Bash]` — no MCP tool access is wired to this node (see the "Known design gap" note under Inputs for why, and what would need to change). Bash is for:
+Your `allowed_tools` is `[Bash]`, plus best-effort MCP access via `.archon/mcp/unreal.json` (see the note under Inputs for what "best-effort" means in practice here). Bash is for:
 - Reading whatever report/log path the harness wrote (see `harness.config.json` and the Harness Output input below)
 - Writing evidence to `$ARTIFACTS_DIR/e2e-*`
 - Sanity-checking file existence/timestamps
@@ -61,46 +61,46 @@ $run-harness-p1.output
 pass-2 harness output:
 $run-harness-p2.output
 
-**Known design gap — read before assuming you can independently verify anything today.**
-This node has no MCP tool access (`allowed_tools: [Bash]` only), so it cannot drive
-Unreal MCP's `CaptureViewport` to independently look at the game the way the original
-browser-holdout looked at a web app. Wiring that would mean: (a) an `mcp:` config on
-this workflow node pointing at `.archon/mcp/unreal.json`, and (b) a live Unreal Editor
-GUI session reachable at `http://127.0.0.1:8000/mcp` at the moment this node runs —
-which is not something this repo's unattended dispatch (cron, `MAX_PARALLEL=1`,
-nobody watching) can currently guarantee; the Editor GUI is not left running by
-default (see `CLAUDE.md`'s Environment section). Deciding whether to require it, and
-how, is a real open question — see `.factory/decisions.md` D-005. Until that's
-decided and built, this node cannot do genuinely independent visual verification, and
-must say so rather than quietly substituting a weaker check (re-running the builder's
-own tests) and calling it a holdout.
-
-Until D-005 resolves, treat this node as **not yet wired to independent verification**
-and follow Phase 0 below rather than attempting to invent a substitute check.
+**Best-effort MCP, not a guarantee — read before assuming either outcome.** This node
+has `mcp: .archon/mcp/unreal.json` wired (2026-08-16), so `CaptureViewport` and the
+rest of the Unreal MCP toolset are available *if reachable*. Whether they're actually
+reachable depends on whether the operator happens to have the Unreal Editor GUI open
+with its MCP server started at the exact moment this node runs — nothing about
+unattended dispatch (cron, `MAX_PARALLEL=1`, nobody watching) guarantees that, and the
+Editor is not left running by default (see `CLAUDE.md`'s Environment section). This is
+a real, load-bearing precondition, not a formality: **attempt Phase 1 first, every
+time.** Only fall back to Phase 0 if that attempt genuinely fails to connect — never
+skip straight to Phase 0 on the assumption that MCP won't be there. See
+`.factory/decisions.md` D-005 for the full history of why this was unwired for a while.
 
 ---
 
 ## Procedure
 
-### Phase 0: No independent verification mechanism yet (current state of this repo)
+### Phase 1 first, always — fall back to Phase 0 only if MCP is unreachable
+
+Try `mcp__unreal-mcp__list_toolsets` (or equivalent) before doing anything else. If it
+connects, proceed through Phases 1-5 below for genuine independent visual
+verification. If it times out or errors, that's your answer — drop to Phase 0
+immediately, don't retry it, don't treat a slow response as a maybe.
+
+### Phase 0: MCP unreachable this run (the honest fallback, not the default)
 
 Return `solves_issue: "not_e2e_testable"`, `app_booted: <copy the harness's own
 APP_STARTED/GATE_OK result from whichever of $run-harness-p1.output /
 $run-harness-p2.output is non-empty for this run (see Inputs above) — this is the
-harness's claim, not something you verified>`, `flows_tested: []`, and explain in `reasoning`: *"This
-node has no MCP tool access and no live Unreal Editor session to independently observe
-the game — see `.factory/decisions.md` D-005. Re-running the builder's own Automation
+harness's claim, not something you verified>`, `flows_tested: []`, and explain in `reasoning`: *"MCP
+was attempted and found unreachable this run, so there was no live Unreal Editor
+session to independently observe the game — see `.factory/decisions.md` D-005. Re-running the builder's own Automation
 Framework tests would not be a genuine holdout (see 'Your Sole Purpose' above), so this
 node does not attempt a substitute check. Do not treat this as evidence the PR's
 behavior is correct or incorrect — the gate that actually matters for this PR is the
 harness gate (`run-harness`, machine-checked) and the other holdout reviewers."*
 
-Skip Phases 1-5 below entirely while this is true. They describe the intended future
-behavior once D-005 is resolved and a live-Editor MCP mechanism exists — keep them so
-whoever builds that wiring has the procedure ready, but they are unreachable until
-then.
+Only land here after actually attempting Phase 1 and having it fail to connect —
+this is the fallback, not the default path.
 
-### Phase 1: Confirm a live, observable game state exists (future — once D-005 resolves)
+### Phase 1: Confirm a live, observable game state exists
 
 Confirm an Unreal Editor session is reachable via MCP and the PR's build is what's
 loaded (not a stale session). If it isn't, the verdict is `app_booted: false` — that's
@@ -125,7 +125,7 @@ reviewers will handle it.
 ### Phase 3: Independently observe the game
 
 Capture the actual running state via Unreal MCP and judge from what you see — not
-from what the tests claim. Typical pattern (once wired):
+from what the tests claim. Typical pattern:
 
 ```
 mcp__unreal-mcp__call_tool EditorToolset.EditorAppToolset.CaptureViewport { ... }
@@ -164,7 +164,7 @@ inspection). Do NOT shut down the app/session — the workflow manages its lifec
 Return structured JSON matching the schema enforced by the workflow node:
 
 - `solves_issue`: `"yes"` | `"partially"` | `"no"` | `"not_e2e_testable"`
-- `app_booted`: boolean — did the game boot (per whichever of `$run-harness-p1.output`/`$run-harness-p2.output` is non-empty for this run, or your own Phase 1 check once wired)
+- `app_booted`: boolean — did the game boot (per whichever of `$run-harness-p1.output`/`$run-harness-p2.output` is non-empty for this run, or your own Phase 1 check)
 - `flows_tested`: array of strings — names of gameplay behaviors you exercised
 - `criteria_results`: array of objects `{criterion: string, result: "pass" | "fail" | "skip", evidence: string}`
 - `regressions_observed`: array of strings — any broken behavior in adjacent systems you noticed (empty if none)

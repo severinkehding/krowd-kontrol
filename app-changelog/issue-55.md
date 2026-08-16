@@ -34,10 +34,13 @@ record of that change; `app-source-tracked/` holds the real copied source)
 - [x] **`KrowdKontrol.Build.cs` enables the Paper2D module/plugin dependency.**
       `"Paper2D"` added to `PublicDependencyModuleNames`.
 - [x] **A minimal test level exists containing one Paper2D pawn instance.**
-      **Not done** — `L_Paper2DPrototype` requires live Unreal Editor/MCP tooling,
-      which was unavailable this session (`mcp__unreal-mcp__*` tools absent), same
-      environment blocker issue #56 hit. Flagged for human/interactive follow-up
-      rather than silently skipped.
+      **Done, post-review** — `L_Paper2DPrototype.umap` created via live Unreal MCP
+      (operator, 2026-08-16): duplicated `/Engine/Maps/Templates/Template_Default`
+      to `/Game/Maps/L_Paper2DPrototype`, placed one `APaper2DPrototypePawn`
+      instance, saved. Confirmed on disk. Not part of this PR's tracked diff —
+      `Content/` binary assets are deliberately never git-tracked (D-003/D-009), so
+      this criterion is satisfied by the asset's real existence in the shared
+      project, the same way the level's own `.umap` file always would be.
 - [x] **A unit test confirms the prototype pawn spawns and is wired correctly.**
       `KrowdKontrol.Unit.Paper2DPipelineSmoke`, passing (see Validation below).
 - [x] **Setup learnings documented.** `docs/paper2d-prototype-notes.md`, written to
@@ -46,6 +49,8 @@ record of that change; `app-source-tracked/` holds the real copied source)
       this tracked repo; see the caveat at the top of `docs/paper2d-prototype-notes.md`.
 
 ## Validation
+
+Original run:
 
 ```
 $ python harness/ci.py
@@ -56,20 +61,35 @@ UE_AUTOMATION_FAILED KrowdKontrol.Unit.StationPowerUpComponent: state=Fail
 GATE_FAILED: unit
 ```
 
-This issue's own new test, `KrowdKontrol.Unit.Paper2DPipelineSmoke`, **passed**. The
-one failure, `KrowdKontrol.Unit.StationPowerUpComponent`, is pre-existing and
-unrelated — this diff never touches `StationPowerUpComponent.{h,cpp}` or its test.
-Root-caused (confirmed independently during both implementation and validation
-passes, reproduced across repeated runs) to a live `UnrealEditor.exe` process
-already running on the shared host holding the module DLL locked, forcing a
-hot-reload-versioned `UnrealEditor-KrowdKontrol-0002.dll` and a resulting duplicate
-test-registration collision — a shared-`app/` concurrency artifact
-(`FACTORY_RULES.md` §8, `.factory/decisions.md` D-003), not a code defect
-introduced here. A fully clean `GATE_OK` requires that process to be closed and a
-fresh build/run done without contention — see `implementation.md`/`validation.md`
-for the full root-cause trace. MISSION.md Hard Invariant #6 (Paper2D-vs-flat-
-camera-3D lock) reviewed by inspection: this diff adds the Paper2D comparison
-prototype the invariant explicitly permits, it does not revisit the lock itself.
+This issue's own new test, `KrowdKontrol.Unit.Paper2DPipelineSmoke`, **passed**.
+
+**Correction (post-review) on the `StationPowerUpComponent` failure's cause.** The
+diagnosis above — a concurrent-Editor DLL/hot-reload collision — was wrong. Verified
+independently (operator, 2026-08-16): the failure was 100% deterministic regardless
+of whether the Editor was open or closed, and traced to a real, unrelated code bug —
+`AddExpectedError`'s `IsRegex` parameter defaults to `true`, and the pattern
+`"OrderedLights[1] is null"` was being parsed as regex (`[1]` = a character class,
+not literal brackets), so it could never match the literal logged text. Fixed by
+passing `IsRegex=false` on both `AddExpectedError` calls in
+`KrowdKontrolStationPowerUpComponentTest.cpp` (issue #60's test, unrelated to this
+PR's own changes) — see `.factory/decisions.md` D-012. Re-run after that fix:
+
+```
+$ python harness/ci.py
+HARNESS_START mode=full driver=cli
+STATIC_SKIPPED no 'static' command in harness.config.json
+UNIT_PASSED tests=16
+APP_STARTED driver=cli
+UE_AUTOMATION_RESULT passed=1 total=1
+UE_AUTOMATION_OK
+E2E_PASSED steps=1
+GATE_OK mode=full
+```
+
+Clean `GATE_OK`, all 16 unit tests passing, no unrelated failures. MISSION.md Hard
+Invariant #6 (Paper2D-vs-flat-camera-3D lock) reviewed by inspection: this diff adds
+the Paper2D comparison prototype the invariant explicitly permits, it does not
+revisit the lock itself.
 
 ---
 

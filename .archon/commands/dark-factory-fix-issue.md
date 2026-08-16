@@ -109,6 +109,32 @@ For each step in the Implementation Plan:
 - Modify `MISSION.md`, `FACTORY_RULES.md`, `CLAUDE.md`, `.github/`, `deploy/`, `.env*`, `.archon/config.yaml`, `scripts/orchestrator.sh`, or `scripts/factory-stop.sh`
 - Touch anything CLAUDE.md documents as a hard invariant enforcement path (once that section is real)
 
+### 5.2a Content that needs the Editor, not just source files (levels, scenes, asset placement)
+
+Some issues ask for things that can't be produced as text — a `.umap` level, actor
+placement in a scene, imported meshes/materials. `implement` has best-effort MCP
+access (`.archon/mcp/unreal-and-blender.json`, 2026-08-16) for exactly this: Unreal
+MCP for level/scene work, Blender MCP for asset generation feeding into it (see
+`CLAUDE.md`'s Environment section for how that pipeline fits together).
+
+**"Best-effort" is the operative phrase — it depends on the operator happening to
+have the Editor (and/or Blender) open with its MCP server started at the moment this
+dispatch runs.** Nothing about unattended cron dispatch guarantees that. So:
+
+1. If the issue needs Editor-only content, **attempt the relevant MCP tool call
+   first** (e.g. `mcp__unreal-mcp__list_toolsets` as a connectivity check) — don't
+   assume it's unreachable without trying.
+2. If it connects, do the work through MCP and note exactly what you did (which
+   tools, what got created) in `implementation.md` per 5.3 below.
+3. If it doesn't connect, **do not fabricate a substitute** (an empty placeholder
+   file, a fake "created" claim, or silently skipping the requirement) — say so
+   plainly. Issue #56/PR #99 already set the right precedent here: it correctly
+   labeled the missing level "environment-blocked" in the PR body and left the
+   acceptance-criteria checkbox unchecked rather than inventing something. Match
+   that — implement everything that *can* be done as source/tests normally, then
+   report the Editor-only gap honestly for a human to unblock (either by opening the
+   Editor and re-running, or by descoping that criterion).
+
 ### 5.3 Track deviations
 
 If you must deviate from the artifact (e.g., the artifact referenced a file that has been refactored), note what changed and why in `$ARTIFACTS_DIR/implementation.md`.

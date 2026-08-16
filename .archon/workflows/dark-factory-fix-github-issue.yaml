@@ -130,6 +130,16 @@ nodes:
     command: dark-factory-fix-issue
     depends_on: [bridge-artifacts, link-unreal-project]
     context: fresh
+    # Best-effort MCP access (2026-08-16) — only reachable if the operator happens to
+    # have the Unreal Editor (and/or Blender) open with its MCP server started at the
+    # moment this dispatch runs; nothing here guarantees that. If unreachable, the
+    # command's own instructions say to self-report honestly (matching the precedent
+    # already set by issue #56/PR #99, which correctly flagged a missing level asset
+    # as "environment-blocked" rather than faking one) — never fail silently or
+    # invent placeholder content in its place. See CLAUDE.md's Environment section
+    # and .factory/decisions.md D-005 for the full context on why this can't be a
+    # hard guarantee yet.
+    mcp: .archon/mcp/unreal-and-blender.json
 
   # ═══════════════════════════════════════════════════════════════
   # PHASE 5: VALIDATE (Dark Factory fork — single gate via harness/ci.py)
