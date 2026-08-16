@@ -15,7 +15,11 @@ public class KrowdKontrol : ModuleRules
 		// the include path once UBT stopped treating this as a from-cache incremental build).
 		PrivateIncludePaths.Add(ModuleDirectory);
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+		// Paper2D for APaper2DPrototypePawn (issue #55) - the Paper2D half of PRD 14 REQ-1's
+		// Paper2D-vs-flat-camera-3D pipeline comparison. Paper2D is EnabledByDefault in its
+		// own .uplugin, so only this module dependency is needed - no .uproject Plugins
+		// array entry.
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "Paper2D" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
