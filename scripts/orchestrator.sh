@@ -226,6 +226,11 @@ while IFS= read -r pr_number; do
   [ -z "$pr_number" ] && continue
   if docs_only_pr "$pr_number"; then
     log "DOCS-ONLY MERGE: PR #$pr_number touches only docs/ and app-changelog/ - merging directly"
+    # create-pr deliberately opens PRs as drafts, so un-draft first - GitHub
+    # refuses to merge a draft ("Pull Request is still a draft"), which left
+    # PR #112 stuck retrying every cycle. Idempotent: succeeds silently if
+    # the PR is already ready.
+    gh pr ready "$pr_number" -R "$REPO" 2>/dev/null || true
     if gh pr merge "$pr_number" -R "$REPO" --merge --delete-branch 2>&1 | while IFS= read -r l; do log "  $l"; done; then
       gh pr edit "$pr_number" -R "$REPO" --remove-label "factory:needs-review" --remove-label "factory:needs-fix" 2>/dev/null || true
     fi
