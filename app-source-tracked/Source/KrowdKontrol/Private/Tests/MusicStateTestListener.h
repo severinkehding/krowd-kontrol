@@ -17,6 +17,15 @@ public:
 	int32 CallCount = 0;
 	EMusicState LastState = EMusicState::Calm;
 
+	// Optional: if set, HandleMusicStateChanged() records GetMusicState() read
+	// through this pointer during the callback, into ObservedStateDuringBroadcast -
+	// proves the "flip CurrentState before broadcasting" re-entrancy guarantee
+	// documented in MusicSubsystem.cpp::SetMusicState() actually holds.
+	UPROPERTY()
+	TObjectPtr<UMusicSubsystem> WatchedSubsystem;
+
+	EMusicState ObservedStateDuringBroadcast = EMusicState::Calm;
+
 	UFUNCTION()
 	void HandleMusicStateChanged(EMusicState NewState);
 };

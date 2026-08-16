@@ -49,7 +49,9 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	// real per-frame Tick() loop - same rationale UAbilityCooldownComponent's
 	// FKrowdKontrolAbilityCooldownTest friendship documents. Friendship isn't
 	// inherited, so each concrete subclass's own test (Sniper, Bomber) needs its own
-	// grant here to drive an instance through Idle->Alert->Attack deterministically.
+	// grant here to drive an instance through Idle->Alert->Attack deterministically -
+	// and so does any other subsystem's test (e.g. FKrowdKontrolMusicSubsystemTest)
+	// that needs to drive a plain AEnemyBaseTestActor through the same transitions.
 	friend class FKrowdKontrolEnemyBaseTest;
 	friend class FKrowdKontrolSniperEnemyTest;
 	friend class FKrowdKontrolBomberEnemyTest;
@@ -96,7 +98,10 @@ protected:
 	// Assumes exactly one live APawn carries UPlayerEnergyComponent (true today;
 	// revisit if local co-op/split-screen or a debug dummy pawn is ever added).
 	// Returns nullptr (and logs a warning) if no such pawn is found. See issue #15,
-	// the first enemy-attack code path to actually touch player state.
+	// the first enemy-attack code path to actually touch player state. Shared with
+	// issue #15's Bomber-enemy work-in-progress already present in the live app/
+	// project (BomberEnemy.cpp calls this); kept here rather than split out, since
+	// this file is shared across both issues' branches - see app-changelog/issue-25.md.
 	UPlayerEnergyComponent* FindPlayerEnergyComponent() const;
 
 	// C++-only (not BlueprintNativeEvent) until a real concrete subclass exists to

@@ -5,10 +5,13 @@
 // one transition per TickCheckDetection call, and (3) ReceiveControl works from both
 // Alert and Attack, recording the ability that triggered it.
 //
-// Uses NewObject rather than spawning into a UWorld: AEnemyBase never calls
-// GetWorld()/SpawnActor in its testable paths (Tick() does, but TickCheckDetection is
-// called directly via the friend, with an explicit FVector player location, never
-// through Tick() itself), same rationale KrowdKontrolBossBaseTest.cpp documents.
+// Uses NewObject rather than spawning into a UWorld for most cases: AEnemyBase never
+// calls GetWorld()/SpawnActor in its testable paths (Tick() does, but
+// TickCheckDetection is called directly via the friend, with an explicit FVector
+// player location, never through Tick() itself), same rationale
+// KrowdKontrolBossBaseTest.cpp documents. Cases (k)/(m)/(n) are the exceptions: they
+// exercise the real Tick() override and FindPlayerEnergyComponent()'s
+// TActorIterator/GetWorld() usage respectively, both of which need a real World.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -17,8 +20,10 @@
 #include "EnemyBase.h"
 #include "EnemyBaseTestActor.h"
 #include "EnemyBankedTestListener.h"
+#include "PlayerEnergyComponent.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -176,6 +181,40 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	ReentrantEnemy->TransitionToBanked();
 	TestEqual(TEXT("Re-entrant TransitionToBanked() during broadcast must not re-fire"),
 		ReentrantListener->CallCount, 1);
+
+	// (m) FindPlayerEnergyComponent finds the world's UPlayerEnergyComponent when a
+	// pawn carries one. Shared with issue #15's Bomber-enemy work-in-progress (see
+	// app-changelog/issue-25.md's "Deviations from plan"); tested here since this is
+	// the only AEnemyBase capability in this PR's tracked diff with no prior coverage.
+	UWorld* EnergyWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), EnergyWorld))
+	{
+		AEnemyBaseTestActor* EnergyEnemy = EnergyWorld->SpawnActor<AEnemyBaseTestActor>();
+		APawn* PlayerPawn = EnergyWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), EnergyEnemy)
+			&& TestNotNull(TEXT("APawn should spawn into the test World"), PlayerPawn))
+		{
+			UPlayerEnergyComponent* Energy = NewObject<UPlayerEnergyComponent>(PlayerPawn);
+			Energy->RegisterComponent();
+
+			TestEqual(TEXT("FindPlayerEnergyComponent should find the pawn's UPlayerEnergyComponent"),
+				EnergyEnemy->FindPlayerEnergyComponent(), Energy);
+		}
+	}
+
+	// (n) not-found path: no pawn with the component anywhere in the world returns
+	// nullptr (and logs a warning) rather than crashing.
+	UWorld* EmptyWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), EmptyWorld))
+	{
+		AEnemyBaseTestActor* LonelyEnemy = EmptyWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), LonelyEnemy))
+		{
+			AddExpectedError(TEXT("found no APawn with a UPlayerEnergyComponent"), EAutomationExpectedErrorFlags::Contains, 1);
+			TestNull(TEXT("FindPlayerEnergyComponent should return nullptr when no pawn carries the component"),
+				LonelyEnemy->FindPlayerEnergyComponent());
+		}
+	}
 
 	return true;
 }

@@ -25,6 +25,8 @@
 #include "AbilitySlot.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "Sound/SoundWave.h"
+#include "Components/AudioComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -49,6 +51,7 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 
 	UMusicStateTestListener* Listener = NewObject<UMusicStateTestListener>();
 	MusicSubsystem->OnMusicStateChanged.AddDynamic(Listener, &UMusicStateTestListener::HandleMusicStateChanged);
+	Listener->WatchedSubsystem = MusicSubsystem;
 
 	// (a) default state, before any enemy exists or any refresh runs.
 	TestEqual(TEXT("Default music state should be Calm"),
@@ -74,6 +77,8 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("OnMusicStateChanged should have fired once"), Listener->CallCount, 1);
 	TestEqual(TEXT("Broadcast should carry Combat"),
 		static_cast<uint8>(Listener->LastState), static_cast<uint8>(EMusicState::Combat));
+	TestEqual(TEXT("GetMusicState() read from inside the broadcast should already reflect the new state (flip-before-broadcast)"),
+		static_cast<uint8>(Listener->ObservedStateDuringBroadcast), static_cast<uint8>(EMusicState::Combat));
 
 	// (d) a refresh with no underlying state change must not re-broadcast.
 	MusicSubsystem->RefreshMusicState();
@@ -124,6 +129,37 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Both enemies Banked should revert music state to Calm"),
 		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::Calm));
 	TestEqual(TEXT("OnMusicStateChanged should have fired a fourth time"), Listener->CallCount, 4);
+
+	// (j) with real tracks configured, a Calm->Combat->Calm round trip actually spawns
+	// audio and crossfades, rather than leaving CurrentMusicComponent null/unchanged -
+	// cases (a)-(i) above all run with CalmTrack/CombatTrack unset, so none of them
+	// exercise SpawnSound2D/FadeIn/FadeOut at all. NewObject<USoundWave>() (no
+	// .uasset) is sufficient: USoundWave is the concrete, non-abstract USoundBase
+	// subclass (USoundBase itself can't be NewObject<>()'d), and
+	// TSoftObjectPtr::LoadSynchronous() resolves an already-in-memory UObject via
+	// FindObject before it would ever try to load from disk.
+	MusicSubsystem->CalmTrack = NewObject<USoundWave>();
+	MusicSubsystem->CombatTrack = NewObject<USoundWave>();
+
+	AEnemyBaseTestActor* ThirdEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("Third AEnemyBaseTestActor should spawn into the test World"), ThirdEnemy))
+	{
+		return false;
+	}
+	ThirdEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert (Hot)
+	MusicSubsystem->RefreshMusicState();
+	UAudioComponent* CombatComponent = MusicSubsystem->CurrentMusicComponent;
+	TestNotNull(TEXT("A configured CombatTrack should spawn a UAudioComponent on switch"),
+		CombatComponent);
+
+	ThirdEnemy->ReceiveControl(EAbilitySlot::Stun);
+	ThirdEnemy->TransitionToBanked();
+	MusicSubsystem->RefreshMusicState();
+	UAudioComponent* CalmComponent = MusicSubsystem->CurrentMusicComponent;
+	TestNotNull(TEXT("A configured CalmTrack should spawn a new UAudioComponent on switch back"),
+		CalmComponent);
+	TestTrue(TEXT("Switching tracks should replace the AudioComponent instance, not reuse/mutate it"),
+		CalmComponent != CombatComponent);
 
 	return true;
 }
