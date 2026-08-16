@@ -754,3 +754,54 @@ moment still can't both have it — automation wins, full stop, per the decision
 above. If the operator is using it interactively when the loop needs it, it will be
 closed out from under them. Acceptable given the explicit instruction, but worth
 remembering if it ever surprises someone mid-session.
+
+## D-014: D-013's close step was a silent no-op under cron — bare tasklist.exe/taskkill.exe don't resolve
+
+**2026-08-16.** Discovered live while watching PR #102's `validate-pr` run at the
+operator's request ("observe and see if it still crashes"). It didn't crash — it did
+something quieter and worse: `ensure-editor-closed-p1` reported `UE_EDITOR_CLOSE_OK`
+in 12ms, and `launch-editor-for-e2e-p1` reported ready in 295ms, both suspiciously
+fast for genuine tasklist/taskkill/cold-Editor-boot work. Checked Windows process
+start times directly (`Get-Process ... StartTime`): two `UnrealEditor.exe` processes
+were running concurrently — one started ~12:21 PM (the operator's own manually-
+launched session, from an earlier "starting unreal now" test), one started ~13:39 PM
+(this workflow's own `launch-editor-for-e2e-p1` spawn) — neither had killed the
+other.
+
+**Root cause:** `scripts/orchestrator.sh`'s crontab entry sets an explicit `PATH`
+(added to fix `bun`/`gh` resolution under cron — see the orchestrator PATH note
+elsewhere in this log) that excludes any Windows directory. `ue_editor_close.sh`
+called `tasklist.exe`/`taskkill.exe` bare. WSL's default Windows-PATH interop only
+supplies those when the shell's own `$PATH` includes something like
+`/mnt/c/Windows/System32` — true in an interactive shell, **false** under cron's
+override. Every invocation resolved to "command not found" (exit 127), swallowed by
+`2>/dev/null`, leaving `PIDS` empty — so the script unconditionally printed
+`UE_EDITOR_CLOSE_OK already closed` regardless of what was actually running. All of
+today's D-013 testing that looked clean was run interactively (this operator's own
+Bash tool calls, full PATH) and never exercised the actual cron code path — the bug
+was invisible until a real dispatch hit it.
+
+**Consequence:** every `ensure-editor-closed*`/`close-editor-after-e2e*` node across
+every real dispatch since D-013 landed has been a false-success no-op. Concretely for
+PR #102: `behavioral-e2e-p1`'s 367-second holdout review almost certainly connected
+via MCP to the operator's long-running manual session (over an hour of uptime,
+definitely warm) rather than a fresh session matching this PR's actual build — the
+verdict it produced should not be trusted as evidence about PR #102 specifically,
+independent of whether its conclusion happened to be right.
+
+**Fix:** `ue_editor_close.sh` now calls `/mnt/c/Windows/System32/tasklist.exe` and
+`/mnt/c/Windows/System32/taskkill.exe` by absolute path (overridable via
+`KROWD_KONTROL_TASKLIST_EXE`/`KROWD_KONTROL_TASKKILL_EXE`), matching the convention
+`ue_editor_launch_and_wait.sh` already used for `UE_EXE`. Verified by re-running the
+script under `env -i PATH="<the exact cron PATH>"`: before the fix, `command not
+found`; after, it correctly found and killed both orphaned `UnrealEditor.exe`
+processes. Committed to `main` (`aa73c37`) and pushed.
+
+**Process note, same shape as D-012's:** a script that "worked" in every manual test
+this operator ran can still be dead code under the one environment that actually
+matters (cron). Interactive verification of an automation script is not verification
+of the automation — the only real test is watching it run for real, which is
+precisely what this operator's "observe and see if it still crashes" request forced.
+Don't treat a clean interactive dry run of an unattended script as sufficient
+evidence again without also checking it under the actual restricted invocation
+environment (PATH, env, cwd) it will really run under.
