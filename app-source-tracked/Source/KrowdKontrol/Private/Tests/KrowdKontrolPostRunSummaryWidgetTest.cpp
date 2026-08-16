@@ -5,9 +5,9 @@
 // formats and updates both fields correctly. Clear time is formatted M:SS, matching
 // PRD 06 REQ-2's own display example ("Your best: 4:32"). Also confirms negative
 // inputs floor at zero, an unbuilt widget tree degrades to empty display text rather
-// than crashing, and the Initialize() safety net's "already built, skip" branch
-// (EnsureWidgetTreeBuilt()) doesn't rebuild the tree when NativeOnInitialized()
-// already ran - see app-changelog/issue-74.md Deviations from plan.
+// than crashing, and the Initialize()/NativeOnInitialized() guard (EnsureWidgetTreeBuilt())
+// builds the tree exactly once regardless of which of the two fires first - both call
+// orders are exercised below.
 //
 // CreateWidget() calls Initialize() synchronously, which fires
 // NativeOnInitialized() - no TakeWidget()/AddToViewport()/Slate realization needed,
@@ -101,6 +101,24 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 	GuardWidget->Initialize();
 	TestEqual(TEXT("Initialize() must not rebuild the tree when ClearTimeText is already set"),
 		ToRawPtr(GuardWidget->ClearTimeText), FirstClearTimeText);
+
+	// (e2) The reverse call order: Initialize() builds the tree first, and a direct
+	// NativeOnInitialized() call afterwards must be the no-op instead - proves the
+	// guard is symmetric, not just correct for the one order that crashed in PR #89.
+	UPostRunSummaryWidget* ReverseGuardWidget = NewObject<UPostRunSummaryWidget>();
+	if (!TestNotNull(TEXT("UPostRunSummaryWidget should construct for reverse guard test"), ReverseGuardWidget))
+	{
+		return false;
+	}
+	ReverseGuardWidget->Initialize();
+	UTextBlock* ReverseFirstClearTimeText = ReverseGuardWidget->ClearTimeText;
+	if (!TestNotNull(TEXT("ClearTimeText should be set after Initialize()"), ReverseFirstClearTimeText))
+	{
+		return false;
+	}
+	ReverseGuardWidget->NativeOnInitialized();
+	TestEqual(TEXT("NativeOnInitialized() must not rebuild the tree when ClearTimeText is already set"),
+		ToRawPtr(ReverseGuardWidget->ClearTimeText), ReverseFirstClearTimeText);
 
 	// (f) A widget whose tree was never built (bare NewObject(), neither
 	// NativeOnInitialized() nor Initialize() called) should degrade to empty display

@@ -24,6 +24,7 @@ reviewer and the validation pipeline both have real code to check.
 | `app-source-tracked/Source/KrowdKontrol/PostRunSummaryWidget.cpp` | CREATE | Verbatim mirror of `app/Source/KrowdKontrol/PostRunSummaryWidget.cpp` — includes the `Initialize()`/`EnsureWidgetTreeBuilt()` lazy-`WidgetTree`-creation guard that resolved PR #89's crash rejection. |
 | `app-source-tracked/Source/KrowdKontrol/Private/Tests/KrowdKontrolPostRunSummaryWidgetTest.cpp` | CREATE | Verbatim mirror of the Automation Framework test — covers placeholder seeding, `SetSummaryValues()` formatting, zero/negative-input clamping, the `Initialize()` guard's "already built, skip" branch, and unbuilt-tree null-safety. |
 | `app-source-tracked/Source/KrowdKontrol/KrowdKontrol.Build.cs` | UPDATE | Applied the scoped `UMG`/`Slate`/`SlateCore` `PrivateDependencyModuleNames` hunk (with its explanatory comment) and removed the now-redundant "Uncomment if you are using Slate UI" placeholder, matching `app/`'s live dependency list. The pre-existing, unrelated Paper2D comment-wording drift (issue #55) at lines 20-21 was left untouched — out of scope for this issue. |
+| `app-source-tracked/Source/KrowdKontrol/Private/Tests/KrowdKontrolReservedGameplayColoursTest.cpp` | UPDATE | Added `UPostRunSummaryWidget` to the existing MISSION.md Hard Invariant #3 chrome-colour audit (background border + both text fields), closing the "checked by inspection only" gap from the review pass on this PR. |
 
 ## Acceptance criteria
 
@@ -39,9 +40,11 @@ reviewer and the validation pipeline both have real code to check.
 - [x] **The screen's chrome does not use any of the five reserved
       gameplay-information colours.** `BuildWidgetTree()`'s background
       (`FLinearColor(0.05, 0.05, 0.05, 0.92)`) and text colour
-      (`FLinearColor(0.85, 0.85, 0.85, 1.0)`) were checked by inspection against
+      (`FLinearColor(0.85, 0.85, 0.85, 1.0)`) don't match
       `ReservedGameplayColours::GetAll()` (Purple `(0.5,0,1,1)`, Teal `(0,0.8,0.8,1)`,
-      Orange `(1,0.5,0,1)`, Blue `(0,0.4,1,1)`, White `(1,1,1,1)`) — no match.
+      Orange `(1,0.5,0,1)`, Blue `(0,0.4,1,1)`, White `(1,1,1,1)`) — now covered by a
+      regression test (`KrowdKontrol.Unit.ReservedGameplayColours`'s widget (3)),
+      not just checked by inspection.
 - [x] **An Automation Framework test confirms the widget, when triggered, displays
       both a clear-time value and a Crowd Mastery value.**
       `KrowdKontrol.Unit.PostRunSummaryWidget` — ran explicitly, see validation
@@ -49,7 +52,7 @@ reviewer and the validation pipeline both have real code to check.
 
 ## Validation evidence
 
-Full gate:
+Full gate, re-run after the review self-fix pass below:
 
 ```
 HARNESS_START mode=full driver=cli
@@ -74,6 +77,34 @@ UE_AUTOMATION_OK
 
 Full mode, first run, no fixes needed. Hard invariants checked by inspection
 (5-colour lock, no-kill rule, no networking) — no regressions found.
+
+**Review self-fix pass**: a multi-agent review of this PR found two HIGH-severity gaps
+(broken "Deviations from plan" comment pointers; chrome colours not in the automated
+`ReservedGameplayColours` audit) plus a MEDIUM inaccurate comment and two LOW gaps
+(missing `checkf` on the root panel attach; guard tested in only one call order). All
+were fixed directly in both `app/` and `app-source-tracked/` (kept byte-identical, per
+D-009) and the full gate above was re-run afterward — still `GATE_OK` on the first
+re-run, `tests=24` unchanged in count (two existing test files extended, not new ones
+added).
+
+## Deviations from plan
+
+No Widget Blueprint asset is used — `UPostRunSummaryWidget::BuildWidgetTree()` constructs
+its `UBorder`/`UVerticalBox`/`UTextBlock` tree directly in C++ via
+`WidgetTree->ConstructWidget<T>()`. This keeps the widget's structure in
+`app-source-tracked/`-reviewable C++ rather than a binary `.uasset` that can't be
+mirrored under the D-009 carve-out — same pattern as `UAbilityCooldownTrayWidget` and
+`UEnergyMeterWidget`.
+
+Both `NativeOnInitialized()` and `Initialize()` independently call
+`EnsureWidgetTreeBuilt()` (idempotent via the `!ClearTimeText` guard) rather than
+relying on just one hook, because `UUserWidget::Initialize()` only invokes
+`NativeOnInitialized()` when the widget has a valid `PlayerContext` — which doesn't
+hold for `CreateWidget(World, Class)` with no owning player/controller, exactly how
+this widget's own Automation test (and the headless `-nullrhi` automation runner)
+constructs it. Same pattern as `UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()`
+(issue #66); this PR's test now exercises both call orders (cases (e) and (e2)) to
+prove the guard is symmetric, not just correct for the order that crashed PR #89.
 
 ## Closing note on `app-source-tracked/`
 

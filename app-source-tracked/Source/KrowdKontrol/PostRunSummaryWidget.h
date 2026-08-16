@@ -4,16 +4,17 @@
 #include "Blueprint/UserWidget.h"
 #include "PostRunSummaryWidget.generated.h"
 
+class UBorder;
 class UTextBlock;
 
 // Post-run summary screen (PRD 13 REQ-5): displays clear time and the "Crowd
 // Mastery" stat after a level/run clears. Real clear-time and Crowd Mastery
 // tracking don't exist yet (PRD 06 REQ-2/REQ-3, tracked separately) - this widget
-// builds its own UI tree in C++ (no Widget Blueprint asset - see
-// app-changelog/issue-74.md Deviations from plan) and seeds itself with placeholder
-// values on construction, purely to prove out the screen's layout and both fields
-// rendering. SetSummaryValues() is the wiring point a future real tracking system
-// replaces the placeholder call with.
+// builds its own UI tree in C++ (no Widget Blueprint asset - mirrors
+// UAbilityCooldownTrayWidget/UEnergyMeterWidget's existing precedent) and seeds
+// itself with placeholder values on construction, purely to prove out the screen's
+// layout and both fields rendering. SetSummaryValues() is the wiring point a future
+// real tracking system replaces the placeholder call with.
 UCLASS()
 class KROWDKONTROL_API UPostRunSummaryWidget : public UUserWidget
 {
@@ -42,7 +43,7 @@ protected:
 	// Fires synchronously from CreateWidget(), before any Slate/viewport realization
 	// - unlike NativeConstruct(), this doesn't depend on TakeWidget()/AddToViewport(),
 	// which matters for the -nullrhi headless Automation run this project's tests use
-	// (harness/run_ue_automation.sh). See app-changelog/issue-74.md Deviations from plan.
+	// (harness/run_ue_automation.sh).
 	virtual void NativeOnInitialized() override;
 
 	// Safety net: UUserWidget::Initialize() only calls NativeOnInitialized() when the
@@ -60,6 +61,7 @@ protected:
 
 private:
 	friend class FKrowdKontrolPostRunSummaryWidgetTest;
+	friend class FKrowdKontrolReservedGameplayColoursTest;
 
 	void BuildWidgetTree();
 
@@ -72,6 +74,13 @@ private:
 	// Shared by both fields in SetSummaryValues(): sets Text on TextBlock if it exists,
 	// otherwise logs which field is rendering blank and why.
 	void SetTextBlockSafe(UTextBlock* TextBlock, const FText& Text, const TCHAR* FieldName) const;
+
+	// Kept as a member (rather than a BuildWidgetTree() local) so
+	// KrowdKontrolReservedGameplayColoursTest.cpp can audit its background colour via
+	// friend-class access, matching UAbilityCooldownTrayWidget::SlotIconBorders's
+	// precedent for the same reason.
+	UPROPERTY()
+	TObjectPtr<UBorder> RootBorder;
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> ClearTimeText;

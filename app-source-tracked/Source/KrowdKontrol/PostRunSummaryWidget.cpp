@@ -1,6 +1,7 @@
 #include "PostRunSummaryWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
+#include "Components/PanelSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
 
@@ -52,12 +53,13 @@ void UPostRunSummaryWidget::BuildWidgetTree()
 	// Purple/Teal/Orange/Blue/White for gameplay information; this screen's chrome
 	// must not use any of them. Both colours stay inside PRD 11 REQ-2's desaturated
 	// white/gray/black base palette.
-	UBorder* RootBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SummaryRootBorder"));
+	RootBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SummaryRootBorder"));
 	RootBorder->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.05f, 0.92f));
 	WidgetTree->RootWidget = RootBorder;
 
 	UVerticalBox* Layout = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SummaryLayout"));
-	RootBorder->SetContent(Layout);
+	UPanelSlot* LayoutSlot = RootBorder->SetContent(Layout);
+	checkf(LayoutSlot, TEXT("UPostRunSummaryWidget: SetContent(Layout) returned null"));
 
 	const FSlateColor TextColor(FLinearColor(0.85f, 0.85f, 0.85f, 1.0f));
 
