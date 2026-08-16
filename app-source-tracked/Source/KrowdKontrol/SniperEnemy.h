@@ -1,0 +1,72 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "EnemyBase.h"
+#include "SniperEnemy.generated.h"
+
+class UStaticMeshComponent;
+class UPointLightComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSniperShotFired);
+
+// SN-1PR: the first concrete core enemy type (PRD 03, MISSION.md Hard Invariant 5),
+// a long-range sniper. Extends AEnemyBase (issue #12) with a distinct cone
+// silhouette, a Blue-tinted "eye glow" light that intensifies only when Sleep is the
+// ability that put it into Controlled, a separate attack "tell" light plus a
+// telegraph countdown timer for the attack warning, and a large GetAttackRangeUnits()
+// override so it enters Attack almost as soon as it's Alert - the mechanical
+// definition of "long-range" in this state machine: it doesn't need to close distance
+// first. See issue #17.
+UCLASS()
+class KROWDKONTROL_API ASniperEnemy : public AEnemyBase
+{
+	GENERATED_BODY()
+
+	// Grants the Automation Framework test direct access to AdvanceAttackTelegraph
+	// below, so a headless test can drive deterministic telegraph timing without a
+	// real per-frame Tick() loop - same rationale UAbilityCooldownComponent's
+	// friendship documents.
+	friend class FKrowdKontrolSniperEnemyTest;
+
+public:
+	ASniperEnemy();
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
+	TObjectPtr<UStaticMeshComponent> MeshComponent;
+
+	// Blue, intensifies on Sleep-triggered OnControlledEntry.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
+	TObjectPtr<UPointLightComponent> EyeGlowLightComponent;
+
+	// Non-reserved placeholder colour, on during Attack.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
+	TObjectPtr<UPointLightComponent> AttackTellLightComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
+	float AttackTelegraphSeconds = 1.2f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
+	float EyeGlowBaselineIntensity = 800.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
+	float EyeGlowIntensifiedIntensity = 2400.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
+	float AttackTellIntensity = 2000.0f;
+
+	// Fires once the attack telegraph elapses.
+	UPROPERTY(BlueprintAssignable, Category = "Sniper")
+	FOnSniperShotFired OnSniperShotFired;
+
+protected:
+	virtual float GetAttackRangeUnits() const override;
+	virtual void OnControlledEntry(EAbilitySlot Ability) override;
+	virtual void OnAttackEntry() override;
+	virtual void Tick(float DeltaTime) override;
+
+private:
+	void AdvanceAttackTelegraph(float DeltaSeconds);
+
+	float RemainingTelegraphSeconds = 0.0f;
+	bool bShotFiredForCurrentAttack = false;
+};
