@@ -61,17 +61,18 @@ $run-harness-p1.output
 pass-2 harness output:
 $run-harness-p2.output
 
-**Best-effort MCP, not a guarantee — read before assuming either outcome.** This node
-has `mcp: .archon/mcp/unreal.json` wired (2026-08-16), so `CaptureViewport` and the
-rest of the Unreal MCP toolset are available *if reachable*. Whether they're actually
-reachable depends on whether the operator happens to have the Unreal Editor GUI open
-with its MCP server started at the exact moment this node runs — nothing about
-unattended dispatch (cron, `MAX_PARALLEL=1`, nobody watching) guarantees that, and the
-Editor is not left running by default (see `CLAUDE.md`'s Environment section). This is
-a real, load-bearing precondition, not a formality: **attempt Phase 1 first, every
+**MCP access is now launched for you, not left to chance (2026-08-16, D-013).**
+`launch-editor-for-e2e-p1`/`-p2` run immediately before this node in the DAG — they
+force-close whatever was running, launch a fresh Editor against this run's actual
+build, and wait for MCP to genuinely respond before this node even starts. So by the
+time you run, a live session should already be there almost every time. This is a
+real, load-bearing precondition, not a formality: **attempt Phase 1 first, every
 time.** Only fall back to Phase 0 if that attempt genuinely fails to connect — never
-skip straight to Phase 0 on the assumption that MCP won't be there. See
-`.factory/decisions.md` D-005 for the full history of why this was unwired for a while.
+skip straight to Phase 0 on the assumption that MCP won't be there. A connection
+failure at this point means the launch itself had a real problem (crash, timeout) —
+check `app/Saved/Logs/` if you want to understand why before reporting Phase 0's
+honest fallback. See `.factory/decisions.md` D-005 for the original gap and D-013 for
+how it closed.
 
 ---
 

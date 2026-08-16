@@ -689,3 +689,68 @@ deterministic, code-level bug can look identical to an environmental one from a
 single test run. Worth remembering next time a PR blames a failure on "the shared
 environment" rather than the code: reproduce it in isolation before trusting that
 framing.
+
+## D-013: Self-managed Editor lifecycle — closes D-011's "best-effort" gap for real
+
+**2026-08-16.** D-011 wired MCP into `implement` and `behavioral-e2e` but left it
+best-effort: reachable only if the operator happened to have the Editor open with
+the right timing. Called out directly by the operator as not actually autonomous —
+correct. "Close it when not using MCP" just moves the coordination burden onto a
+human instead of removing it.
+
+**Decision: automation always takes precedence.** If a live Editor session (human-
+launched or a leftover from a prior dispatch) is in the way of what the workflow
+needs to do next, it gets force-closed, no negotiation. This is what makes a fully
+scripted lifecycle possible instead of another best-effort layer.
+
+**What got built, tested live against the real project before being trusted:**
+
+- `scripts/ue_editor_close.sh` — force-closes any `UnrealEditor.exe`/
+  `UnrealEditor-Cmd.exe`/`CrashReportClientEditor.exe`, idempotent (`UE_EDITOR_CLOSE_OK`
+  either way). No MCP tool exposes a graceful quit (confirmed: the sandbox
+  deliberately has no console-command-execution or method-invocation tool), so this
+  is `taskkill /F` — already proven safe across many uses this session.
+- `scripts/ue_editor_launch_and_wait.sh [timeout_s]` — closes first (same reasoning),
+  launches `UnrealEditor.exe` (the real GUI, not `-Cmd.exe`) against
+  `app/KrowdKontrol.uproject`, polls the MCP endpoint until it genuinely responds or
+  times out loudly (`UE_EDITOR_LAUNCH_TIMEOUT`, not silent). Depends on "Auto Start
+  Server" being enabled in this project's Editor Preferences (confirmed on,
+  2026-08-16) — without it the server never comes up on its own and this always
+  times out.
+  - **Found and fixed a real bug in this script before trusting it**: the readiness
+    poll's `curl ... || echo "000"` fallback could concatenate with curl's own
+    placeholder output on a connection failure, producing `"000000"` — which a naive
+    `!= "000"` check wrongly treated as a real response, reporting `UE_EDITOR_READY`
+    at 0 seconds elapsed while the Editor had only just been launched. Fixed by
+    checking curl's actual exit code explicitly. Confirmed the fix live: 9s to a
+    genuine `405` response, verified independently via a real
+    `mcp__unreal-mcp__list_toolsets` call, not just trusting the script's own report.
+  - Also directly confirmed the launched window is real and visible on the operator's
+    desktop (not a background/headless process that merely happens to serve MCP) —
+    checked after the operator reported not having seen it appear during an earlier,
+    very fast launch→verify→close test cycle; a slower, left-open relaunch confirmed
+    it was there the whole time, just missed in the short window.
+
+**Wired into both workflows:**
+
+- `dark-factory-validate-pr.yaml`: `ensure-editor-closed-p1/p2` before
+  `run-harness-p1/p2` (so the headless UBT compile never fights a live session);
+  `launch-editor-for-e2e-p1/p2` after `run-harness-p1/p2` and before
+  `behavioral-e2e-p1/p2` (so E2E gets a session that's actually current, not stale —
+  this is what PR #101 hit); `close-editor-after-e2e-p1/p2` as best-effort cleanup;
+  `teardown-app` (already ran unconditionally at the end regardless of pass-1/pass-2
+  path) now also force-closes as the hard guarantee. Also removed a dead
+  `agent-browser close` call left over from before D-004.
+- `dark-factory-fix-github-issue.yaml`: `ensure-editor-closed` before `implement`
+  (same build-collision reasoning). `implement` itself stays on-demand rather than
+  auto-launched — most issues never touch Editor-only content, and launching
+  unconditionally would cost ~10-15s+ of dead time on all of them for no benefit.
+  `dark-factory-fix-issue.md` §5.2a now tells it exactly which scripts to call and
+  when, including the explicit requirement to close the Editor itself before
+  finishing so it doesn't block the very next headless build.
+
+**What this doesn't solve:** two humans/processes wanting the Editor at the same
+moment still can't both have it — automation wins, full stop, per the decision
+above. If the operator is using it interactively when the loop needs it, it will be
+closed out from under them. Acceptable given the explicit instruction, but worth
+remembering if it ever surprises someone mid-session.
