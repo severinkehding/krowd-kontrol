@@ -81,6 +81,16 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 			Listener->LastSpawnedWaveIndex, 1);
 		TestEqual(TEXT("OnAllWavesComplete should fire exactly once"),
 			Listener->CompleteCallCount, 1);
+
+		// Regression: a second StartWaves() call must no-op, not re-run the sequence -
+		// mirrors UStationPowerUpComponent's InitializeSequence() idempotency test.
+		Spawner->StartWaves();
+		TestEqual(TEXT("A second StartWaves() call must not re-spawn any waves"),
+			Spawner->GetSpawnedActors().Num(), 5);
+		TestEqual(TEXT("A second StartWaves() call must not re-fire OnWaveSpawned"),
+			Listener->SpawnedWaveCount, 2);
+		TestEqual(TEXT("A second StartWaves() call must not re-fire OnAllWavesComplete"),
+			Listener->CompleteCallCount, 1);
 	}
 
 	// (2) A nonzero delay defers a wave until explicitly triggered; (3) TriggerNextWave()
@@ -153,7 +163,9 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 	}
 
 	// (5) An unset EnemyClass on one wave entry warns, skips spawning that wave, but
-	// still advances.
+	// still advances. A Count = 0 wave with a valid EnemyClass (plausible designer
+	// typo) is folded in here too: it should spawn nothing, log no warning, and still
+	// advance the sequence and fire OnWaveSpawned like any other wave.
 	{
 		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
 		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
@@ -167,23 +179,93 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 		UnsetWave.DelaySeconds = 0.0f;
 		// EnemyClass intentionally left unset.
 
+		FWaveEntry ZeroCountWave;
+		ZeroCountWave.EnemyClass = APlaceholderCubeActor::StaticClass();
+		ZeroCountWave.Count = 0;
+		ZeroCountWave.DelaySeconds = 0.0f;
+
 		FWaveEntry WaveAfter;
 		WaveAfter.EnemyClass = APlaceholderCubeActor::StaticClass();
 		WaveAfter.Count = 1;
 		WaveAfter.DelaySeconds = 0.0f;
 
-		Spawner->Waves = { UnsetWave, WaveAfter };
+		Spawner->Waves = { UnsetWave, ZeroCountWave, WaveAfter };
 
 		UWaveSpawnerTestListener* Listener = NewObject<UWaveSpawnerTestListener>();
+		Spawner->OnWaveSpawned.AddDynamic(Listener, &UWaveSpawnerTestListener::HandleWaveSpawned);
 		Spawner->OnAllWavesComplete.AddDynamic(Listener, &UWaveSpawnerTestListener::HandleAllWavesComplete);
 
 		AddExpectedError(TEXT("EnemyClass is unset"), EAutomationExpectedErrorFlags::Contains, 1);
 		Spawner->StartWaves();
 
-		TestEqual(TEXT("Unset EnemyClass wave should contribute no actors"),
+		TestEqual(TEXT("Unset EnemyClass and Count = 0 waves should contribute no actors"),
 			Spawner->GetSpawnedActors().Num(), 1);
+		TestEqual(TEXT("All three waves should still fire OnWaveSpawned, including the Count = 0 one"),
+			Listener->SpawnedWaveCount, 3);
 		TestEqual(TEXT("Sequence should still reach OnAllWavesComplete"),
 			Listener->CompleteCallCount, 1);
+	}
+
+	// (6) TriggerNextWave() called before StartWaves() must no-op (with a warning)
+	// rather than spawning early and letting a later StartWaves() re-spawn wave 0.
+	{
+		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
+		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
+		{
+			return false;
+		}
+		Spawner->RegisterComponent();
+
+		FWaveEntry WaveA;
+		WaveA.EnemyClass = APlaceholderCubeActor::StaticClass();
+		WaveA.Count = 1;
+		WaveA.DelaySeconds = 0.0f;
+		Spawner->Waves = { WaveA };
+
+		UWaveSpawnerTestListener* Listener = NewObject<UWaveSpawnerTestListener>();
+		Spawner->OnWaveSpawned.AddDynamic(Listener, &UWaveSpawnerTestListener::HandleWaveSpawned);
+
+		AddExpectedError(TEXT("TriggerNextWave() called on"), EAutomationExpectedErrorFlags::Contains, 1, false);
+		Spawner->TriggerNextWave();
+		TestEqual(TEXT("TriggerNextWave() before StartWaves() should not spawn (guarded)"),
+			Spawner->GetSpawnedActors().Num(), 0);
+
+		Spawner->StartWaves();
+		TestEqual(TEXT("StartWaves() afterward should spawn wave 0 exactly once"),
+			Spawner->GetSpawnedActors().Num(), 1);
+		TestEqual(TEXT("OnWaveSpawned should have fired exactly once"),
+			Listener->SpawnedWaveCount, 1);
+	}
+
+	// (7) Destroying the component mid-sequence (a wave is pending on a timer) must not
+	// crash and must clear the pending timer via EndPlay().
+	{
+		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
+		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
+		{
+			return false;
+		}
+		Spawner->RegisterComponent();
+
+		FWaveEntry WaveA;
+		WaveA.EnemyClass = APlaceholderCubeActor::StaticClass();
+		WaveA.Count = 1;
+		WaveA.DelaySeconds = 0.0f;
+
+		FWaveEntry WaveB;
+		WaveB.EnemyClass = APlaceholderCubeActor::StaticClass();
+		WaveB.Count = 1;
+		WaveB.DelaySeconds = 30.0f; // long enough it will never fire naturally in this test
+
+		Spawner->Waves = { WaveA, WaveB };
+		Spawner->StartWaves();
+
+		TestEqual(TEXT("Wave 0 should have spawned before destruction"),
+			Spawner->GetSpawnedActors().Num(), 1);
+
+		// DestroyComponent() invokes EndPlay() on a registered component; must not crash
+		// with a wave still pending on WaveTimerHandle.
+		Spawner->DestroyComponent();
 	}
 
 	return true;

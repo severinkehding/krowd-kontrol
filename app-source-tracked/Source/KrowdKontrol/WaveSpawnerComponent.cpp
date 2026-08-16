@@ -31,6 +31,14 @@ void UWaveSpawnerComponent::StartWaves()
 
 void UWaveSpawnerComponent::TriggerNextWave()
 {
+	if (!bHasStarted)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UWaveSpawnerComponent: TriggerNextWave() called on '%s' before StartWaves() - ignoring."),
+			*GetNameSafe(GetOwner()));
+		return;
+	}
+
 	if (NextWaveIndex >= Waves.Num())
 	{
 		return;

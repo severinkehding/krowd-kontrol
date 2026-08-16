@@ -38,6 +38,48 @@ literally specified. Changed the accessor to return `const TArray<TObjectPtr<AAc
 directly (matching the storage type) — same capability (callers/tests can still read
 `.Num()` and each spawned actor), just a type that actually compiles.
 
+## Post-review fixes
+
+Code review (PR #123) found `TriggerNextWave()` didn't check `bHasStarted`, so calling
+it before `StartWaves()` would spawn wave 0 immediately, then let a later `StartWaves()`
+call bypass its own idempotency guard (since `bHasStarted` was still `false`) and
+re-spawn wave 0 — real duplicate actors, not just a redundant delegate broadcast. This
+contradicted the header doc's own claim that `TriggerNextWave()` "no-ops ... before
+`StartWaves()` has ever been called." Fixed by adding the guard the doc already
+promised, matching `StartWaves()`'s own idempotency-flag pattern and this file's
+warn-then-continue precedent for misconfiguration:
+
+```cpp
+void UWaveSpawnerComponent::TriggerNextWave()
+{
+	if (!bHasStarted)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UWaveSpawnerComponent: TriggerNextWave() called on '%s' before StartWaves() - ignoring."),
+			*GetNameSafe(GetOwner()));
+		return;
+	}
+	...
+```
+
+Test coverage added alongside the fix:
+- **(1) extended**: a second `StartWaves()` call must not re-spawn any waves or re-fire
+  either delegate (mirrors `UStationPowerUpComponent::InitializeSequence()`'s existing
+  idempotency regression test).
+- **(5) extended**: a `Count = 0` wave with a valid `EnemyClass` contributes no actors
+  but still fires `OnWaveSpawned` and advances the sequence normally.
+- **(6) new**: `TriggerNextWave()` called before `StartWaves()` must not spawn, and a
+  subsequent `StartWaves()` call must spawn wave 0 exactly once — proves the fix above.
+- **(7) new**: destroying the component mid-sequence, with a wave still pending on
+  `WaveTimerHandle`, must not crash (`EndPlay()`'s existing `ClearTimer` call was
+  previously unverified by any test).
+
+Not added: a test that drives a wave's `DelaySeconds` timer to a real elapsed fire
+(rather than being preempted by `TriggerNextWave()` or using a zero delay). No test in
+this codebase currently advances `FTimerManager` timers for real, so building that
+infrastructure well deserves its own dedicated pass rather than being rushed into this
+fix — tracked as a follow-up rather than attempted here.
+
 ## Acceptance criteria
 
 - [x] **A spawner component (`UWaveSpawnerComponent`) exists that accepts a
