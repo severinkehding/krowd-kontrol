@@ -29,6 +29,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
+#include "GameFramework/InputSettings.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -98,6 +99,11 @@ bool FKrowdKontrolPaper2DPipelineSmokeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("SpriteComponent should be rotated into the ground plane (<= -45 degrees pitch), not edge-on"),
 		SpriteComponent->GetRelativeRotation().Pitch <= -45.0f);
 
+	// ConstructorHelpers::FObjectFinder silently no-ops on failure (no assert, no log) -
+	// without this check, a future asset path change would leave the pawn invisible
+	// in-game while every other assertion in this file still passed.
+	TestNotNull(TEXT("SpriteComponent should have a default sprite assigned"), SpriteComponent->GetSprite());
+
 	TestTrue(TEXT("CameraBoom RELATIVE pitch should be genuinely top-down (<= -45 degrees)"),
 		CameraBoomComponent->GetRelativeRotation().Pitch <= -45.0f);
 	TestTrue(TEXT("CameraBoom WORLD pitch should be genuinely top-down (<= -45 degrees) - this is the "
@@ -126,8 +132,18 @@ bool FKrowdKontrolPaper2DPipelineSmokeTest::RunTest(const FString& Parameters)
 	// bound delegates actually fire and accumulate the expected world-space input, not
 	// just that a binding with this name exists - mirrors
 	// KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp's own delegate-invocation assertion
-	// (issue #56's post-review pattern).
-	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn);
+	// (issue #56's post-review pattern). Constructs against the project's actual
+	// configured input component class (UInputSettings::GetDefaultInputComponentClass(),
+	// resolving to UEnhancedInputComponent per DefaultInput.ini) rather than a bare
+	// UInputComponent, mirroring how APawn::CreatePlayerInputComponent() constructs the
+	// real one (Engine/Private/Pawn.cpp).
+	UClass* InputComponentClass = UInputSettings::GetDefaultInputComponentClass();
+	if (!TestNotNull(TEXT("Project should have a configured default InputComponent class"), InputComponentClass))
+	{
+		return false;
+	}
+
+	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn, InputComponentClass);
 	InputComponent->RegisterComponent();
 	Pawn->SetupPlayerInputComponent(InputComponent);
 
@@ -208,7 +224,16 @@ bool FKrowdKontrolPaper2DPipelineMovementTest::RunTest(const FString& Parameters
 	Controller->Possess(Pawn);
 	Controller->SetAsLocalPlayerController();
 
-	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn);
+	// Constructs against the project's actual configured input component class - see the
+	// comment above KrowdKontrol.Unit.Paper2DPipelineSmoke's own InputComponentClass
+	// resolution for why a bare UInputComponent isn't representative of runtime behavior.
+	UClass* InputComponentClass = UInputSettings::GetDefaultInputComponentClass();
+	if (!TestNotNull(TEXT("Project should have a configured default InputComponent class"), InputComponentClass))
+	{
+		return false;
+	}
+
+	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn, InputComponentClass);
 	InputComponent->RegisterComponent();
 	Pawn->SetupPlayerInputComponent(InputComponent);
 
@@ -273,6 +298,18 @@ bool FKrowdKontrolPaper2DPipelineLevelTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+
+	// Asserts the actual defect this test exists to catch: L_Paper2DPrototype.umap's
+	// placed pawn instance was once found with CameraBoom->AttachParent still serialized
+	// as SpriteComponent even after the C++ class default was fixed, because a native
+	// class's default-attachment change doesn't propagate to an already-placed instance.
+	// A pitch-only check wouldn't catch a future reparent that preserves world transform.
+	TestEqual(TEXT("Placed pawn's CameraBoom should remain attached directly to PawnRoot, not SpriteComponent"),
+		PlacedPawn->CameraBoom->GetAttachParent(),
+		static_cast<USceneComponent*>(PlacedPawn->PawnRoot));
+	TestEqual(TEXT("Placed pawn's SpriteComponent should remain attached directly to PawnRoot"),
+		PlacedPawn->SpriteComponent->GetAttachParent(),
+		static_cast<USceneComponent*>(PlacedPawn->PawnRoot));
 
 	TestTrue(TEXT("Placed pawn's CameraBoom RELATIVE pitch should be genuinely top-down (<= -45 degrees)"),
 		PlacedPawn->CameraBoom->GetRelativeRotation().Pitch <= -45.0f);
