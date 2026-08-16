@@ -112,8 +112,7 @@ void UOnScreenPromptWidget::ShowPrompt(const FText& Message, float DurationSecon
 	}
 	else
 	{
-		PromptText->SetText(FText::GetEmpty());
-		PromptBorder->SetVisibility(ESlateVisibility::Collapsed);
+		ClearPromptDisplay();
 	}
 }
 
@@ -124,15 +123,20 @@ void UOnScreenPromptWidget::AdvanceDismissTimer(float DeltaSeconds)
 		RemainingSeconds = FMath::Max(0.0f, RemainingSeconds - DeltaSeconds);
 		if (RemainingSeconds <= 0.0f)
 		{
-			if (PromptText)
-			{
-				PromptText->SetText(FText::GetEmpty());
-			}
-			if (PromptBorder)
-			{
-				PromptBorder->SetVisibility(ESlateVisibility::Collapsed);
-			}
+			ClearPromptDisplay();
 		}
+	}
+}
+
+void UOnScreenPromptWidget::ClearPromptDisplay()
+{
+	if (PromptText)
+	{
+		PromptText->SetText(FText::GetEmpty());
+	}
+	if (PromptBorder)
+	{
+		PromptBorder->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 

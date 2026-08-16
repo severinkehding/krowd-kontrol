@@ -82,6 +82,10 @@ private:
 	// UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt().
 	void EnsureWidgetTreeBuilt();
 
+	// Shared by ShowPrompt()'s zero-duration path and AdvanceDismissTimer()'s
+	// countdown-expiry path - both dismiss the same way.
+	void ClearPromptDisplay();
+
 	UPROPERTY()
 	TObjectPtr<UBorder> PromptBorder;
 
