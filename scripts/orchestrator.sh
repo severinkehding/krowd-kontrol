@@ -174,6 +174,23 @@ capacity_left() {
 #    folds fix + re-validate into a single dispatch (see FACTORY_RULES §8).
 # ─────────────────────────────────────────────────────────────────────────
 
+# Safety net: stamp factory:needs-review on any open PR with no factory:*
+# label at all. The main create-pr flow labels its own PR, but follow-up PRs
+# split out by the bundled self-fix/simplify commands (e.g. a docs/changelog
+# split to satisfy the 500-line cap - PRs #108 and #111, both found unlabeled
+# 2026-08-16) get created by `gh pr create` calls those bundled commands make
+# without any label, leaving them invisible to pr_queue() forever. Cheaper and
+# more robust to catch the invariant here ("no open PR may be unlabeled") than
+# to fork the bundled commands. factory:needs-human/approved/etc. PRs are
+# untouched - only fully-unlabeled ones get stamped.
+gh pr list -R "$REPO" --state open --json number,labels \
+  --jq '.[] | select([.labels[].name | select(startswith("factory:"))] | length == 0) | .number' \
+  2>/dev/null | while read -r unlabeled_pr; do
+    [ -z "$unlabeled_pr" ] && continue
+    log "LABEL: PR #$unlabeled_pr has no factory:* label - stamping factory:needs-review"
+    gh pr edit "$unlabeled_pr" -R "$REPO" --add-label "factory:needs-review" 2>/dev/null || true
+  done
+
 pr_queue() {
   {
     gh pr list -R "$REPO" --state open --label "factory:needs-review" \
