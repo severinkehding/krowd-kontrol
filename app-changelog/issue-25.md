@@ -59,9 +59,11 @@ assets (see Known Follow-Up below).
 - [x] No Hard Invariant from MISSION.md violated: no kill path touched (`Banked`
       still maps to `Idle`, never destroyed), no 6th gameplay colour introduced,
       ability/enemy rosters untouched, engine/2D lock untouched.
-- [ ] Editor-side WAV import (`USoundWave` assets) + `DefaultGame.ini` wiring — see
-      Known Follow-Up below. `SetMusicState()` degrades gracefully with unset tracks,
-      so this does not block the state-machine/test half of this issue.
+- [x] Editor-side WAV import (`USoundWave` assets) + `DefaultGame.ini` wiring — the
+      WAV import turned out to already be done (see "Fix round" below for the
+      evidence); `DefaultGame.ini` wiring landed in that same fix round. See "Fix
+      round: pass-1 validation feedback" below for what changed and the honest
+      caveat on how far this was re-verified this session.
 
 ## Validation evidence
 
@@ -166,3 +168,95 @@ explicitly anticipated and permitted this split.
   no new friend grant needed) covering both the found-component and
   not-found/warning paths, using `FAutomationEditorCommonUtils::CreateNewMap()` +
   `NewObject<UPlayerEnergyComponent>(PlayerPawn)` + `RegisterComponent()`.
+
+## Fix round: pass-1 validation feedback (2026-08-17)
+
+Addresses `dark-factory-validate-pr` pass-1's `request_changes` verdict (workflow
+`68f0f516428af1026f66f69930ddda56`).
+
+### Critical - CalmTrack/CombatTrack resolved to null (behavioral)
+
+`app/Content/_Placeholder/Music/PlaceholderCalmTrack.wav` and
+`PlaceholderCombatTrack.wav` turn out to have already been imported into the Editor
+as `USoundWave` assets in a prior session - `app/Saved/Logs/KrowdKontrol.log` shows
+`Performing atomic reimport of .../PlaceholderCalmTrack.wav` and
+`Saving Package: /Game/_Placeholder/Music/PlaceholderCalmTrack` (both timestamped
+2026.08.16-20.10.03), and the resulting `.uasset` files on disk are confirmed real
+`SoundWave` packages by binary inspection (`class SoundWave`, correct package path).
+What was still actually missing was the `DefaultGame.ini` wiring itself. Added to
+`app/Config/DefaultGame.ini` (gitignored - not visible in this repo's own diff, per
+CLAUDE.md's Environment section; the value format is the standard UE ini
+soft-object-path string for a `TSoftObjectPtr`):
+
+```ini
+[/Script/KrowdKontrol.MusicSubsystem]
+CalmTrack=/Game/_Placeholder/Music/PlaceholderCalmTrack.PlaceholderCalmTrack
+CombatTrack=/Game/_Placeholder/Music/PlaceholderCombatTrack.PlaceholderCombatTrack
+```
+
+`harness/ci.py` full mode is `GATE_OK` after this change (29/29 unit tests,
+`KrowdKontrol.Smoke.` e2e still passing). **Caveat, stated honestly**: neither the
+Automation unit-test suite (which injects its own `NewObject<USoundWave>()` test
+tracks in case (j), not the Config-driven ones) nor `harness/e2e.py` (Smoke-suite
+only, per `harness/README.md`) actually exercises `PlayTrackForState()`'s
+`CalmTrack.LoadSynchronous()` / `CombatTrack.LoadSynchronous()` path. This session had
+no live `unreal-mcp` connection (Editor not running, MCP server not started - see
+CLAUDE.md's WSL2/mirrored-networking section), so the live-PIE inspection pass-1 used
+to originally catch `CalmTrack=None` could not be re-run to positively confirm the
+fix end-to-end. The config values are correct against the real, verified asset paths,
+but this is an inference from static evidence, not a re-run behavioral confirmation -
+pass-2 should re-check with a live PIE session if one is available.
+
+### High - E2E "no APawn with a UPlayerEnergyComponent" (e2e)
+
+Investigated by code inspection (no live Editor session available this round, so this
+is a static-analysis finding, not a re-run PIE confirmation). `AEnemyBase::GetThreatState()`
+- the method issue #25's music switch actually reads via `IThreatState` - derives
+`Hot`/`Idle` purely from `CurrentState` (`Alert`/`Attack`/`Controlled` map to `Hot`;
+`Idle`/`Banked` map to `Idle`), and `CurrentState` only ever advances via
+`TickCheckDetection(PlayerLocation)`, called every `Tick()` with
+`UGameplayStatics::GetPlayerPawn(GetWorld(), 0)`'s location - a plain distance check
+against `DetectionRangeUnits`/`GetAttackRangeUnits()`. None of that path touches
+`FindPlayerEnergyComponent()` or `UPlayerEnergyComponent` at all.
+`AFlatCamera3DPrototypePawn` (the pawn in `L_FlatCamera3DPrototype`, the map pass-1's
+E2E session used) self-possesses via `AutoPossessPlayer = EAutoReceiveInput::Player0`
+in its own constructor, so `GetPlayerPawn()` should resolve to it without needing a
+`GameMode`/`DefaultPawnClass` - the Hot-state trigger path looks reachable on
+inspection, independent of the missing-audio-asset issue above.
+
+The `FindPlayerEnergyComponent` warning pass-1 actually saw comes from a different
+code path: `ABomberEnemy`'s contact-damage handling (`BomberEnemy.cpp`, issue #15's
+own work, not part of this PR's tracked diff - see the scope note below) calls
+`FindPlayerEnergyComponent()` when applying damage on overlap, and
+`AFlatCamera3DPrototypePawn` has no `UPlayerEnergyComponent` attached, so that call
+always warns-and-returns-null today regardless of issue #25. Forcing "player-enemy
+overlap" during E2E testing exercises that Bomber-specific overlap/damage path, not
+the proximity-based `TickCheckDetection` path issue #25's music switch depends on -
+the two are unrelated once traced through the code, even though both hang off
+`AEnemyBase`/its subclass. No source edit made for this item: it's an investigated
+finding pointing at a pre-existing, already-disclosed scope-mixing issue (next
+section), not a bug in code this PR owns.
+
+### Medium - split FindPlayerEnergyComponent()/friend grant out (scope)
+
+Re-investigated; same conclusion the original implementation already reached (see
+"Deviations from plan" above), now with the structural reason confirmed directly:
+`BomberEnemy.cpp` is issue #15's own work, open as PR #119
+(`archon/task-fix-issue-15`, not merged to `main`) - but `app/` is a single physical,
+gitignored Unreal project shared across every in-flight branch (CLAUDE.md's
+Environment section), not a per-branch checkout. `BomberEnemy.cpp` calls
+`FindPlayerEnergyComponent()` directly in that shared `app/` tree today (confirmed via
+grep against the live file). Removing the method/friend grant from
+`EnemyBase.h`/`.cpp` in this PR would edit the one shared physical file both PRs'
+source lives in and break PR #119's build the moment anyone builds against current
+`app/` state - a cross-PR regression, not a scope fix. Left in place, unchanged from
+the original implementation; this PR's tracked diff already discloses the bundling in
+the "Files changed" table above, which is the documented fallback this exact
+situation calls for.
+
+### Low - stale PR description
+
+PR #120's top-level description synced via `gh pr edit` to match this file's already-
+accurate case count (10 cases (a)-(j), not 9) and fix-round history (this file's
+"Deviations from plan" / "Self-fix review round" sections above), plus this fix
+round's findings.
