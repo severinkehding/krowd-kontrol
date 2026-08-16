@@ -805,3 +805,50 @@ precisely what this operator's "observe and see if it still crashes" request for
 Don't treat a clean interactive dry run of an unattended script as sufficient
 evidence again without also checking it under the actual restricted invocation
 environment (PATH, env, cwd) it will really run under.
+
+## D-015: A rejected/closed PR's leftover worktree could permanently stick an issue in-progress
+
+**2026-08-16.** Found during a routine "any failed/stuck?" status sweep (operator
+request), not a crash — the opposite: silence. Issues #55 and #74 both showed
+`factory:in-progress` with timestamps ~5+ hours stale, no open PR, and no active
+process. `issue_queue()` already excludes `factory:in-progress` and
+`factory:needs-human` (D-009's fix) — neither applied here, since nothing had ever
+labeled these `factory:needs-human`, and nothing had ever cleared `in-progress`
+either. Genuinely invisible: not flagged as needing a human, not eligible for
+redispatch, not in flight.
+
+**Root cause:** `dark-factory-validate-pr.yaml`'s `checkout-pr` step already prunes a
+stale worktree pinned to the PR branch (left behind by a preceding
+`fix-github-issue` run) before checking the PR out — see the existing comment there
+citing `dark-factory-experiment`'s rationale. Nothing did the reverse. `validate-pr`'s
+own `checkout-pr` worktree (`task-validate-pr-100`, `task-validate-pr-89`) stays
+pinned to `archon/task-fix-issue-{55,74}` after that validate-pr run finishes —
+whether the PR merges, gets rejected, or gets closed — with no teardown step for the
+worktree itself. A later `fix-github-issue` redispatch on the same issue then fails
+at `git worktree add` (`fatal: 'archon/task-fix-issue-55' is already checked out at
+'.../task-validate-pr-100'`) before a single DAG node runs — before it can even
+reach `cleanup-issue-label`. The label set at dispatch time (`factory:in-progress`)
+never gets cleared, and the process that would have cleared it never existed long
+enough to try.
+
+**Immediate fix:** manually removed both stale worktrees (uncommitted leftovers
+stashed first, not discarded — see D-013's investigation for what those leftovers
+actually were), cleared both `factory:in-progress` labels by hand.
+
+**Systemic fix:** `scripts/orchestrator.sh`'s `dispatch()` now prunes any worktree
+pinned to `archon/task-<branch>` immediately before launching, mirroring
+`checkout-pr`'s existing pattern. Safe specifically because `is_locked()` already ran
+first in `dispatch()` — anything still pinned to the branch at that point is
+guaranteed stale, not a live collision with a real in-flight run. Uses `--force`
+(matching `checkout-pr`'s own precedent) since this runs unattended under cron with
+no human present to stash first, and anything sitting uncommitted in a *finished*
+validate-pr worktree is disposable review-run byproduct, not real work — the
+branch's actual committed history is untouched by removing the worktree.
+
+**Pattern note:** this is the third distinct "an issue's own successful-looking
+history quietly stops it from ever being touched again" bug found today (see D-009,
+and the earlier same-session `-vN` branch-suffix dispatch bug), each with a different
+root cause but the same shape: something that looks like an ending (workflow exits,
+label update, PR closes) doesn't actually reach the step that was supposed to signal
+it. Worth treating "is anything stuck with no error and no visible cause" as its own
+recurring category to sweep for, not just individual bugs to fix one at a time.
