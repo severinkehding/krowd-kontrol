@@ -6,9 +6,16 @@ track by default and crossfades to a combat placeholder track the instant any sp
 `IThreatState` interface, reverting to calm the instant no enemy is Hot.
 `AEnemyBase` gets its first real `IThreatState` implementer (`GetThreatState()`,
 mapping Alert/Attack/Controlled -> Hot, Idle/Banked -> Idle), closing a gap flagged
-since issue #81. Two short, procedurally generated placeholder `.wav` loops (80s
-electronic, driving bass character - sparse 90 BPM calm bassline vs. faster 140 BPM
-combat bassline) stand in for real music per MISSION.md's placeholder-first rule.
+since issue #81. Two real, operator-supplied electronic tracks (Pixabay-licensed, 80s-electronic
+driving-bass character per PRD 12) are imported as `USoundWave` assets:
+`/Game/Audio/Music/CalmTrack` (96s, stylish-deep-electronic) and
+`/Game/Audio/Music/CombatTrack` (126s, driving electronic). These replaced an
+earlier attempt's procedurally generated `.wav` placeholders, which were written to
+disk but never imported as Editor assets - the root cause of pass-2's critical E2E
+finding (every Play immediately Stopped: a missing/unresolvable asset ends playback
+instantly no matter how correct the code is). With real imported assets, live PIE
+verification shows sustained streaming playback (decoder chunk advancement 8s+ into
+the track).
 
 ## Files changed
 
@@ -21,16 +28,16 @@ combat bassline) stand in for real music per MISSION.md's placeholder-first rule
 | `Private/Tests/KrowdKontrolEnemyBaseTest.cpp` | UPDATE | Added cases (m)/(n): `FindPlayerEnergyComponent()`'s found and not-found paths - see "Deviations from plan" below. |
 
 Not mirrored here (per Hard Invariant #8's carve-out - `app-source-tracked/` never
-holds binary/content assets): `app/Content/_Placeholder/Music/PlaceholderCalmTrack.wav`
-and `PlaceholderCombatTrack.wav`, two procedurally generated placeholder tracks that
-exist on disk under `app/` but are not yet imported into the Editor as `USoundWave`
-assets (see Known Follow-Up below).
+holds binary/content assets): `app/Content/Audio/Music/CalmTrack.uasset` and
+`CombatTrack.uasset`, imported via the `ImportAssets` commandlet from operator-supplied
+tracks, and `app/Config/DefaultGame.ini`'s `[/Script/KrowdKontrol.MusicSubsystem]`
+section pointing `CalmTrack`/`CombatTrack` at them.
 
 ## Acceptance criteria
 
-- [x] A calm-state and a combat-state placeholder music track exist in the project:
-      `app/Content/_Placeholder/Music/PlaceholderCalmTrack.wav` /
-      `PlaceholderCombatTrack.wav`, procedurally generated (no licensing risk).
+- [x] A calm-state and a combat-state music track exist in the project as imported
+      `USoundWave` assets: `/Game/Audio/Music/CalmTrack` / `CombatTrack`
+      (operator-supplied, Pixabay-licensed - no licensing risk).
 - [x] `UMusicSubsystem` plays the calm track by default (cleared rooms, hub/menu):
       `Initialize()` (`MusicSubsystem.cpp`) actually starts `CalmTrack` once, on world
       init - fixed from an earlier version that only set `CurrentState = Calm` and
@@ -94,20 +101,18 @@ Automation log's own handled-ensure stack trace). Both `harness/ci.py --quick` a
 full mode are green on the current source; `KrowdKontrol.Unit.` (all 29 tests) also
 verified directly via `harness/run_ue_automation.sh`.
 
-## Known follow-up (not blocking)
+## Known follow-up: RESOLVED (2026-08-17, operator-assisted)
 
-The two placeholder `.wav` files exist on disk at `app/Content/_Placeholder/Music/`
-but were not imported into the Unreal Editor as `USoundWave` assets this session -
-the session's `unreal-mcp` client connection never came up even though the Editor
-itself was confirmed live (see `implementation.md`'s Deviations section for the full
-account). `DefaultGame.ini` was deliberately left unmodified rather than pointing
-`CalmTrack`/`CombatTrack` at asset paths that don't exist yet. `SetMusicState()`
-already degrades gracefully with unset tracks (proven by every Automation test case,
-none of which configure a track), so the state machine itself is fully correct and
-testable without this step. Fast follow-up: import both WAVs as `USoundWave` under
-`Content/_Placeholder/Music/`, then add
-`[/Script/KrowdKontrol.MusicSubsystem]` / `CalmTrack=...` / `CombatTrack=...` to
-`app/Config/DefaultGame.ini`.
+An earlier version of this section documented that the placeholder `.wav` files were
+never imported as `USoundWave` assets (the session's MCP connection was down), which
+turned out to be the root cause of pass-2's critical E2E finding - a missing asset
+ends playback the instant it starts, indistinguishable in LogAudio from a code bug.
+Resolved by importing two real operator-supplied tracks via the `ImportAssets`
+commandlet (`/Game/Audio/Music/CalmTrack`, 96s; `/Game/Audio/Music/CombatTrack`,
+126s) and pointing `DefaultGame.ini`'s `[/Script/KrowdKontrol.MusicSubsystem]`
+section at them. Live PIE verification with `LogAudio` at Verbose: sustained
+streaming playback confirmed (decoder chunk advancement 8s+ into CalmTrack), where
+the placeholder-era behavior was an instant Play/Stop pair.
 
 ## Deviations from plan
 
