@@ -102,9 +102,10 @@ confirms it still is.
 
 ## Closing note on `app-source-tracked/`
 
-`app/` itself is a gitignored symlink to the real Unreal project on the Windows host
-(D-003) — binary assets can't live in this repo without LFS set up ahead of time.
-`app-source-tracked/` mirrors the plain-text `.h`/`.cpp` files touched by this issue
-into the tracked repo (D-009) so this PR carries real, reviewable source instead of
-just a description of it. `app/` stays exactly as-is; this is a copy for review, not a
-new live link.
+Not applicable to this PR — no `.h`/`.cpp`/`.Build.cs` changed, so no mirror was
+created (see D-009's carve-out). For context: `app/` itself is a gitignored symlink
+to the real Unreal project on the Windows host (D-003) — binary assets can't live in
+this repo without LFS set up ahead of time. When source *does* change,
+`app-source-tracked/` mirrors the plain-text `.h`/`.cpp` files touched by that issue
+into the tracked repo so the PR carries real, reviewable source instead of just a
+description of it.
