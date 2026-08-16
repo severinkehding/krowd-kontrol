@@ -193,10 +193,20 @@ issue_queue() {
 # Confirmed live 2026-08-15 on issue #2 / PR #84. fix-github-issue always
 # branches as archon/task-fix-issue-<N> (confirmed via PR #84's headRefName),
 # so an open PR on that branch name is the real "already has a PR" signal.
+#
+# NOT always exactly archon/task-fix-issue-<N> though: Archon appends -v2,
+# -v3, ... when that branch name already exists locally (e.g. a prior,
+# closed-not-merged attempt left the branch behind — issue #56's PR #99 was
+# closed but its branch survived, so the next attempt became
+# archon/task-fix-issue-56-v2 on PR #102). A bare ltrimstr left "56-v2",
+# which never string-equals "56", so the exclusion silently missed it and
+# issue #56 got redispatched again while PR #102 was still open awaiting
+# review. Confirmed live 2026-08-16 (D-014 investigation). Extract just the
+# leading digit run so any -vN suffix is stripped along with it.
 open_pr_issue_numbers() {
   gh pr list -R "$REPO" --state open --json headRefName --jq \
     '.[].headRefName | select(startswith("archon/task-fix-issue-")) | ltrimstr("archon/task-fix-issue-")' \
-    2>/dev/null
+    2>/dev/null | grep -oE '^[0-9]+'
 }
 OPEN_PR_ISSUE_NUMBERS=$'\n'"$(open_pr_issue_numbers)"$'\n'
 
