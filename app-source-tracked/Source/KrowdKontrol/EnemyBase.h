@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "AbilitySlot.h"
-#include "ThreatState.h"
 #include "EnemyBase.generated.h"
 
 class UPlayerEnergyComponent;
@@ -40,7 +39,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyBanked);
 // Banked, never a kill" guarantee. Abstract: never placed/spawned directly, only
 // subclassed. See issue #12.
 UCLASS(Abstract)
-class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
+class KROWDKONTROL_API AEnemyBase : public AActor
 {
 	GENERATED_BODY()
 
@@ -49,13 +48,10 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	// real per-frame Tick() loop - same rationale UAbilityCooldownComponent's
 	// FKrowdKontrolAbilityCooldownTest friendship documents. Friendship isn't
 	// inherited, so each concrete subclass's own test (Sniper, Bomber) needs its own
-	// grant here to drive an instance through Idle->Alert->Attack deterministically -
-	// and so does any other subsystem's test (e.g. FKrowdKontrolMusicSubsystemTest)
-	// that needs to drive a plain AEnemyBaseTestActor through the same transitions.
+	// grant here to drive an instance through Idle->Alert->Attack deterministically.
 	friend class FKrowdKontrolEnemyBaseTest;
 	friend class FKrowdKontrolSniperEnemyTest;
 	friend class FKrowdKontrolBomberEnemyTest;
-	friend class FKrowdKontrolMusicSubsystemTest;
 	friend class FKrowdKontrolOvercrowdDetectionComponentTest;
 
 public:
@@ -66,11 +62,6 @@ public:
 	FOnEnemyBanked OnEnemyBanked;
 
 	EEnemyState GetEnemyState() const { return CurrentState; }
-
-	// IThreatState (issue #25): Alert/Attack/Controlled all read as "Hot" - any state
-	// where the enemy is actively engaged, not just mid-attack. Idle and Banked both
-	// read as "Idle" - not yet aggroed, or pacified. See ThreatState.h.
-	virtual EThreatState GetThreatState() const override;
 
 	// Idle->Alert proximity radius. Base-defined, not overridden per concrete type -
 	// issue #12's AC only calls out attack range as the per-type-overridable one.

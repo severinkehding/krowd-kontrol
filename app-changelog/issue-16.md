@@ -15,7 +15,7 @@ record of that change, see the closing note below)
 
 | File | Action | What it contains |
 |------|--------|-------------------|
-| `app/Source/KrowdKontrol/EnemyBase.h` | UPDATE | One new `friend class FKrowdKontrolOvercrowdDetectionComponentTest;` line, alongside the 4 existing friend grants, so the new test can drive enemies into `Alert`/`Attack` via the private `TickCheckDetection()` |
+| `app/Source/KrowdKontrol/EnemyBase.h` | UPDATE | One new `friend class FKrowdKontrolOvercrowdDetectionComponentTest;` line, alongside the 4 existing friend grants, so the new test can drive enemies into `Alert`/`Attack` via the private `TickCheckDetection()` (an unrelated `IThreatState`/`GetThreatState()` implementation and a `FKrowdKontrolMusicSubsystemTest` friend grant briefly leaked in from concurrent, unmerged issue #25 work sharing the same `app/` tree — caught in review and stripped back out; see Validation below) |
 | `app/Source/KrowdKontrol/OvercrowdDetectionComponent.h` | CREATE | `EPanicOverloadState` enum, `FOnPanicOverloadStateChanged` delegate, `UOvercrowdDetectionComponent` declaration: tunable `OvercrowdCrowdThreshold`/`OvercrowdRadiusUnits`/`OvercrowdUncontrolledDurationSeconds`, `GetPanicOverloadState()`, private `AdvancePanicOverloadState()`/`CountHotUncontrolledEnemiesNearby()` |
 | `app/Source/KrowdKontrol/OvercrowdDetectionComponent.cpp` | CREATE | Tick-driven accumulator (mirrors `UAbilityCooldownComponent`) and `TActorIterator<AEnemyBase>` aggregation (mirrors `UMusicSubsystem::IsAnyEnemyInCombat()`), using `GetEnemyState()` (never `GetThreatState()`, which reports `Controlled` as `Hot` too) |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolOvercrowdDetectionComponentTest.cpp` | CREATE | `KrowdKontrol.Unit.OvercrowdDetectionComponent` — cases (a)-(i) below |
@@ -40,8 +40,8 @@ file — no change to `AEnemyBase`/`AEnemyBaseTestActor` production or shared te
 - [x] **A system tracks, per tick or on-demand, how many hot-and-uncontrolled enemies
       are within a tunable radius of the player, excluding `Controlled` enemies.**
       `CountHotUncontrolledEnemiesNearby()` reads `GetEnemyState() == Alert || Attack`
-      only. Test case (i) proves `Controlled` enemies (still `Hot` per `IThreatState`)
-      never count — the issue's core AC.
+      only. Test case (i) proves `Controlled` enemies never count — the issue's core
+      AC.
 - [x] **Sustaining that count at/above the threshold for the configured duration flips
       the state to `Active` and fires a subscribable delegate, plus a plain getter.**
       `AdvancePanicOverloadState()` + `OnPanicOverloadStateChanged` +
@@ -56,7 +56,10 @@ file — no change to `AEnemyBase`/`AEnemyBaseTestActor` production or shared te
       exists and asserts `Active` under a simulated converging-crowd scenario.** Cases
       (a)-(i): default state, below-threshold count, count-met/duration-pending, the
       flip + single broadcast, no-op no-rebroadcast, count-drop timer reset, radius
-      exclusion, and controlled-exclusion.
+      exclusion, and controlled-exclusion. Two more added during review: an inclusive
+      radius-boundary case (an enemy exactly at `OvercrowdRadiusUnits` still counts) and
+      a no-owning-Actor case (`CountHotUncontrolledEnemiesNearby()`'s `GetOwner()` null
+      guard doesn't crash and leaves the component `Inactive`).
 - [ ] **`python harness/ci.py` (full mode) passes with `GATE_OK`.** Does not currently
       pass — see Validation below. Root cause is unrelated to this diff.
 - [x] **`app-source-tracked/` mirror is byte-identical to the real `app/` files
@@ -77,27 +80,17 @@ complete isolation (same crash, zero interaction with this issue's diff). This m
 `harness/ci.py`'s `unit` rung cannot report `GATE_OK` for *any* PR against this repo
 right now, not just this one — recommend a follow-up issue to fix that test case.
 
-Substitute verification performed instead (this diff's own correctness):
+Substitute verification performed instead (this diff's own correctness), re-run after
+review caught and this PR fixed the leaked `IThreatState`/`FKrowdKontrolMusicSubsystemTest`
+content described above:
 
 ```
 $ harness/run_ue_automation.sh KrowdKontrol.Unit.OvercrowdDetectionComponent
 UE_AUTOMATION_RESULT passed=1 total=1
 UE_AUTOMATION_OK
 
-$ harness/run_ue_automation.sh KrowdKontrol.Unit.EnemyBase
-UE_AUTOMATION_RESULT passed=1 total=1
-UE_AUTOMATION_OK
-
-$ harness/run_ue_automation.sh KrowdKontrol.Unit.MusicSubsystem
-UE_AUTOMATION_RESULT passed=1 total=1
-UE_AUTOMATION_OK
-
-$ harness/run_ue_automation.sh KrowdKontrol.Unit.SniperEnemy
-UE_AUTOMATION_RESULT passed=1 total=1
-UE_AUTOMATION_OK
-
-$ harness/run_ue_automation.sh KrowdKontrol.Unit.BomberEnemy
-UE_AUTOMATION_RESULT passed=1 total=1
+$ harness/run_ue_automation.sh "KrowdKontrol.Unit.EnemyBase+KrowdKontrol.Unit.SniperEnemy+KrowdKontrol.Unit.BomberEnemy+KrowdKontrol.Unit.ThreatState"
+UE_AUTOMATION_RESULT passed=4 total=4
 UE_AUTOMATION_OK
 
 # All KrowdKontrol.Unit.* tests joined via '+', excluding only WaveSpawnerComponent:
@@ -105,11 +98,14 @@ UE_AUTOMATION_RESULT passed=30 total=30
 UE_AUTOMATION_OK
 ```
 
-30/30 passed, including `EnemyBase`, `MusicSubsystem`, `SniperEnemy`, and
-`BomberEnemy` (the tests most exposed to the new friend grant on `EnemyBase.h`) — no
-regressions from this diff. A human (or the workflow's deterministic infra-backstop)
-should decide whether to route this PR to `factory:needs-human` given the gate can't
-produce a clean `GATE_OK` right now for reasons entirely outside this diff.
+30/30 passed, including `EnemyBase`, `SniperEnemy`, `BomberEnemy`, and `ThreatState`
+(the tests most exposed to `EnemyBase.h`, including the removal of its stray
+`IThreatState` inheritance) — no regressions from this diff. `app-source-tracked/` was
+also re-diffed against the real `app/` files for every changed `.h`/`.cpp` and
+confirmed byte-identical (D-009) after the fix. A human (or the workflow's
+deterministic infra-backstop) should decide whether to route this PR to
+`factory:needs-human` given the gate can't produce a clean `GATE_OK` right now for
+reasons entirely outside this diff.
 
 ---
 

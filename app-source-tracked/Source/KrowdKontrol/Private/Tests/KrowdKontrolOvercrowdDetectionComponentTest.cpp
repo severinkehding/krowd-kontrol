@@ -201,9 +201,27 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 	TestEqual(TEXT("An out-of-radius hot-and-uncontrolled enemy should not count toward the threshold"),
 		static_cast<uint8>(RadiusComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
 
+	// The radius check is inclusive (<=) - an enemy placed exactly on the boundary
+	// must still count. Bring the qualifying count back up to threshold with an enemy
+	// at precisely OvercrowdRadiusUnits from the owner.
+	AEnemyBaseTestActor* BoundaryEnemy = RadiusWorld->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("Boundary AEnemyBaseTestActor should spawn"), BoundaryEnemy))
+	{
+		return false;
+	}
+	BoundaryEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+	USceneComponent* BoundaryRoot = NewObject<USceneComponent>(BoundaryEnemy);
+	BoundaryRoot->RegisterComponent();
+	BoundaryEnemy->SetRootComponent(BoundaryRoot);
+	BoundaryEnemy->SetActorLocation(FVector(RadiusComponent->OvercrowdRadiusUnits, 0.0f, 0.0f));
+
+	RadiusComponent->AdvancePanicOverloadState(RadiusComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
+	TestEqual(TEXT("A hot-and-uncontrolled enemy exactly at OvercrowdRadiusUnits should still count (inclusive boundary)"),
+		static_cast<uint8>(RadiusComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
+
 	// --- Scenario 4: Controlled-exclusion (case i) - the core acceptance criterion.
-	// Enough enemies to meet OvercrowdCrowdThreshold if merely "Hot" per IThreatState,
-	// but all driven to Controlled, must never count. ---
+	// Enough enemies to meet OvercrowdCrowdThreshold if merely Alert/Attack, but all
+	// driven to Controlled, must never count. ---
 	UWorld* ControlledWorld = FAutomationEditorCommonUtils::CreateNewMap();
 	if (!TestNotNull(TEXT("CreateNewMap should return a valid World for the controlled scenario"), ControlledWorld))
 	{
@@ -222,12 +240,20 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 			return false;
 		}
 		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
-		Enemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled - still Hot per IThreatState, but excluded here
+		Enemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled - excluded here
 	}
 
 	ControlledComponent->AdvancePanicOverloadState(ControlledComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
 	TestEqual(TEXT("An all-Controlled crowd must never trigger Panic Overload, even past the full duration"),
 		static_cast<uint8>(ControlledComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
+
+	// --- Scenario 5: no owning actor (GetOwner() null) must not crash and must leave
+	// the component Inactive - covers CountHotUncontrolledEnemiesNearby()'s defensive
+	// early-out. Not RegisterComponent()'d, since that requires an owning Actor. ---
+	UOvercrowdDetectionComponent* OwnerlessComponent = NewObject<UOvercrowdDetectionComponent>();
+	OwnerlessComponent->AdvancePanicOverloadState(OwnerlessComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
+	TestEqual(TEXT("A component with no owning Actor should not crash and should stay Inactive"),
+		static_cast<uint8>(OwnerlessComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
 
 	return true;
 }
