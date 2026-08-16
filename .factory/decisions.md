@@ -649,3 +649,43 @@ the Editor around MCP-needing steps. Given the confirmed build collision, that w
 also need to coordinate against concurrent headless builds — real orchestration work,
 not something to build reactively while chasing a single PR's blocker. Left as a
 bigger future option if best-effort turns out to be too unreliable in practice.
+
+## D-012: The pipeline-wide GATE_FAILED bug was a regex/literal mismatch, not concurrency
+
+**2026-08-16.** `KrowdKontrol.Unit.StationPowerUpComponent` had been failing
+deterministically — 100% reproducible, every run, regardless of whether the Editor
+was open or closed — since issue #60 first landed it. Two different PRs (mine
+manually testing, and the automated loop's own PR #100) both hit it and both guessed
+wrong causes: PR #100's build attributed it to a concurrent-Editor DLL/hot-reload
+collision (a real phenomenon this session independently confirmed exists for actual
+*builds*, per D-011, but not what was happening here). Because `harness/ci.py`'s
+`GATE_OK` is a hard requirement for every PR regardless of what it touches, this one
+broken, unrelated test was silently on track to block every future PR indefinitely.
+
+**Actual root cause, confirmed by reading this engine version's own header
+(`AutomationTest.h`) rather than guessing from memory:** `FAutomationTestBase::
+AddExpectedError`'s `IsRegex` parameter **defaults to `true`** — patterns are regular
+expressions unless told otherwise. The test's
+`AddExpectedError(TEXT("OrderedLights[1] is null"), ..., 1)` call never passed that
+4th argument, so `[1]` was interpreted as a regex character class (matching a single
+literal `1`, no brackets) rather than literal text — it could never match the actual
+logged string, which contains literal `[` `]` characters. The sibling call
+(`"OrderedLights is empty"`, no bracket/regex metacharacters) worked by coincidence,
+since a bracket-free string means identical behavior under literal or regex
+interpretation — which is exactly why only one of the two calls failed and why the
+failure was rock-solid deterministic rather than flaky.
+
+Fixed by passing `IsRegex = false` explicitly on both calls (matching what both
+were actually written to mean — plain substrings, not patterns), confirmed via a
+real rebuild + full harness run: `GATE_OK mode=full`, `UNIT_PASSED tests=16` (up
+from 15, the previously-permanently-failing test now genuinely passes). Synced the
+tracked mirror to match.
+
+**Process note:** this is the second time this session an AI-authored PR's own
+plausible-sounding root-cause diagnosis (D-011's "concurrent Editor" theory) turned
+out to be wrong on independent verification, not because the reasoning was
+unreasonable given what that PR's own dispatch could observe, but because a
+deterministic, code-level bug can look identical to an environmental one from a
+single test run. Worth remembering next time a PR blames a failure on "the shared
+environment" rather than the code: reproduce it in isolation before trusting that
+framing.

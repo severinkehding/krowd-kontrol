@@ -132,7 +132,11 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	}
 	EmptyComponent->RegisterComponent();
 
-	AddExpectedError(TEXT("OrderedLights is empty"), EAutomationExpectedErrorFlags::Contains, 1);
+	// IsRegex defaults to true (see AutomationTest.h) - explicit false here since these
+	// are plain substrings, not patterns. Load-bearing below: "OrderedLights[1] is
+	// null" contains regex metacharacters ([1]) that silently fail to match the
+	// literal log text under the default regex mode - found live, D-012.
+	AddExpectedError(TEXT("OrderedLights is empty"), EAutomationExpectedErrorFlags::Contains, 1, false);
 	EmptyComponent->InitializeSequence();
 
 	EmptyComponent->NotifyPowerUpStageTriggered();
@@ -164,7 +168,7 @@ bool FKrowdKontrolStationPowerUpComponentTest::RunTest(const FString& Parameters
 	NullEntryComponent->NotifyPowerUpStageTriggered();
 	TestFalse(TEXT("LightX should become visible after the first trigger"), LightX->IsHidden());
 
-	AddExpectedError(TEXT("OrderedLights[1] is null"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("OrderedLights[1] is null"), EAutomationExpectedErrorFlags::Contains, 1, false);
 	NullEntryComponent->NotifyPowerUpStageTriggered();
 	TestEqual(TEXT("Null entry should still advance the index"), NullEntryComponent->GetEnabledLightCount(), 2);
 	TestEqual(TEXT("OnLightEnabled should fire even for the null entry"), NullEntryListener->LightEnabledCallCount, 2);
