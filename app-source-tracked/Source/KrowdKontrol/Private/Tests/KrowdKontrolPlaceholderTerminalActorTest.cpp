@@ -15,6 +15,7 @@
 #include "Misc/AutomationTest.h"
 #include "PlaceholderTerminalActor.h"
 #include "GizmoBarkTestListener.h"
+#include "ReentrantTerminalListener.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 
@@ -78,6 +79,41 @@ bool FKrowdKontrolPlaceholderTerminalActorTest::RunTest(const FString& Parameter
 	// progress" a structural fact of the class (nothing else exists to gate on)
 	// rather than something requiring a separate runtime assertion against a
 	// progression system that doesn't exist yet.
+
+	// (4) Regression: a listener that re-enters Interact() on the same actor from
+	// inside the broadcast must not re-fire. Pins down Interact()'s
+	// flip-before-broadcast ordering (bHasBeenTriggered = true precedes
+	// OnTerminalLogRevealed.Broadcast) - the property that makes same-actor
+	// re-entrancy safe instead of unbounded recursion. Mirrors
+	// KrowdKontrolGizmoNarrativeSubsystemTest.cpp's case (4) for TriggerBark.
+	APlaceholderTerminalActor* ReentrantActor = NewObject<APlaceholderTerminalActor>();
+	ReentrantActor->TerminalLog.BarkID = TEXT("Terminal.Reentrant");
+	ReentrantActor->TerminalLog.Lines = { TEXT("Only fires once even if re-entered.") };
+
+	UReentrantTerminalListener* ReentrantListener = NewObject<UReentrantTerminalListener>();
+	ReentrantListener->ActorToReenter = ReentrantActor;
+	ReentrantActor->OnTerminalLogRevealed.AddDynamic(ReentrantListener, &UReentrantTerminalListener::HandleBarkTriggered);
+
+	ReentrantActor->Interact();
+	TestEqual(TEXT("Re-entrant Interact() during broadcast must not re-fire"),
+		ReentrantListener->CallCount, 1);
+
+	// (5) An editor-authored TerminalLog.bHasBeenTriggered = true (settable in the
+	// details panel since TerminalLog is EditAnywhere) must make Interact() a silent
+	// no-op, the same as if it had already fired - no separate "pre-triggered" code
+	// path exists, so this documents that the existing no-replay guard also covers
+	// authoring-time state, not just runtime state.
+	APlaceholderTerminalActor* PreTriggeredActor = NewObject<APlaceholderTerminalActor>();
+	PreTriggeredActor->TerminalLog.BarkID = TEXT("Terminal.PreTriggered");
+	PreTriggeredActor->TerminalLog.Lines = { TEXT("Should never broadcast.") };
+	PreTriggeredActor->TerminalLog.bHasBeenTriggered = true;
+
+	UGizmoBarkTestListener* PreTriggeredListener = NewObject<UGizmoBarkTestListener>();
+	PreTriggeredActor->OnTerminalLogRevealed.AddDynamic(PreTriggeredListener, &UGizmoBarkTestListener::HandleBarkTriggered);
+
+	PreTriggeredActor->Interact();
+	TestEqual(TEXT("Interact() must not broadcast when bHasBeenTriggered was pre-set"),
+		PreTriggeredListener->CallCount, 0);
 
 	return true;
 }
