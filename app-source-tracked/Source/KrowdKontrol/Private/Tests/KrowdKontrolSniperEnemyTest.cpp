@@ -88,10 +88,18 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("EyeGlowLightComponent attenuation radius should match the placeholder value"),
 		EyeGlow->AttenuationRadius, 300.0f);
 
+	// Drives a sniper from Idle straight through to Attack via two zero/mid-distance
+	// detection checks (Idle -> Alert -> Attack) - shared by every case below that
+	// needs a sniper already in Attack.
+	auto AdvanceToAttack = [](ASniperEnemy* TargetSniper, const FVector& PlayerLocation)
+	{
+		TargetSniper->TickCheckDetection(PlayerLocation); // Idle -> Alert
+		TargetSniper->TickCheckDetection(PlayerLocation); // Alert -> Attack
+	};
+
 	// (c) advance to Attack, then Sleep specifically intensifies the glow.
 	const FVector ZeroDistanceLocation(0.0f, 0.0f, 0.0f);
-	Sniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
-	Sniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	AdvanceToAttack(Sniper, ZeroDistanceLocation);
 	TestEqual(TEXT("Sniper should be in Attack after two zero-distance detection checks"),
 		static_cast<uint8>(Sniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 	Sniper->ReceiveControl(EAbilitySlot::Sleep);
@@ -107,8 +115,7 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	for (EAbilitySlot NonSleepAbility : NonSleepAbilities)
 	{
 		ASniperEnemy* NonSleepSniper = NewObject<ASniperEnemy>();
-		NonSleepSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
-		NonSleepSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		AdvanceToAttack(NonSleepSniper, ZeroDistanceLocation);
 		NonSleepSniper->ReceiveControl(NonSleepAbility);
 		TestEqual(TEXT("Eye glow should stay at baseline intensity for a non-Sleep ability"),
 			NonSleepSniper->EyeGlowLightComponent->Intensity, NonSleepSniper->EyeGlowBaselineIntensity);
@@ -128,8 +135,7 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("AttackTellLightComponent attenuation radius should match the placeholder value"),
 		TellLight->AttenuationRadius, 300.0f);
 
-	TellSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
-	TellSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	AdvanceToAttack(TellSniper, ZeroDistanceLocation);
 	TestTrue(TEXT("Attack tell should be visibly on once Attack is entered"), TellLight->Intensity > 0.0f);
 
 	USniperShotFiredTestListener* ShotListener = NewObject<USniperShotFiredTestListener>();
@@ -157,8 +163,7 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	// the assertion was wrong, not AdvanceAttackTelegraph's FMath::Max clamp (PR #117
 	// review, issue #17).
 	ASniperEnemy* AccumulatingSniper = NewObject<ASniperEnemy>();
-	AccumulatingSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
-	AccumulatingSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	AdvanceToAttack(AccumulatingSniper, ZeroDistanceLocation);
 	USniperShotFiredTestListener* AccumulatingListener = NewObject<USniperShotFiredTestListener>();
 	AccumulatingSniper->OnSniperShotFired.AddDynamic(AccumulatingListener, &USniperShotFiredTestListener::HandleSniperShotFired);
 
@@ -187,8 +192,7 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("GetAttackRangeUnits() should return SN-1PR's long-range value"),
 		LongRangeSniper->GetAttackRangeUnits(), 1400.0f);
 	const FVector MidRangeLocation(800.0f, 0.0f, 0.0f);
-	LongRangeSniper->TickCheckDetection(MidRangeLocation); // Idle -> Alert
-	LongRangeSniper->TickCheckDetection(MidRangeLocation); // Alert -> Attack, since 800 <= 1400
+	AdvanceToAttack(LongRangeSniper, MidRangeLocation); // Attack reached since 800 <= 1400
 	TestEqual(TEXT("Sniper's long attack range should reach Attack well beyond a short-range distance"),
 		static_cast<uint8>(LongRangeSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 
@@ -206,8 +210,7 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	// will never fire (the state guard in AdvanceAttackTelegraph already stops the
 	// shot itself - this proves the visual is cleared too).
 	ASniperEnemy* InterruptedSniper = NewObject<ASniperEnemy>();
-	InterruptedSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
-	InterruptedSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	AdvanceToAttack(InterruptedSniper, ZeroDistanceLocation);
 	TestTrue(TEXT("Attack tell should be visibly on before the interrupt"),
 		InterruptedSniper->AttackTellLightComponent->Intensity > 0.0f);
 	InterruptedSniper->ReceiveControl(EAbilitySlot::Sleep);
@@ -228,8 +231,7 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		ASniperEnemy* TickedSniper = World->SpawnActor<ASniperEnemy>();
 		if (TestNotNull(TEXT("ASniperEnemy should spawn into the test World"), TickedSniper))
 		{
-			TickedSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
-			TickedSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+			AdvanceToAttack(TickedSniper, ZeroDistanceLocation);
 			USniperShotFiredTestListener* TickedListener = NewObject<USniperShotFiredTestListener>();
 			TickedSniper->OnSniperShotFired.AddDynamic(TickedListener, &USniperShotFiredTestListener::HandleSniperShotFired);
 			TickedSniper->Tick(TickedSniper->AttackTelegraphSeconds);
