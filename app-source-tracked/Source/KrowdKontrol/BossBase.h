@@ -66,6 +66,9 @@ public:
 	bool IsEnraged() const { return bIsEnraged; }
 
 protected:
+	// C++-only (not BlueprintNativeEvent) until a real mid-boss subclass exists to
+	// inform whether these hooks need Blueprint override - same rationale
+	// ThreatState.h and Herdable.h document for their own extension points.
 	virtual void OnShieldChanged(bool bNewHasShield) {}
 	virtual void OnSplitChanged(bool bNewIsSplit) {}
 	virtual void OnEnrageChanged(bool bNewIsEnraged) {}

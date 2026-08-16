@@ -61,8 +61,20 @@ bool FKrowdKontrolBossBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Repeated AdvanceToArmed should not double-advance"),
 		static_cast<uint8>(Boss->GetBossState()), static_cast<uint8>(EBossState::Armed));
 
+	Boss->TransitionToBanked();
+	TestEqual(TEXT("TransitionToBanked from Armed should be a no-op"),
+		static_cast<uint8>(Boss->GetBossState()), static_cast<uint8>(EBossState::Armed));
+
 	Boss->AdvanceToVulnerable();
 	TestEqual(TEXT("AdvanceToVulnerable from Armed should move to Vulnerable"),
+		static_cast<uint8>(Boss->GetBossState()), static_cast<uint8>(EBossState::Vulnerable));
+
+	Boss->AdvanceToArmed();
+	TestEqual(TEXT("AdvanceToArmed from Vulnerable should be a no-op"),
+		static_cast<uint8>(Boss->GetBossState()), static_cast<uint8>(EBossState::Vulnerable));
+
+	Boss->AdvanceToVulnerable();
+	TestEqual(TEXT("Repeated AdvanceToVulnerable should not double-advance"),
 		static_cast<uint8>(Boss->GetBossState()), static_cast<uint8>(EBossState::Vulnerable));
 
 	Boss->TransitionToBanked();
@@ -128,6 +140,40 @@ bool FKrowdKontrolBossBaseTest::RunTest(const FString& Parameters)
 		Boss->ShieldChangedCallCount, 2);
 	TestEqual(TEXT("Split hook call count should be unaffected by shield/enrage toggling"),
 		Boss->SplitChangedCallCount, 2);
+	TestEqual(TEXT("Enrage hook call count should be unaffected by anything after it"),
+		Boss->EnrageChangedCallCount, 2);
+
+	// (g) flags are genuinely state-independent, not just tested once already
+	// Banked - toggle one interleaved with the state progression itself, on a
+	// fresh actor so it doesn't disturb (f)'s call-count assertions above.
+	ABossBaseTestActor* InterleavedBoss = NewObject<ABossBaseTestActor>();
+	InterleavedBoss->AdvanceToArmed();
+	InterleavedBoss->SetHasShield(true);
+	TestTrue(TEXT("HasShield should be true after SetHasShield(true) while Armed"),
+		InterleavedBoss->HasShield());
+	TestEqual(TEXT("OnShieldChanged should fire while Armed same as any other state"),
+		InterleavedBoss->ShieldChangedCallCount, 1);
+	InterleavedBoss->AdvanceToVulnerable();
+	TestTrue(TEXT("HasShield should remain true across the Armed->Vulnerable transition"),
+		InterleavedBoss->HasShield());
+
+	// (h) TransitionToBanked()'s flip-before-broadcast ordering must be
+	// re-entrancy safe: a listener that re-enters TransitionToBanked() on the
+	// same actor from inside OnBossBanked must not cause a double-fire. Mirrors
+	// KrowdKontrolPlaceholderTerminalActorTest.cpp case (4)'s
+	// UReentrantTerminalListener coverage of the same pattern in
+	// APlaceholderTerminalActor::Interact().
+	ABossBaseTestActor* ReentrantBoss = NewObject<ABossBaseTestActor>();
+	ReentrantBoss->AdvanceToArmed();
+	ReentrantBoss->AdvanceToVulnerable();
+
+	UBossBankedTestListener* ReentrantListener = NewObject<UBossBankedTestListener>();
+	ReentrantListener->ActorToReenter = ReentrantBoss;
+	ReentrantBoss->OnBossBanked.AddDynamic(ReentrantListener, &UBossBankedTestListener::HandleBossBanked);
+
+	ReentrantBoss->TransitionToBanked();
+	TestEqual(TEXT("Re-entrant TransitionToBanked() during broadcast must not re-fire"),
+		ReentrantListener->CallCount, 1);
 
 	return true;
 }
