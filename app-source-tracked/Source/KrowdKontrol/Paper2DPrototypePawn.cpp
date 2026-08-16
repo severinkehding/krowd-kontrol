@@ -32,9 +32,11 @@ APaper2DPrototypePawn::APaper2DPrototypePawn()
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	// -90 degrees (independent of SpriteComponent's own -90 rotation above) points the
-	// camera straight down, for a genuinely orthographic top-down view rather than
-	// flat-camera-3D's steeper-but-still-perspective -80 degrees.
+	// CameraBoom is attached to RootComponent, which is SpriteComponent - so this
+	// relative pitch composes with SpriteComponent's own -90 rotation above rather than
+	// being independent of it. TODO(#55): verify the resulting world-space camera
+	// direction is actually straight down; the automation tests below only assert the
+	// boom's *relative* pitch, not its composed world pitch.
 	CameraBoom->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f));
 	CameraBoom->TargetArmLength = 800.0f;
 	CameraBoom->bDoCollisionTest = false;

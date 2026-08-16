@@ -5,10 +5,10 @@
 //
 // Needs a real UWorld to spawn into (SpringArmComponent attachment/registration is
 // safer exercised inside a spawned actor in a real world than via bare NewObject), so
-// like the flat-camera-3D prototype's own smoke test (issue #56; note: #56's PR was
-// not merged, so that file isn't in this tracked repo - see docs/paper2d-prototype-
-// notes.md) this uses FAutomationEditorCommonUtils::CreateNewMap() rather than the
-// NewObject-only approach KrowdKontrolPlaceholderCubeActorTest.cpp uses.
+// like the flat-camera-3D prototype's own smoke test
+// (KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp, already merged in this repo) this
+// uses FAutomationEditorCommonUtils::CreateNewMap() rather than the NewObject-only
+// approach KrowdKontrolPlaceholderCubeActorTest.cpp uses.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -24,6 +24,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Editor.h"
+#include "GameFramework/PlayerController.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -84,11 +85,15 @@ bool FKrowdKontrolPaper2DPipelineSmokeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("TopDownCamera should use orthographic projection"),
 		TopDownCameraComponent->ProjectionMode, ECameraProjectionMode::Orthographic);
 
-	TestTrue(TEXT("TopDownCamera OrthoWidth should be a positive, non-degenerate value"),
-		TopDownCameraComponent->OrthoWidth > 0.0f);
+	TestEqual(TEXT("TopDownCamera OrthoWidth should match the configured top-down framing"),
+		TopDownCameraComponent->OrthoWidth, 1024.0f);
 
 	TestFalse(TEXT("CameraBoom rotation should be locked, not player-controlled"),
 		Pawn->CameraBoom->bUsePawnControlRotation);
+	TestFalse(TEXT("CameraBoom should not collision-test, to avoid zooming through geometry"),
+		Pawn->CameraBoom->bDoCollisionTest);
+	TestFalse(TEXT("TopDownCamera rotation should also be locked, not player-controlled"),
+		TopDownCameraComponent->bUsePawnControlRotation);
 
 	// Confirms SetupPlayerInputComponent's BindAxis calls actually register AND that the
 	// bound delegates actually fire and accumulate the expected world-space input, not
@@ -175,10 +180,84 @@ bool FKrowdKontrolPaper2DPipelineLevelTest::RunTest(const FString& Parameters)
 		PlacedPawn->CameraBoom->GetRelativeRotation().Pitch <= -45.0f);
 	TestFalse(TEXT("Placed pawn's CameraBoom rotation should be locked, not player-controlled"),
 		PlacedPawn->CameraBoom->bUsePawnControlRotation);
+	TestFalse(TEXT("Placed pawn's CameraBoom should not collision-test, to avoid zooming through geometry"),
+		PlacedPawn->CameraBoom->bDoCollisionTest);
+	TestFalse(TEXT("Placed pawn's TopDownCamera rotation should also be locked, not player-controlled"),
+		PlacedPawn->TopDownCamera->bUsePawnControlRotation);
 	TestTrue(TEXT("Placed pawn's SpriteComponent should be rotated into the ground plane (<= -45 degrees pitch)"),
 		PlacedPawn->SpriteComponent->GetRelativeRotation().Pitch <= -45.0f);
 	TestEqual(TEXT("Placed pawn's TopDownCamera should use orthographic projection"),
 		PlacedPawn->TopDownCamera->ProjectionMode, ECameraProjectionMode::Orthographic);
+
+	return true;
+}
+
+// Regression coverage for the acceptance criterion that WASD/arrow input actually
+// moves the pawn at runtime, not just that the bound delegates accumulate a pending
+// movement vector (which KrowdKontrol.Unit.Paper2DPipelineSmoke above already covers).
+// Simulates one frame of held-forward input the way UPlayerInput::ProcessInputStack
+// would invoke the bound delegate, then ticks UFloatingPawnMovement directly the way
+// its own per-frame component tick would, and asserts the pawn's world location
+// actually changed. Mirrors KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp's
+// KrowdKontrol.Unit.FlatCamera3DPipelineMovement test.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolPaper2DPipelineMovementTest,
+	"KrowdKontrol.Unit.Paper2DPipelineMovement",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolPaper2DPipelineMovementTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+
+	APaper2DPrototypePawn* Pawn = World->SpawnActor<APaper2DPrototypePawn>();
+	if (!TestNotNull(TEXT("APaper2DPrototypePawn should spawn into the test World"), Pawn))
+	{
+		return false;
+	}
+
+	// UFloatingPawnMovement::TickComponent only applies pending input when the pawn has
+	// a local controller (Engine/Private/FloatingPawnMovement.cpp) - CreateNewMap()'s
+	// editor world has no player-start/GameMode flow to auto-possess AutoPossessPlayer,
+	// so possess explicitly to exercise the same runtime gate a live PIE session hits.
+	APlayerController* Controller = World->SpawnActor<APlayerController>();
+	if (!TestNotNull(TEXT("Should be able to spawn a controller to possess the pawn"), Controller))
+	{
+		return false;
+	}
+	Controller->Possess(Pawn);
+	Controller->SetAsLocalPlayerController();
+
+	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn);
+	InputComponent->RegisterComponent();
+	Pawn->SetupPlayerInputComponent(InputComponent);
+
+	FInputAxisBinding* MoveForwardBinding = nullptr;
+	for (FInputAxisBinding& Binding : InputComponent->AxisBindings)
+	{
+		if (Binding.AxisName == TEXT("MoveForward"))
+		{
+			MoveForwardBinding = &Binding;
+			break;
+		}
+	}
+
+	if (!TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveForward axis"), MoveForwardBinding != nullptr))
+	{
+		return false;
+	}
+
+	const FVector StartLocation = Pawn->GetActorLocation();
+
+	MoveForwardBinding->AxisDelegate.Execute(1.0f);
+	Pawn->MovementComponent->TickComponent(0.1f, LEVELTICK_All, nullptr);
+
+	const FVector EndLocation = Pawn->GetActorLocation();
+	TestTrue(TEXT("Pawn's world location should change after simulated forward input and a movement tick"),
+		!EndLocation.Equals(StartLocation));
 
 	return true;
 }

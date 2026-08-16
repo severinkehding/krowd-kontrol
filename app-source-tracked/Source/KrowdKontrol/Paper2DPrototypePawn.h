@@ -17,9 +17,8 @@ class UInputComponent;
 // top-down movement, with a camera locked to a genuine orthographic top-down
 // projection via a non-collision-testing spring arm. Does not itself decide Paper2D
 // vs flat-camera-3D - that's a human call made by comparing this against the
-// companion flat-camera-3D prototype (issue #56; note: #56's PR was closed, not
-// merged, so that companion class isn't in this tracked repo - see
-// docs/paper2d-prototype-notes.md).
+// companion flat-camera-3D prototype (issue #56, merged as PR #102; see
+// FlatCamera3DPrototypePawn.h/.cpp in this same module).
 UCLASS()
 class KROWDKONTROL_API APaper2DPrototypePawn : public APawn
 {
