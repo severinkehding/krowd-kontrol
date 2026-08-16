@@ -16,7 +16,7 @@ record of that change, see the closing note below)
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/EnemyType.h` | CREATE | `EEnemyType`, a `UENUM(BlueprintType)` with exactly the 4 locked codenames (`RU_NNR`, `TR_UPR`, `B0_0MR`, `SN_1PR`), each with a `UMETA(DisplayName = "...")` preserving the hyphenated codename in the Editor/Blueprint UI. No `Count` sentinel — the roster is locked, not iterated. |
 | `app/Source/KrowdKontrol/RoomActor.h` | CREATE | `FRoomTargetZone` struct (`EnemyType` + `MarkerActor`) and `ARoomActor` declaration: `AddTargetZone(EEnemyType, TSubclassOf<AActor>)`, `GetTargetZones()`, private `TargetZones` array |
-| `app/Source/KrowdKontrol/RoomActor.cpp` | CREATE | Constructor creates a `USceneComponent` root (`RoomRoot`); `AddTargetZone` spawns the given class (or `APlaceholderTargetZoneActor` if none given), attaches it to the room via `KeepWorldTransform`, and records the `(EnemyType, MarkerActor)` pair |
+| `app/Source/KrowdKontrol/RoomActor.cpp` | CREATE | Constructor creates a `USceneComponent` root (`RoomRoot`); `AddTargetZone` spawns the given class (or `APlaceholderTargetZoneActor` if none given), attaches it to the room via `SnapToTargetNotIncludingScale` so the marker starts at the room's origin rather than the world origin, and records the `(EnemyType, MarkerActor)` pair |
 | `app/Source/KrowdKontrol/DoorConnectorActor.h` | CREATE | `ADoorConnectorActor` declaration: `EditInstanceOnly` `RoomA`/`RoomB` (`TObjectPtr<ARoomActor>`), inline `ConnectsValidRooms()` (`RoomA && RoomB && RoomA != RoomB`) |
 | `app/Source/KrowdKontrol/DoorConnectorActor.cpp` | CREATE | Constructor creates a `USceneComponent` root (`DoorConnectorRoot`) — no other logic; no placeholder visual required by the acceptance criteria |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolRoomActorTest.cpp` | CREATE | `KrowdKontrol.Unit.RoomActor` — spawns a room in a real `UWorld`, adds one then a second tagged target zone, asserts the marker is spawned, attached (`IsAttachedTo`), tagged, and tracked |
@@ -25,6 +25,24 @@ record of that change, see the closing note below)
 No `app/Source/KrowdKontrol/KrowdKontrol.Build.cs` change was needed — `UnrealEd` (for
 `FAutomationEditorCommonUtils::CreateNewMap()`) and the module-root `PrivateIncludePaths`
 fix were already present from issue #82's work.
+
+## Post-review fixes
+
+Addressed during PR review (see PR #105 review discussion):
+
+- **`AddTargetZone` marker mislocation (HIGH)** — the marker spawns at world `(0,0,0)`
+  (no `FTransform` passed to `SpawnActor`), so attaching with `KeepWorldTransform` left
+  it stuck at the world origin, disconnected from any room not itself placed at
+  `(0,0,0)`. Both existing tests spawn their test room at the origin too, so this never
+  surfaced. Fixed by attaching with `SnapToTargetNotIncludingScale` instead, so the
+  marker starts at the room's origin and can still be freely repositioned afterward.
+- **`AddTargetZone`'s `MarkerClass` override branch untested (MEDIUM)** — added a third
+  `KrowdKontrol.Unit.RoomActor` assertion that passes `APlaceholderCubeActor::StaticClass()`
+  explicitly and checks the returned actor's class, closing the only branch of the
+  spawn ternary with zero prior coverage.
+- **`ConnectsValidRooms()`'s single-room-assigned state untested (LOW)** — added a
+  `TestFalse` assertion to `KrowdKontrol.Unit.DoorConnectorActor` after only `RoomA` is
+  set, completing the truth table (default → one set → two set → same-room).
 
 ## Acceptance criteria
 

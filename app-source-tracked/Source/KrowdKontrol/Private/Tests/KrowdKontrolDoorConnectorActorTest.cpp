@@ -54,6 +54,9 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		Door->ConnectsValidRooms());
 
 	Door->RoomA = RoomOne;
+	TestFalse(TEXT("A door with only RoomA assigned should not connect valid rooms"),
+		Door->ConnectsValidRooms());
+
 	Door->RoomB = RoomTwo;
 	TestTrue(TEXT("A door referencing two distinct rooms should connect valid rooms"),
 		Door->ConnectsValidRooms());

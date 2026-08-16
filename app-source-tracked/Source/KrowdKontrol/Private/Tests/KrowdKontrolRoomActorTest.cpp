@@ -14,6 +14,7 @@
 #include "Misc/AutomationTest.h"
 #include "RoomActor.h"
 #include "EnemyType.h"
+#include "PlaceholderCubeActor.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 
@@ -63,6 +64,14 @@ bool FKrowdKontrolRoomActorTest::RunTest(const FString& Parameters)
 		Room->GetTargetZones().Num(), 2);
 	TestEqual(TEXT("Second target zone's enemy type should match its own requested tag"),
 		static_cast<uint8>(Room->GetTargetZones()[1].EnemyType), static_cast<uint8>(EEnemyType::TR_UPR));
+
+	AActor* CustomMarkerActor = Room->AddTargetZone(EEnemyType::B0_0MR, APlaceholderCubeActor::StaticClass());
+	if (!TestNotNull(TEXT("AddTargetZone should spawn a marker actor when given an explicit MarkerClass"), CustomMarkerActor))
+	{
+		return false;
+	}
+	TestTrue(TEXT("An explicit MarkerClass should be honored instead of the default placeholder"),
+		CustomMarkerActor->IsA(APlaceholderCubeActor::StaticClass()));
 
 	return true;
 }

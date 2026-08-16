@@ -26,11 +26,12 @@ AActor* ARoomActor::AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> Mark
 		return nullptr;
 	}
 
-	// KeepWorldTransform, not SnapToTargetNotIncludingScale - the marker spawns at the
-	// world origin (no FTransform passed to SpawnActor above), so snapping to the
-	// room's origin on attach would cause an unwanted jump for a marker a designer may
-	// reposition after spawning.
-	MarkerActor->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+	// SnapToTargetNotIncludingScale, not KeepWorldTransform - the marker spawns at the
+	// world origin (no FTransform passed to SpawnActor above), so it must snap to the
+	// room's origin on attach or it stays visually disconnected from the room for any
+	// room not itself placed at the level origin. A designer can freely reposition the
+	// marker afterward; this only fixes its starting point.
+	MarkerActor->AttachToActor(this, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 
 	FRoomTargetZone TargetZone;
 	TargetZone.EnemyType = EnemyType;
