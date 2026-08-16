@@ -125,6 +125,36 @@ dispatch() {
     return 1
   fi
 
+  # Stale worktree prune, mirroring dark-factory-validate-pr.yaml's own
+  # checkout-pr step (which prunes a fix-github-issue worktree pinned to the
+  # PR branch it needs). This handles the reverse case: a validate-pr run's
+  # worktree (checkout-pr's own) stays pinned to archon/task-<branch> after
+  # that run finishes, since nothing ever tears it down - so a LATER
+  # fix-github-issue redispatch on the same issue fails at `git worktree add`
+  # before any node runs, before it can even clear factory:in-progress,
+  # leaving the issue permanently stuck (excluded from issue_queue(), no
+  # active process either). Confirmed live 2026-08-16 on issues #55 and #74:
+  # both had their validate-pr worktree (task-validate-pr-100/-89) survive
+  # PR #100/#89 being closed, silently blocking every redispatch since. Only
+  # relevant here since is_locked() above already confirmed no real dispatch
+  # is using this branch right now - anything found below is guaranteed
+  # stale, not a live collision.
+  local local_branch="archon/task-$(echo "$branch" | tr '/' '-')"
+  git worktree prune 2>/dev/null || true
+  git worktree list --porcelain | awk -v b="$local_branch" '
+    /^worktree / {w=$2}
+    $0 == "branch refs/heads/" b {print w}
+  ' | while read -r stale_wt; do
+    [ -z "$stale_wt" ] && continue
+    log "Removing stale worktree pinned to $local_branch: $stale_wt"
+    # --force, matching validate-pr.yaml's own precedent: this runs unattended
+    # under cron, nothing here to stash for a human, and anything left behind
+    # in a finished validate-pr worktree is disposable review-run byproduct,
+    # not real work (the branch's actual committed history is untouched).
+    git worktree remove --force "$stale_wt" 2>&1 | while IFS= read -r l; do log "  $l"; done
+  done
+  git worktree prune 2>/dev/null || true
+
   local logfile="$LOG_DIR/${branch//\//_}-$(date -u +%Y%m%dT%H%M%SZ).log"
   log "DISPATCH: archon workflow run $workflow --branch $branch \"$message\" (log: $logfile)"
   nohup archon workflow run "$workflow" --branch "$branch" "$message" \
