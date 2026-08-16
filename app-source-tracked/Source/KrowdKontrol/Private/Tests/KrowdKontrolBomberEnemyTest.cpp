@@ -98,7 +98,7 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("tell attenuation radius"), TellLight->AttenuationRadius, 300.0f);
 
 	AdvanceToAttack(TellBomber, ZeroDistanceLocation);
-	TestTrue(TEXT("tell visibly on once Attack entered"), TellLight->Intensity > 0.0f);
+	TestEqual(TEXT("tell reaches configured intensity once Attack entered"), TellLight->Intensity, TellBomber->AttackTellIntensity);
 	UBomberExplodedTestListener* ExplodedListener = NewObject<UBomberExplodedTestListener>();
 	TellBomber->OnBomberExploded.AddDynamic(ExplodedListener, &UBomberExplodedTestListener::HandleBomberExploded);
 	TestEqual(TEXT("explosion not fired yet - tell precedes it"), ExplodedListener->CallCount, 0);

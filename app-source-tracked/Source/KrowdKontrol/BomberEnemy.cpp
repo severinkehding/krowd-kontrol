@@ -4,9 +4,7 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
-#include "GameFramework/Pawn.h"
 #include "PlayerEnergyComponent.h"
-#include "EngineUtils.h"
 
 ABomberEnemy::ABomberEnemy()
 {
@@ -85,25 +83,14 @@ void ABomberEnemy::TriggerExplosion()
 {
 	OnBomberExploded.Broadcast();
 
-	// GetWorld() is nullptr for a NewObject<>()-constructed actor - friend-tested
-	// AdvanceAttackTelegraph calls hit this; guarded so the delegate still fires.
-	if (!GetWorld())
+	// FindPlayerEnergyComponent() tolerates GetWorld() being nullptr (true for a
+	// NewObject<>()-constructed actor - friend-tested AdvanceAttackTelegraph calls hit
+	// this) by returning nullptr, so the delegate above still fires unconditionally.
+	if (UPlayerEnergyComponent* Energy = FindPlayerEnergyComponent())
 	{
-		return;
-	}
-	// TActorIterator, not UGameplayStatics::GetPlayerPawn() - the latter needs a
-	// driven World->BeginPlay() pass (never run by this module's Automation tests,
-	// same gap KrowdKontrolRoomEnemyBudgetControllerTest.cpp documents for component
-	// BeginPlay) to populate the controller/GameInstance registries it depends on.
-	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
-	{
-		if (UPlayerEnergyComponent* Energy = It->FindComponentByClass<UPlayerEnergyComponent>())
-		{
-			// Clamped and floors at 0 by construction - ExplosionDamageAmount stays
-			// large and never lethal through this, the only legal damage mutator.
-			Energy->ApplyContactDamage(ExplosionDamageAmount, this);
-			return;
-		}
+		// Clamped and floors at 0 by construction - ExplosionDamageAmount stays
+		// large and never lethal through this, the only legal damage mutator.
+		Energy->ApplyContactDamage(ExplosionDamageAmount, this);
 	}
 }
 

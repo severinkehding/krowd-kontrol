@@ -5,6 +5,8 @@
 #include "AbilitySlot.h"
 #include "EnemyBase.generated.h"
 
+class UPlayerEnergyComponent;
+
 // Idle -> Alert -> Attack -> Controlled -> Banked, with Banked as the only reachable
 // "defeated" state. Transition table (no other edges exist):
 //   Idle -> Alert: player enters DetectionRangeUnits (proximity check, no perception
@@ -81,6 +83,14 @@ protected:
 	// Per-type attack range, in units. Base default is 0.0f (never reaches Attack on
 	// its own); a concrete subclass overrides this per issue #12's AC.
 	virtual float GetAttackRangeUnits() const { return 0.0f; }
+
+	// TActorIterator, not UGameplayStatics::GetPlayerPawn() - the latter needs a
+	// driven World->BeginPlay() pass this module's Automation tests never run.
+	// Assumes exactly one live APawn carries UPlayerEnergyComponent (true today;
+	// revisit if local co-op/split-screen or a debug dummy pawn is ever added).
+	// Returns nullptr (and logs a warning) if no such pawn is found. See issue #15,
+	// the first enemy-attack code path to actually touch player state.
+	UPlayerEnergyComponent* FindPlayerEnergyComponent() const;
 
 	// C++-only (not BlueprintNativeEvent) until a real concrete subclass exists to
 	// inform whether these hooks need Blueprint override - same rationale
