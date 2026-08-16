@@ -76,7 +76,7 @@ void ASniperEnemy::OnControlledEntry(EAbilitySlot Ability)
 
 void ASniperEnemy::OnAttackEntry()
 {
-	AttackTellLightComponent->SetIntensity(2000.0f);
+	AttackTellLightComponent->SetIntensity(AttackTellIntensity);
 	RemainingTelegraphSeconds = AttackTelegraphSeconds;
 	bShotFiredForCurrentAttack = false;
 }

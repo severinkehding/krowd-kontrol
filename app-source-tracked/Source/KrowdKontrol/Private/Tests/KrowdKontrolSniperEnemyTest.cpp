@@ -6,9 +6,10 @@
 // to the base class default.
 //
 // Uses NewObject rather than spawning into a UWorld: nothing exercised here calls
-// GetWorld()/SpawnActor - AdvanceAttackTelegraph and ReceiveControl are both driven
-// directly via friend access, never through a real Tick() loop, same rationale
-// KrowdKontrolAbilityCooldownTest.cpp documents.
+// GetWorld()/SpawnActor - AdvanceAttackTelegraph and TickCheckDetection are both
+// driven directly via friend access, never through a real Tick() loop, same rationale
+// KrowdKontrolAbilityCooldownTest.cpp documents. Case (m) is the one exception - it
+// spawns into a real UWorld to prove the Tick() override itself is wired correctly.
 //
 // Case (j) below is a structural proxy, not a direct numeric assertion against
 // another enemy's range, because no sibling concrete enemy type exists in the
@@ -24,6 +25,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
+#include "Tests/AutomationEditorCommon.h"
 #include "SniperShotFiredTestListener.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -81,13 +84,21 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Eye glow should intensify after Sleep-triggered OnControlledEntry"),
 		EyeGlow->Intensity, Sniper->EyeGlowIntensifiedIntensity);
 
-	// (d) a non-Sleep ability produces no glow response at all, on a fresh actor.
-	ASniperEnemy* NonSleepSniper = NewObject<ASniperEnemy>();
-	NonSleepSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
-	NonSleepSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
-	NonSleepSniper->ReceiveControl(EAbilitySlot::Root);
-	TestEqual(TEXT("Eye glow should stay at baseline intensity for a non-Sleep ability"),
-		NonSleepSniper->EyeGlowLightComponent->Intensity, NonSleepSniper->EyeGlowBaselineIntensity);
+	// (d) every non-Sleep ability produces no glow response at all, each on its own
+	// fresh actor - exhaustive over EAbilitySlot rather than a single representative
+	// value, since the guard could someday become per-ability instead of a single
+	// equality check.
+	const EAbilitySlot NonSleepAbilities[] = {
+		EAbilitySlot::Stun, EAbilitySlot::Root, EAbilitySlot::Fear, EAbilitySlot::Snare };
+	for (EAbilitySlot NonSleepAbility : NonSleepAbilities)
+	{
+		ASniperEnemy* NonSleepSniper = NewObject<ASniperEnemy>();
+		NonSleepSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		NonSleepSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		NonSleepSniper->ReceiveControl(NonSleepAbility);
+		TestEqual(TEXT("Eye glow should stay at baseline intensity for a non-Sleep ability"),
+			NonSleepSniper->EyeGlowLightComponent->Intensity, NonSleepSniper->EyeGlowBaselineIntensity);
+	}
 
 	// (e)/(f) the attack tell is off until Attack is entered, and visibly on
 	// (before the shot fires) once it is - ordering proven explicitly below.
@@ -116,6 +127,25 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("OnSniperShotFired should not re-fire on a later telegraph advance"),
 		ShotListener->CallCount, 1);
 
+	// (g2) the telegraph accumulates across multiple partial advances, matching how
+	// the real per-frame Tick() drives this - not just a single full-duration jump.
+	// Distinguishes "decrements a running total" from "any call >= AttackTelegraphSeconds
+	// fires", which case (g) alone cannot.
+	ASniperEnemy* AccumulatingSniper = NewObject<ASniperEnemy>();
+	AccumulatingSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	AccumulatingSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	USniperShotFiredTestListener* AccumulatingListener = NewObject<USniperShotFiredTestListener>();
+	AccumulatingSniper->OnSniperShotFired.AddDynamic(AccumulatingListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+
+	AccumulatingSniper->AdvanceAttackTelegraph(0.5f);
+	AccumulatingSniper->AdvanceAttackTelegraph(0.4f);
+	TestEqual(TEXT("Partial advances summing to below AttackTelegraphSeconds should not fire yet"),
+		AccumulatingListener->CallCount, 0);
+
+	AccumulatingSniper->AdvanceAttackTelegraph(0.3f); // 0.5 + 0.4 + 0.3 = 1.2 == AttackTelegraphSeconds
+	TestEqual(TEXT("The telegraph should fire once the accumulated partial advances cross AttackTelegraphSeconds"),
+		AccumulatingListener->CallCount, 1);
+
 	// (i) advancing the telegraph while not in Attack is a no-op.
 	ASniperEnemy* IdleSniper = NewObject<ASniperEnemy>();
 	USniperShotFiredTestListener* IdleListener = NewObject<USniperShotFiredTestListener>();
@@ -129,6 +159,8 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	// but still within the base DetectionRangeUnits default (1500.0f) still reaches
 	// Attack after the same two-step detection walk used in (c).
 	ASniperEnemy* LongRangeSniper = NewObject<ASniperEnemy>();
+	TestEqual(TEXT("GetAttackRangeUnits() should return SN-1PR's long-range value"),
+		LongRangeSniper->GetAttackRangeUnits(), 1400.0f);
 	const FVector MidRangeLocation(800.0f, 0.0f, 0.0f);
 	LongRangeSniper->TickCheckDetection(MidRangeLocation); // Idle -> Alert
 	LongRangeSniper->TickCheckDetection(MidRangeLocation); // Alert -> Attack, since 800 <= 1400
@@ -160,6 +192,26 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	InterruptedSniper->OnSniperShotFired.AddDynamic(InterruptedListener, &USniperShotFiredTestListener::HandleSniperShotFired);
 	InterruptedSniper->AdvanceAttackTelegraph(InterruptedSniper->AttackTelegraphSeconds);
 	TestEqual(TEXT("The interrupted shot should never fire"), InterruptedListener->CallCount, 0);
+
+	// (m) the real Tick() override, not just the friend-called AdvanceAttackTelegraph
+	// helper, must wire the telegraph into the per-frame loop - proves neither a
+	// missing Super::Tick(DeltaTime) nor a wiring mistake in the override itself,
+	// mirroring KrowdKontrolEnemyBaseTest.cpp case (k)'s real-UWorld Tick() coverage.
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		ASniperEnemy* TickedSniper = World->SpawnActor<ASniperEnemy>();
+		if (TestNotNull(TEXT("ASniperEnemy should spawn into the test World"), TickedSniper))
+		{
+			TickedSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+			TickedSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+			USniperShotFiredTestListener* TickedListener = NewObject<USniperShotFiredTestListener>();
+			TickedSniper->OnSniperShotFired.AddDynamic(TickedListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+			TickedSniper->Tick(TickedSniper->AttackTelegraphSeconds);
+			TestEqual(TEXT("Tick() should drive the telegraph through to firing the shot"),
+				TickedListener->CallCount, 1);
+		}
+	}
 
 	return true;
 }

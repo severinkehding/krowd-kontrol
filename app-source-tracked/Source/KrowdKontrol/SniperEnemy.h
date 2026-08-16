@@ -51,6 +51,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
 	float EyeGlowIntensifiedIntensity = 2400.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
+	float AttackTellIntensity = 2000.0f;
+
 	// Fires once the attack telegraph elapses.
 	UPROPERTY(BlueprintAssignable, Category = "Sniper")
 	FOnSniperShotFired OnSniperShotFired;
