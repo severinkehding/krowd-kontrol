@@ -112,28 +112,38 @@ For each step in the Implementation Plan:
 ### 5.2a Content that needs the Editor, not just source files (levels, scenes, asset placement)
 
 Some issues ask for things that can't be produced as text — a `.umap` level, actor
-placement in a scene, imported meshes/materials. `implement` has best-effort MCP
-access (`.archon/mcp/unreal-and-blender.json`, 2026-08-16) for exactly this: Unreal
-MCP for level/scene work, Blender MCP for asset generation feeding into it (see
-`CLAUDE.md`'s Environment section for how that pipeline fits together).
+placement in a scene, imported meshes/materials. `implement` has MCP access
+(`.archon/mcp/unreal-and-blender.json`) for exactly this: Unreal MCP for level/scene
+work, Blender MCP for asset generation feeding into it (see `CLAUDE.md`'s Environment
+section for how that pipeline fits together).
 
-**"Best-effort" is the operative phrase — it depends on the operator happening to
-have the Editor (and/or Blender) open with its MCP server started at the moment this
-dispatch runs.** Nothing about unattended cron dispatch guarantees that. So:
+**On-demand, not automatic — you have to launch it yourself (2026-08-16, D-013).**
+Unlike `behavioral-e2e` (which gets a session launched for it automatically),
+`implement` doesn't get the Editor opened unconditionally, because most issues never
+touch Editor-only content and launching costs real time on every one that doesn't
+need it. If — and only if — this issue actually needs Editor-only content:
 
-1. If the issue needs Editor-only content, **attempt the relevant MCP tool call
-   first** (e.g. `mcp__unreal-mcp__list_toolsets` as a connectivity check) — don't
-   assume it's unreachable without trying.
-2. If it connects, do the work through MCP and note exactly what you did (which
+1. Run `bash scripts/ue_editor_launch_and_wait.sh` (Bash tool). It force-closes
+   anything already running first (automation always takes precedence, D-013 — don't
+   assume whatever's open, if anything, is safe to reuse), launches the Editor
+   against `app/KrowdKontrol.uproject`, and waits for its MCP server to actually
+   respond — prints `UE_EDITOR_READY` on success or `UE_EDITOR_LAUNCH_TIMEOUT` on
+   failure (check `app/Saved/Logs/` if it times out).
+2. If it succeeds, do the work through MCP and note exactly what you did (which
    tools, what got created) in `implementation.md` per 5.3 below.
-3. If it doesn't connect, **do not fabricate a substitute** (an empty placeholder
-   file, a fake "created" claim, or silently skipping the requirement) — say so
-   plainly. Issue #56/PR #99 already set the right precedent here: it correctly
-   labeled the missing level "environment-blocked" in the PR body and left the
-   acceptance-criteria checkbox unchecked rather than inventing something. Match
-   that — implement everything that *can* be done as source/tests normally, then
-   report the Editor-only gap honestly for a human to unblock (either by opening the
-   Editor and re-running, or by descoping that criterion).
+3. **Run `bash scripts/ue_editor_close.sh` when you're done with MCP**, before this
+   node finishes — leaving the Editor open blocks the next headless build (this
+   node's own `validate` step, or whatever the loop dispatches next) from compiling
+   at all. Do this even if MCP work failed partway through.
+4. If `ue_editor_launch_and_wait.sh` itself fails (times out), **do not fabricate a
+   substitute** (an empty placeholder file, a fake "created" claim, or silently
+   skipping the requirement) — say so plainly. Issue #56/PR #99 already set the
+   right precedent here: it correctly labeled the missing level
+   "environment-blocked" in the PR body and left the acceptance-criteria checkbox
+   unchecked rather than inventing something. Match that — implement everything
+   that *can* be done as source/tests normally, then report the Editor-only gap
+   honestly for a human to investigate (a genuine launch failure, unlike a merely
+   unreachable session, means something is actually broken, not just untimed).
 
 ### 5.3 Track deviations
 

@@ -215,6 +215,17 @@ nodes:
   # for dark-factory-experiment's own decisions.md D-002 ("two definitions of
   # passing") applied from day one instead of retrofitted later.
 
+  # Automation always takes precedence over any interactive session left open
+  # (2026-08-16 operator decision, D-013) — a live Editor (human-launched or a
+  # leftover from a prior dispatch) collides with the headless UnrealBuildTool
+  # compile run-harness triggers ("Unable to perform hot reload with multiple
+  # targets", confirmed live). Force-close first, unconditionally, so the build
+  # never has to fight a running session for the module DLL.
+  - id: ensure-editor-closed-p1
+    bash: bash scripts/ue_editor_close.sh
+    depends_on: [checkout-pr, link-unreal-project]
+    timeout: 30000
+
   - id: run-harness-p1
     bash: |
       set +e
@@ -223,10 +234,21 @@ nodes:
       echo ""
       echo "RUN_HARNESS_EXIT=$RC"
       exit $RC
-    depends_on: [checkout-pr, link-unreal-project]
+    depends_on: [checkout-pr, link-unreal-project, ensure-editor-closed-p1]
     # static + unit + app boot + e2e floor + holdout + mutations, whichever are
     # configured in harness.config.json — give it real headroom.
     timeout: 600000
+
+  # Launches the Editor fresh (with the build run-harness-p1 just proved good) and
+  # waits for its MCP server to come up, so behavioral-e2e-p1 gets a real, current
+  # session instead of depending on the operator having timed one correctly. D-013 —
+  # closes the "best-effort" gap D-011 left open (MCP wired, but only reachable by
+  # chance). Runs after run-harness-p1 specifically so nothing is compiling while
+  # the Editor is up.
+  - id: launch-editor-for-e2e-p1
+    bash: bash scripts/ue_editor_launch_and_wait.sh 180
+    depends_on: [run-harness-p1]
+    timeout: 200000
 
   # ═══════════════════════════════════════════════════════════════
   # PHASE 3: PASS-1 HOLDOUT REVIEWERS (parallel, fresh context)
@@ -267,13 +289,15 @@ nodes:
   # so completing D-001 is a small change, not a rebuild.
   - id: behavioral-e2e-p1
     command: dark-factory-behavioral-e2e
-    depends_on: [fetch-pr, fetch-linked-issue, run-harness-p1]
+    depends_on: [fetch-pr, fetch-linked-issue, run-harness-p1, launch-editor-for-e2e-p1]
     context: fresh
     allowed_tools: [Bash]
-    # Best-effort MCP access (2026-08-16, closes part of D-005) — only reachable if
-    # the operator happens to have the Editor open with the MCP server started at
-    # dispatch time; the command's Phase 0 fallback (honest "not independently
-    # verified") still applies whenever it isn't. See CLAUDE.md's Environment section.
+    # Guaranteed MCP access as of D-013 (2026-08-16) — launch-editor-for-e2e-p1
+    # launches the Editor and waits for MCP itself, so this node no longer depends
+    # on the operator happening to have one open. The command's Phase 0 fallback
+    # stays as a defense-in-depth path (e.g. if the Editor crashed on launch) but
+    # should be the exception now, not the common case. See CLAUDE.md's Environment
+    # section and .factory/decisions.md D-011/D-013.
     mcp: .archon/mcp/unreal.json
     output_format:
       type: object
@@ -303,6 +327,15 @@ nodes:
         - evidence_captured
         - confidence
         - reasoning
+
+  # Best-effort cleanup, not load-bearing — pass-2's own ensure-editor-closed-p2
+  # force-closes unconditionally regardless of whether this ran, so nothing
+  # downstream depends on this succeeding. Keeps a session from lingering open
+  # into whatever the orchestrator dispatches next if this PR doesn't need pass-2.
+  - id: close-editor-after-e2e-p1
+    bash: bash scripts/ue_editor_close.sh
+    depends_on: [behavioral-e2e-p1]
+    timeout: 30000
 
   - id: security-check-p1
     command: dark-factory-security-check
@@ -419,6 +452,15 @@ nodes:
     depends_on: [fix-issues]
     timeout: 30000
 
+  # See ensure-editor-closed-p1's identical comment — same reasoning, pass-2 needs
+  # its own force-close since pass-1's close-editor-after-e2e-p1 isn't guaranteed
+  # to have finished (or even run, if pass-1 approved outright) by the time this
+  # fires.
+  - id: ensure-editor-closed-p2
+    bash: bash scripts/ue_editor_close.sh
+    depends_on: [fix-issues, link-unreal-project]
+    timeout: 30000
+
   - id: run-harness-p2
     bash: |
       set +e
@@ -429,8 +471,14 @@ nodes:
       exit $RC
     # Same worktree pass-1 already linked app/ in, but idempotent and cheap — no
     # reason to rely on that continuity holding.
-    depends_on: [fix-issues, link-unreal-project]
+    depends_on: [fix-issues, link-unreal-project, ensure-editor-closed-p2]
     timeout: 600000
+
+  # See launch-editor-for-e2e-p1's identical comment.
+  - id: launch-editor-for-e2e-p2
+    bash: bash scripts/ue_editor_launch_and_wait.sh 180
+    depends_on: [run-harness-p2]
+    timeout: 200000
 
   - id: behavioral-validation-p2
     command: dark-factory-behavioral-validation-p2
@@ -462,10 +510,10 @@ nodes:
 
   - id: behavioral-e2e-p2
     command: dark-factory-behavioral-e2e
-    depends_on: [fix-issues, fetch-pr, fetch-linked-issue, run-harness-p2]
+    depends_on: [fix-issues, fetch-pr, fetch-linked-issue, run-harness-p2, launch-editor-for-e2e-p2]
     context: fresh
     allowed_tools: [Bash]
-    # Best-effort MCP access — see behavioral-e2e-p1's identical comment above.
+    # Guaranteed MCP access — see behavioral-e2e-p1's identical comment above.
     mcp: .archon/mcp/unreal.json
     output_format:
       type: object
@@ -495,6 +543,13 @@ nodes:
         - evidence_captured
         - confidence
         - reasoning
+
+  # Best-effort cleanup — see close-editor-after-e2e-p1's identical comment.
+  # teardown-app is still the hard guarantee at the very end of the workflow.
+  - id: close-editor-after-e2e-p2
+    bash: bash scripts/ue_editor_close.sh
+    depends_on: [behavioral-e2e-p2]
+    timeout: 30000
 
   - id: security-check-p2
     command: dark-factory-security-check-p2
@@ -593,8 +648,12 @@ nodes:
   - id: teardown-app
     bash: |
       set +e
-      agent-browser close 2>/dev/null || true
+      bash scripts/ue_editor_close.sh
       echo "TEARDOWN_COMPLETE"
+    # The hard guarantee, unlike close-editor-after-e2e-p1/p2 (best-effort,
+    # skippable): this always runs regardless of which pass approved/rejected, so
+    # a dispatch never leaves the Editor open into whatever the orchestrator
+    # dispatches next. agent-browser (pre-D-004) removed — no longer installed.
     depends_on: [synthesize-verdict-pass-1, synthesize-verdict-pass-2]
     trigger_rule: all_done
     timeout: 30000

@@ -126,19 +126,28 @@ nodes:
   # PHASE 4: IMPLEMENT (Dark Factory fork — stack per CLAUDE.md)
   # ═══════════════════════════════════════════════════════════════
 
+  # Automation always takes precedence (2026-08-16, D-013) — force-close whatever's
+  # running (human-launched or leftover) before implement's own internal headless
+  # UnrealBuildTool compiles start, so they never fight a live session for the
+  # module DLL. See ensure-editor-closed-p1's identical comment in
+  # dark-factory-validate-pr.yaml.
+  - id: ensure-editor-closed
+    bash: bash scripts/ue_editor_close.sh
+    depends_on: [link-unreal-project]
+    timeout: 30000
+
   - id: implement
     command: dark-factory-fix-issue
-    depends_on: [bridge-artifacts, link-unreal-project]
+    depends_on: [bridge-artifacts, link-unreal-project, ensure-editor-closed]
     context: fresh
-    # Best-effort MCP access (2026-08-16) — only reachable if the operator happens to
-    # have the Unreal Editor (and/or Blender) open with its MCP server started at the
-    # moment this dispatch runs; nothing here guarantees that. If unreachable, the
-    # command's own instructions say to self-report honestly (matching the precedent
-    # already set by issue #56/PR #99, which correctly flagged a missing level asset
-    # as "environment-blocked" rather than faking one) — never fail silently or
-    # invent placeholder content in its place. See CLAUDE.md's Environment section
-    # and .factory/decisions.md D-005 for the full context on why this can't be a
-    # hard guarantee yet.
+    # On-demand MCP access (2026-08-16, D-013) — unlike behavioral-e2e (which now
+    # gets a guaranteed, freshly-launched session via launch-editor-for-e2e-p1/p2),
+    # implement launches the Editor itself only when the issue actually needs
+    # Editor-only content (a level, scene/actor placement, imported assets) — see
+    # dark-factory-fix-issue.md §5.2a for exactly when and how (scripts/
+    # ue_editor_launch_and_wait.sh / scripts/ue_editor_close.sh). Launching
+    # unconditionally on every dispatch would cost ~10-15s+ of dead time on the
+    # large majority of issues that never touch app/'s Editor-only content at all.
     mcp: .archon/mcp/unreal-and-blender.json
 
   # ═══════════════════════════════════════════════════════════════
