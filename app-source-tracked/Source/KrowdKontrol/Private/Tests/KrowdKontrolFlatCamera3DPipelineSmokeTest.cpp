@@ -79,9 +79,10 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 		Pawn->CameraBoom->bUsePawnControlRotation);
 
 	// Confirms SetupPlayerInputComponent's BindAxis calls actually register, not just
-	// that the pawn has an InputComponent - this is the concrete signal for the
-	// Enhanced-Input-vs-legacy-BindAxis compatibility question docs/flat-camera-3d-prototype-notes.md
-	// leaves open.
+	// that the pawn has an InputComponent - but this exercises a plain UInputComponent,
+	// not the project's configured UEnhancedInputComponent (DefaultInput.ini). The
+	// Enhanced-Input-vs-legacy-BindAxis compatibility question
+	// docs/flat-camera-3d-prototype-notes.md raises is still open pending a live PIE check.
 	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn);
 	InputComponent->RegisterComponent();
 	Pawn->SetupPlayerInputComponent(InputComponent);
