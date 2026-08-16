@@ -5,11 +5,12 @@
 
 class UGizmoNarrativeSubsystem;
 
-// Test-only listener for UGizmoNarrativeSubsystem::OnBarkTriggered. Dynamic
-// multicast delegates (DECLARE_DYNAMIC_MULTICAST_DELEGATE) only bind to UFUNCTIONs
-// via AddDynamic - no AddLambda - so counting/inspecting broadcasts in
-// KrowdKontrolGizmoNarrativeSubsystemTest.cpp needs this rather than a capturing
-// lambda. Used only by that test.
+// Generic listener for FOnBarkTriggered-shaped delegates (used by
+// UGizmoNarrativeSubsystem::OnBarkTriggered and any actor that reuses that
+// delegate signature, e.g. APlaceholderTerminalActor::OnTerminalLogRevealed).
+// Dynamic multicast delegates (DECLARE_DYNAMIC_MULTICAST_DELEGATE) only bind to
+// UFUNCTIONs via AddDynamic - no AddLambda - so counting/inspecting broadcasts in
+// tests needs this rather than a capturing lambda.
 UCLASS()
 class UGizmoBarkTestListener : public UObject
 {
