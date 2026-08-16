@@ -1,6 +1,8 @@
 #include "EnemyBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/Pawn.h"
+#include "PlayerEnergyComponent.h"
+#include "EngineUtils.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -80,4 +82,31 @@ void AEnemyBase::Tick(float DeltaTime)
 	{
 		TickCheckDetection(PlayerPawn->GetActorLocation());
 	}
+}
+
+UPlayerEnergyComponent* AEnemyBase::FindPlayerEnergyComponent() const
+{
+	if (!GetWorld())
+	{
+		return nullptr;
+	}
+	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
+	{
+		if (UPlayerEnergyComponent* Energy = It->FindComponentByClass<UPlayerEnergyComponent>())
+		{
+			return Energy;
+		}
+	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("AEnemyBase: FindPlayerEnergyComponent on '%s' found no APawn with a UPlayerEnergyComponent."),
+		*GetNameSafe(this));
+	return nullptr;
+}
+
+EThreatState AEnemyBase::GetThreatState() const
+{
+	const bool bIsEngaged = CurrentState == EEnemyState::Alert
+		|| CurrentState == EEnemyState::Attack
+		|| CurrentState == EEnemyState::Controlled;
+	return bIsEngaged ? EThreatState::Hot : EThreatState::Idle;
 }
