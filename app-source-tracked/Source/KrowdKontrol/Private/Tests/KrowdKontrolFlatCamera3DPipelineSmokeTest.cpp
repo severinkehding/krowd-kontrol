@@ -25,6 +25,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Editor.h"
+#include "GameFramework/PlayerController.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -149,6 +150,90 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 	return true;
 }
 
+// Regression coverage for the acceptance criterion that WASD/arrow input actually
+// moves the pawn at runtime, not just that the bound delegates accumulate a pending
+// movement vector (which the assertions above already cover). Simulates one frame of
+// held-forward input the way UPlayerInput::ProcessInputStack would invoke the bound
+// delegate, then ticks UFloatingPawnMovement directly the way its own per-frame
+// component tick would, and asserts the pawn's world location actually changed - the
+// gap a live-MCP E2E validator could not close because Slate-level key injection
+// doesn't reach the PIE viewport's gameplay input focus.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolFlatCamera3DPipelineMovementTest,
+	"KrowdKontrol.Unit.FlatCamera3DPipelineMovement",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolFlatCamera3DPipelineMovementTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+
+	AFlatCamera3DPrototypePawn* Pawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+	if (!TestNotNull(TEXT("AFlatCamera3DPrototypePawn should spawn into the test World"), Pawn))
+	{
+		return false;
+	}
+
+	// UFloatingPawnMovement::TickComponent only applies pending input when the pawn has
+	// a local controller (Engine/Private/FloatingPawnMovement.cpp) - CreateNewMap()'s
+	// editor world has no player-start/GameMode flow to auto-possess AutoPossessPlayer,
+	// so possess explicitly to exercise the same runtime gate a live PIE session hits.
+	// AController itself is abstract (no concrete state machine), so use the concrete
+	// APlayerController subclass rather than the base class.
+	APlayerController* Controller = World->SpawnActor<APlayerController>();
+	if (!TestNotNull(TEXT("Should be able to spawn a controller to possess the pawn"), Controller))
+	{
+		return false;
+	}
+	Controller->Possess(Pawn);
+	// This editor world has no GameInstance/ULocalPlayer flow to make IsLocalController()
+	// true on its own (Engine/Private/PlayerController.cpp falls back to "does this
+	// controller have a ULocalPlayer?" once GetNetDriver() is null) - SetAsLocalPlayerController()
+	// is the same public setter APlayerController::SetPlayer() calls for a real local
+	// player, so this exercises the identical runtime gate without needing a full
+	// GameInstance/viewport setup this unit test has no use for otherwise.
+	Controller->SetAsLocalPlayerController();
+
+	UClass* InputComponentClass = UInputSettings::GetDefaultInputComponentClass();
+	if (!TestNotNull(TEXT("Project should have a configured default InputComponent class"), InputComponentClass))
+	{
+		return false;
+	}
+
+	UInputComponent* InputComponent = NewObject<UInputComponent>(Pawn, InputComponentClass);
+	InputComponent->RegisterComponent();
+	Pawn->SetupPlayerInputComponent(InputComponent);
+
+	FInputAxisBinding* MoveForwardBinding = nullptr;
+	for (FInputAxisBinding& Binding : InputComponent->AxisBindings)
+	{
+		if (Binding.AxisName == TEXT("MoveForward"))
+		{
+			MoveForwardBinding = &Binding;
+			break;
+		}
+	}
+
+	if (!TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveForward axis"), MoveForwardBinding != nullptr))
+	{
+		return false;
+	}
+
+	const FVector StartLocation = Pawn->GetActorLocation();
+
+	MoveForwardBinding->AxisDelegate.Execute(1.0f);
+	Pawn->MovementComponent->TickComponent(0.1f, LEVELTICK_All, nullptr);
+
+	const FVector EndLocation = Pawn->GetActorLocation();
+	TestTrue(TEXT("Pawn's world location should change after simulated forward input and a movement tick"),
+		!EndLocation.Equals(StartLocation));
+
+	return true;
+}
+
 // Regression coverage for the acceptance criterion that
 // L_FlatCamera3DPrototype.umap itself (not just the pawn class in a throwaway map)
 // contains a correctly-configured placed pawn instance. CreateNewMap()-based tests
@@ -186,6 +271,10 @@ bool FKrowdKontrolFlatCamera3DPipelineLevelTest::RunTest(const FString& Paramete
 		PlacedPawn->CameraBoom->GetRelativeRotation().Pitch <= -45.0f);
 	TestFalse(TEXT("Placed pawn's CameraBoom rotation should be locked, not player-controlled"),
 		PlacedPawn->CameraBoom->bUsePawnControlRotation);
+	TestFalse(TEXT("Placed pawn's CameraBoom should not collision-test, to avoid zooming through geometry"),
+		PlacedPawn->CameraBoom->bDoCollisionTest);
+	TestFalse(TEXT("Placed pawn's TopDownCamera rotation should also be locked, not player-controlled"),
+		PlacedPawn->TopDownCamera->bUsePawnControlRotation);
 
 	return true;
 }
