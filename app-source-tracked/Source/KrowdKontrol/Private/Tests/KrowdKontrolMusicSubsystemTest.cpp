@@ -161,6 +161,38 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Switching tracks should replace the AudioComponent instance, not reuse/mutate it"),
 		CalmComponent != CombatComponent);
 
+	// (k) the real Config-driven soft-object-ptr path (CalmTrack/CombatTrack pointing
+	// at DefaultGame.ini's actual placeholder asset paths, resolved via
+	// LoadSynchronous() rather than (j)'s NewObject<USoundWave>() injection) must also
+	// spawn a persistent, looping AudioComponent. This is the exact path a live PIE
+	// session exercises and that a prior E2E pass caught a regression in - (j)'s
+	// injected in-memory USoundWave happens to default to non-looping too, but only
+	// resolving the real Content asset proves PlayTrackForState()'s forced-looping fix
+	// actually reaches the SoundWave that DefaultGame.ini configures.
+	MusicSubsystem->CalmTrack = TSoftObjectPtr<USoundBase>(
+		FSoftObjectPath(TEXT("/Game/_Placeholder/Music/PlaceholderCalmTrack.PlaceholderCalmTrack")));
+	MusicSubsystem->CombatTrack = TSoftObjectPtr<USoundBase>(
+		FSoftObjectPath(TEXT("/Game/_Placeholder/Music/PlaceholderCombatTrack.PlaceholderCombatTrack")));
+
+	AEnemyBaseTestActor* FourthEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("Fourth AEnemyBaseTestActor should spawn into the test World"), FourthEnemy))
+	{
+		return false;
+	}
+	FourthEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert (Hot)
+	MusicSubsystem->RefreshMusicState();
+	UAudioComponent* RealCombatComponent = MusicSubsystem->CurrentMusicComponent;
+	if (!TestNotNull(TEXT("The real Config-driven CombatTrack path should spawn a UAudioComponent"), RealCombatComponent))
+	{
+		return false;
+	}
+	USoundWave* RealCombatWave = Cast<USoundWave>(RealCombatComponent->Sound);
+	if (TestNotNull(TEXT("The real CombatTrack asset should resolve to a USoundWave"), RealCombatWave))
+	{
+		TestTrue(TEXT("Music must be forced to loop so it persists for as long as the state holds, not stop after one playthrough"),
+			RealCombatWave->bLooping);
+	}
+
 	return true;
 }
 

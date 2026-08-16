@@ -41,6 +41,13 @@ class KROWDKONTROL_API UMusicSubsystem : public UTickableWorldSubsystem
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+	// The default-state track actually starts here, not in Initialize(): Initialize()
+	// runs during world/subsystem construction, before the world's AudioDevice is
+	// guaranteed live, so a SpawnSound2D() call made there can silently produce no
+	// audible playback. OnWorldBeginPlay() is UWorldSubsystem's dedicated "world has
+	// truly begun play, actor/audio-dependent setup is now safe" hook.
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 

@@ -3,10 +3,16 @@
 #include "EngineUtils.h"
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Sound/SoundWave.h"
 
 void UMusicSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+}
+
+void UMusicSubsystem::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
 	if (bHasStartedInitialTrack)
 	{
 		return;
@@ -84,6 +90,17 @@ void UMusicSubsystem::PlayTrackForState(EMusicState State)
 
 	if (NextTrack)
 	{
+		// Placeholder tracks are plain imported USoundWave loops that default to
+		// bLooping = false, so they finish and self-destroy (SpawnSound2D's
+		// bAutoDestroy) within seconds of starting instead of persisting for as long
+		// as the state holds. Force looping at the resolved asset regardless of its
+		// own import setting - this subsystem is the only thing that plays these two
+		// tracks, and they must behave as an indefinite music bed, not a one-shot.
+		if (USoundWave* NextWave = Cast<USoundWave>(NextTrack))
+		{
+			NextWave->bLooping = true;
+		}
+
 		CurrentMusicComponent = UGameplayStatics::SpawnSound2D(this, NextTrack);
 		if (CurrentMusicComponent)
 		{
