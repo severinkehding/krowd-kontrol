@@ -263,8 +263,15 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 	// World through World->BeginPlay() (see EnemyBase.h's "driven World->BeginPlay()"
 	// note and KrowdKontrolRoomEnemyBudgetControllerTest.cpp's comment), so
 	// DestroyComponent() alone never reaches EndPlay() (UActorComponent only calls it
-	// when bHasBegunPlay is true) - call EndPlay() directly so this test actually
-	// exercises the cleanup path it claims to cover.
+	// when bHasBegunPlay is true). Calling EndPlay() directly is NOT an option either:
+	// UE 5.8's UActorComponent::EndPlay() opens with check(bHasBegunPlay)
+	// (ActorComponent.cpp:1667), so a direct call on a never-begun component is a
+	// hard engine assert that kills the entire automation run - which is exactly what
+	// this case did in its first merged version, breaking the harness gate for every
+	// PR after it. The legal route: AActor::DispatchBeginPlay() is public ENGINE_API
+	// and BeginPlays the owner plus every registered component, making the later
+	// EndPlay() call legitimate AND the test more faithful (real teardown always
+	// follows a real BeginPlay).
 	{
 		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
 		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
@@ -272,6 +279,7 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 			return false;
 		}
 		Spawner->RegisterComponent();
+		OwnerActor->DispatchBeginPlay();
 
 		FWaveEntry WaveA;
 		WaveA.EnemyClass = APlaceholderCubeActor::StaticClass();
