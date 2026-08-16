@@ -7,11 +7,11 @@
 // (not just SlotIconBorders[i]) since the widget's own BuildWidgetTree() comment
 // claims text colour is reserved-colour-safe chrome too.
 //
-// Widgets currently audited here: UAbilityCooldownTrayWidget and
-// UPostRunSummaryWidget (issue #74). UEnergyMeterWidget is issue #64/PR #92's
-// deliverable and still isn't audited here - a pre-existing gap, not introduced by
-// issue #74, tracked as a separate follow-up. Add any future HUD widget's chrome to
-// this list.
+// Widgets currently audited here: UAbilityCooldownTrayWidget, UPostRunSummaryWidget
+// (issue #74), and UOnScreenPromptWidget (issue #34). UEnergyMeterWidget is issue
+// #64/PR #92's deliverable and still isn't audited here - a pre-existing gap, not
+// introduced by issue #74, tracked as a separate follow-up. Add any future HUD
+// widget's chrome to this list.
 //
 // Needs friend-class access to each widget's private chrome members (e.g.
 // SlotIconBorders/SlotCooldownTexts, RootBorder) - see each widget's own
@@ -25,6 +25,7 @@
 #include "ReservedGameplayColours.h"
 #include "AbilityCooldownTrayWidget.h"
 #include "PostRunSummaryWidget.h"
+#include "OnScreenPromptWidget.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Components/Border.h"
@@ -116,7 +117,19 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			AllReserved.Contains(SummaryWidget->CrowdMasteryText->GetColorAndOpacity().GetSpecifiedColor()));
 	}
 
-	// (4) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
+	// (4) On-screen prompt widget audit (issue #34) - border and text colours,
+	// mirroring the tray/summary widgets' audits above.
+	UOnScreenPromptWidget* PromptWidget =
+		CreateWidget<UOnScreenPromptWidget>(World, UOnScreenPromptWidget::StaticClass());
+	if (TestNotNull(TEXT("UOnScreenPromptWidget should construct"), PromptWidget))
+	{
+		TestFalse(TEXT("Prompt border colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(PromptWidget->PromptBorder->GetBrushColor()));
+		TestFalse(TEXT("Prompt text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(PromptWidget->PromptText->GetColorAndOpacity().GetSpecifiedColor()));
+	}
+
+	// (5) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
 	// genuine collision, not just on the (never-colliding) real widget colours above -
 	// guards against an inverted/typo'd assertion silently passing forever.
 	UBorder* CollidingBorder = NewObject<UBorder>(GetTransientPackage());
