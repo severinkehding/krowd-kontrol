@@ -85,7 +85,14 @@ public:
 	const TArray<TObjectPtr<AActor>>& GetSpawnedActors() const { return SpawnedActors; }
 	int32 GetNextWaveIndex() const { return NextWaveIndex; }
 
-protected:
+	// Test-support accessor, same rationale as GetSpawnedActors()/GetNextWaveIndex():
+	// this harness never drives a real BeginPlay lifecycle (see EnemyBase.h's
+	// "driven World->BeginPlay()" note), so the Automation test calls EndPlay()
+	// directly to verify its timer cleanup and needs a way to observe the result.
+	bool IsWaveTimerActive() const;
+
+	// Public (not protected, despite overriding a protected UActorComponent method) so
+	// the Automation test can invoke it directly - see IsWaveTimerActive()'s comment.
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:

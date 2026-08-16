@@ -99,8 +99,23 @@ void UWaveSpawnerComponent::SpawnWave(int32 WaveIndex)
 			WaveIndex, *GetNameSafe(GetOwner()));
 	}
 
-	OnWaveSpawned.Broadcast(WaveIndex);
+	// NextWaveIndex must advance before the broadcast: a handler (e.g. a boss's
+	// phase-change hook) may call TriggerNextWave() synchronously from inside it, and
+	// TriggerNextWave() targets NextWaveIndex - broadcasting first would leave it
+	// pointing at the wave that's still spawning, re-triggering it instead of the next
+	// one.
 	NextWaveIndex = WaveIndex + 1;
+	const int32 NextWaveIndexBeforeBroadcast = NextWaveIndex;
+
+	OnWaveSpawned.Broadcast(WaveIndex);
+
+	// A reentrant TriggerNextWave() call from inside that broadcast already advanced
+	// NextWaveIndex further and ran its own scheduling/completion below - detect that
+	// and stop here so this frame doesn't do it a second time.
+	if (NextWaveIndex != NextWaveIndexBeforeBroadcast)
+	{
+		return;
+	}
 
 	if (NextWaveIndex >= Waves.Num())
 	{
@@ -124,4 +139,13 @@ void UWaveSpawnerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+bool UWaveSpawnerComponent::IsWaveTimerActive() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		return World->GetTimerManager().IsTimerActive(WaveTimerHandle);
+	}
+	return false;
 }

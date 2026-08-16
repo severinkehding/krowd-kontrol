@@ -19,6 +19,7 @@
 #include "WaveSpawnerComponent.h"
 #include "WaveSpawnerTestListener.h"
 #include "PlaceholderCubeActor.h"
+#include "PlaceholderTargetZoneActor.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 
@@ -53,6 +54,9 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 		}
 		Spawner->RegisterComponent();
 
+		// WaveA and WaveB deliberately use different EnemyClasses so the assertions
+		// below can confirm each wave spawns its own configured type, not just a
+		// correct total count.
 		FWaveEntry WaveA;
 		WaveA.EnemyType = EEnemyType::RU_NNR;
 		WaveA.EnemyClass = APlaceholderCubeActor::StaticClass();
@@ -61,7 +65,7 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 
 		FWaveEntry WaveB;
 		WaveB.EnemyType = EEnemyType::SN_1PR;
-		WaveB.EnemyClass = APlaceholderCubeActor::StaticClass();
+		WaveB.EnemyClass = APlaceholderTargetZoneActor::StaticClass();
 		WaveB.Count = 3;
 		WaveB.DelaySeconds = 0.0f;
 
@@ -81,6 +85,24 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 			Listener->LastSpawnedWaveIndex, 1);
 		TestEqual(TEXT("OnAllWavesComplete should fire exactly once"),
 			Listener->CompleteCallCount, 1);
+
+		int32 WaveAActorCount = 0;
+		int32 WaveBActorCount = 0;
+		for (const TObjectPtr<AActor>& SpawnedActor : Spawner->GetSpawnedActors())
+		{
+			if (SpawnedActor && SpawnedActor->IsA(APlaceholderCubeActor::StaticClass()))
+			{
+				++WaveAActorCount;
+			}
+			else if (SpawnedActor && SpawnedActor->IsA(APlaceholderTargetZoneActor::StaticClass()))
+			{
+				++WaveBActorCount;
+			}
+		}
+		TestEqual(TEXT("WaveA's EnemyClass (APlaceholderCubeActor) should have spawned WaveA.Count actors"),
+			WaveAActorCount, WaveA.Count);
+		TestEqual(TEXT("WaveB's EnemyClass (APlaceholderTargetZoneActor) should have spawned WaveB.Count actors, not WaveA's class"),
+			WaveBActorCount, WaveB.Count);
 
 		// Regression: a second StartWaves() call must no-op, not re-run the sequence -
 		// mirrors UStationPowerUpComponent's InitializeSequence() idempotency test.
@@ -237,8 +259,12 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 			Listener->SpawnedWaveCount, 1);
 	}
 
-	// (7) Destroying the component mid-sequence (a wave is pending on a timer) must not
-	// crash and must clear the pending timer via EndPlay().
+	// (7) EndPlay() must clear a pending wave's timer. This harness never drives the
+	// World through World->BeginPlay() (see EnemyBase.h's "driven World->BeginPlay()"
+	// note and KrowdKontrolRoomEnemyBudgetControllerTest.cpp's comment), so
+	// DestroyComponent() alone never reaches EndPlay() (UActorComponent only calls it
+	// when bHasBegunPlay is true) - call EndPlay() directly so this test actually
+	// exercises the cleanup path it claims to cover.
 	{
 		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
 		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
@@ -262,9 +288,16 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 
 		TestEqual(TEXT("Wave 0 should have spawned before destruction"),
 			Spawner->GetSpawnedActors().Num(), 1);
+		TestTrue(TEXT("Wave 1's timer should be pending before EndPlay()"),
+			Spawner->IsWaveTimerActive());
 
-		// DestroyComponent() invokes EndPlay() on a registered component; must not crash
-		// with a wave still pending on WaveTimerHandle.
+		Spawner->EndPlay(EEndPlayReason::Destroyed);
+
+		TestFalse(TEXT("EndPlay() should clear the pending wave timer"),
+			Spawner->IsWaveTimerActive());
+
+		// Also confirm the whole lifecycle still doesn't crash, mirroring what actually
+		// happens when a registered component is destroyed mid-sequence.
 		Spawner->DestroyComponent();
 	}
 
