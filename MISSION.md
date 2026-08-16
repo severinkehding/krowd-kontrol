@@ -55,8 +55,10 @@ falls in, not be assigned independently of it.
 - All 4 core enemy types (RU-NNR, TR-UPR, B0-0MR, SN-1PR), each with a distinct
   silhouette and attack tell independent of colour, simple
   Idle→Alert→Attack→Controlled→Banked state-machine AI (`03`).
-- 3 hand-authored levels with a difficulty ramp via room count and enemy density
-  (`05`).
+- 5 hand-authored levels with a difficulty ramp via room count and enemy density
+  (`05`) — 5, not 3, so the one-ability-unlock-per-level sequence (`02` above) maps
+  cleanly onto the level count (operator decision 2026-08-17, resolving the
+  discrepancy issue #69 flagged).
 - Diegetic onboarding: the entire game taught through forced-safe first encounters in
   the Opening Scene, no paused tutorial cards (`09`).
 - Core HUD: energy meter, ability/cooldown tray, world-space target-zone beacons, none

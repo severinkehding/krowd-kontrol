@@ -98,10 +98,7 @@ protected:
 	// Assumes exactly one live APawn carries UPlayerEnergyComponent (true today;
 	// revisit if local co-op/split-screen or a debug dummy pawn is ever added).
 	// Returns nullptr (and logs a warning) if no such pawn is found. See issue #15,
-	// the first enemy-attack code path to actually touch player state. Shared with
-	// issue #15's Bomber-enemy work-in-progress already present in the live app/
-	// project (BomberEnemy.cpp calls this); kept here rather than split out, since
-	// this file is shared across both issues' branches - see app-changelog/issue-25.md.
+	// the first enemy-attack code path to actually touch player state.
 	UPlayerEnergyComponent* FindPlayerEnergyComponent() const;
 
 	// C++-only (not BlueprintNativeEvent) until a real concrete subclass exists to
