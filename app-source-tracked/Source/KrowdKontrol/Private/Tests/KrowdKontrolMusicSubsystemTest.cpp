@@ -162,17 +162,21 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 		CalmComponent != CombatComponent);
 
 	// (k) the real Config-driven soft-object-ptr path (CalmTrack/CombatTrack pointing
-	// at DefaultGame.ini's actual placeholder asset paths, resolved via
+	// at the same shipping asset paths DefaultGame.ini configures, resolved via
 	// LoadSynchronous() rather than (j)'s NewObject<USoundWave>() injection) must also
 	// spawn a persistent, looping AudioComponent. This is the exact path a live PIE
 	// session exercises and that a prior E2E pass caught a regression in - (j)'s
 	// injected in-memory USoundWave happens to default to non-looping too, but only
 	// resolving the real Content asset proves PlayTrackForState()'s forced-looping fix
-	// actually reaches the SoundWave that DefaultGame.ini configures.
+	// actually reaches the SoundWave that DefaultGame.ini configures. These paths must
+	// stay in sync with DefaultGame.ini's [/Script/KrowdKontrol.MusicSubsystem]
+	// section - a prior review pass caught them pointing at stale, never-imported
+	// placeholder assets while the game shipped different ones, which silently turned
+	// this case into a test of nothing.
 	MusicSubsystem->CalmTrack = TSoftObjectPtr<USoundBase>(
-		FSoftObjectPath(TEXT("/Game/_Placeholder/Music/PlaceholderCalmTrack.PlaceholderCalmTrack")));
+		FSoftObjectPath(TEXT("/Game/Audio/Music/CalmTrack.CalmTrack")));
 	MusicSubsystem->CombatTrack = TSoftObjectPtr<USoundBase>(
-		FSoftObjectPath(TEXT("/Game/_Placeholder/Music/PlaceholderCombatTrack.PlaceholderCombatTrack")));
+		FSoftObjectPath(TEXT("/Game/Audio/Music/CombatTrack.CombatTrack")));
 
 	AEnemyBaseTestActor* FourthEnemy = World->SpawnActor<AEnemyBaseTestActor>();
 	if (!TestNotNull(TEXT("Fourth AEnemyBaseTestActor should spawn into the test World"), FourthEnemy))
@@ -192,6 +196,26 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Music must be forced to loop so it persists for as long as the state holds, not stop after one playthrough"),
 			RealCombatWave->bLooping);
 	}
+
+	// (l) natural reversion: the Hot enemy simply ceasing to exist (destroyed/
+	// despawned - death, room unload, wave cleanup) must revert music to Calm. This
+	// is a genuinely different code path from (g)/(i)'s Banked-pacification
+	// reversion: there the enemy still exists and reports Idle; here
+	// IsAnyEnemyInCombat()'s TActorIterator must correctly see no enemy at all.
+	// Note: AEnemyBase currently has NO Alert->Idle de-detection transition
+	// (TickCheckDetection only escalates), so an enemy "losing sight of the player"
+	// cannot yet revert music - destruction and banking are the only two reversion
+	// paths that exist at runtime today. If de-detection is ever added to the enemy
+	// state machine, add a case here driving it.
+	const int32 CallCountBeforeDestroy = Listener->CallCount;
+	World->DestroyActor(FourthEnemy);
+	MusicSubsystem->RefreshMusicState();
+	TestEqual(TEXT("Destroying the only Hot enemy should revert music state to Calm"),
+		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::Calm));
+	TestEqual(TEXT("The destruction-driven reversion should broadcast exactly once"),
+		Listener->CallCount, CallCountBeforeDestroy + 1);
+	TestEqual(TEXT("The reversion broadcast should carry Calm"),
+		static_cast<uint8>(Listener->LastState), static_cast<uint8>(EMusicState::Calm));
 
 	return true;
 }
