@@ -23,7 +23,7 @@ D-009's precedent for `app/`-only, non-source issues.
 | `app/Content/_Placeholder/Enemies/` | CREATE (directory) | Feeds PRD 03 (enemies) — placeholder art for the enemy types |
 | `app/Content/_Placeholder/Abilities/` | CREATE (directory) | Feeds PRD 02 (abilities) — ability placeholder art (VFX, projectiles, etc.) |
 | `app/Content/_Placeholder/TargetZones/` | CREATE (directory) | Feeds PRD 05 (levels) — target-zone placeholder art |
-| `app/Content/_Placeholder/README.md` | CREATE (46 lines) | Policy doc: placeholder-first rule (quotes `MISSION.md:198-201` near-verbatim), marketplace-replacement sequencing, final-asset destination, subfolder-to-PRD mapping, and why `_Placeholder/` is used instead of Epic's `Developers/` folder |
+| `app/Content/_Placeholder/README.md` | CREATE (46 lines) | Policy doc: placeholder-first rule (quotes `MISSION.md:199-201` near-verbatim), marketplace-replacement sequencing, final-asset destination, subfolder-to-PRD mapping, and why `_Placeholder/` is used instead of Epic's `Developers/` folder |
 
 ## Acceptance criteria
 
