@@ -111,26 +111,22 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 	InputComponent->RegisterComponent();
 	Pawn->SetupPlayerInputComponent(InputComponent);
 
-	bool bHasMoveForwardBinding = false;
-	bool bHasMoveRightBinding = false;
 	FInputAxisBinding* MoveForwardBinding = nullptr;
 	FInputAxisBinding* MoveRightBinding = nullptr;
 	for (FInputAxisBinding& Binding : InputComponent->AxisBindings)
 	{
 		if (Binding.AxisName == TEXT("MoveForward"))
 		{
-			bHasMoveForwardBinding = true;
 			MoveForwardBinding = &Binding;
 		}
 		else if (Binding.AxisName == TEXT("MoveRight"))
 		{
-			bHasMoveRightBinding = true;
 			MoveRightBinding = &Binding;
 		}
 	}
 
-	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveForward axis"), bHasMoveForwardBinding);
-	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveRight axis"), bHasMoveRightBinding);
+	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveForward axis"), MoveForwardBinding != nullptr);
+	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveRight axis"), MoveRightBinding != nullptr);
 
 	// Invokes the bound delegates directly (as UPlayerInput::ProcessInputStack would
 	// each frame) and checks the deliberate world-space-vs-actor-relative design
