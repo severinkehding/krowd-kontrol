@@ -121,11 +121,3 @@ UPlayerEnergyComponent* AEnemyBase::FindPlayerEnergyComponent() const
 		*GetNameSafe(this));
 	return nullptr;
 }
-
-EThreatState AEnemyBase::GetThreatState() const
-{
-	const bool bIsEngaged = CurrentState == EEnemyState::Alert
-		|| CurrentState == EEnemyState::Attack
-		|| CurrentState == EEnemyState::Controlled;
-	return bIsEngaged ? EThreatState::Hot : EThreatState::Idle;
-}

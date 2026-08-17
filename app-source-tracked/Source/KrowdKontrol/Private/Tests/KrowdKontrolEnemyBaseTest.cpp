@@ -228,8 +228,9 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	const FVector StartLocation = IdleChaser->GetActorLocation();
 	const FVector FarPlayerLocation(5000.0f, 0.0f, 0.0f);
 	IdleChaser->TickChaseMovement(FarPlayerLocation, 1.0f);
+	const float IdleDistanceMoved = FVector::Dist(IdleChaser->GetActorLocation(), StartLocation);
 	TestEqual(TEXT("TickChaseMovement while Idle should not move the actor"),
-		FVector::Dist(IdleChaser->GetActorLocation(), StartLocation), 0.0f);
+		IdleDistanceMoved, 0.0f);
 
 	// (q) TickChaseMovement moves the actor toward the player at the base default
 	// speed while in Alert, advancing exactly speed*DeltaSeconds in one tick.
@@ -249,19 +250,58 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	AttackChaser->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
 	const FVector AttackStart = AttackChaser->GetActorLocation();
 	AttackChaser->TickChaseMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float AttackDistanceMoved = FVector::Dist(AttackChaser->GetActorLocation(), AttackStart);
 	TestEqual(TEXT("TickChaseMovement while Attack should not move the actor"),
-		FVector::Dist(AttackChaser->GetActorLocation(), AttackStart), 0.0f);
+		AttackDistanceMoved, 0.0f);
+
+	// (p2) TickChaseMovement is a no-op outside Alert: Controlled.
+	AEnemyBaseTestActor* ControlledChaser = NewObject<AEnemyBaseTestActor>();
+	ControlledChaser->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	ControlledChaser->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	ControlledChaser->ReceiveControl(EAbilitySlot::Stun); // Attack -> Controlled
+	const FVector ControlledStart = ControlledChaser->GetActorLocation();
+	ControlledChaser->TickChaseMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float ControlledDistanceMoved = FVector::Dist(ControlledChaser->GetActorLocation(), ControlledStart);
+	TestEqual(TEXT("TickChaseMovement while Controlled should not move the actor"),
+		ControlledDistanceMoved, 0.0f);
+
+	// (r2) TickChaseMovement is a no-op outside Alert: Banked.
+	AEnemyBaseTestActor* BankedChaser = NewObject<AEnemyBaseTestActor>();
+	BankedChaser->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	BankedChaser->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	BankedChaser->ReceiveControl(EAbilitySlot::Stun); // Attack -> Controlled
+	BankedChaser->TransitionToBanked(); // Controlled -> Banked
+	const FVector BankedStart = BankedChaser->GetActorLocation();
+	BankedChaser->TickChaseMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float BankedDistanceMoved = FVector::Dist(BankedChaser->GetActorLocation(), BankedStart);
+	TestEqual(TEXT("TickChaseMovement while Banked should not move the actor"),
+		BankedDistanceMoved, 0.0f);
 
 	// (s) no-overshoot clamp: a player closer than speed*DeltaSeconds is reached
 	// exactly, not overshot past.
 	AEnemyBaseTestActor* CloseChaser = NewObject<AEnemyBaseTestActor>();
 	CloseChaser->TickCheckDetection(FVector(50.0f, 0.0f, 0.0f)); // Idle -> Alert (within DetectionRangeUnits, outside base 0.0f attack range)
 	CloseChaser->TickChaseMovement(FVector(50.0f, 0.0f, 0.0f), 1.0f); // would move 600 units at base speed - player is only 50 away
+	const float ResidualDistance = FVector::Dist(CloseChaser->GetActorLocation(), FVector(50.0f, 0.0f, 0.0f));
 	TestEqual(TEXT("chase clamps to the player's location instead of overshooting"),
-		FVector::Dist(CloseChaser->GetActorLocation(), FVector(50.0f, 0.0f, 0.0f)), 0.0f);
+		ResidualDistance, 0.0f);
 
 	// (t) the real Tick() override wires TickChaseMovement into the per-frame loop,
 	// same World-backed shape as case (k)'s detection-only Tick() coverage.
+	// UGameplayStatics::GetPlayerPawn (what Tick() actually calls) resolves through
+	// World::PlayerControllerList, which UWorld::AddController normally populates from
+	// AController::PostInitializeComponents - but CreateNewMap()'s editor world is
+	// never driven through World->InitializeActorsForPlay/BeginPlay (see EnemyBase.h's
+	// "driven World->BeginPlay()" note and KrowdKontrolWaveSpawnerComponentTest.cpp
+	// case (7)'s comment on the same limitation), so that registration never happens
+	// for a plain SpawnActor<APlayerController>() here. AddController() is called
+	// directly to register it - the same public entry point PostInitializeComponents
+	// itself would have called, just invoked manually since this harness never drives
+	// the World through the flow that calls it automatically. A raw APawn also has no
+	// default RootComponent (unlike ACharacter/ADefaultPawn), so SetActorLocation()
+	// on one is a silent no-op (Actor.cpp early-outs when RootComponent is null) -
+	// same class of issue KrowdKontrolOvercrowdDetectionComponentTest.cpp's
+	// AEnemyBaseTestActor comment documents; give it a scene root for the same reason.
 	UWorld* ChaseWorld = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), ChaseWorld))
 	{
@@ -270,12 +310,62 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), TickedChaser)
 			&& TestNotNull(TEXT("APawn should spawn into the test World"), ChasePlayerPawn))
 		{
+			APlayerController* ChaseController = ChaseWorld->SpawnActor<APlayerController>();
+			if (!TestNotNull(TEXT("Should be able to spawn a controller to possess the pawn"), ChaseController))
+			{
+				return false;
+			}
+			ChaseController->Possess(ChasePlayerPawn);
+			ChaseWorld->AddController(ChaseController);
+
+			USceneComponent* ChasePlayerPawnRoot = NewObject<USceneComponent>(ChasePlayerPawn);
+			ChasePlayerPawnRoot->RegisterComponent();
+			ChasePlayerPawn->SetRootComponent(ChasePlayerPawnRoot);
 			ChasePlayerPawn->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f));
+
 			TickedChaser->TickCheckDetection(ChasePlayerPawn->GetActorLocation()); // Idle -> Alert
 			const FVector BeforeTick = TickedChaser->GetActorLocation();
 			TickedChaser->Tick(0.1f);
-			TestTrue(TEXT("Tick() should move the chaser toward the player"),
-				FVector::Dist(TickedChaser->GetActorLocation(), BeforeTick) > 0.0f);
+			const float TickDistanceMoved = FVector::Dist(TickedChaser->GetActorLocation(), BeforeTick);
+			TestEqual(TEXT("Tick() should move the chaser toward the player at base default speed * DeltaSeconds"),
+				TickDistanceMoved, 600.0f * 0.1f);
+		}
+	}
+
+	// (u) same-tick transition-and-move: an Idle actor whose Tick() call newly
+	// detects the player must both flip to Alert AND advance toward them within that
+	// one call - the exact same-frame transition+move interaction scope.md's review
+	// focus flagged (TickCheckDetection runs before TickChaseMovement, same tick).
+	UWorld* SameTickWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), SameTickWorld))
+	{
+		AEnemyBaseTestActor* FreshChaser = SameTickWorld->SpawnActor<AEnemyBaseTestActor>();
+		APawn* FreshPlayerPawn = SameTickWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), FreshChaser)
+			&& TestNotNull(TEXT("APawn should spawn into the test World"), FreshPlayerPawn))
+		{
+			APlayerController* SameTickController = SameTickWorld->SpawnActor<APlayerController>();
+			if (!TestNotNull(TEXT("Should be able to spawn a controller to possess the pawn"), SameTickController))
+			{
+				return false;
+			}
+			SameTickController->Possess(FreshPlayerPawn);
+			SameTickWorld->AddController(SameTickController);
+
+			USceneComponent* FreshPlayerPawnRoot = NewObject<USceneComponent>(FreshPlayerPawn);
+			FreshPlayerPawnRoot->RegisterComponent();
+			FreshPlayerPawn->SetRootComponent(FreshPlayerPawnRoot);
+			FreshPlayerPawn->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f));
+			TestEqual(TEXT("precondition: chaser starts Idle"),
+				static_cast<uint8>(FreshChaser->GetEnemyState()), static_cast<uint8>(EEnemyState::Idle));
+			const FVector BeforeFirstTick = FreshChaser->GetActorLocation();
+
+			FreshChaser->Tick(0.1f); // single call: detection AND chase movement
+
+			TestEqual(TEXT("single Tick() call also flips state to Alert"),
+				static_cast<uint8>(FreshChaser->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+			TestTrue(TEXT("same Tick() call also moves the newly-alerted chaser"),
+				FVector::Dist(FreshChaser->GetActorLocation(), BeforeFirstTick) > 0.0f);
 		}
 	}
 
