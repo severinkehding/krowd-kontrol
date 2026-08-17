@@ -21,6 +21,9 @@
 // This is the module's first UHT-reflection-free header at the root level (compare
 // Public/Herdable.h and AbilitySlot.h, which both use .generated.h for their
 // UINTERFACE/UENUM needs) - revisit if a Blueprint consumer ever needs these values.
+//
+// Issue #11 added GetBackground() below for the same reason GetAll()/the 5 accessors
+// exist: one file, zero call-site duplication, for the palette's Background value too.
 namespace ReservedGameplayColours
 {
 	// RU-NNR enemy / Snare ability.
@@ -41,4 +44,10 @@ namespace ReservedGameplayColours
 	// All 5 reserved colours, for code (widgets, tests) that wants to assert
 	// none-match rather than name each individually.
 	KROWDKONTROL_API TArray<FLinearColor> GetAll();
+
+	// Desaturated near-black environment background colour (issue #11, PRD
+	// 11-visual-and-art-direction.md REQ-2). Deliberately NOT included in GetAll() -
+	// this is the backdrop the 5 reserved colours are locked against, not a 6th
+	// reserved colour.
+	KROWDKONTROL_API FLinearColor GetBackground();
 }
