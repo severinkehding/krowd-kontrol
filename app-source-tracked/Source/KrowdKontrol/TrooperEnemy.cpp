@@ -4,6 +4,9 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
+#include "Sound/SoundBase.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/AudioComponent.h"
 
 ATrooperEnemy::ATrooperEnemy()
 {
@@ -43,6 +46,26 @@ ATrooperEnemy::ATrooperEnemy()
 	AttackTellLightComponent->SetLightColor(FLinearColor(1.0f, 0.1f, 0.6f));
 	AttackTellLightComponent->SetIntensity(0.0f); // off until Attack entry
 	AttackTellLightComponent->SetAttenuationRadius(300.0f);
+
+	// Placeholder-first default (MISSION.md) so issue #30's "a distinct sound
+	// effect plays" AC holds without waiting on a designer to configure
+	// AttackTellSound. /Engine/EngineSounds/ has only two playable USoundBase
+	// assets (1kSineTonePing, WhiteNoise) and both are already claimed by
+	// ASniperEnemy/ABomberEnemy respectively (verified against the installed
+	// Engine content) - reusing either here would make two enemy types share an
+	// "audibly distinct" tell, contradicting issue #30's AC directly. This uses a
+	// different built-in Engine asset instead: a short notification chime, always
+	// present in a stock Engine install and loadable in the Editor context this
+	// project's Automation tests actually run in (no packaging/cook step exists
+	// yet - see harness/README.md). Revisit alongside #36/#33's own "sourcing a
+	// real sound" follow-up once one exists. Still Details-panel/Blueprint
+	// overridable.
+	static ConstructorHelpers::FObjectFinder<USoundBase> AttackTellSoundFinder(
+		TEXT("/Engine/EditorSounds/Notifications/CompileSuccess.CompileSuccess"));
+	if (AttackTellSoundFinder.Succeeded())
+	{
+		AttackTellSound = AttackTellSoundFinder.Object;
+	}
 }
 
 float ATrooperEnemy::GetAttackRangeUnits() const
@@ -73,6 +96,26 @@ void ATrooperEnemy::OnAttackEntry()
 {
 	AttackTellLightComponent->SetIntensity(AttackTellIntensity);
 	RemainingTelegraphSeconds = AttackTelegraphSeconds;
+
+	// AttackTellSound defaults to a placeholder engine chime (see the
+	// constructor), so this resolves normally out of the box; the else-branch
+	// below is a defensive fallback for the case a Blueprint/Details-panel
+	// override explicitly clears it. Fires exactly once per Attack entry -
+	// AdvanceAttackTelegraph()'s rapid re-arm loop below re-fires
+	// OnTrooperRayFired repeatedly without ever re-calling OnAttackEntry(), so
+	// this deliberately does NOT repeat per ray (issue #30 AC: "plays once per
+	// telegraph - not looping").
+	if (USoundBase* TellSound = AttackTellSound.LoadSynchronous())
+	{
+		AttackTellAudioComponent = UGameplayStatics::SpawnSoundAtLocation(this, TellSound, GetActorLocation());
+	}
+	else if (!bHasWarnedMissingAttackTellSound)
+	{
+		bHasWarnedMissingAttackTellSound = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ATrooperEnemy: no AttackTellSound configured on '%s' - attack telegraph will be silent."),
+			*GetNameSafe(this));
+	}
 }
 
 void ATrooperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)

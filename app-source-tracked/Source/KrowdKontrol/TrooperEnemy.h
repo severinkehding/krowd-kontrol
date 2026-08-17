@@ -6,6 +6,8 @@
 
 class UStaticMeshComponent;
 class UPointLightComponent;
+class USoundBase;
+class UAudioComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnTrooperRayFired);
 
@@ -62,6 +64,20 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Trooper")
 	FOnTrooperRayFired OnTrooperRayFired;
 
+	// Defaults to a built-in engine sound asset (set in the constructor via
+	// ConstructorHelpers::FObjectFinder, same pattern as MeshComponent's
+	// PlaneMeshFinder below) so issue #30's "a distinct sound effect plays" AC is
+	// met out of the box, not left silent pending designer configuration - same
+	// placeholder-first rationale ASniperEnemy::AttackTellSound/
+	// ABomberEnemy::AttackTellSound document. Deliberately a THIRD distinct asset
+	// from both siblings' (Sniper's 1kSineTonePing, Bomber's WhiteNoise) so all
+	// three enemies' tells are audibly distinct - see TrooperEnemy.cpp's
+	// constructor comment for why this one lives outside /Engine/EngineSounds/
+	// (that folder has no third distinct playable sound asset left). Still
+	// Blueprint/Details-panel overridable.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trooper")
+	TSoftObjectPtr<USoundBase> AttackTellSound;
+
 protected:
 	virtual float GetAttackRangeUnits() const override;
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
@@ -74,4 +90,18 @@ private:
 	void AdvanceAttackTelegraph(float DeltaSeconds);
 
 	float RemainingTelegraphSeconds = 0.0f;
+
+	// Test-visible via the existing FKrowdKontrolTrooperEnemyTest friend grant
+	// above - set by OnAttackEntry() when AttackTellSound resolves, so the
+	// Automation test can assert the audio cue actually spawned without querying
+	// real audio hardware.
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> AttackTellAudioComponent;
+
+	// Defensive one-shot guard, mirroring ASniperEnemy::bHasWarnedMissingAttackTellSound's
+	// shape - currently unreachable a second time in practice, since EnemyBase's
+	// linear state machine only ever calls OnAttackEntry() once per instance. Kept
+	// so a future change that made Attack re-enterable wouldn't silently start
+	// spamming this warning.
+	bool bHasWarnedMissingAttackTellSound = false;
 };
