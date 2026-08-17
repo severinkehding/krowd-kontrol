@@ -71,16 +71,35 @@ void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)
 	}
 }
 
+void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSeconds)
+{
+	if (CurrentState != EEnemyState::Alert)
+	{
+		return;
+	}
+	const FVector ToPlayer = PlayerLocation - GetActorLocation();
+	const float DistanceRemaining = ToPlayer.Size();
+	if (DistanceRemaining <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	const float MoveDistance = FMath::Min(DistanceRemaining, GetMovementSpeedUnitsPerSecond() * DeltaSeconds);
+	SetActorLocation(GetActorLocation() + ToPlayer.GetSafeNormal() * MoveDistance);
+}
+
 void AEnemyBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
 	// GetPlayerPawn returns nullptr in a headless Automation test with no
-	// PlayerController spawned - this is fine and expected; TickCheckDetection is
-	// friend-testable independently of a live Tick() call for exactly this reason.
+	// PlayerController spawned - this is fine and expected; TickCheckDetection and
+	// TickChaseMovement are both friend-testable independently of a live Tick() call
+	// for exactly this reason.
 	if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
 	{
-		TickCheckDetection(PlayerPawn->GetActorLocation());
+		const FVector PlayerLocation = PlayerPawn->GetActorLocation();
+		TickCheckDetection(PlayerLocation);
+		TickChaseMovement(PlayerLocation, DeltaTime);
 	}
 }
 

@@ -47,6 +47,13 @@ float ABomberEnemy::GetAttackRangeUnits() const
 	return 150.0f;
 }
 
+float ABomberEnemy::GetMovementSpeedUnitsPerSecond() const
+{
+	// Per-type override (issue #122) - B0-0MR's slow-movement AC (issue #15) now
+	// actually drives AEnemyBase::TickChaseMovement, not just a declared value.
+	return MovementSpeed;
+}
+
 void ABomberEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
 	// Clear the tell on any Controlled-entry interrupt (Alert/Attack -> Controlled),
