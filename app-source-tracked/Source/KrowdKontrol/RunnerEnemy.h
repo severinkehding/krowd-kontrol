@@ -7,6 +7,8 @@
 class UStaticMeshComponent;
 class UPointLightComponent;
 class UEnemyTypeIndicatorComponent;
+class USoundBase;
+class UAudioComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRunnerDrainFired);
 
@@ -63,6 +65,19 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Runner")
 	float AttackTellIntensity = 2000.0f;
 
+	// Defaults to /Engine/EditorSounds/Notifications/CompileFailed (set in the
+	// constructor via ConstructorHelpers::FObjectFinder, same pattern as
+	// MeshComponent's CubeMeshFinder above) so issue #28's "a distinct sound effect
+	// plays" AC is met out of the box, not left silent pending designer
+	// configuration. Still placeholder-first (MISSION.md): a primitive built-in
+	// engine chime standing in until a real, per-enemy-type-distinguishable sound is
+	// sourced - deliberately a different built-in asset from ASniperEnemy's
+	// 1kSineTonePing, ABomberEnemy's WhiteNoise, and ATrooperEnemy's CompileSuccess,
+	// so RU-NNR's tell is audibly distinct from all 3 siblings. Still Blueprint/
+	// Details-panel overridable.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Runner")
+	TSoftObjectPtr<USoundBase> AttackTellSound;
+
 	// Fast chase speed (issue #122's per-type override pattern), well above
 	// AEnemyBase's 600 u/s base default - the opposite of ABomberEnemy's slow 200.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Runner", meta = (ClampMin = "0.0"))
@@ -84,4 +99,17 @@ private:
 
 	float RemainingTelegraphSeconds = 0.0f;
 	bool bDrainFiredForCurrentAttack = false;
+
+	// Test-visible via the existing FKrowdKontrolRunnerEnemyTest friend grant above -
+	// set by OnAttackEntry() when AttackTellSound resolves, so the Automation test can
+	// assert the audio cue actually spawned without querying real audio hardware.
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> AttackTellAudioComponent;
+
+	// Defensive one-shot guard, mirroring ASniperEnemy/ABomberEnemy/ATrooperEnemy's
+	// bHasWarnedMissingAttackTellSound shape - currently unreachable a second time in
+	// practice, since EnemyBase's linear state machine (EnemyBase.h) only ever calls
+	// OnAttackEntry() once per instance. Kept so a future change that made Attack
+	// re-enterable wouldn't silently start spamming this warning.
+	bool bHasWarnedMissingAttackTellSound = false;
 };
