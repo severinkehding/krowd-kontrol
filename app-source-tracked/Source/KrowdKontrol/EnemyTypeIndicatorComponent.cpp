@@ -49,7 +49,11 @@ void UEnemyTypeIndicatorComponent::InitializeMarkerVisual()
 	// constructor) view the actor from the opposite (+X) side, so the unrotated default
 	// renders mirror-flipped (issue #134, e.g. "B0-0MR" as "ЯM0-08"). A fixed 180deg
 	// Yaw flip is pitch-independent, so this single rotation reads correctly under both
-	// locked camera pitches without per-rig logic.
+	// locked camera pitches without per-rig logic. This assumes Owner's root component
+	// has identity world rotation - true for every enemy actor today, but NOT for
+	// ATrooperEnemy (TR-UPR), which rolls its own root 90deg (TrooperEnemy.cpp); once
+	// TR-UPR gets a concrete indicator-bearing actor, that roll will compose with this
+	// fixed rotation and needs accounting for.
 	MarkerTextComponent->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
 	MarkerTextComponent->SetHorizontalAlignment(EHTA_Center);
 	MarkerTextComponent->SetWorldSize(48.0f);

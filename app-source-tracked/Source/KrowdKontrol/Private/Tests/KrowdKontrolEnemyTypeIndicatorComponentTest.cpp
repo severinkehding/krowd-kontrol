@@ -147,6 +147,27 @@ bool FKrowdKontrolEnemyTypeIndicatorComponentTest::RunTest(const FString& Parame
 		}
 	}
 
+	// (c3) Regression guard: (c2) alone only re-states InitializeMarkerVisual()'s own
+	// hardcoded rotation literal back at itself, so it can't tell "the fix is correct"
+	// from "the fix's test constant happens to match its production constant". This
+	// asserts the *composed* invariant the fix actually depends on instead - that a
+	// fixed local Yaw flip survives composition with a non-identity owner world
+	// rotation, which the World-backed actors' RootComponent attachment (see (c)
+	// above) makes exercisable. FRotator composition of two pure-Yaw rotations
+	// (RunnerStandIn's actor Yaw + this fixed relative Yaw) is additive since neither
+	// has any Pitch/Roll to interact with.
+	RunnerStandIn->SetActorRotation(FRotator(0.0f, 45.0f, 0.0f));
+	UEnemyTypeIndicatorComponent* RotatedIndicator = NewObject<UEnemyTypeIndicatorComponent>(RunnerStandIn);
+	RotatedIndicator->EnemyType = EEnemyType::RU_NNR;
+	RotatedIndicator->RegisterComponent();
+	RotatedIndicator->InitializeMarkerVisual();
+	UTextRenderComponent* RotatedMarker = RotatedIndicator->MarkerTextComponent;
+	if (TestNotNull(TEXT("RotatedIndicator->MarkerTextComponent should be non-null"), RotatedMarker))
+	{
+		TestTrue(TEXT("MarkerTextComponent's world rotation should still be actor-yaw + 180 when the owner itself is rotated"),
+			RotatedMarker->GetComponentRotation().Equals(FRotator(0.0f, 225.0f, 0.0f), 0.01f));
+	}
+
 	// (d) AC #1: each of the 4 core enemy types has mutually distinct marker text.
 	TArray<FString> AllMarkerTexts;
 	for (UEnemyTypeIndicatorComponent* Indicator : AllIndicators)
