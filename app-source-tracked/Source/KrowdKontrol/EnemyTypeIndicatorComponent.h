@@ -22,7 +22,13 @@ class KROWDKONTROL_API UEnemyTypeIndicatorComponent : public UActorComponent
 public:
 	UEnemyTypeIndicatorComponent();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy Type Indicator")
+	// Set entirely by the owning C++ subclass at construction time (see
+	// ABomberEnemy/ASniperEnemy's constructors) - VisibleAnywhere/BlueprintReadOnly,
+	// not EditAnywhere/BlueprintReadWrite, so a placed instance or Blueprint can't
+	// silently desync the marker from the actor's real type. Matches the
+	// VisibleAnywhere convention every other type/colour-tied subobject property on
+	// those classes already uses (e.g. AttackTellLightComponent).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy Type Indicator")
 	EEnemyType EnemyType = EEnemyType::RU_NNR;
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Type Indicator")

@@ -163,6 +163,32 @@ bool FKrowdKontrolEnemyTypeIndicatorComponentTest::RunTest(const FString& Parame
 	TestTrue(TEXT("A second InitializeMarkerVisual() call should not create a duplicate MarkerTextComponent"),
 		WorldBomber->EnemyTypeIndicatorComponent->MarkerTextComponent == MarkerBeforeSecondCall);
 
+	// (g) Regression: an owner with no RootComponent must warn, not crash, and must
+	// never create MarkerTextComponent. A plain AActor (not AEnemyBaseTestActor,
+	// which now always carries a root - see (b) above) is used here so this path is
+	// deliberately, not incidentally, exercised. The early-return path never sets
+	// bHasInitializedMarkerVisual, so a second call retries and warns again rather
+	// than silently no-op'ing.
+	AActor* RootlessOwner = World->SpawnActor<AActor>();
+	if (!TestNotNull(TEXT("Rootless owner actor should spawn into the test World"), RootlessOwner))
+	{
+		return false;
+	}
+	TestNull(TEXT("Sanity: plain AActor should have no RootComponent by default"), RootlessOwner->GetRootComponent());
+
+	UEnemyTypeIndicatorComponent* RootlessIndicator = NewObject<UEnemyTypeIndicatorComponent>(RootlessOwner);
+	RootlessIndicator->EnemyType = EEnemyType::RU_NNR;
+	RootlessIndicator->RegisterComponent();
+
+	AddExpectedError(TEXT("found no Owner root component"), EAutomationExpectedErrorFlags::Contains, 2, false);
+	RootlessIndicator->InitializeMarkerVisual();
+	TestNull(TEXT("MarkerTextComponent should stay null when the owner has no RootComponent"),
+		RootlessIndicator->MarkerTextComponent);
+
+	RootlessIndicator->InitializeMarkerVisual();
+	TestNull(TEXT("A second InitializeMarkerVisual() call on a rootless owner should still leave MarkerTextComponent null"),
+		RootlessIndicator->MarkerTextComponent);
+
 	return true;
 }
 
