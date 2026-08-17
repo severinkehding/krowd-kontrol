@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class UPointLightComponent;
+class UEnemyTypeIndicatorComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBomberExploded);
 
@@ -36,6 +37,11 @@ public:
 	// Non-reserved placeholder colour, on during Attack.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bomber")
 	TObjectPtr<UPointLightComponent> AttackTellLightComponent;
+
+	// Colourblind-safe non-colour marker (PRD 13 REQ-7, issue #77) - "B0-0MR" text
+	// floating above the mesh, independent of CoreGlowLightComponent's Orange.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bomber")
+	TObjectPtr<UEnemyTypeIndicatorComponent> EnemyTypeIndicatorComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0"))
 	float AttackTelegraphSeconds = 2.0f;

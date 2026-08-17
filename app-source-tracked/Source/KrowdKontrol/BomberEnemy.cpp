@@ -5,6 +5,8 @@
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
 #include "PlayerEnergyComponent.h"
+#include "EnemyTypeIndicatorComponent.h"
+#include "EnemyType.h"
 
 ABomberEnemy::ABomberEnemy()
 {
@@ -33,6 +35,9 @@ ABomberEnemy::ABomberEnemy()
 	AttackTellLightComponent->SetLightColor(FLinearColor(1.0f, 0.15f, 0.05f));
 	AttackTellLightComponent->SetIntensity(0.0f); // off until Attack entry
 	AttackTellLightComponent->SetAttenuationRadius(300.0f);
+
+	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
+	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::B0_0MR;
 }
 
 float ABomberEnemy::GetAttackRangeUnits() const
