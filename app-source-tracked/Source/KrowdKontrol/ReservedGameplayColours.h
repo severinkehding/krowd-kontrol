@@ -45,9 +45,8 @@ namespace ReservedGameplayColours
 	// none-match rather than name each individually.
 	KROWDKONTROL_API TArray<FLinearColor> GetAll();
 
-	// Desaturated near-black environment background colour (issue #11, PRD
-	// 11-visual-and-art-direction.md REQ-2). Deliberately NOT included in GetAll() -
-	// this is the backdrop the 5 reserved colours are locked against, not a 6th
-	// reserved colour.
+	// Desaturated near-black environment background colour (issue #11, PRD 11
+	// REQ-2). Deliberately NOT included in GetAll() - this is the backdrop the 5
+	// reserved colours are locked against, not a 6th reserved colour.
 	KROWDKONTROL_API FLinearColor GetBackground();
 }
