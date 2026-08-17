@@ -87,20 +87,27 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 
 	if (TestNotNull(TEXT("Energy meter should be bound"), ToRawPtr(Controller->EnergyMeterWidgetInstance)))
 	{
-		// The widget seeds itself to the 0.72 placeholder fraction on construction; the
-		// pawn's UPlayerEnergyComponent::BeginPlay() never runs in this test (only the
-		// controller's DispatchBeginPlay() does), so its CurrentEnergy stays at the
-		// default-constructed 0.0f. A successful BindToEnergyComponent() call therefore
-		// drives the displayed fraction from 0.72 down to 0.0 - proof the bind actually
-		// happened, not just that the widget was constructed.
+		// The widget seeds itself to the 0.72 placeholder fraction on construction.
+		// UPlayerEnergyComponent now seeds CurrentEnergy to MaxEnergy in its own
+		// constructor (not BeginPlay - see PlayerEnergyComponent.cpp), so the pawn's
+		// component already holds full energy by the time this test spawns it,
+		// independent of whether the pawn's own BeginPlay ever runs. A successful
+		// BindToEnergyComponent() call therefore drives the displayed fraction from the
+		// 0.72 placeholder to 1.0 (full energy) - proof the bind actually happened, not
+		// just that the widget was constructed.
 		TestEqual(TEXT("Energy meter fraction should move off the 0.72 placeholder once bound"),
-			Controller->EnergyMeterWidgetInstance->GetDisplayedFraction(), 0.0f);
+			Controller->EnergyMeterWidgetInstance->GetDisplayedFraction(), 1.0f);
 	}
 
 	// Second controller/pawn pair, opposite ordering from the one above: widgets are
 	// constructed first (DispatchBeginPlay), then Possess() runs against already-existing
-	// widgets. This exercises OnPossess()'s own WireWidgetsToPawn() call directly, rather
-	// than relying on BeginPlay()'s defensive re-wire to satisfy the assertions.
+	// widgets. This exercises OnPossess()'s own WireWidgetsToPawn() call directly - a
+	// path that is a guaranteed no-op on both current playable levels, since
+	// AutoPossessPlayer there always possesses before the controller's BeginPlay (and
+	// therefore before CreateHUDWidgets()) runs, so OnPossess()'s WireWidgetsToPawn()
+	// call always finds null widgets in practice. Covered here as defense-in-depth for
+	// a future level/possession order that isn't AutoPossessPlayer-driven, not because
+	// it's reachable today.
 	AFlatCamera3DPrototypePawn* Pawn2 = World->SpawnActor<AFlatCamera3DPrototypePawn>();
 	if (!TestNotNull(TEXT("Second pawn should spawn"), Pawn2))
 	{

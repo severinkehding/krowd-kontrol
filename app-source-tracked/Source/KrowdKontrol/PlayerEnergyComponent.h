@@ -34,7 +34,7 @@ class KROWDKONTROL_API UPlayerEnergyComponent : public UActorComponent
 public:
 	UPlayerEnergyComponent();
 
-	// Ceiling CurrentEnergy is seeded to (on BeginPlay) and clamped to.
+	// Ceiling CurrentEnergy is seeded to (on construction) and clamped to.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player Energy", meta = (ClampMin = "0.0"))
 	float MaxEnergy = 100.0f;
 
@@ -59,9 +59,6 @@ public:
 	// Read-only accessor for CurrentEnergy - a future HUD can either bind
 	// OnEnergyChanged or poll this. No corresponding setter exists on purpose.
 	float GetCurrentEnergy() const { return CurrentEnergy; }
-
-protected:
-	virtual void BeginPlay() override;
 
 private:
 	// Runtime state, not designer config - hence no EditDefaultsOnly/EditAnywhere, and
