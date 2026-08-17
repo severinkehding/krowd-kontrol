@@ -363,6 +363,17 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// (r) OnAttackEntry's sound-spawn call must degrade gracefully for actors without a
+	// real UWorld (SpawnSoundAtLocation needs a world context) - a combination this PR
+	// makes reachable for the first time via every NewObject-only case above (a)-(l).
+	ARunnerEnemy* WorldlessRunner = NewObject<ARunnerEnemy>();
+	if (TestNotNull(TEXT("ARunnerEnemy should construct without a UWorld"), WorldlessRunner))
+	{
+		AdvanceToAttack(WorldlessRunner, ZeroDistanceLocation);
+		TestNull(TEXT("SpawnSoundAtLocation should no-op (not crash) for an actor with no real UWorld"),
+			WorldlessRunner->AttackTellAudioComponent.Get());
+	}
+
 	return true;
 }
 
