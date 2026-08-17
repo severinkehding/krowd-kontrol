@@ -1,4 +1,5 @@
 #include "AbilityCooldownTrayWidget.h"
+#include "AbilityUnlockComponent.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -174,6 +175,29 @@ void UAbilityCooldownTrayWidget::SetSlotLocked(EAbilitySlot AbilitySlot, bool bL
 	}
 	SlotLocked[Index] = bLocked;
 	UpdateSlotVisual(AbilitySlot);
+}
+
+void UAbilityCooldownTrayWidget::BindAbilityUnlockComponent(UAbilityUnlockComponent* UnlockComponent)
+{
+	if (!UnlockComponent)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("AbilityCooldownTrayWidget::BindAbilityUnlockComponent called with null component - tray keeps its current locked states"));
+		return;
+	}
+	for (int32 Index = 0; Index < NumAbilitySlots; ++Index)
+	{
+		const EAbilitySlot CurrentSlot = static_cast<EAbilitySlot>(Index);
+		SetSlotLocked(CurrentSlot, !UnlockComponent->IsAbilityUnlocked(CurrentSlot));
+	}
+	// AddUniqueDynamic so a repeated bind (e.g. HUD rebuild on level transition,
+	// issue #132) can't stack duplicate subscriptions.
+	UnlockComponent->OnAbilityUnlocked.AddUniqueDynamic(this, &UAbilityCooldownTrayWidget::HandleAbilityUnlocked);
+}
+
+void UAbilityCooldownTrayWidget::HandleAbilityUnlocked(EAbilitySlot Ability)
+{
+	SetSlotLocked(Ability, false);
 }
 
 void UAbilityCooldownTrayWidget::AdvanceCooldowns(float DeltaSeconds)

@@ -42,15 +42,23 @@ record of that change, see the closing note below)
       reach and no-op on repeat calls for an already-unlocked level; test assertions
       (b)-(f) cover in-order unlocking and exactly-once semantics via a repeat
       `NotifyLevelReached(2)` call.
-- [ ] **"Castable" / hidden-as-active-tray-slot until unlocked.** NOT implemented.
-      There is no cast-execution path anywhere in this codebase yet — `TryStartCooldown`
-      (the documented future cast-gating point) has zero production callers, and
-      `UAbilityCooldownTrayWidget` is never added to any viewport in production code;
-      both are explicitly reserved placeholders for issue #71. Wiring unlock state into
-      either would mean building issue #71's cast-execution system inside this issue,
-      and `UAbilityCooldownComponent.h` explicitly forbids adding new public mutators to
-      preserve that separation. Deferred to issue #71, which owns cast execution and
-      tray gating.
+- [x] **Tray-slot gating (the buildable half).** Wired post-escalation (operator-
+      guided, 2026-08-17): `UAbilityCooldownTrayWidget::BindAbilityUnlockComponent()`
+      initializes every slot's locked visual (issue #68's `SetSlotLocked` state, merged
+      via PR #129) from `IsAbilityUnlocked()` — Stun unlocked, the other four locked —
+      and subscribes to `OnAbilityUnlocked` so slots unlock live as levels are reached.
+      Test assertion (i) covers initial bind state, live unlock on
+      `NotifyLevelReached`, and re-bind idempotence (`AddUniqueDynamic`).
+- [ ] **"Castable" gating.** NOT implemented, and cannot be yet: there is no
+      cast-execution path anywhere in this codebase — `TryStartCooldown` (the
+      documented future cast-gating point) has zero production callers; it is an
+      explicitly reserved placeholder for issue #71's cast-execution system.
+      Deliberately deferred there rather than built speculatively here.
+- [ ] **On-screen reachability.** The tray widget is never added to any viewport in
+      production code — a project-wide HUD-wiring gap predating this issue (no HUD
+      widget is), tracked as issue #132, whose wiring will call
+      `BindAbilityUnlockComponent()` with the player pawn's component at widget
+      creation.
 - [x] **A `KrowdKontrol.Unit.AbilityUnlockSequence` Automation Framework test asserts
       only Stun is available at run start, and simulating progression through
       subsequent levels unlocks Sleep/Root/Fear/Snare in the correct order and none

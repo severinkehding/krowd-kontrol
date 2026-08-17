@@ -12,6 +12,10 @@
 #include "Misc/AutomationTest.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityUnlockTestListener.h"
+#include "AbilityCooldownTrayWidget.h"
+#include "Tests/AutomationEditorCommon.h"
+#include "Engine/World.h"
+#include "Blueprint/UserWidget.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -119,6 +123,56 @@ bool FKrowdKontrolAbilityUnlockSequenceTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Root should NOT catch-up unlock from a level-5 signal alone"), SkipComponent->IsAbilityUnlocked(EAbilitySlot::Root));
 	TestFalse(TEXT("Fear should NOT catch-up unlock from a level-5 signal alone"), SkipComponent->IsAbilityUnlocked(EAbilitySlot::Fear));
 	TestEqual(TEXT("Exactly one unlock event should fire for the skipped-ahead call"), SkipListener->UnlockedOrder.Num(), 1);
+
+	// (i) production wiring: BindAbilityUnlockComponent() must initialize the tray's
+	// locked-slot visuals from the component's unlock state and keep them live via
+	// OnAbilityUnlocked - the consumer path issue #69's acceptance criteria describe
+	// ("locked/uncastable... not shown as an active, usable ability-tray slot").
+	// CreateWidget needs a real UWorld (same pattern/rationale as
+	// KrowdKontrolAbilityCooldownTrayWidgetTest.cpp - works under -nullrhi).
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+	UAbilityCooldownTrayWidget* Tray =
+		CreateWidget<UAbilityCooldownTrayWidget>(World, UAbilityCooldownTrayWidget::StaticClass());
+	if (!TestNotNull(TEXT("Tray widget should construct via CreateWidget"), Tray))
+	{
+		return false;
+	}
+	UAbilityUnlockComponent* BoundComponent = NewObject<UAbilityUnlockComponent>();
+	if (!TestNotNull(TEXT("A bind-target UAbilityUnlockComponent should construct"), BoundComponent))
+	{
+		return false;
+	}
+
+	Tray->BindAbilityUnlockComponent(BoundComponent);
+	TestFalse(TEXT("Stun's tray slot should be unlocked immediately after binding (unlocked at run start)"),
+		Tray->IsSlotLocked(EAbilitySlot::Stun));
+	TestTrue(TEXT("Sleep's tray slot should be locked immediately after binding"),
+		Tray->IsSlotLocked(EAbilitySlot::Sleep));
+	TestTrue(TEXT("Root's tray slot should be locked immediately after binding"),
+		Tray->IsSlotLocked(EAbilitySlot::Root));
+	TestTrue(TEXT("Fear's tray slot should be locked immediately after binding"),
+		Tray->IsSlotLocked(EAbilitySlot::Fear));
+	TestTrue(TEXT("Snare's tray slot should be locked immediately after binding"),
+		Tray->IsSlotLocked(EAbilitySlot::Snare));
+
+	BoundComponent->NotifyLevelReached(2);
+	TestFalse(TEXT("Sleep's tray slot should unlock live when level 2 is reached"),
+		Tray->IsSlotLocked(EAbilitySlot::Sleep));
+	TestTrue(TEXT("Root's tray slot should stay locked after only level 2"),
+		Tray->IsSlotLocked(EAbilitySlot::Root));
+
+	// Re-binding must not stack duplicate subscriptions (AddUniqueDynamic) - a second
+	// bind then an unlock should still flip exactly the expected slot, no side effects.
+	Tray->BindAbilityUnlockComponent(BoundComponent);
+	TestFalse(TEXT("Re-binding should re-read state: Sleep stays unlocked"),
+		Tray->IsSlotLocked(EAbilitySlot::Sleep));
+	BoundComponent->NotifyLevelReached(3);
+	TestFalse(TEXT("Root's tray slot should unlock live when level 3 is reached (post re-bind)"),
+		Tray->IsSlotLocked(EAbilitySlot::Root));
 
 	return true;
 }
