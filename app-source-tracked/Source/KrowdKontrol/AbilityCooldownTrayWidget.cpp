@@ -9,6 +9,7 @@
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
 #include "AbilityData.h"
+#include "HUDChromeColours.h"
 
 namespace
 {
@@ -68,13 +69,10 @@ void UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()
 
 void UAbilityCooldownTrayWidget::BuildWidgetTree()
 {
-	// Desaturated near-black background + light-gray (not pure white) text -
-	// MISSION.md Hard Invariant 3 / PRD 13 REQ-4 / PRD 11 REQ-1 reserve
-	// Purple/Teal/Orange/Blue/White for gameplay information; this tray's chrome must
-	// not use any of them. Same already-reviewed palette as UPostRunSummaryWidget
-	// (issue #74).
-	const FLinearColor ChromeBackgroundColor(0.05f, 0.05f, 0.05f, 0.92f);
-	const FSlateColor TextColor(FLinearColor(0.85f, 0.85f, 0.85f, 1.0f));
+	// Chrome background/text come from HUDChromeColours (issue #93), shared across all
+	// HUD widgets.
+	const FLinearColor ChromeBackgroundColor = HUDChromeColours::GetBackground();
+	const FSlateColor TextColor(HUDChromeColours::GetText());
 
 	// First use of UCanvasPanel in this codebase - needed because corner anchoring
 	// requires a UCanvasPanelSlot, which only a UCanvasPanel child gets.
