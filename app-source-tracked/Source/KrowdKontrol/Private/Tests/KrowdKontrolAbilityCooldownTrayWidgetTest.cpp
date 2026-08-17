@@ -156,6 +156,12 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		TestFalse(*FString::Printf(TEXT("Slot %d should be unaffected by StartCooldown(Fear, ...)"), Index), Widget->IsSlotOnCooldown(Slot));
 		TestEqual(*FString::Printf(TEXT("Slot %d remaining should be unaffected by StartCooldown(Fear, ...)"), Index), Widget->GetSlotRemainingSeconds(Slot), 0.0f);
 	}
+	// Icon tint/text are informational (PRD 13 REQ-7), not cooldown state - a
+	// StartCooldown() call must not leak into UpdateSlotVisual()'s icon-label path.
+	TestEqual(TEXT("Fear icon tint should be unaffected by StartCooldown()"),
+		Widget->GetSlotIconTintColour(EAbilitySlot::Fear), AbilityData::Get(EAbilitySlot::Fear).Colour);
+	TestEqual(TEXT("Fear icon label text should be unaffected by StartCooldown()"),
+		Widget->GetSlotIconLabelText(EAbilitySlot::Fear).ToString(), FString(TEXT("FER")));
 
 	// (f2) Negative duration clamps to 0 rather than leaving the slot on an
 	// effectively-infinite or negative-time cooldown.
