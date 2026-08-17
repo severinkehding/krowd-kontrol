@@ -15,6 +15,8 @@ class UTargetZoneBankedTestListener : public UObject
 
 public:
 	int32 CallCount = 0;
+
+	UPROPERTY()
 	TObjectPtr<AActor> LastBankedActor = nullptr;
 
 	UFUNCTION()

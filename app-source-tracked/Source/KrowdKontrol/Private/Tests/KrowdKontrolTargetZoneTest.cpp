@@ -30,6 +30,7 @@
 #include "Misc/AutomationTest.h"
 #include "TargetZone.h"
 #include "TargetZoneTestActor.h"
+#include "NonHerdableTestActor.h"
 #include "TargetZoneBankedTestListener.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
@@ -99,6 +100,56 @@ bool FKrowdKontrolTargetZoneTest::RunTest(const FString& Parameters)
 	UncontrolledActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
 	TestEqual(TEXT("OnActorBanked should not fire for an uncontrolled actor"),
 		Listener->CallCount, 1);
+
+	// (d) a non-IHerdable actor overlapping the zone never fires the delegate. This is
+	// the highest-traffic real-level case (room geometry, doors, props all outnumber
+	// IHerdable actors) since ZoneCollisionComponent uses OverlapAllDynamic and will
+	// physically overlap with any dynamic actor, not just IHerdable ones.
+	ANonHerdableTestActor* PlainActor = World->SpawnActor<ANonHerdableTestActor>(FVector(1000.f, 0.f, 0.f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Non-herdable actor should spawn into the test World"), PlainActor))
+	{
+		return false;
+	}
+	PlainActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
+	TestEqual(TEXT("OnActorBanked should not fire for a non-IHerdable actor overlap"),
+		Listener->CallCount, 1);
+
+	// (e) an unconfigured zone (default ZoneColourTag == NAME_None) matches an
+	// unconfigured actor (default HerdColourTag == NAME_None) by design - pins the
+	// documented default-match behavior rather than leaving it to a comment alone.
+	// Also confirms cross-instance isolation: this second zone's broadcast must not
+	// reach the first zone's Listener (constructor-time delegate binds are per-instance).
+	ATargetZone* UnconfiguredZone = World->SpawnActor<ATargetZone>(FVector(2000.f, 0.f, 0.f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Unconfigured zone should spawn into the test World"), UnconfiguredZone))
+	{
+		return false;
+	}
+
+	UTargetZoneBankedTestListener* UnconfiguredListener = NewObject<UTargetZoneBankedTestListener>();
+	UnconfiguredZone->OnActorBanked.AddDynamic(UnconfiguredListener, &UTargetZoneBankedTestListener::HandleActorBanked);
+
+	ATargetZoneTestActor* DefaultColourActor = World->SpawnActor<ATargetZoneTestActor>(FVector(3000.f, 0.f, 0.f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Default-colour actor should spawn into the test World"), DefaultColourActor))
+	{
+		return false;
+	}
+	DefaultColourActor->SetControlled(true);
+	// HerdColourTag left at its NAME_None default - deliberately not calling SetHerdColourTag().
+	DefaultColourActor->SetActorLocation(FVector(2000.f, 0.f, 0.f), /*bSweep=*/true);
+	TestEqual(TEXT("An unconfigured zone should bank an unconfigured, controlled actor (documented default-match behavior)"),
+		UnconfiguredListener->CallCount, 1);
+	TestEqual(TEXT("A second zone's broadcast should not reach the first zone's listener (cross-instance isolation)"),
+		Listener->CallCount, 1);
+
+	// (f) re-entry: an already-banked actor that leaves and re-enters the zone fires
+	// OnActorBanked again. Pins current (undefined-by-issue-scope) behavior so a future
+	// change to it is a deliberate decision, not a silent regression - see
+	// NotifyEnemyBanked() integration note in TargetZone.h/.cpp for the out-of-scope
+	// consumer that will eventually need this contract pinned.
+	MatchedActor->SetActorLocation(FVector(1000.f, 0.f, 0.f), /*bSweep=*/true);
+	MatchedActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
+	TestEqual(TEXT("OnActorBanked should fire again when an already-banked actor re-enters the zone"),
+		Listener->CallCount, 2);
 
 	return true;
 }

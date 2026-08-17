@@ -16,7 +16,7 @@ ATargetZone::ATargetZone()
 	// setup.
 	ZoneCollisionComponent->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 	ZoneCollisionComponent->SetGenerateOverlapEvents(true);
-	ZoneCollisionComponent->OnComponentBeginOverlap.AddDynamic(this, &ATargetZone::HandleZoneOverlap);
+	ZoneCollisionComponent->OnComponentBeginOverlap.AddUniqueDynamic(this, &ATargetZone::HandleZoneOverlap);
 }
 
 void ATargetZone::HandleZoneOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

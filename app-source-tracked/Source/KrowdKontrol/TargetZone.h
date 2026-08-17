@@ -38,12 +38,14 @@ public:
 	FOnActorBanked OnActorBanked;
 
 private:
-	// Bound in the constructor, not BeginPlay() - this module's Automation Framework
-	// tests spawn actors into a UWorld that never runs World->BeginPlay() (see
-	// KrowdKontrolRoomEnemyBudgetControllerTest.cpp), so a BeginPlay()-bound dynamic
-	// delegate would silently never fire under test. Unlike BeginPlay()-driven setup
-	// elsewhere in this module (e.g. InitializeRoom()), a delegate binding has no
-	// re-invocation path a test could call directly instead.
+	// Bound in the constructor, not BeginPlay() - most of this module's Automation
+	// Framework tests spawn actors into a UWorld that never runs World->BeginPlay()
+	// (see KrowdKontrolRoomEnemyBudgetControllerTest.cpp), so a BeginPlay()-bound
+	// dynamic delegate would silently never fire under those tests. This class's own
+	// test (KrowdKontrolTargetZoneTest.cpp) is an exception - it does drive
+	// World->SetBegunPlay(true) to get real overlap events, so BeginPlay() binding
+	// would also have worked here - but constructor-binding is kept anyway, since it
+	// stays correct even under tests that don't force play state, with no downside.
 	UFUNCTION()
 	void HandleZoneOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 };
