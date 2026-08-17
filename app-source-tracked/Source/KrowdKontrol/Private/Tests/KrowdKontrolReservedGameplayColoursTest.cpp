@@ -102,6 +102,18 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 				TestFalse(*FString::Printf(TEXT("TrayWidget slot %d cooldown text colour should not collide with a reserved gameplay colour"), Index),
 					AllReserved.Contains(TrayWidget->SlotCooldownTexts[Index]->GetColorAndOpacity().GetSpecifiedColor()));
 			}
+
+			// (2b) Locked-state border colour (issue #68 / PRD 13 REQ-3) - audited the
+			// same way as the normal chrome colour above, then restored to unlocked so
+			// iteration order doesn't leave stray locked slots affecting later checks.
+			TrayWidget->SetSlotLocked(static_cast<EAbilitySlot>(Index), true);
+			if (TestNotNull(*FString::Printf(TEXT("TrayWidget->SlotIconBorders[%d] should be non-null while locked"), Index),
+				ToRawPtr(TrayWidget->SlotIconBorders[Index])))
+			{
+				TestFalse(*FString::Printf(TEXT("TrayWidget slot %d locked border colour should not collide with a reserved gameplay colour"), Index),
+					AllReserved.Contains(TrayWidget->SlotIconBorders[Index]->GetBrushColor()));
+			}
+			TrayWidget->SetSlotLocked(static_cast<EAbilitySlot>(Index), false);
 		}
 	}
 

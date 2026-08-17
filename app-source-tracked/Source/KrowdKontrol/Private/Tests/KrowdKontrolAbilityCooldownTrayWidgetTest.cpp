@@ -26,6 +26,7 @@
 #include "Misc/AutomationTest.h"
 #include "AbilityCooldownTrayWidget.h"
 #include "AbilityData.h"
+#include "ReservedGameplayColours.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Blueprint/WidgetTree.h"
@@ -169,6 +170,56 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	TestFalse(TEXT("Negative StartCooldown duration should clamp to not-on-cooldown"), Widget->IsSlotOnCooldown(EAbilitySlot::Root));
 	TestEqual(TEXT("Negative StartCooldown duration should clamp remaining to 0"), Widget->GetSlotRemainingSeconds(EAbilitySlot::Root), 0.0f);
 
+	// (f3) Default-unlocked state - every slot reports IsSlotLocked() == false
+	// immediately after construction (mirrors the "(b) Initial placeholder state"
+	// loop style above).
+	for (int32 Index = 0; Index < UAbilityCooldownTrayWidget::NumAbilitySlots; ++Index)
+	{
+		TestFalse(*FString::Printf(TEXT("Slot %d should start unlocked"), Index),
+			Widget->IsSlotLocked(static_cast<EAbilitySlot>(Index)));
+	}
+
+	// (f4) Locked-vs-cooldown visual diff on the same slot (the issue's explicit test
+	// requirement) - Root was already cleared by the (f2) block above, so start it on
+	// a fresh cooldown here to prove locking suppresses the countdown display without
+	// clearing the underlying cooldown state.
+	Widget->StartCooldown(EAbilitySlot::Root, 5.0f);
+	TestEqual(TEXT("Root label before locking should be the ability abbreviation"),
+		Widget->GetSlotIconLabelText(EAbilitySlot::Root).ToString(), FString(TEXT("ROT")));
+	TestEqual(TEXT("Root cooldown display before locking should show ceil(5.0) = 5"),
+		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Root).ToString(), FString(TEXT("5")));
+	const FLinearColor RootBorderColourBeforeLock = Widget->SlotIconBorders[static_cast<int32>(EAbilitySlot::Root)]->GetBrushColor();
+
+	Widget->SetSlotLocked(EAbilitySlot::Root, true);
+	TestTrue(TEXT("Root should report locked after SetSlotLocked(true)"), Widget->IsSlotLocked(EAbilitySlot::Root));
+	TestEqual(TEXT("Root label should swap to LCK while locked"),
+		Widget->GetSlotIconLabelText(EAbilitySlot::Root).ToString(), FString(TEXT("LCK")));
+	const FLinearColor RootBorderColourLocked = Widget->SlotIconBorders[static_cast<int32>(EAbilitySlot::Root)]->GetBrushColor();
+	TestNotEqual(TEXT("Root border colour should change while locked"), RootBorderColourLocked, RootBorderColourBeforeLock);
+	TestTrue(TEXT("Root cooldown display should be suppressed while locked"),
+		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Root).IsEmpty());
+	TestEqual(TEXT("Root remaining cooldown time should be unchanged by locking (suppression is display-only)"),
+		Widget->GetSlotRemainingSeconds(EAbilitySlot::Root), 5.0f);
+
+	// (f5) Locked border colour is reserved-colour-safe (MISSION.md Hard Invariant 3 /
+	// PRD 13 REQ-4).
+	const TArray<FLinearColor> AllReservedForLockCheck = ReservedGameplayColours::GetAll();
+	TestFalse(TEXT("Locked border colour should not collide with a reserved gameplay colour"),
+		AllReservedForLockCheck.Contains(RootBorderColourLocked));
+
+	// (f6) Unlock reverts the label and border, without clearing the cooldown that was
+	// still counting down underneath while locked.
+	Widget->SetSlotLocked(EAbilitySlot::Root, false);
+	TestFalse(TEXT("Root should report unlocked after SetSlotLocked(false)"), Widget->IsSlotLocked(EAbilitySlot::Root));
+	TestEqual(TEXT("Root label should revert to ROT after unlocking"),
+		Widget->GetSlotIconLabelText(EAbilitySlot::Root).ToString(), FString(TEXT("ROT")));
+	TestEqual(TEXT("Root border colour should revert to the chrome background constant after unlocking"),
+		Widget->SlotIconBorders[static_cast<int32>(EAbilitySlot::Root)]->GetBrushColor(), RootBorderColourBeforeLock);
+	TestEqual(TEXT("Root cooldown display should show the still-running cooldown again after unlocking"),
+		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Root).ToString(), FString(TEXT("5")));
+	TestEqual(TEXT("Root remaining cooldown time should still be 5s - unlocking must not have cleared it"),
+		Widget->GetSlotRemainingSeconds(EAbilitySlot::Root), 5.0f);
+
 	// (g) Corner anchoring - the tray's single canvas child is actually anchored
 	// bottom-right, not just visually eyeballed.
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(Widget->WidgetTree->RootWidget);
@@ -218,9 +269,11 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	TestTrue(TEXT("Unbuilt widget should report empty display text"), UnbuiltWidget->GetSlotCooldownDisplayText(EAbilitySlot::Stun).IsEmpty());
 	TestTrue(TEXT("Unbuilt widget should report empty icon label text"), UnbuiltWidget->GetSlotIconLabelText(EAbilitySlot::Stun).IsEmpty());
 	TestEqual(TEXT("Unbuilt widget should report black icon tint colour"), UnbuiltWidget->GetSlotIconTintColour(EAbilitySlot::Stun), FLinearColor::Black);
+	TestFalse(TEXT("Unbuilt widget should report not locked"), UnbuiltWidget->IsSlotLocked(EAbilitySlot::Stun));
 	UnbuiltWidget->AdvanceCooldowns(1.0f);
 	UnbuiltWidget->StartCooldown(EAbilitySlot::Stun, 2.0f);
-	TestTrue(TEXT("AdvanceCooldowns()/StartCooldown() on an unbuilt tree should not crash"), true);
+	UnbuiltWidget->SetSlotLocked(EAbilitySlot::Stun, true);
+	TestTrue(TEXT("AdvanceCooldowns()/StartCooldown()/SetSlotLocked() on an unbuilt tree should not crash"), true);
 
 	// (j) NativeTick actually drives AdvanceCooldowns() - the real per-frame code path a
 	// live game session ticks, not just the direct AdvanceCooldowns() calls used above.
