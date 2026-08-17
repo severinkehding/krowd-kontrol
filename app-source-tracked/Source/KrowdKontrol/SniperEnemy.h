@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class UPointLightComponent;
+class UEnemyTypeIndicatorComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSniperShotFired);
 
@@ -41,6 +42,11 @@ public:
 	// Non-reserved placeholder colour, on during Attack.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
 	TObjectPtr<UPointLightComponent> AttackTellLightComponent;
+
+	// Colourblind-safe non-colour marker (PRD 13 REQ-7, issue #77) - "SN-1PR" text
+	// floating above the mesh, independent of EyeGlowLightComponent's Blue.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
+	TObjectPtr<UEnemyTypeIndicatorComponent> EnemyTypeIndicatorComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
 	float AttackTelegraphSeconds = 1.2f;
