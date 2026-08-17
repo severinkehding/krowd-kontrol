@@ -6,11 +6,14 @@
 #include "AbilityUnlockComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "Blueprint/UserWidget.h"
+#include "PlaceholderTargetZoneActor.h"
+#include "EngineUtils.h"
 
 void AKrowdKontrolPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 	CreateHUDWidgets();
+	RefreshTargetZoneBeacons();
 	// If the pawn was already possessed before BeginPlay ran (order isn't guaranteed
 	// relative to AutoPossessPlayer), wire it now instead of waiting for a
 	// possession that already happened.
@@ -60,4 +63,17 @@ void AKrowdKontrolPlayerController::WireWidgetsToPawn(APawn* InPawn)
 	{
 		EnergyMeterWidgetInstance->BindToEnergyComponent(InPawn->FindComponentByClass<UPlayerEnergyComponent>());
 	}
+}
+
+int32 AKrowdKontrolPlayerController::RefreshTargetZoneBeacons()
+{
+	TargetZoneBeacons.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<APlaceholderTargetZoneActor> It(World); It; ++It)
+		{
+			TargetZoneBeacons.Add(*It);
+		}
+	}
+	return TargetZoneBeacons.Num();
 }

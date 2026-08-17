@@ -16,6 +16,7 @@
 #include "KrowdKontrolGameMode.h"
 #include "KrowdKontrolPlayerController.h"
 #include "GameMapsSettings.h"
+#include "PlaceholderTargetZoneActor.h"
 #include "GameFramework/WorldSettings.h"
 #include "Editor.h"
 
@@ -86,6 +87,56 @@ bool FKrowdKontrolGameModeLevelOverrideTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s should not override GameMode away from AKrowdKontrolGameMode"), MapPath),
 			!WorldSettings->DefaultGameMode || WorldSettings->DefaultGameMode == AKrowdKontrolGameMode::StaticClass());
 	}
+
+	return true;
+}
+
+// Beacon hook (issue #132's third scoped deliverable): RefreshTargetZoneBeacons()
+// must collect exactly the live APlaceholderTargetZoneActor instances - starting
+// empty in a bare test map, tracking spawns, and pruning removals on re-refresh.
+// The controller is spawned directly (not via GameMode possession flow) because this
+// harness never drives World->BeginPlay(); RefreshTargetZoneBeacons() is public and
+// world-driven, so it is testable standalone - same friend-free pattern as the
+// GameMode tests above.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolControllerBeaconHookTest,
+	"KrowdKontrol.Unit.ControllerBeaconHook",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolControllerBeaconHookTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+
+	AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+	if (!TestNotNull(TEXT("AKrowdKontrolPlayerController should spawn"), Controller))
+	{
+		return false;
+	}
+
+	// (a) empty world: refresh finds nothing.
+	TestEqual(TEXT("Refresh in a beacon-less world should find 0"), Controller->RefreshTargetZoneBeacons(), 0);
+	TestEqual(TEXT("TargetZoneBeacons should be empty"), Controller->TargetZoneBeacons.Num(), 0);
+
+	// (b) two spawned beacons are both collected.
+	APlaceholderTargetZoneActor* BeaconA = World->SpawnActor<APlaceholderTargetZoneActor>();
+	APlaceholderTargetZoneActor* BeaconB = World->SpawnActor<APlaceholderTargetZoneActor>();
+	if (!TestNotNull(TEXT("First beacon should spawn"), BeaconA) ||
+		!TestNotNull(TEXT("Second beacon should spawn"), BeaconB))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Refresh should find both spawned beacons"), Controller->RefreshTargetZoneBeacons(), 2);
+	TestTrue(TEXT("TargetZoneBeacons should contain the first beacon"), Controller->TargetZoneBeacons.Contains(BeaconA));
+	TestTrue(TEXT("TargetZoneBeacons should contain the second beacon"), Controller->TargetZoneBeacons.Contains(BeaconB));
+
+	// (c) removal is pruned on re-refresh (destroyed actors must not linger).
+	World->DestroyActor(BeaconA);
+	TestEqual(TEXT("Refresh after destroying one beacon should find 1"), Controller->RefreshTargetZoneBeacons(), 1);
+	TestTrue(TEXT("The surviving beacon should still be tracked"), Controller->TargetZoneBeacons.Contains(BeaconB));
 
 	return true;
 }
