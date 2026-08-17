@@ -1,4 +1,5 @@
 #include "PostRunSummaryWidget.h"
+#include "HUDChromeColours.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelSlot.h"
@@ -51,20 +52,18 @@ void UPostRunSummaryWidget::EnsureWidgetTreeBuilt()
 
 void UPostRunSummaryWidget::BuildWidgetTree()
 {
-	// Desaturated near-black background + light-gray (not pure white) text -
-	// MISSION.md Hard Invariant 3 / PRD 13 REQ-4 / PRD 11 REQ-1 reserve
-	// Purple/Teal/Orange/Blue/White for gameplay information; this screen's chrome
-	// must not use any of them. Both colours stay inside PRD 11 REQ-2's desaturated
-	// white/gray/black base palette.
+	// Chrome background/text come from HUDChromeColours (issue #93), shared across all
+	// HUD widgets - stays inside PRD 11 REQ-2's desaturated white/gray/black base
+	// palette and outside MISSION.md Hard Invariant 3's reserved gameplay colours.
 	RootBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SummaryRootBorder"));
-	RootBorder->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.05f, 0.92f));
+	RootBorder->SetBrushColor(HUDChromeColours::GetBackground());
 	WidgetTree->RootWidget = RootBorder;
 
 	UVerticalBox* Layout = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SummaryLayout"));
 	UPanelSlot* LayoutSlot = RootBorder->SetContent(Layout);
 	checkf(LayoutSlot, TEXT("UPostRunSummaryWidget: SetContent(Layout) returned null"));
 
-	const FSlateColor TextColor(FLinearColor(0.85f, 0.85f, 0.85f, 1.0f));
+	const FSlateColor TextColor(HUDChromeColours::GetText());
 
 	ClearTimeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ClearTimeText"));
 	ClearTimeText->SetColorAndOpacity(TextColor);

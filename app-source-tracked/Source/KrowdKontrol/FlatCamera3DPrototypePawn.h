@@ -11,6 +11,7 @@ class UFloatingPawnMovement;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputComponent;
+class UAbilityUnlockComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -37,6 +38,14 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UCameraComponent> TopDownCamera;
+
+	// Makes the run's crowd-control unlock state (issue #69) reachable from the only
+	// pawn placed in the project's actual playable level - this pawn was previously
+	// the sole player pawn with no unlock tracking attached at all, so nothing could
+	// ever observe unlock state during real play. Cast-permission/ability-tray wiring
+	// to this component's state is not part of this pawn - see issue #71.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityUnlockComponent> AbilityUnlockComponent;
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 

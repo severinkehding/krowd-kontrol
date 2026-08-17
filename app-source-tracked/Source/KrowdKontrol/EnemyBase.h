@@ -55,6 +55,7 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolEnemyBaseTest;
 	friend class FKrowdKontrolSniperEnemyTest;
 	friend class FKrowdKontrolBomberEnemyTest;
+	friend class FKrowdKontrolTrooperEnemyTest;
 	friend class FKrowdKontrolMusicSubsystemTest;
 	friend class FKrowdKontrolOvercrowdDetectionComponentTest;
 
