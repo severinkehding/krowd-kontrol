@@ -16,10 +16,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSniperShotFired);
 // a long-range sniper. Extends AEnemyBase (issue #12) with a distinct cone
 // silhouette, a Blue-tinted "eye glow" light that intensifies only when Sleep is the
 // ability that put it into Controlled, a separate attack "tell" light plus a
-// telegraph countdown timer for the attack warning, and a large GetAttackRangeUnits()
-// override so it enters Attack almost as soon as it's Alert - the mechanical
-// definition of "long-range" in this state machine: it doesn't need to close distance
-// first. See issue #17.
+// telegraph countdown timer for the attack warning, a one-shot attack-tell audio cue
+// (issue #36) fired from the same OnAttackEntry() extension point, and a large
+// GetAttackRangeUnits() override so it enters Attack almost as soon as it's Alert -
+// the mechanical definition of "long-range" in this state machine: it doesn't need to
+// close distance first. See issue #17.
 UCLASS()
 class KROWDKONTROL_API ASniperEnemy : public AEnemyBase
 {
@@ -90,7 +91,10 @@ private:
 	UPROPERTY()
 	TObjectPtr<UAudioComponent> AttackTellAudioComponent;
 
-	// One-shot guard so an unset AttackTellSound only logs once per ASniperEnemy
-	// instance, not once per Attack entry - mirrors UMusicSubsystem::bHasWarnedMissingTrack.
+	// Defensive one-shot guard, mirroring UMusicSubsystem::bHasWarnedMissingTrack's shape -
+	// currently unreachable a second time in practice, since EnemyBase's linear state
+	// machine (EnemyBase.h) only ever calls OnAttackEntry() once per instance. Kept so a
+	// future change that made Attack re-enterable wouldn't silently start spamming this
+	// warning.
 	bool bHasWarnedMissingAttackTellSound = false;
 };

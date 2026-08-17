@@ -29,6 +29,7 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "SniperShotFiredTestListener.h"
 #include "Sound/SoundWave.h"
+#include "Components/AudioComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -251,10 +252,16 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		ASniperEnemy* AudioSniper = AudioWorld->SpawnActor<ASniperEnemy>();
 		if (TestNotNull(TEXT("ASniperEnemy should spawn into the audio test World"), AudioSniper))
 		{
-			AudioSniper->AttackTellSound = NewObject<USoundWave>();
+			USoundWave* ConfiguredSound = NewObject<USoundWave>();
+			AudioSniper->AttackTellSound = ConfiguredSound;
 			AdvanceToAttack(AudioSniper, ZeroDistanceLocation);
-			TestNotNull(TEXT("Entering Attack with a configured AttackTellSound should spawn an audio cue"),
-				AudioSniper->AttackTellAudioComponent.Get());
+			if (TestNotNull(TEXT("Entering Attack with a configured AttackTellSound should spawn an audio cue"),
+				AudioSniper->AttackTellAudioComponent.Get()))
+			{
+				TestEqual(TEXT("The spawned audio cue should play the configured AttackTellSound, not some other sound"),
+					static_cast<USoundBase*>(AudioSniper->AttackTellAudioComponent->Sound.Get()),
+					static_cast<USoundBase*>(ConfiguredSound));
+			}
 		}
 	}
 
