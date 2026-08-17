@@ -28,6 +28,14 @@ public class KrowdKontrol : ModuleRules
 		// Build.cs mirror was never updated for it until now.
 		PrivateDependencyModuleNames.AddRange(new string[] { "UMG", "Slate", "SlateCore" });
 
+		// EngineSettings for UGameMapsSettings (Runtime/EngineSettings/Classes/GameMapsSettings.h),
+		// used by KrowdKontrolGameModeTest.cpp. Found as a pre-existing link failure (LNK2019
+		// on UGameMapsSettings::GetGlobalDefaultGameMode) while validating an unrelated issue
+		// #11 change - app/ is shared, uncommitted state across worktrees (CLAUDE.md's
+		// Environment section, .factory/decisions.md D-016), so this dependency gap was
+		// blocking every build off the shared project, not just this one.
+		PrivateDependencyModuleNames.Add("EngineSettings");
+
 		if (Target.bBuildEditor)
 		{
 			// Needed only for FAutomationEditorCommonUtils::CreateNewMap() in

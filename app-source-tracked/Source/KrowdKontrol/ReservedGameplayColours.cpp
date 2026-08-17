@@ -29,3 +29,8 @@ TArray<FLinearColor> ReservedGameplayColours::GetAll()
 {
 	return { GetPurple(), GetTeal(), GetOrange(), GetBlue(), GetWhite() };
 }
+
+FLinearColor ReservedGameplayColours::GetBackground()
+{
+	return FLinearColor(0.02f, 0.02f, 0.03f, 1.0f);
+}
