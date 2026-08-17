@@ -25,6 +25,7 @@ class KROWDKONTROL_API UEnergyMeterWidget : public UUserWidget
 	GENERATED_BODY()
 
 	friend class FKrowdKontrolEnergyMeterWidgetTest;
+	friend class FKrowdKontrolReservedGameplayColoursTest;
 
 public:
 	// The low-level wiring point: clamps CurrentEnergy to [0, MaxEnergy] and updates

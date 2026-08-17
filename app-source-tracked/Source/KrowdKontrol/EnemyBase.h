@@ -62,16 +62,16 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 public:
 	AEnemyBase();
 
+	// IThreatState (issue #25): Alert/Attack/Controlled all read as "Hot" - any state
+	// where the enemy is actively engaged, not just mid-attack. Idle and Banked both
+	// read as "Idle" - not yet aggroed, or pacified. See ThreatState.h.
+	virtual EThreatState GetThreatState() const override;
+
 	// Fires exactly once, on the transition into Banked.
 	UPROPERTY(BlueprintAssignable, Category = "Enemy")
 	FOnEnemyBanked OnEnemyBanked;
 
 	EEnemyState GetEnemyState() const { return CurrentState; }
-
-	// IThreatState (issue #25): Alert/Attack/Controlled all read as "Hot" - any state
-	// where the enemy is actively engaged, not just mid-attack. Idle and Banked both
-	// read as "Idle" - not yet aggroed, or pacified. See ThreatState.h.
-	virtual EThreatState GetThreatState() const override;
 
 	// Idle->Alert proximity radius. Base-defined, not overridden per concrete type -
 	// issue #12's AC only calls out attack range as the per-type-overridable one.

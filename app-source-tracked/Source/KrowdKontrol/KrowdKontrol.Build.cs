@@ -17,8 +17,8 @@ public class KrowdKontrol : ModuleRules
 
 		// Paper2D for APaper2DPrototypePawn (issue #55) - the Paper2D half of PRD 14 REQ-1's
 		// Paper2D-vs-flat-camera-3D pipeline comparison. Paper2D is EnabledByDefault in its
-		// own .uplugin, so only this module dependency is needed - no .uproject Plugins
-		// array entry.
+		// .uplugin, so no KrowdKontrol.uproject Plugins-array entry is needed - only this
+		// module dependency, to make UPaperSpriteComponent/UPaperSprite visible to C++.
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "Paper2D" });
 
 		// UMG for UPostRunSummaryWidget (issue #74). No Widget Blueprint asset involved;
