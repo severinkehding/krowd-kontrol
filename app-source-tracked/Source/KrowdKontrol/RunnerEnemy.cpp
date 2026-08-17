@@ -25,9 +25,10 @@ ARunnerEnemy::ARunnerEnemy()
 	// ((1.0,0.85,0.1) Sniper, (1.0,0.15,0.05) Bomber, (1.0,0.1,0.6) Trooper,
 	// (0.6,1.0,0.2) Runner) - a bright saturated green, the one hue family none of the
 	// existing warm-hue tell colours or the 5 reserved colours occupy. Created inline
-	// here (not via a shared AEnemyBase helper) - see EnemyBase.h's
-	// EliteTrimLightComponent comment for why a common-base CreateDefaultSubobject
-	// helper corrupts UE's CDO instancing across these 4 sibling classes.
+	// here (not via a shared AEnemyBase helper) - matches every other type-tied
+	// component's shape (AttackTellLightComponent, etc). See app-changelog/issue-19.md's
+	// "Design note" for why a shared-helper version was tried and reverted (a
+	// GC/test-lifetime issue, not a declaration-shape problem).
 	EliteTrimLightComponent->SetLightColor(FLinearColor(0.1f, 1.0f, 0.15f));
 	EliteTrimLightComponent->SetIntensity(0.0f); // off unless bIsElite
 	EliteTrimLightComponent->SetAttenuationRadius(300.0f);

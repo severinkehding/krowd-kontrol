@@ -2,6 +2,7 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "EnemyBase.h"
+#include "EliteEligibility.h"
 
 UWaveSpawnerComponent::UWaveSpawnerComponent()
 {
@@ -90,7 +91,7 @@ void UWaveSpawnerComponent::SpawnWave(int32 WaveIndex)
 				{
 					SpawnedActors.Add(SpawnedActor);
 
-					if (Entry.bIsElite)
+					if (Entry.bIsElite && EliteEligibility::IsEligibleAtLevel(LevelIndex))
 					{
 						if (AEnemyBase* SpawnedEnemy = Cast<AEnemyBase>(SpawnedActor))
 						{

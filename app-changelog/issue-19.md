@@ -14,9 +14,11 @@ existing `AttackTellLightComponent` pattern) and overrides a new protected virtu
 polymorphically. A new `EliteEligibility::IsEligibleAtLevel(int32)` pure function
 (mirroring `UAbilityUnlockComponent`/`UOvercrowdDetectionComponent`'s "no real
 level-progression subsystem yet, caller supplies LevelIndex explicitly" pattern) is
-the single source of truth for the level-4+ eligibility gate. `FWaveEntry` gets a new
-`bIsElite` field so `UWaveSpawnerComponent::SpawnWave()` can actually produce an Elite
-instance through the real spawn path.
+the single source of truth for the level-4+ eligibility gate, and `UWaveSpawnerComponent`
+now has its own `LevelIndex` property so `SpawnWave()` consults the gate before
+honoring an entry's flag. `FWaveEntry` gets a new `bIsElite` field so
+`UWaveSpawnerComponent::SpawnWave()` can actually produce an Elite instance through the
+real spawn path, gated by `LevelIndex`.
 
 ## Files changed
 
@@ -25,12 +27,13 @@ instance through the real spawn path.
 | `EliteEligibility.h`/`.cpp` | CREATE | `IsEligibleAtLevel(int32)` pure function, `MinEligibleLevel = 4` |
 | `EnemyBase.h`/`.cpp` | UPDATE | `bIsElite`, `EliteMovementSpeedMultiplier`, `EliteTrimIntensity`, `SetIsElite()`, `GetEffectiveMovementSpeedUnitsPerSecond()`, protected virtual `GetEliteTrimLightComponent()` (base default `nullptr`); `TickChaseMovement` now calls the effective-speed method |
 | `RunnerEnemy.h`/`.cpp`, `TrooperEnemy.h`/`.cpp`, `BomberEnemy.h`/`.cpp`, `SniperEnemy.h`/`.cpp` | UPDATE | Each gets its own `EliteTrimLightComponent` property, created inline in the constructor (same shape as `AttackTellLightComponent`), and overrides `GetEliteTrimLightComponent()` |
-| `WaveSpawnerComponent.h` | UPDATE | `FWaveEntry.bIsElite` flag |
-| `WaveSpawnerComponent.cpp` | UPDATE | `SpawnWave()` casts the spawned actor to `AEnemyBase` and calls `SetIsElite(true)` when the entry is flagged, warning (not blocking) if the class isn't an `AEnemyBase` |
+| `WaveSpawnerComponent.h` | UPDATE | `FWaveEntry.bIsElite` flag; `UWaveSpawnerComponent::LevelIndex` property (default 1) |
+| `WaveSpawnerComponent.cpp` | UPDATE | `SpawnWave()` casts the spawned actor to `AEnemyBase` and calls `SetIsElite(true)` when the entry is flagged **and** `EliteEligibility::IsEligibleAtLevel(LevelIndex)` passes, warning (not blocking) if the class isn't an `AEnemyBase` |
 | `Private/Tests/EnemyBaseTestActor.h`/`.cpp` | UPDATE | Own `EliteTrimLightComponent` + override, same shape as the 4 concrete types, so base-level Elite tests can exercise it |
-| `Private/Tests/KrowdKontrolEnemyBaseTest.cpp` | UPDATE | New cases: default `bIsElite`/effective speed, `SetIsElite(true/false)` toggles trim light + speed together, trim colour non-reserved |
+| `Private/Tests/EnemyBaseNoTrimLightTestActor.h`/`.cpp` | CREATE | Minimal `AEnemyBase` subclass that omits the `GetEliteTrimLightComponent()` override, so `SetIsElite()`'s null-trim-light branch (base default `nullptr`) has a test case that actually exercises it |
+| `Private/Tests/KrowdKontrolEnemyBaseTest.cpp` | UPDATE | Elite cases moved to run immediately after construction (matching the 4 per-type test files' early-assertion fix, see Design note below) instead of after ~20 `NewObject<>()`/5 `CreateNewMap()` calls; new case for `SetIsElite()`'s null-trim-light branch |
 | `Private/Tests/KrowdKontrolRunnerEnemyTest.cpp`, `.../TrooperEnemyTest.cpp`, `.../BomberEnemyTest.cpp`, `.../SniperEnemyTest.cpp` | UPDATE | One elite-trim-light smoke case each (exists, attached to `MeshComponent`, non-reserved colour) |
-| `Private/Tests/KrowdKontrolWaveSpawnerComponentTest.cpp` | UPDATE | New cases: `bIsElite = true` wave entry produces a spawned `AEnemyBase` with `bIsElite == true`; `bIsElite = false` (default) leaves it unaffected |
+| `Private/Tests/KrowdKontrolWaveSpawnerComponentTest.cpp` | UPDATE | New/updated cases: `bIsElite = true` wave entry at an eligible `LevelIndex` produces a spawned `AEnemyBase` with `bIsElite == true`; `bIsElite = false` (default) leaves it unaffected; `bIsElite = true` on a non-`AEnemyBase` class still spawns (cast-failure branch); `bIsElite = true` below `EliteEligibility::MinEligibleLevel` spawns a non-Elite enemy (the level gate itself) |
 | `Private/Tests/KrowdKontrolEliteEligibilityTest.cpp` | CREATE | Pure-function test: levels 1-3 false, 4/5/100 true, boundary at `MinEligibleLevel` |
 
 ## Design note: why `EliteTrimLightComponent` is a per-subclass property, not a shared one
@@ -84,8 +87,12 @@ false alarm.
       logic in this PR.
 - [x] No 5th enemy type introduced - `EEnemyType` (`EnemyType.h`) untouched.
 - [x] Spawn eligibility gated by level number, not NG+/meta-progression -
-      `EliteEligibility::IsEligibleAtLevel(int32)` is the sole gate, tested directly,
-      no save/meta-progression dependency.
+      `EliteEligibility::IsEligibleAtLevel(int32)` is the sole gate, tested directly
+      (`KrowdKontrolEliteEligibilityTest.cpp`) **and** consulted by the actual spawn
+      path (`UWaveSpawnerComponent::SpawnWave()`, gated on the component's own
+      `LevelIndex`; see `KrowdKontrolWaveSpawnerComponentTest.cpp`'s below-threshold
+      case). No save/meta-progression dependency - `LevelIndex` is caller-supplied,
+      same convention as `AbilityUnlockComponent`/`OvercrowdDetectionComponent`.
 - [x] Validation commands pass with exit 0 / `GATE_OK`.
 - [x] No regressions in any pre-existing `KrowdKontrol.Unit.*` test.
 
@@ -112,3 +119,45 @@ reviewed by inspection: no-kill rule (#2) untouched; roster (#5) untouched — n
 `EEnemyType` value, no new `AActor` subclass, only a flag + a few members on the
 existing 4 classes; colour lock (#3) untouched — `EliteTrimLightComponent`'s colour is
 asserted distinct from `ReservedGameplayColours::GetAll()` by test, not just comment.
+
+### Post-review-fix validation (level-gating now wired in)
+
+Self-fix pass wired `EliteEligibility::IsEligibleAtLevel()` into
+`UWaveSpawnerComponent::SpawnWave()` (previously tested only in isolation), added test
+coverage for the `SpawnWave()` cast-failure branch and `SetIsElite()`'s null-trim-light
+branch, moved `KrowdKontrolEnemyBaseTest.cpp`'s Elite cases to the early,
+GC-safe position matching the 4 per-type test files, and corrected two comments that
+misattributed the GC/test-lifetime bug (see Design note above) to "CDO instancing".
+Full gate rerun after all of the above:
+
+```
+$ python harness/ci.py --quick
+UNIT_PASSED tests=46
+GATE_OK mode=quick
+
+$ bash harness/run_ue_automation.sh "KrowdKontrol.Unit."
+UE_BUILD_OK
+UE_AUTOMATION_RESULT passed=46 total=46
+UE_AUTOMATION_OK
+
+$ python harness/ci.py
+UNIT_PASSED tests=46
+E2E_PASSED steps=1
+GATE_OK mode=full
+```
+
+Test function count is unchanged (46) - the new coverage was added as additional
+assertions/cases inside already-counted `KrowdKontrolEnemyBaseTest`/
+`KrowdKontrolWaveSpawnerComponentTest`, not new top-level Automation tests.
+
+**Known, deliberate divergence between `app/` and `app-source-tracked/`**: this PR's
+tracked diff had picked up an unrelated `friend class
+FKrowdKontrolOvercrowdLevelThresholdTest;` line in `EnemyBase.h` (flagged by review as
+undocumented scope creep). Investigation found it's real, necessary, already-landed
+work from a separate, concurrent issue (#23) sharing this task's `app/` directory -
+`KrowdKontrolOvercrowdLevelThresholdTest.cpp` genuinely needs that friend grant to
+compile (`TickCheckDetection` is private on `AEnemyBase` and never re-exposed, contrary
+to that review finding's own claim). The line was removed from `app-source-tracked/`
+only (correcting this PR's diff to not claim unrelated work) and deliberately left in
+the live `app/EnemyBase.h`, since removing it there would break that unrelated,
+already-merged-elsewhere work sharing the same live Unreal project directory.

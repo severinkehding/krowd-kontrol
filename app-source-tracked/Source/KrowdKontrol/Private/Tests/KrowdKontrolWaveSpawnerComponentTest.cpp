@@ -313,7 +313,9 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 
 	// (8) FWaveEntry.bIsElite = true (issue #19) produces a spawned AEnemyBase
 	// instance with bIsElite == true, through the real spawn path - not just
-	// constructible in isolation via SetIsElite() directly.
+	// constructible in isolation via SetIsElite() directly. LevelIndex is set at or
+	// above EliteEligibility::MinEligibleLevel so the gate added for this same issue
+	// doesn't suppress the flag here - see case (11) for the below-threshold behavior.
 	{
 		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
 		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
@@ -321,6 +323,7 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 			return false;
 		}
 		Spawner->RegisterComponent();
+		Spawner->LevelIndex = 4;
 
 		FWaveEntry EliteWave;
 		EliteWave.EnemyClass = ARunnerEnemy::StaticClass();
@@ -367,6 +370,68 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 			if (TestNotNull(TEXT("Spawned actor should be an AEnemyBase"), SpawnedEnemy))
 			{
 				TestFalse(TEXT("bIsElite = false (default) on the wave entry should leave the spawned enemy non-Elite"),
+					SpawnedEnemy->bIsElite);
+			}
+		}
+	}
+
+	// (10) bIsElite = true on a non-AEnemyBase EnemyClass logs a warning but still
+	// spawns the actor normally (cast-failure branch added by issue #19). LevelIndex
+	// is set at or above the eligibility threshold so this exercises the cast-failure
+	// branch specifically, not the level gate from case (11).
+	{
+		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
+		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
+		{
+			return false;
+		}
+		Spawner->RegisterComponent();
+		Spawner->LevelIndex = 4;
+
+		FWaveEntry MismatchedWave;
+		MismatchedWave.EnemyClass = APlaceholderCubeActor::StaticClass();
+		MismatchedWave.Count = 1;
+		MismatchedWave.bIsElite = true;
+
+		Spawner->Waves = { MismatchedWave };
+
+		AddExpectedError(TEXT("does not derive from AEnemyBase"), EAutomationExpectedErrorFlags::Contains, 1);
+		Spawner->StartWaves();
+
+		TestEqual(TEXT("bIsElite on a non-AEnemyBase class should still spawn the actor"),
+			Spawner->GetSpawnedActors().Num(), 1);
+	}
+
+	// (11) FWaveEntry.bIsElite = true on a spawner whose LevelIndex is below
+	// EliteEligibility::MinEligibleLevel spawns a non-Elite enemy - the level gate
+	// this PR wires EliteEligibility::IsEligibleAtLevel() into (issue #19, PRD 03
+	// REQ-4), not just the pure function tested in isolation by
+	// KrowdKontrolEliteEligibilityTest.cpp.
+	{
+		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
+		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
+		{
+			return false;
+		}
+		Spawner->RegisterComponent();
+		Spawner->LevelIndex = 3; // below EliteEligibility::MinEligibleLevel (4)
+
+		FWaveEntry EliteWave;
+		EliteWave.EnemyClass = ARunnerEnemy::StaticClass();
+		EliteWave.Count = 1;
+		EliteWave.DelaySeconds = 0.0f;
+		EliteWave.bIsElite = true;
+
+		Spawner->Waves = { EliteWave };
+		Spawner->StartWaves();
+
+		if (TestEqual(TEXT("Below-threshold-level elite wave should still spawn exactly one actor"),
+			Spawner->GetSpawnedActors().Num(), 1))
+		{
+			AEnemyBase* SpawnedEnemy = Cast<AEnemyBase>(Spawner->GetSpawnedActors()[0]);
+			if (TestNotNull(TEXT("Spawned actor should be an AEnemyBase"), SpawnedEnemy))
+			{
+				TestFalse(TEXT("bIsElite = true on a wave entry should be ignored below EliteEligibility::MinEligibleLevel"),
 					SpawnedEnemy->bIsElite);
 			}
 		}
