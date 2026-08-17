@@ -36,8 +36,17 @@ public:
 	void TriggerBark(FName BarkID);
 
 	// True if BarkID is registered and has already fired. False for an unregistered
-	// ID (matches TriggerBark's own no-op treatment of unknown IDs).
+	// ID (matches TriggerBark's own no-op treatment of unknown IDs). BlueprintCallable
+	// so the once-only-fire guarantee can be independently verified (e.g. from a
+	// Blueprint-driven E2E check) without needing to bind OnBarkTriggered.
+	UFUNCTION(BlueprintCallable, Category = "Gizmo Narrative")
 	bool HasBarkFired(FName BarkID) const;
+
+	// True if BarkID has been registered (via RegisterBark or the placeholder
+	// milestone barks), regardless of fired state. BlueprintCallable so registered
+	// bark content can be independently verified without reading source.
+	UFUNCTION(BlueprintCallable, Category = "Gizmo Narrative")
+	bool IsBarkRegistered(FName BarkID) const;
 
 	// Registers the six placeholder story-beat barks this issue adds (issue #61,
 	// PRD 07 REQ-3/REQ-5): the five narrative-arc milestones (Meet Krowd, Saving

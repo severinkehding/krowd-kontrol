@@ -37,6 +37,11 @@ bool UGizmoNarrativeSubsystem::HasBarkFired(FName BarkID) const
 	return Bark && Bark->bHasBeenTriggered;
 }
 
+bool UGizmoNarrativeSubsystem::IsBarkRegistered(FName BarkID) const
+{
+	return RegisteredBarks.Contains(BarkID);
+}
+
 void UGizmoNarrativeSubsystem::RegisterPlaceholderMilestoneBarks()
 {
 	if (bHasRegisteredPlaceholderMilestoneBarks)
