@@ -9,6 +9,7 @@
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
 #include "AbilityData.h"
+#include "HUDChromeColours.h"
 
 namespace
 {
@@ -23,16 +24,6 @@ namespace
 	// entirely rather than being appended/overlaid, so a locked slot reads as a
 	// distinct state at a glance, not a modified cooldown.
 	const TCHAR* LockedSlotLabel = TEXT("LCK");
-
-	// Desaturated near-black background + light-gray (not pure white) text -
-	// MISSION.md Hard Invariant 3 / PRD 13 REQ-4 / PRD 11 REQ-1 reserve
-	// Purple/Teal/Orange/Blue/White for gameplay information; this tray's chrome must
-	// not use any of them. Same already-reviewed palette as UPostRunSummaryWidget
-	// (issue #74).
-	FLinearColor GetChromeBackgroundColor()
-	{
-		return FLinearColor(0.05f, 0.05f, 0.05f, 0.92f);
-	}
 
 	// Desaturated dark red - reads as a "warning/blocked" treatment without becoming
 	// a 6th saturated gameplay-information colour (MISSION.md Hard Invariant 3 /
@@ -92,7 +83,7 @@ void UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()
 
 void UAbilityCooldownTrayWidget::BuildWidgetTree()
 {
-	const FSlateColor TextColor(FLinearColor(0.85f, 0.85f, 0.85f, 1.0f));
+	const FSlateColor TextColor(HUDChromeColours::GetText());
 
 	// First use of UCanvasPanel in this codebase - needed because corner anchoring
 	// requires a UCanvasPanelSlot, which only a UCanvasPanel child gets.
@@ -126,7 +117,7 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 		SlotsBoxSlot->SetPadding(FMargin(4.0f));
 
 		UBorder* IconBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), *FString::Printf(TEXT("SlotIconBorder_%d"), Index));
-		IconBorder->SetBrushColor(GetChromeBackgroundColor());
+		IconBorder->SetBrushColor(HUDChromeColours::GetBackground());
 		SlotOverlay->AddChildToOverlay(IconBorder);
 
 		const EAbilitySlot CurrentSlot = static_cast<EAbilitySlot>(Index);
@@ -218,7 +209,7 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 
 	if (SlotIconBorders.IsValidIndex(Index) && SlotIconBorders[Index])
 	{
-		SlotIconBorders[Index]->SetBrushColor(bLocked ? GetLockedBorderColor() : GetChromeBackgroundColor());
+		SlotIconBorders[Index]->SetBrushColor(bLocked ? GetLockedBorderColor() : HUDChromeColours::GetBackground());
 	}
 	else if (SlotIconBorders.IsValidIndex(Index))
 	{

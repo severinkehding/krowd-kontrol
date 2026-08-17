@@ -27,6 +27,7 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "AbilityData.h"
 #include "ReservedGameplayColours.h"
+#include "HUDChromeColours.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Blueprint/WidgetTree.h"
@@ -82,7 +83,7 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	// Purple/Teal/Orange/Blue/White for gameplay information; the tray's background
 	// must not drift onto one of those values.
 	TestEqual(TEXT("Icon border background should match the reserved-colour-safe chrome constant"),
-		Widget->SlotIconBorders[0]->GetBrushColor(), FLinearColor(0.05f, 0.05f, 0.05f, 0.92f));
+		Widget->SlotIconBorders[0]->GetBrushColor(), HUDChromeColours::GetBackground());
 
 	// (a3) Shape/glyph distinctness (PRD 13 REQ-7 / issue #76) - each slot's label
 	// text differs from every other slot's, independent of whatever colour is
