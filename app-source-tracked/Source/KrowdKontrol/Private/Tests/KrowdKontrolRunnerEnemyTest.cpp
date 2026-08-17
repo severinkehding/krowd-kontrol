@@ -29,6 +29,11 @@
 #include "DrainRayFiredTestListener.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
+#include "Sound/SoundWave.h"
+#include "Components/AudioComponent.h"
+#include "SniperEnemy.h"
+#include "BomberEnemy.h"
+#include "TrooperEnemy.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -259,6 +264,114 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Tick() should drive the telegraph through to firing the drain-ray"),
 				TickedListener->CallCount, 1);
 		}
+
+		// (n) OnAttackEntry spawns the attack-tell audio cue when AttackTellSound is
+		// configured. NewObject<USoundWave>() (no .uasset) is sufficient, per
+		// KrowdKontrolSniperEnemyTest.cpp case (n)'s precedent. Reuses World, the
+		// same one case (m) already created above.
+		ARunnerEnemy* AudioRunner = World->SpawnActor<ARunnerEnemy>();
+		if (TestNotNull(TEXT("ARunnerEnemy should spawn into the audio test World"), AudioRunner))
+		{
+			USoundWave* ConfiguredSound = NewObject<USoundWave>();
+			AudioRunner->AttackTellSound = ConfiguredSound;
+			AdvanceToAttack(AudioRunner, ZeroDistanceLocation);
+			if (TestNotNull(TEXT("Entering Attack with a configured AttackTellSound should spawn an audio cue"),
+				AudioRunner->AttackTellAudioComponent.Get()))
+			{
+				TestEqual(TEXT("The spawned audio cue should play the configured AttackTellSound, not some other sound"),
+					static_cast<USoundBase*>(AudioRunner->AttackTellAudioComponent->Sound.Get()),
+					static_cast<USoundBase*>(ConfiguredSound));
+			}
+		}
+
+		// (o) AttackTellSound defaults to a real placeholder asset (constructor's
+		// AttackTellSoundFinder, issue #28 AC: "a distinct sound effect plays" out of
+		// the box) rather than being left unset, so a freshly spawned, unconfigured
+		// ARunnerEnemy must actually spawn an audio cue on Attack entry, and that
+		// default must differ from all 3 siblings' own live defaults - compared
+		// against NewObject<>() instances, not hardcoded path strings, per PR #145's
+		// review-fix precedent.
+		ARunnerEnemy* DefaultSoundRunner = World->SpawnActor<ARunnerEnemy>();
+		if (TestNotNull(TEXT("ARunnerEnemy should spawn into the default-audio test World"), DefaultSoundRunner))
+		{
+			TestFalse(TEXT("AttackTellSound should default to a configured placeholder asset, not be left unset"),
+				DefaultSoundRunner->AttackTellSound.IsNull());
+			TestEqual(TEXT("AttackTellSound should default to the CompileFailed placeholder, not some other asset"),
+				DefaultSoundRunner->AttackTellSound.ToSoftObjectPath().ToString(),
+				FString(TEXT("/Engine/EditorSounds/Notifications/CompileFailed.CompileFailed")));
+
+			ASniperEnemy* SiblingSniper = NewObject<ASniperEnemy>();
+			ABomberEnemy* SiblingBomber = NewObject<ABomberEnemy>();
+			ATrooperEnemy* SiblingTrooper = NewObject<ATrooperEnemy>();
+			TestNotEqual(TEXT("Runner's default tell must differ from Sniper's live default, so the two enemies are audibly distinct"),
+				DefaultSoundRunner->AttackTellSound.ToSoftObjectPath().ToString(),
+				SiblingSniper->AttackTellSound.ToSoftObjectPath().ToString());
+			TestNotEqual(TEXT("Runner's default tell must differ from Bomber's live default, so the two enemies are audibly distinct"),
+				DefaultSoundRunner->AttackTellSound.ToSoftObjectPath().ToString(),
+				SiblingBomber->AttackTellSound.ToSoftObjectPath().ToString());
+			TestNotEqual(TEXT("Runner's default tell must differ from Trooper's live default, so the two enemies are audibly distinct"),
+				DefaultSoundRunner->AttackTellSound.ToSoftObjectPath().ToString(),
+				SiblingTrooper->AttackTellSound.ToSoftObjectPath().ToString());
+
+			AdvanceToAttack(DefaultSoundRunner, ZeroDistanceLocation);
+			TestNotNull(TEXT("Entering Attack with the default AttackTellSound should spawn an audio cue"),
+				DefaultSoundRunner->AttackTellAudioComponent.Get());
+		}
+
+		// (p) the graceful, no-crash fallback is still exercised for the defensive
+		// case an explicit override (Blueprint/Details panel) clears AttackTellSound
+		// back to unset. No assertion on the warning log itself (no existing test in
+		// this module asserts UE_LOG output).
+		ARunnerEnemy* SilentRunner = World->SpawnActor<ARunnerEnemy>();
+		if (TestNotNull(TEXT("ARunnerEnemy should spawn into the silent-audio test World"), SilentRunner))
+		{
+			SilentRunner->AttackTellSound = nullptr;
+			AdvanceToAttack(SilentRunner, ZeroDistanceLocation);
+			TestNull(TEXT("Entering Attack with AttackTellSound explicitly cleared should not spawn an audio cue"),
+				SilentRunner->AttackTellAudioComponent.Get());
+		}
+
+		// (q) Issue #28 AC: the attack-tell audio "is not replayed if the attack is
+		// interrupted or the enemy is controlled mid-telegraph". AEnemyBase.cpp's
+		// state machine is strictly linear (Idle->Alert->Attack->Controlled->Banked,
+		// no edges back) and AdvanceToAttack() itself guards on CurrentState ==
+		// Alert, so once ReceiveControl() has moved an actor to Controlled
+		// mid-telegraph, no further TickCheckDetection() call can ever drive it back
+		// into Attack and re-invoke OnAttackEntry() - structurally, not just "in
+		// practice". This proves the audio cue captured on first entry is never
+		// replaced/re-spawned.
+		ARunnerEnemy* ReplayGuardRunner = World->SpawnActor<ARunnerEnemy>();
+		if (TestNotNull(TEXT("ARunnerEnemy should spawn into the replay-guard test World"), ReplayGuardRunner))
+		{
+			AdvanceToAttack(ReplayGuardRunner, ZeroDistanceLocation);
+			UAudioComponent* FirstAudioComponent = ReplayGuardRunner->AttackTellAudioComponent.Get();
+			if (TestNotNull(TEXT("Entering Attack should spawn the attack-tell audio cue"), FirstAudioComponent))
+			{
+				ReplayGuardRunner->ReceiveControl(EAbilitySlot::Snare); // interrupts mid-telegraph
+				TestEqual(TEXT("interrupted enemy is Controlled"),
+					static_cast<uint8>(ReplayGuardRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+				// Further detection checks (e.g. player still in range post-interrupt)
+				// must not drive the state machine back into Attack.
+				ReplayGuardRunner->TickCheckDetection(ZeroDistanceLocation);
+				ReplayGuardRunner->TickCheckDetection(ZeroDistanceLocation);
+				TestEqual(TEXT("state stays Controlled - no edge back to Attack exists"),
+					static_cast<uint8>(ReplayGuardRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+				TestEqual(TEXT("audio cue is not replaced/re-spawned after the interrupt"),
+					ReplayGuardRunner->AttackTellAudioComponent.Get(), FirstAudioComponent);
+			}
+		}
+	}
+
+	// (r) OnAttackEntry's sound-spawn call must degrade gracefully for actors without a
+	// real UWorld (SpawnSoundAtLocation needs a world context) - a combination this PR
+	// makes reachable for the first time via every NewObject-only case above (a)-(l).
+	ARunnerEnemy* WorldlessRunner = NewObject<ARunnerEnemy>();
+	if (TestNotNull(TEXT("ARunnerEnemy should construct without a UWorld"), WorldlessRunner))
+	{
+		AdvanceToAttack(WorldlessRunner, ZeroDistanceLocation);
+		TestNull(TEXT("SpawnSoundAtLocation should no-op (not crash) for an actor with no real UWorld"),
+			WorldlessRunner->AttackTellAudioComponent.Get());
 	}
 
 	return true;

@@ -6,6 +6,9 @@
 #include "ReservedGameplayColours.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
+#include "Sound/SoundBase.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/AudioComponent.h"
 
 ARunnerEnemy::ARunnerEnemy()
 {
@@ -54,6 +57,27 @@ ARunnerEnemy::ARunnerEnemy()
 
 	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
 	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::RU_NNR;
+
+	// Placeholder-first default (MISSION.md) so issue #28's "a distinct sound
+	// effect plays" AC holds without waiting on a designer to configure
+	// AttackTellSound. /Engine/EngineSounds/ has only two playable USoundBase
+	// assets (1kSineTonePing, WhiteNoise) and both are already claimed by
+	// ASniperEnemy/ABomberEnemy respectively, and
+	// /Engine/EditorSounds/Notifications/CompileSuccess is already claimed by
+	// ATrooperEnemy (verified against the installed Engine content) - reusing any
+	// of those here would make two enemy types share an "audibly distinct" tell,
+	// contradicting issue #28's AC directly. This uses a fourth built-in Engine
+	// asset instead, in the same notification-chime family: a short "compile
+	// failed" chime, always present in a stock Engine install and loadable in the
+	// Editor context this project's Automation tests actually run in (no
+	// packaging/cook step exists yet - see harness/README.md). Still Details-panel/
+	// Blueprint overridable.
+	static ConstructorHelpers::FObjectFinder<USoundBase> AttackTellSoundFinder(
+		TEXT("/Engine/EditorSounds/Notifications/CompileFailed.CompileFailed"));
+	if (AttackTellSoundFinder.Succeeded())
+	{
+		AttackTellSound = AttackTellSoundFinder.Object;
+	}
 }
 
 float ARunnerEnemy::GetAttackRangeUnits() const
@@ -93,6 +117,22 @@ void ARunnerEnemy::OnAttackEntry()
 	AttackTellLightComponent->SetIntensity(AttackTellIntensity);
 	RemainingTelegraphSeconds = AttackTelegraphSeconds;
 	bDrainFiredForCurrentAttack = false;
+
+	// AttackTellSound defaults to a placeholder engine chime (see the
+	// constructor), so this resolves normally out of the box; the else-branch below
+	// is a defensive fallback for the case a Blueprint/Details-panel override
+	// explicitly clears it.
+	if (USoundBase* TellSound = AttackTellSound.LoadSynchronous())
+	{
+		AttackTellAudioComponent = UGameplayStatics::SpawnSoundAtLocation(this, TellSound, GetActorLocation());
+	}
+	else if (!bHasWarnedMissingAttackTellSound)
+	{
+		bHasWarnedMissingAttackTellSound = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ARunnerEnemy: no AttackTellSound configured on '%s' - attack telegraph will be silent."),
+			*GetNameSafe(this));
+	}
 }
 
 void ARunnerEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
