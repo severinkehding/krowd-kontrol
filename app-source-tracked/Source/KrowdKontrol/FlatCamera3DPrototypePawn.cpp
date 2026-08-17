@@ -9,6 +9,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "AbilityUnlockComponent.h"
+#include "PlayerEnergyComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
@@ -42,6 +43,7 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	TopDownCamera->bUsePawnControlRotation = false;
 
 	AbilityUnlockComponent = CreateDefaultSubobject<UAbilityUnlockComponent>(TEXT("AbilityUnlockComponent"));
+	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }

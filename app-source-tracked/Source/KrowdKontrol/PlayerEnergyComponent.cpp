@@ -3,14 +3,13 @@
 UPlayerEnergyComponent::UPlayerEnergyComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-}
 
-void UPlayerEnergyComponent::BeginPlay()
-{
-	Super::BeginPlay();
-	// SafeMaxEnergy guards against a negative MaxEnergy (e.g. a bad editor value)
-	// seeding CurrentEnergy negative - the same bug class SafeMaxDamagePerHit below
-	// guards against for MaxDamagePerHit.
+	// Seeded here, not BeginPlay, so CurrentEnergy already holds a valid value the
+	// moment any other actor's BeginPlay queries it - BeginPlay order between the
+	// owning pawn and another actor binding to this component (e.g. the HUD's
+	// PlayerController) is not guaranteed. SafeMaxEnergy guards against a negative
+	// MaxEnergy (e.g. a bad editor value) seeding CurrentEnergy negative - the same
+	// bug class SafeMaxDamagePerHit below guards against for MaxDamagePerHit.
 	const float SafeMaxEnergy = FMath::Max(0.0f, MaxEnergy);
 	CurrentEnergy = SafeMaxEnergy;
 }

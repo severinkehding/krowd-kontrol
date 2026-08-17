@@ -9,6 +9,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
+#include "PlayerEnergyComponent.h"
 
 APaper2DPrototypePawn::APaper2DPrototypePawn()
 {
@@ -67,6 +68,8 @@ APaper2DPrototypePawn::APaper2DPrototypePawn()
 	TopDownCamera->bUsePawnControlRotation = false;
 	TopDownCamera->ProjectionMode = ECameraProjectionMode::Orthographic;
 	TopDownCamera->OrthoWidth = 1024.0f;
+
+	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
