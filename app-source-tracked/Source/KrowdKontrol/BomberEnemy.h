@@ -7,14 +7,18 @@
 class UStaticMeshComponent;
 class UPointLightComponent;
 class UEnemyTypeIndicatorComponent;
+class USoundBase;
+class UAudioComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBomberExploded);
 
 // B0-0MR: short-range explosive attacker (PRD 03). Extends AEnemyBase (issue #12)
 // with a sphere silhouette, Fear-only Orange "core glow", attack-tell + telegraph,
-// and a small GetAttackRangeUnits() (opposite of ASniperEnemy's). Unlike Sniper, the
-// telegraph elapsing also drains UPlayerEnergyComponent via ApplyContactDamage() -
-// clamped, floors at 0 - the "never lethal, crowd-drain" AC. See issue #15.
+// a one-shot attack-tell audio cue (issue #33) fired from the same OnAttackEntry()
+// extension point, and a small GetAttackRangeUnits() (opposite of ASniperEnemy's).
+// Unlike Sniper, the telegraph elapsing also drains UPlayerEnergyComponent via
+// ApplyContactDamage() - clamped, floors at 0 - the "never lethal, crowd-drain" AC.
+// See issue #15.
 UCLASS()
 class KROWDKONTROL_API ABomberEnemy : public AEnemyBase
 {
@@ -51,6 +55,20 @@ public:
 	float CoreGlowIntensifiedIntensity = 2400.0f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber")
 	float AttackTellIntensity = 2000.0f;
+
+	// Defaults to /Engine/EngineSounds/WhiteNoise (set in the constructor via
+	// ConstructorHelpers::FObjectFinder, same pattern as MeshComponent's
+	// SphereMeshFinder below) so issue #33's "a distinct sound effect plays" AC is met
+	// out of the box, not left silent pending designer configuration - unlike
+	// UMusicSubsystem::CalmTrack/CombatTrack, which are legitimately Config-driven
+	// because a designer places real music later. This is still placeholder-first
+	// (MISSION.md): a primitive built-in engine noise-burst standing in until a real,
+	// per-enemy-type-distinguishable sound is sourced - deliberately a different
+	// built-in asset from ASniperEnemy's AttackTellSound (1kSineTonePing) so B0-0MR's
+	// tell is audibly distinct. Still Blueprint/Details-panel overridable.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber")
+	TSoftObjectPtr<USoundBase> AttackTellSound;
+
 	// Deliberately large - non-lethality comes from ApplyContactDamage()'s clamp, not
 	// from this value being small; the size makes that guarantee testable.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber")
@@ -84,4 +102,17 @@ private:
 
 	float RemainingTelegraphSeconds = 0.0f;
 	bool bExplodedForCurrentAttack = false;
+
+	// Test-visible via the existing FKrowdKontrolBomberEnemyTest friend grant above -
+	// set by OnAttackEntry() when AttackTellSound resolves, so the Automation test can
+	// assert the audio cue actually spawned without querying real audio hardware.
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> AttackTellAudioComponent;
+
+	// Defensive one-shot guard, mirroring ASniperEnemy::bHasWarnedMissingAttackTellSound's
+	// shape - currently unreachable a second time in practice, since EnemyBase's linear
+	// state machine (EnemyBase.h) only ever calls OnAttackEntry() once per instance. Kept
+	// so a future change that made Attack re-enterable wouldn't silently start spamming
+	// this warning.
+	bool bHasWarnedMissingAttackTellSound = false;
 };

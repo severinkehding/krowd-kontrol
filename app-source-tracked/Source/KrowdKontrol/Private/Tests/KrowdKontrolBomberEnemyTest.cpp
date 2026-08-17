@@ -1,8 +1,12 @@
 // Confirms ABomberEnemy (issue #15, PRD 03) satisfies B0-0MR's AC, mirroring
 // KrowdKontrolSniperEnemyTest.cpp's structure (NewObject + friend access for most
-// cases, a real UWorld only for (m)/(n)/(o)). New vs. Sniper: the explosion's
-// player-damage hookup is clamped/non-lethal by construction. Case (j) is a
-// structural proxy, same caveat as Sniper's own case (j).
+// cases, a real UWorld only for (m)/(n)/(o)/(p)/(q)/(r)). New vs. Sniper: the
+// explosion's player-damage hookup is clamped/non-lethal by construction. Case (j) is
+// a structural proxy, same caveat as Sniper's own case (j). Cases (p)/(q)/(r) (issue
+// #33) mirror Sniper's own (n)/(o)/(p): a configured AttackTellSound spawns an audio
+// cue with the matching asset, the constructor's WhiteNoise default also spawns a cue
+// out of the box, and an explicitly-cleared AttackTellSound spawns nothing without
+// crashing.
 
 #include "Misc/AutomationTest.h"
 #include "BomberEnemy.h"
@@ -15,6 +19,8 @@
 #include "BomberExplodedTestListener.h"
 #include "PlayerEnergyComponent.h"
 #include "GameFramework/Pawn.h"
+#include "Sound/SoundWave.h"
+#include "Components/AudioComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -220,6 +226,65 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 				TestEqual(TEXT("energy drops by MaxDamagePerHit, not raw ExplosionDamageAmount"), Energy->GetCurrentEnergy(), Energy->MaxEnergy - Energy->MaxDamagePerHit);
 				TestTrue(TEXT("energy never driven negative/lethal"), Energy->GetCurrentEnergy() >= 0.0f);
 			}
+		}
+	}
+
+	// (p) OnAttackEntry spawns the attack-tell audio cue when AttackTellSound is
+	// configured - needs a real UWorld (SpawnSoundAtLocation resolves it via the
+	// actor's outer), same shape as case (m). NewObject<USoundWave>() (no .uasset) is
+	// sufficient, per KrowdKontrolSniperEnemyTest.cpp case (n)'s precedent.
+	UWorld* AudioWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the audio test"), AudioWorld))
+	{
+		ABomberEnemy* AudioBomber = AudioWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the audio test World"), AudioBomber))
+		{
+			USoundWave* ConfiguredSound = NewObject<USoundWave>();
+			AudioBomber->AttackTellSound = ConfiguredSound;
+			AdvanceToAttack(AudioBomber, ZeroDistanceLocation);
+			if (TestNotNull(TEXT("Entering Attack with a configured AttackTellSound should spawn an audio cue"),
+				AudioBomber->AttackTellAudioComponent.Get()))
+			{
+				TestEqual(TEXT("The spawned audio cue should play the configured AttackTellSound, not some other sound"),
+					static_cast<USoundBase*>(AudioBomber->AttackTellAudioComponent->Sound.Get()),
+					static_cast<USoundBase*>(ConfiguredSound));
+			}
+		}
+	}
+
+	// (q) AttackTellSound now defaults to a real placeholder asset (constructor's
+	// AttackTellSoundFinder, issue #33 AC: "a distinct sound effect plays" out of the
+	// box) rather than being left unset, so a freshly spawned, unconfigured
+	// ABomberEnemy must actually spawn an audio cue on Attack entry.
+	UWorld* DefaultSoundWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the default-audio test"), DefaultSoundWorld))
+	{
+		ABomberEnemy* DefaultSoundBomber = DefaultSoundWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the default-audio test World"), DefaultSoundBomber))
+		{
+			TestFalse(TEXT("AttackTellSound should default to a configured placeholder asset, not be left unset"),
+				DefaultSoundBomber->AttackTellSound.IsNull());
+			AdvanceToAttack(DefaultSoundBomber, ZeroDistanceLocation);
+			TestNotNull(TEXT("Entering Attack with the default AttackTellSound should spawn an audio cue"),
+				DefaultSoundBomber->AttackTellAudioComponent.Get());
+		}
+	}
+
+	// (r) the graceful, no-crash fallback is still exercised for the defensive case an
+	// explicit override (Blueprint/Details panel) clears AttackTellSound back to unset -
+	// same placeholder-first shape UMusicSubsystem's CalmTrack/CombatTrack document. No
+	// assertion on the warning log itself (no existing test in this module asserts
+	// UE_LOG output).
+	UWorld* SilentWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the silent-audio test"), SilentWorld))
+	{
+		ABomberEnemy* SilentBomber = SilentWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the silent-audio test World"), SilentBomber))
+		{
+			SilentBomber->AttackTellSound = nullptr;
+			AdvanceToAttack(SilentBomber, ZeroDistanceLocation);
+			TestNull(TEXT("Entering Attack with AttackTellSound explicitly cleared should not spawn an audio cue"),
+				SilentBomber->AttackTellAudioComponent.Get());
 		}
 	}
 

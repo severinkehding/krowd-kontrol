@@ -7,6 +7,9 @@
 #include "PlayerEnergyComponent.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
+#include "Sound/SoundBase.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/AudioComponent.h"
 
 ABomberEnemy::ABomberEnemy()
 {
@@ -38,6 +41,18 @@ ABomberEnemy::ABomberEnemy()
 
 	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
 	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::B0_0MR;
+
+	// Placeholder-first default (MISSION.md) so issue #33's "a distinct sound effect
+	// plays" AC holds without waiting on a designer to configure AttackTellSound - a
+	// short built-in noise burst, distinct from ASniperEnemy's 1kSineTonePing and from
+	// CalmTrack/CombatTrack (music loops) and any future ability-cast/UI sound. Still
+	// Details-panel/Blueprint overridable once a real per-enemy-type tell is sourced.
+	static ConstructorHelpers::FObjectFinder<USoundBase> AttackTellSoundFinder(
+		TEXT("/Engine/EngineSounds/WhiteNoise.WhiteNoise"));
+	if (AttackTellSoundFinder.Succeeded())
+	{
+		AttackTellSound = AttackTellSoundFinder.Object;
+	}
 }
 
 float ABomberEnemy::GetAttackRangeUnits() const
@@ -74,6 +89,22 @@ void ABomberEnemy::OnAttackEntry()
 	AttackTellLightComponent->SetIntensity(AttackTellIntensity);
 	RemainingTelegraphSeconds = AttackTelegraphSeconds;
 	bExplodedForCurrentAttack = false;
+
+	// AttackTellSound defaults to a placeholder engine noise burst (see the
+	// constructor), so this resolves normally out of the box; the else-branch below is
+	// a defensive fallback for the case a Blueprint/Details-panel override explicitly
+	// clears it.
+	if (USoundBase* TellSound = AttackTellSound.LoadSynchronous())
+	{
+		AttackTellAudioComponent = UGameplayStatics::SpawnSoundAtLocation(this, TellSound, GetActorLocation());
+	}
+	else if (!bHasWarnedMissingAttackTellSound)
+	{
+		bHasWarnedMissingAttackTellSound = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABomberEnemy: no AttackTellSound configured on '%s' - attack telegraph will be silent."),
+			*GetNameSafe(this));
+	}
 }
 
 void ABomberEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
