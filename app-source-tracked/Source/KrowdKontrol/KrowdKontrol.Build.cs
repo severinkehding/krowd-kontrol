@@ -36,6 +36,16 @@ public class KrowdKontrol : ModuleRules
 		// blocking every build off the shared project, not just this one.
 		PrivateDependencyModuleNames.Add("EngineSettings");
 
+		// AudioMixer for UAudioMixerBlueprintLibrary::Set/ClearSubmixEffectChainOverride
+		// (issue #38's runtime submix-effect toggle mechanism - chosen over per-
+		// UAudioComponent SetLowPassFilterFrequency, which is documented as runtime-
+		// unreliable per two independent Epic forum reports, since Sound Attenuation
+		// settings are cached at sound-instance init). Synthesis for
+		// USubmixEffectFilterPreset/ESubmixFilterType::LowPass; the plugin is
+		// EnabledByDefault=true (confirmed in Synthesis.uplugin) so no KrowdKontrol.uproject
+		// Plugins-array entry is needed, same as the Paper2D precedent above.
+		PrivateDependencyModuleNames.AddRange(new string[] { "AudioMixer", "Synthesis" });
+
 		if (Target.bBuildEditor)
 		{
 			// Needed only for FAutomationEditorCommonUtils::CreateNewMap() in
