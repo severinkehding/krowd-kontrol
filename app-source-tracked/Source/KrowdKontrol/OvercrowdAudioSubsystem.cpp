@@ -14,6 +14,26 @@ void UOvercrowdAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	MuffleFilterPreset->Settings.FilterFrequency = MuffleFilterFrequencyHz;
 }
 
+void UOvercrowdAudioSubsystem::Deinitialize()
+{
+	// The submix effect chain override is applied to the main output submix, not to anything
+	// owned/destroyed alongside this subsystem - clear it explicitly so a level transition or
+	// PIE stop that happens while Muffled doesn't leave the next world's audio mix stuck
+	// filtered (see WaveSpawnerComponent::EndPlay for the same teardown convention).
+	if (CurrentMuffleState == EOvercrowdAudioMuffleState::Muffled)
+	{
+		if (GetWorld())
+		{
+			if (FAudioDeviceHandle AudioDevice = GetWorld()->GetAudioDevice())
+			{
+				UAudioMixerBlueprintLibrary::ClearSubmixEffectChainOverride(
+					this, &AudioDevice->GetMainSubmixObject(), 0.0f);
+			}
+		}
+	}
+	Super::Deinitialize();
+}
+
 void UOvercrowdAudioSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -69,6 +89,7 @@ void UOvercrowdAudioSubsystem::SetMuffleState(EOvercrowdAudioMuffleState NewStat
 	// sees CurrentMuffleState already updated.
 	CurrentMuffleState = NewState;
 
+	bool bAppliedSubmixOverride = false;
 	if (GetWorld())
 	{
 		if (FAudioDeviceHandle AudioDevice = GetWorld()->GetAudioDevice())
@@ -84,7 +105,21 @@ void UOvercrowdAudioSubsystem::SetMuffleState(EOvercrowdAudioMuffleState NewStat
 				UAudioMixerBlueprintLibrary::ClearSubmixEffectChainOverride(
 					this, &MainSubmix, MuffleFadeTimeSeconds);
 			}
+			bAppliedSubmixOverride = true;
 		}
+	}
+
+	if (!bAppliedSubmixOverride && !bHasWarnedMissingAudioDevice)
+	{
+		// CurrentMuffleState/the broadcast below still reflect the requested state even though
+		// the submix call was skipped (see MusicSubsystem::PlayTrackForState's
+		// bHasWarnedMissingTrack precedent for this same "logically succeeded, side effect
+		// didn't" shape) - log once so a missing world/audio device window is diagnosable
+		// instead of silently invisible.
+		bHasWarnedMissingAudioDevice = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UOvercrowdAudioSubsystem: no world/audio device available - muffle state changed to %d but the submix override could not be applied."),
+			static_cast<int32>(NewState));
 	}
 
 	OnOvercrowdAudioMuffleStateChanged.Broadcast(CurrentMuffleState);

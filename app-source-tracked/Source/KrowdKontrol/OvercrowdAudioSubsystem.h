@@ -51,6 +51,7 @@ class KROWDKONTROL_API UOvercrowdAudioSubsystem : public UTickableWorldSubsystem
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 
@@ -92,4 +93,8 @@ private:
 	EOvercrowdAudioMuffleState CurrentMuffleState = EOvercrowdAudioMuffleState::Clear;
 
 	bool bHasBoundOvercrowdComponent = false;
+
+	// One-shot guard so a missing world/audio device at SetMuffleState() time only logs once
+	// per UOvercrowdAudioSubsystem instance, matching MusicSubsystem::bHasWarnedMissingTrack.
+	bool bHasWarnedMissingAudioDevice = false;
 };

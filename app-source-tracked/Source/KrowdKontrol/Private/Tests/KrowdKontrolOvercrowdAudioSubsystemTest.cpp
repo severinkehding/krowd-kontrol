@@ -24,6 +24,7 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "SubmixEffects/SubmixEffectFilter.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -44,6 +45,20 @@ bool FKrowdKontrolOvercrowdAudioSubsystemTest::RunTest(const FString& Parameters
 	if (!TestNotNull(TEXT("UWorld should auto-instantiate UOvercrowdAudioSubsystem"), AudioSubsystem))
 	{
 		return false;
+	}
+
+	// Initialize() must build a real, correctly-configured low-pass preset - not a
+	// default-constructed or wrong-filter-type one - using the friend access this test class
+	// is already granted.
+	USubmixEffectFilterPreset* MuffleFilterPreset = AudioSubsystem->MuffleFilterPreset;
+	if (TestNotNull(TEXT("Initialize() should construct MuffleFilterPreset"), MuffleFilterPreset))
+	{
+		TestEqual(TEXT("MuffleFilterPreset should be configured as a low-pass filter"),
+			static_cast<uint8>(MuffleFilterPreset->Settings.FilterType),
+			static_cast<uint8>(ESubmixFilterType::LowPass));
+		TestEqual(TEXT("MuffleFilterPreset frequency should be wired off MuffleFilterFrequencyHz"),
+			MuffleFilterPreset->Settings.FilterFrequency,
+			AudioSubsystem->MuffleFilterFrequencyHz);
 	}
 
 	UOvercrowdMuffleStateTestListener* Listener = NewObject<UOvercrowdMuffleStateTestListener>();
