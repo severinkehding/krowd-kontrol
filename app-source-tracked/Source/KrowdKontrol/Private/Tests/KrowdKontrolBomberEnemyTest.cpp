@@ -266,6 +266,15 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("AttackTellSound should default to the WhiteNoise placeholder, not some other asset"),
 				DefaultSoundBomber->AttackTellSound.ToSoftObjectPath().ToString(),
 				FString(TEXT("/Engine/EngineSounds/WhiteNoise.WhiteNoise")));
+			// Issue #33 AC: "distinguishable from existing ability-cast/UI sounds". As of
+			// this PR the codebase has no ability-cast/UI sound system at all - no
+			// USoundBase/USoundCue/USoundWave/UAudioComponent usage anywhere outside
+			// BomberEnemy/SniperEnemy/MusicSubsystem - so there is no such asset to
+			// compare against yet (tracked separately; see the PR's "Not in scope" note).
+			// The one other sound asset hardcoded anywhere in this codebase today is
+			// ASniperEnemy's own tell, checked below; this is the strongest distinctness
+			// proof currently possible and should gain more entries if a real
+			// ability-cast/UI sound is ever hardcoded the same way.
 			TestNotEqual(TEXT("Bomber's default tell must differ from Sniper's, so the two enemies are audibly distinct"),
 				DefaultSoundBomber->AttackTellSound.ToSoftObjectPath().ToString(),
 				FString(TEXT("/Engine/EngineSounds/1kSineTonePing.1kSineTonePing")));
@@ -286,6 +295,39 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			AdvanceToAttack(SilentBomber, ZeroDistanceLocation);
 			TestNull(TEXT("Entering Attack with AttackTellSound explicitly cleared should not spawn an audio cue"),
 				SilentBomber->AttackTellAudioComponent.Get());
+		}
+
+		// (s) Issue #33 AC: the attack-tell audio "is not replayed if the attack is
+		// interrupted or the enemy is controlled mid-telegraph". EnemyBase.cpp's state
+		// machine is strictly linear (Idle->Alert->Attack->Controlled->Banked, no edges
+		// back - see EnemyBase.h's transition table) and AdvanceToAttack() itself guards
+		// on CurrentState == Alert, so once ReceiveControl() has moved an actor to
+		// Controlled mid-telegraph, no further TickCheckDetection() call can ever drive
+		// it back into Attack and re-invoke OnAttackEntry() - structurally, not just "in
+		// practice" (mirrors the bHasWarnedMissingAttackTellSound comment in
+		// BomberEnemy.h). This proves the audio cue captured on first entry is never
+		// replaced/re-spawned, the same guarantee case (l) above already proves for the
+		// visual tell and the explosion.
+		ABomberEnemy* ReplayGuardBomber = AudioWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the replay-guard test World"), ReplayGuardBomber))
+		{
+			AdvanceToAttack(ReplayGuardBomber, ZeroDistanceLocation);
+			UAudioComponent* FirstAudioComponent = ReplayGuardBomber->AttackTellAudioComponent.Get();
+			if (TestNotNull(TEXT("Entering Attack should spawn the attack-tell audio cue"), FirstAudioComponent))
+			{
+				ReplayGuardBomber->ReceiveControl(EAbilitySlot::Sleep); // interrupts mid-telegraph
+				TestEqual(TEXT("interrupted enemy is Controlled"),
+					static_cast<uint8>(ReplayGuardBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+				// Further detection checks (e.g. player still in range post-interrupt)
+				// must not drive the state machine back into Attack.
+				ReplayGuardBomber->TickCheckDetection(ZeroDistanceLocation);
+				ReplayGuardBomber->TickCheckDetection(ZeroDistanceLocation);
+				TestEqual(TEXT("state stays Controlled - no edge back to Attack exists"),
+					static_cast<uint8>(ReplayGuardBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+				TestEqual(TEXT("audio cue is not replaced/re-spawned after the interrupt"),
+					ReplayGuardBomber->AttackTellAudioComponent.Get(), FirstAudioComponent);
+			}
 		}
 	}
 
