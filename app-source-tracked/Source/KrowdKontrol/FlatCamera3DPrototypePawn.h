@@ -12,6 +12,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UInputComponent;
 class UAbilityUnlockComponent;
+class UPlayerEnergyComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -46,6 +47,12 @@ public:
 	// to this component's state is not part of this pawn - see issue #71.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityUnlockComponent> AbilityUnlockComponent;
+
+	// Makes real per-hit energy tracking (issue #78) reachable from this pawn, so
+	// UEnergyMeterWidget::BindToEnergyComponent() (issue #132) and
+	// AEnemyBase::FindPlayerEnergyComponent() have a live component to find.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UPlayerEnergyComponent> PlayerEnergyComponent;
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 

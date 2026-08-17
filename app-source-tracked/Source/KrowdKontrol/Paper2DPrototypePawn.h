@@ -12,6 +12,7 @@ class UFloatingPawnMovement;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputComponent;
+class UPlayerEnergyComponent;
 
 // Minimal Paper2D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D pipeline
 // comparison (issue #55). A sprite driven by WASD/arrow input in world-space top-down
@@ -42,6 +43,12 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Paper2DPrototype")
 	TObjectPtr<UCameraComponent> TopDownCamera;
+
+	// Makes real per-hit energy tracking (issue #78) reachable from this pawn, so
+	// UEnergyMeterWidget::BindToEnergyComponent() (issue #132) and
+	// AEnemyBase::FindPlayerEnergyComponent() have a live component to find.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Paper2DPrototype")
+	TObjectPtr<UPlayerEnergyComponent> PlayerEnergyComponent;
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
