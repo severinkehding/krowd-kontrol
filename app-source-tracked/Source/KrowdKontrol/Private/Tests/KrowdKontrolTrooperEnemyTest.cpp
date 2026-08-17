@@ -12,6 +12,8 @@
 
 #include "Misc/AutomationTest.h"
 #include "TrooperEnemy.h"
+#include "SniperEnemy.h"
+#include "BomberEnemy.h"
 #include "ReservedGameplayColours.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
@@ -276,12 +278,16 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 		{
 			TestFalse(TEXT("AttackTellSound should default to a configured placeholder asset, not be left unset"),
 				DefaultSoundTrooper->AttackTellSound.IsNull());
-			TestNotEqual(TEXT("Trooper's default tell must differ from Sniper's, so all three enemies are audibly distinct"),
+			// Compared against live sibling instances, not hardcoded path literals, so
+			// this stays correct if ASniperEnemy's/ABomberEnemy's own defaults ever change.
+			ASniperEnemy* SniperRef = NewObject<ASniperEnemy>();
+			ABomberEnemy* BomberRef = NewObject<ABomberEnemy>();
+			TestNotEqual(TEXT("Trooper's default tell must differ from Sniper's actual current default, so all three enemies are audibly distinct"),
 				DefaultSoundTrooper->AttackTellSound.ToSoftObjectPath().ToString(),
-				FString(TEXT("/Engine/EngineSounds/1kSineTonePing.1kSineTonePing")));
-			TestNotEqual(TEXT("Trooper's default tell must differ from Bomber's, so all three enemies are audibly distinct"),
+				SniperRef->AttackTellSound.ToSoftObjectPath().ToString());
+			TestNotEqual(TEXT("Trooper's default tell must differ from Bomber's actual current default, so all three enemies are audibly distinct"),
 				DefaultSoundTrooper->AttackTellSound.ToSoftObjectPath().ToString(),
-				FString(TEXT("/Engine/EngineSounds/WhiteNoise.WhiteNoise")));
+				BomberRef->AttackTellSound.ToSoftObjectPath().ToString());
 			AdvanceToAttack(DefaultSoundTrooper, ZeroDistanceLocation);
 			TestNotNull(TEXT("Entering Attack with the default AttackTellSound should spawn an audio cue"),
 				DefaultSoundTrooper->AttackTellAudioComponent.Get());
@@ -334,6 +340,17 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 					ReplayGuardListener->CallCount, 0);
 			}
 		}
+	}
+
+	// (r) OnAttackEntry's sound-spawn call must degrade gracefully for actors without a
+	// real UWorld (SpawnSoundAtLocation needs a world context) - a combination this PR
+	// makes reachable for the first time via every NewObject-only case above (a)-(l).
+	ATrooperEnemy* WorldlessTrooper = NewObject<ATrooperEnemy>();
+	if (TestNotNull(TEXT("ATrooperEnemy should construct without a UWorld"), WorldlessTrooper))
+	{
+		AdvanceToAttack(WorldlessTrooper, ZeroDistanceLocation);
+		TestNull(TEXT("SpawnSoundAtLocation should no-op (not crash) for an actor with no real UWorld"),
+			WorldlessTrooper->AttackTellAudioComponent.Get());
 	}
 
 	return true;
