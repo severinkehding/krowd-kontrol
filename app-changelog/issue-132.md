@@ -47,7 +47,8 @@ D-009, so this is a plain-text copy for review — `app/` itself is unchanged in
 | `app/Source/KrowdKontrol/KrowdKontrolGameMode.cpp` | CREATE | Constructor sets `PlayerControllerClass = AKrowdKontrolPlayerController::StaticClass()` |
 | `app/Source/KrowdKontrol/FlatCamera3DPrototypePawn.h`/`.cpp` | UPDATE | Adds `UPlayerEnergyComponent` subobject, mirroring the existing `AbilityUnlockComponent` pattern |
 | `app/Source/KrowdKontrol/Paper2DPrototypePawn.h`/`.cpp` | UPDATE | Same `UPlayerEnergyComponent` addition (no `AbilityUnlockComponent` added here — not requested, tray's `BindAbilityUnlockComponent(nullptr)` no-ops safely) |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolHUDWiringTest.cpp` | CREATE | `KrowdKontrol.Unit.HUDWiring` — spawns pawn + controller, asserts both widgets construct on `BeginPlay()` and the tray reflects bound unlock state (Stun unlocked, Sleep locked) |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolHUDWiringTest.cpp` | UPDATE | `KrowdKontrol.Unit.HUDWiring` — spawns pawn + controller, asserts both widgets construct on `BeginPlay()` and the tray reflects bound unlock state (Stun unlocked, Sleep locked); post-review, also asserts the energy meter's bound state (fraction moves off its 0.72 placeholder), exercises `OnPossess()`'s own wiring call against pre-existing widgets (not just `BeginPlay()`'s fallback re-wire), and spawns `APaper2DPrototypePawn` to cover the null-`AbilityUnlockComponent` path and confirm its `PlayerEnergyComponent` |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolGameModeTest.cpp` | CREATE | `KrowdKontrol.Unit.GameModeSetsPlayerController` — asserts `AKrowdKontrolGameMode::PlayerControllerClass` points at `AKrowdKontrolPlayerController`, closing the last untested link in the HUD-reachability chain (added post-review) |
 | `app/Config/DefaultEngine.ini` | UPDATE | Adds `GlobalDefaultGameMode=/Script/KrowdKontrol.KrowdKontrolGameMode` under `[/Script/EngineSettings.GameMapsSettings]` — **not mirrored to `app-source-tracked/`** (D-009's `.h`/`.cpp`/`.Build.cs`-only scope), so this line is invisible in the tracked diff; called out here explicitly per the investigation's own flag |
 
 ## Acceptance criteria
@@ -77,7 +78,7 @@ D-009, so this is a plain-text copy for review — `app/` itself is unchanged in
 ```
 HARNESS_START mode=full driver=cli
 STATIC_SKIPPED no 'static' command in harness.config.json
-UNIT_PASSED tests=36
+UNIT_PASSED tests=37
 APP_STARTED driver=cli
 UE_AUTOMATION_RESULT passed=1 total=1
 UE_AUTOMATION_OK
@@ -87,14 +88,15 @@ MUTATIONS_ABSENT no harness/mutations/run.py
 GATE_OK mode=full
 ```
 
-36/36 `KrowdKontrol.Unit.*` tests pass (including the new
-`KrowdKontrol.Unit.HUDWiring`, up from 33 pre-implementation), plus a real UE
-Automation Framework run (1/1) and a full E2E pass (1/1 step) — all against a binary
-actually rebuilt from this change's source (confirmed via direct
-`UnrealBuildTool.dll` invocation during implementation, not just the harness's
-launch-only path, after a stale-binary false-green was caught and ruled out). Hard
-invariants #1-#8 reviewed against the diff and not implicated / holding — see
-`validation.md` Phase 3.
+37/37 `KrowdKontrol.Unit.*` tests pass (including `KrowdKontrol.Unit.HUDWiring`'s
+expanded coverage and the new `KrowdKontrol.Unit.GameModeSetsPlayerController`, up
+from 36 pre-review-fixes / 33 pre-implementation), plus a real UE Automation
+Framework run (1/1) and a full E2E pass (1/1 step) — all against a binary actually
+rebuilt from this change's source (confirmed via direct `UnrealBuildTool.dll`
+invocation, not just the harness's launch-only path; re-confirmed again after the
+review-driven test additions below, since the harness's `cli` driver launches the
+Editor but does not itself trigger a recompile). Hard invariants #1-#8 reviewed
+against the diff and not implicated / holding — see `validation.md` Phase 3.
 
 ## Notes
 
@@ -107,6 +109,19 @@ unnecessary — removed), and a `CreateWidget()` runtime failure requiring a rea
 `ULocalPlayer` rather than just the `SetAsLocalPlayerController()` bool flag (fixed
 by constructing one via `NewObject<ULocalPlayer>(GEngine)` in the test). No
 production-code deviations from the investigation's plan.
+
+**Post-review test-coverage fixes** (self-fix pass on PR #133, aggressive mode): the
+review flagged that the energy meter's *bound* state was never asserted (only its
+construction was), that `OnPossess()`'s own wiring call was never exercised
+independently of `BeginPlay()`'s defensive fallback re-wire, that no test spawned
+`APaper2DPrototypePawn` (the pawn that actually exercises the null-
+`AbilityUnlockComponent` path), and that `AKrowdKontrolGameMode` had zero coverage
+for the one line that makes the whole feature reachable. All four gaps are closed by
+the `KrowdKontrolHUDWiringTest.cpp` additions and the new
+`KrowdKontrolGameModeTest.cpp` above — no production code changed. The one review
+finding not acted on (docs-impact's suggestion to record a "HUD ownership" convention
+in `CLAUDE.md`) was skipped because `CLAUDE.md` is a protected path the factory
+cannot edit; flagged for a human maintainer per the review itself.
 
 The full implementation and validation record for this issue lives in
 `/home/severin/.archon/workspaces/severinkehding/krowd-kontrol/artifacts/runs/f9703f816ff3c8ea4435d92912bf374e/implementation.md`

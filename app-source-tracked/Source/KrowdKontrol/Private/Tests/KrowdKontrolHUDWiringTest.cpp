@@ -12,6 +12,7 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "EnergyMeterWidget.h"
 #include "FlatCamera3DPrototypePawn.h"
+#include "Paper2DPrototypePawn.h"
 #include "AbilityUnlockComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "AbilitySlot.h"
@@ -83,6 +84,72 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Sleep should read locked (not yet unlocked this run)"),
 			Controller->AbilityTrayWidget->IsSlotLocked(EAbilitySlot::Sleep));
 	}
+
+	if (TestNotNull(TEXT("Energy meter should be bound"), ToRawPtr(Controller->EnergyMeterWidgetInstance)))
+	{
+		// The widget seeds itself to the 0.72 placeholder fraction on construction; the
+		// pawn's UPlayerEnergyComponent::BeginPlay() never runs in this test (only the
+		// controller's DispatchBeginPlay() does), so its CurrentEnergy stays at the
+		// default-constructed 0.0f. A successful BindToEnergyComponent() call therefore
+		// drives the displayed fraction from 0.72 down to 0.0 - proof the bind actually
+		// happened, not just that the widget was constructed.
+		TestEqual(TEXT("Energy meter fraction should move off the 0.72 placeholder once bound"),
+			Controller->EnergyMeterWidgetInstance->GetDisplayedFraction(), 0.0f);
+	}
+
+	// Second controller/pawn pair, opposite ordering from the one above: widgets are
+	// constructed first (DispatchBeginPlay), then Possess() runs against already-existing
+	// widgets. This exercises OnPossess()'s own WireWidgetsToPawn() call directly, rather
+	// than relying on BeginPlay()'s defensive re-wire to satisfy the assertions.
+	AFlatCamera3DPrototypePawn* Pawn2 = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+	if (!TestNotNull(TEXT("Second pawn should spawn"), Pawn2))
+	{
+		return false;
+	}
+
+	AKrowdKontrolPlayerController* Controller2 = World->SpawnActor<AKrowdKontrolPlayerController>();
+	if (!TestNotNull(TEXT("Second controller should spawn"), Controller2))
+	{
+		return false;
+	}
+	Controller2->Player = NewObject<ULocalPlayer>(GEngine);
+	Controller2->SetAsLocalPlayerController();
+	Controller2->DispatchBeginPlay();
+	Controller2->Possess(Pawn2);
+
+	if (TestNotNull(TEXT("Ability tray should be bound via OnPossess"), ToRawPtr(Controller2->AbilityTrayWidget)))
+	{
+		TestFalse(TEXT("Stun should read unlocked after OnPossess-driven wiring"),
+			Controller2->AbilityTrayWidget->IsSlotLocked(EAbilitySlot::Stun));
+	}
+
+	// Third controller/pawn pair: APaper2DPrototypePawn has no AbilityUnlockComponent, so
+	// FindComponentByClass<UAbilityUnlockComponent>() returns nullptr here -
+	// BindAbilityUnlockComponent(nullptr) must no-crash and leave the tray's
+	// default-constructed locked state untouched. This is the pawn/path combination this
+	// PR's own review focus flagged as needing a spot-check.
+	APaper2DPrototypePawn* Paper2DPawn = World->SpawnActor<APaper2DPrototypePawn>();
+	if (!TestNotNull(TEXT("Paper2D pawn should spawn"), Paper2DPawn))
+	{
+		return false;
+	}
+
+	AKrowdKontrolPlayerController* Controller3 = World->SpawnActor<AKrowdKontrolPlayerController>();
+	if (!TestNotNull(TEXT("Third controller should spawn"), Controller3))
+	{
+		return false;
+	}
+	Controller3->Possess(Paper2DPawn);
+	Controller3->Player = NewObject<ULocalPlayer>(GEngine);
+	Controller3->SetAsLocalPlayerController();
+	Controller3->DispatchBeginPlay();
+
+	TestNotNull(TEXT("Widgets still construct for a pawn without AbilityUnlockComponent"),
+		ToRawPtr(Controller3->AbilityTrayWidget));
+	// Also confirms the Paper2D pawn's own PlayerEnergyComponent wiring - it is spawned
+	// through the controller flow above rather than only in isolation.
+	TestNotNull(TEXT("Paper2D pawn should have a PlayerEnergyComponent"),
+		Paper2DPawn->FindComponentByClass<UPlayerEnergyComponent>());
 
 	return true;
 }
