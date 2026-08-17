@@ -37,15 +37,32 @@ record of that change, see the closing note below)
       reaches `Active`; scenario 2 (same 3 enemies, `CrowdThreshold=8`) stays
       `Inactive`.
 - [x] **No-match and empty-array cases are safe no-ops.** Scenario 3 (`LevelIndex`
-      not present, non-empty array) warns and leaves fields unchanged; scenario 4
-      (empty `LevelThresholds`) silently leaves fields unchanged — existing
-      placements that never call `NotifyLevelReached` are unaffected.
+      not present, non-empty array) warns (asserted via `AddExpectedError`) and
+      leaves fields unchanged; scenario 4 (empty `LevelThresholds`) silently leaves
+      fields unchanged — existing placements that never call `NotifyLevelReached`
+      are unaffected. Both scenarios also drive a real World/enemy setup to prove
+      an in-progress `UncontrolledSeconds` accumulation survives the no-op path,
+      not just that the 3 public threshold fields do.
 - [x] **In-progress `UncontrolledSeconds` accumulation does not carry over across a
       level-threshold change.** Scenario 5 accumulates a partial duration, calls
       `NotifyLevelReached`, and confirms the reset accumulator does not trip the
       new threshold early.
 - [x] **No regression in `KrowdKontrol.Unit.OvercrowdDetectionComponent` or any
       other existing test.** Full `KrowdKontrol.Unit.` sweep passed (45/45).
+
+## Post-review hardening
+
+PR review flagged that the initial 5 scenarios all configured `LevelThresholds`
+with a single entry, so the array's actual job — picking the matching entry out
+of several configured levels via `FindByPredicate` — was never exercised; a
+regression to first-entry/index-based access would have passed every scenario
+unchanged. Addressed by extending scenario 1's `LevelThresholds` to 3 entries
+(2 decoys with `CrowdThreshold=99`, positioned before and after the real entry)
+and asserting the matching entry's values are applied, not a decoy's. Review
+also flagged that `NotifyLevelReached`'s one-directional `CurrentState`
+invariant (Inactive→Active-only) was verified by code inspection only, not by
+a test — closed by re-notifying scenario 1's component after it reaches
+`Active` and asserting the state does not change.
 
 ## Validation
 
