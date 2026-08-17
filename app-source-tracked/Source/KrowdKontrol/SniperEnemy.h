@@ -63,9 +63,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
 	float AttackTellIntensity = 2000.0f;
 
-	// Placeholder-first (MISSION.md): left unset is a normal, non-error state until a
-	// real sound distinguishable from the other 3 enemy types' tells is sourced - same
-	// rationale UMusicSubsystem::CalmTrack/CombatTrack document.
+	// Defaults to /Engine/EngineSounds/1kSineTonePing (set in the constructor via
+	// ConstructorHelpers::FObjectFinder, same pattern as MeshComponent's ConeMeshFinder
+	// below) so issue #36's "a distinct sound effect plays" AC is met out of the box,
+	// not left silent pending designer configuration - unlike
+	// UMusicSubsystem::CalmTrack/CombatTrack, which are legitimately Config-driven
+	// because a designer places real music later. This is still placeholder-first
+	// (MISSION.md): a primitive built-in engine tone standing in until a real,
+	// per-enemy-type-distinguishable sound is sourced. Still Blueprint/Details-panel
+	// overridable.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
 	TSoftObjectPtr<USoundBase> AttackTellSound;
 

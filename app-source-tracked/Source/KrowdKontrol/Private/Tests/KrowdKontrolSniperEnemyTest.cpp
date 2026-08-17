@@ -265,18 +265,38 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// (o) without a configured AttackTellSound, entering Attack must not spawn an audio
-	// cue and must not crash - placeholder-first, matching UMusicSubsystem's
-	// CalmTrack/CombatTrack-unset precedent. No assertion on the warning log itself (no
-	// existing test in this module asserts UE_LOG output).
+	// (o) AttackTellSound now defaults to a real placeholder asset (constructor's
+	// AttackTellSoundFinder, issue #36 AC: "a distinct sound effect plays" out of the
+	// box) rather than being left unset, so a freshly spawned, unconfigured
+	// ASniperEnemy must actually spawn an audio cue on Attack entry.
+	UWorld* DefaultSoundWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the default-audio test"), DefaultSoundWorld))
+	{
+		ASniperEnemy* DefaultSoundSniper = DefaultSoundWorld->SpawnActor<ASniperEnemy>();
+		if (TestNotNull(TEXT("ASniperEnemy should spawn into the default-audio test World"), DefaultSoundSniper))
+		{
+			TestFalse(TEXT("AttackTellSound should default to a configured placeholder asset, not be left unset"),
+				DefaultSoundSniper->AttackTellSound.IsNull());
+			AdvanceToAttack(DefaultSoundSniper, ZeroDistanceLocation);
+			TestNotNull(TEXT("Entering Attack with the default AttackTellSound should spawn an audio cue"),
+				DefaultSoundSniper->AttackTellAudioComponent.Get());
+		}
+	}
+
+	// (p) the graceful, no-crash fallback is still exercised for the defensive case an
+	// explicit override (Blueprint/Details panel) clears AttackTellSound back to unset -
+	// same placeholder-first shape UMusicSubsystem's CalmTrack/CombatTrack document. No
+	// assertion on the warning log itself (no existing test in this module asserts
+	// UE_LOG output).
 	UWorld* SilentWorld = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the silent-audio test"), SilentWorld))
 	{
 		ASniperEnemy* SilentSniper = SilentWorld->SpawnActor<ASniperEnemy>();
 		if (TestNotNull(TEXT("ASniperEnemy should spawn into the silent-audio test World"), SilentSniper))
 		{
+			SilentSniper->AttackTellSound = nullptr;
 			AdvanceToAttack(SilentSniper, ZeroDistanceLocation);
-			TestNull(TEXT("Entering Attack without a configured AttackTellSound should not spawn an audio cue"),
+			TestNull(TEXT("Entering Attack with AttackTellSound explicitly cleared should not spawn an audio cue"),
 				SilentSniper->AttackTellAudioComponent.Get());
 		}
 	}
