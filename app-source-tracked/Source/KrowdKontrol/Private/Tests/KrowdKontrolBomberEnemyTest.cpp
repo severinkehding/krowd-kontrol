@@ -67,6 +67,22 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("glow attached to mesh"), CoreGlow->GetAttachParent() == Mesh);
 	TestEqual(TEXT("glow attenuation radius"), CoreGlow->AttenuationRadius, 300.0f);
 
+	// (b2) Elite trim light (issue #19): exists, attached to MeshComponent, colour
+	// non-reserved. Checked here (early, on the original un-GC'd Bomber) rather than
+	// at the end of this test after dozens more NewObject<>() instances and several
+	// CreateNewMap() calls have run - a NewObject<>()-constructed actor held only by
+	// a local pointer has no GC roots, and asserting on it this late risked it having
+	// already been collected by an incidental GC pass triggered by the later, heavier
+	// cases (reproduced empirically: intermittent null failures when checked late).
+	if (TestNotNull(TEXT("ABomberEnemy should have an EliteTrimLightComponent"), Bomber->EliteTrimLightComponent.Get()))
+	{
+		TestTrue(TEXT("EliteTrimLightComponent should be attached to MeshComponent"),
+			Bomber->EliteTrimLightComponent->GetAttachParent() == Mesh);
+		TestFalse(TEXT("EliteTrimLightComponent colour should not collide with a reserved gameplay-information colour"),
+			ReservedGameplayColours::GetAll().ContainsByPredicate(
+				[Bomber](const FLinearColor& Reserved) { return Reserved.Equals(Bomber->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
+	}
+
 	// Drives Idle -> Alert -> Attack via two detection checks - shared below.
 	auto AdvanceToAttack = [](ABomberEnemy* TargetBomber, const FVector& PlayerLocation)
 	{

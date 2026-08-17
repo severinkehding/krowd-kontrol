@@ -22,6 +22,8 @@
 #include "PlaceholderTargetZoneActor.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "RunnerEnemy.h"
+#include "EnemyBase.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -307,6 +309,67 @@ bool FKrowdKontrolWaveSpawnerComponentTest::RunTest(const FString& Parameters)
 		// Also confirm the whole lifecycle still doesn't crash, mirroring what actually
 		// happens when a registered component is destroyed mid-sequence.
 		Spawner->DestroyComponent();
+	}
+
+	// (8) FWaveEntry.bIsElite = true (issue #19) produces a spawned AEnemyBase
+	// instance with bIsElite == true, through the real spawn path - not just
+	// constructible in isolation via SetIsElite() directly.
+	{
+		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
+		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
+		{
+			return false;
+		}
+		Spawner->RegisterComponent();
+
+		FWaveEntry EliteWave;
+		EliteWave.EnemyClass = ARunnerEnemy::StaticClass();
+		EliteWave.Count = 1;
+		EliteWave.DelaySeconds = 0.0f;
+		EliteWave.bIsElite = true;
+
+		Spawner->Waves = { EliteWave };
+		Spawner->StartWaves();
+
+		if (TestEqual(TEXT("Elite wave should spawn exactly one actor"),
+			Spawner->GetSpawnedActors().Num(), 1))
+		{
+			AEnemyBase* SpawnedEnemy = Cast<AEnemyBase>(Spawner->GetSpawnedActors()[0]);
+			if (TestNotNull(TEXT("Spawned actor should be an AEnemyBase"), SpawnedEnemy))
+			{
+				TestTrue(TEXT("bIsElite = true on the wave entry should set bIsElite on the spawned enemy"),
+					SpawnedEnemy->bIsElite);
+			}
+		}
+	}
+
+	// (9) The default bIsElite = false leaves the spawned actor unaffected.
+	{
+		UWaveSpawnerComponent* Spawner = NewObject<UWaveSpawnerComponent>(OwnerActor);
+		if (!TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
+		{
+			return false;
+		}
+		Spawner->RegisterComponent();
+
+		FWaveEntry NonEliteWave;
+		NonEliteWave.EnemyClass = ARunnerEnemy::StaticClass();
+		NonEliteWave.Count = 1;
+		NonEliteWave.DelaySeconds = 0.0f;
+
+		Spawner->Waves = { NonEliteWave };
+		Spawner->StartWaves();
+
+		if (TestEqual(TEXT("Non-elite wave should spawn exactly one actor"),
+			Spawner->GetSpawnedActors().Num(), 1))
+		{
+			AEnemyBase* SpawnedEnemy = Cast<AEnemyBase>(Spawner->GetSpawnedActors()[0]);
+			if (TestNotNull(TEXT("Spawned actor should be an AEnemyBase"), SpawnedEnemy))
+			{
+				TestFalse(TEXT("bIsElite = false (default) on the wave entry should leave the spawned enemy non-Elite"),
+					SpawnedEnemy->bIsElite);
+			}
+		}
 	}
 
 	return true;

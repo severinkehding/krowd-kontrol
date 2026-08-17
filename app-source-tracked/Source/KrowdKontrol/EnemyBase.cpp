@@ -3,6 +3,7 @@
 #include "GameFramework/Pawn.h"
 #include "PlayerEnergyComponent.h"
 #include "EngineUtils.h"
+#include "Components/PointLightComponent.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -83,7 +84,7 @@ void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSec
 	{
 		return;
 	}
-	const float MoveDistance = FMath::Min(DistanceRemaining, GetMovementSpeedUnitsPerSecond() * DeltaSeconds);
+	const float MoveDistance = FMath::Min(DistanceRemaining, GetEffectiveMovementSpeedUnitsPerSecond() * DeltaSeconds);
 	SetActorLocation(GetActorLocation() + ToPlayer.GetSafeNormal() * MoveDistance);
 }
 
@@ -128,4 +129,18 @@ EThreatState AEnemyBase::GetThreatState() const
 		|| CurrentState == EEnemyState::Attack
 		|| CurrentState == EEnemyState::Controlled;
 	return bIsEngaged ? EThreatState::Hot : EThreatState::Idle;
+}
+
+void AEnemyBase::SetIsElite(bool bNewIsElite)
+{
+	bIsElite = bNewIsElite;
+	if (UPointLightComponent* TrimLight = GetEliteTrimLightComponent())
+	{
+		TrimLight->SetIntensity(bIsElite ? EliteTrimIntensity : 0.0f);
+	}
+}
+
+float AEnemyBase::GetEffectiveMovementSpeedUnitsPerSecond() const
+{
+	return GetMovementSpeedUnitsPerSecond() * (bIsElite ? EliteMovementSpeedMultiplier : 1.0f);
 }

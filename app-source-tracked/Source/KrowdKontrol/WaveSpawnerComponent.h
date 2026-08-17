@@ -28,6 +28,14 @@ struct FWaveEntry
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Wave", meta = (ClampMin = "0.0"))
 	float DelaySeconds = 0.0f;
+
+	// When true, SpawnWave() calls AEnemyBase::SetIsElite(true) on this entry's
+	// spawned actors after spawning (issue #19). No-op (with a warning, see .cpp) if
+	// EnemyClass doesn't derive from AEnemyBase - this field has no opinion on which
+	// EnemyClass is assigned, matching EnemyType's own "tag only, resolving to a
+	// class is the caller's job" philosophy.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Wave")
+	bool bIsElite = false;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWaveSpawned, int32, WaveIndex);

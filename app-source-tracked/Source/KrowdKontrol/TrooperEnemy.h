@@ -45,6 +45,13 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Trooper")
 	TObjectPtr<UPointLightComponent> AttackTellLightComponent;
 
+	// Elite configuration (PRD 03 REQ-4, issue #19): non-reserved secondary trim
+	// light, lit only while AEnemyBase::bIsElite is true - see
+	// AEnemyBase::GetEliteTrimLightComponent()'s comment for why this is declared
+	// per-subclass rather than once on AEnemyBase.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Trooper")
+	TObjectPtr<UPointLightComponent> EliteTrimLightComponent;
+
 	// Rapid cadence - clearly shorter than Sniper's 1.2f and Bomber's 2.0f, reflecting
 	// "rapid" in the PRD table.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trooper", meta = (ClampMin = "0.0"))
@@ -80,6 +87,7 @@ public:
 
 protected:
 	virtual float GetAttackRangeUnits() const override;
+	virtual UPointLightComponent* GetEliteTrimLightComponent() const override { return EliteTrimLightComponent; }
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
 	virtual void Tick(float DeltaTime) override;

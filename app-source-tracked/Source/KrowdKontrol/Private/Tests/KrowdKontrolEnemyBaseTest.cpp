@@ -24,6 +24,8 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "ReservedGameplayColours.h"
+#include "Components/PointLightComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -368,6 +370,41 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 				FVector::Dist(FreshChaser->GetActorLocation(), BeforeFirstTick) > 0.0f);
 		}
 	}
+
+	// (v) default Elite state: bIsElite false, effective speed equals the base
+	// GetMovementSpeedUnitsPerSecond() unmultiplied, trim light off.
+	AEnemyBaseTestActor* EliteDefaultEnemy = NewObject<AEnemyBaseTestActor>();
+	TestFalse(TEXT("bIsElite should default to false"), EliteDefaultEnemy->bIsElite);
+	TestEqual(TEXT("Default effective movement speed should equal the unmultiplied base speed"),
+		EliteDefaultEnemy->GetEffectiveMovementSpeedUnitsPerSecond(), 600.0f);
+	if (TestNotNull(TEXT("EliteTrimLightComponent should exist"), EliteDefaultEnemy->EliteTrimLightComponent.Get()))
+	{
+		TestEqual(TEXT("Elite trim light should be off by default"),
+			EliteDefaultEnemy->EliteTrimLightComponent->Intensity, 0.0f);
+	}
+
+	// (w) SetIsElite(true) turns the trim light on and multiplies effective speed.
+	AEnemyBaseTestActor* EliteEnemy = NewObject<AEnemyBaseTestActor>();
+	EliteEnemy->SetIsElite(true);
+	TestTrue(TEXT("SetIsElite(true) should set bIsElite"), EliteEnemy->bIsElite);
+	TestEqual(TEXT("Elite trim light should turn on once bIsElite is true"),
+		EliteEnemy->EliteTrimLightComponent->Intensity, EliteEnemy->EliteTrimIntensity);
+	TestEqual(TEXT("Effective movement speed should be multiplied while Elite"),
+		EliteEnemy->GetEffectiveMovementSpeedUnitsPerSecond(), 600.0f * EliteEnemy->EliteMovementSpeedMultiplier);
+
+	// (x) SetIsElite(false) reverts both the flag and the light intensity.
+	EliteEnemy->SetIsElite(false);
+	TestFalse(TEXT("SetIsElite(false) should clear bIsElite"), EliteEnemy->bIsElite);
+	TestEqual(TEXT("Elite trim light should turn back off once bIsElite is false"),
+		EliteEnemy->EliteTrimLightComponent->Intensity, 0.0f);
+	TestEqual(TEXT("Effective movement speed should revert to the unmultiplied base speed"),
+		EliteEnemy->GetEffectiveMovementSpeedUnitsPerSecond(), 600.0f);
+
+	// (y) Elite trim colour must not collide with any of the 5 reserved gameplay-
+	// information colours.
+	TestFalse(TEXT("EliteTrimLightComponent colour should not collide with a reserved colour"),
+		ReservedGameplayColours::GetAll().ContainsByPredicate(
+			[EliteEnemy](const FLinearColor& Reserved) { return Reserved.Equals(EliteEnemy->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 
 	return true;
 }

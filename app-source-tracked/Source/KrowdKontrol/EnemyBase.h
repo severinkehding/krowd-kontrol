@@ -7,6 +7,7 @@
 #include "EnemyBase.generated.h"
 
 class UPlayerEnergyComponent;
+class UPointLightComponent;
 
 // Idle -> Alert -> Attack -> Controlled -> Banked, with Banked as the only reachable
 // "defeated" state. Transition table (no other edges exist):
@@ -60,6 +61,7 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolMusicSubsystemTest;
 	friend class FKrowdKontrolOvercrowdDetectionComponentTest;
 	friend class FKrowdKontrolOvercrowdAudioSubsystemTest;
+	friend class FKrowdKontrolOvercrowdLevelThresholdTest;
 
 public:
 	AEnemyBase();
@@ -90,6 +92,33 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy")
 	void TransitionToBanked();
 
+	// Elite configuration (PRD 03 REQ-4, issue #19): a secondary, non-reserved trim
+	// colour plus a movement-speed multiplier layered on top of this type's own
+	// GetMovementSpeedUnitsPerSecond() override - never a 5th EEnemyType or a new
+	// subclass, per MISSION.md Hard Invariant 5. False (and multiplier inert) unless
+	// SetIsElite(true) is called - normal spawns are entirely unaffected.
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Elite")
+	bool bIsElite = false;
+
+	// Applied on top of GetMovementSpeedUnitsPerSecond() only while bIsElite is true -
+	// see GetEffectiveMovementSpeedUnitsPerSecond(). EditDefaultsOnly so each concrete
+	// type/Blueprint can tune its own Elite speed bump independently, satisfying the
+	// issue's "configurable per enemy type" AC without needing a per-type override.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Elite", meta = (ClampMin = "1.0"))
+	float EliteMovementSpeedMultiplier = 1.3f;
+
+	// Trim-light intensity while bIsElite is true (0.0f while false) - see
+	// GetEliteTrimLightComponent()/SetIsElite().
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Elite")
+	float EliteTrimIntensity = 1600.0f;
+
+	// Toggles bIsElite and the trim light's visibility together, so the two can never
+	// desync. BlueprintCallable so UWaveSpawnerComponent::SpawnWave() (a plain
+	// AActor* spawn path) can call it post-spawn via a Cast<AEnemyBase>, same shape as
+	// ReceiveControl()/TransitionToBanked() above.
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Elite")
+	void SetIsElite(bool bNewIsElite);
+
 protected:
 	virtual void Tick(float DeltaTime) override;
 
@@ -104,6 +133,22 @@ protected:
 	// UCharacterMovementComponent's engine-default MaxWalkSpeed (600.0f), the same
 	// "normal" reference point BomberEnemy.h's MovementSpeed comment already cites.
 	virtual float GetMovementSpeedUnitsPerSecond() const { return 600.0f; }
+
+	// GetMovementSpeedUnitsPerSecond() * (bIsElite ? EliteMovementSpeedMultiplier :
+	// 1.0f) - TickChaseMovement calls this, not GetMovementSpeedUnitsPerSecond()
+	// directly, so every concrete type's existing per-type override (issue #122)
+	// gets the Elite bump for free with zero change to any of the 4 override
+	// implementations themselves.
+	float GetEffectiveMovementSpeedUnitsPerSecond() const;
+
+	// Each concrete subclass's own non-reserved secondary trim light, lit only while
+	// bIsElite is true - overridden to return that subclass's own EliteTrimLightComponent
+	// property (see RunnerEnemy.h etc.), the same per-type-property shape every other
+	// type-tied component (AttackTellLightComponent, DrainGlowLightComponent/
+	// CoreGlowLightComponent/GlowLightComponent/EyeGlowLightComponent) already uses.
+	// Base default nullptr, same "safe base default" shape as GetAttackRangeUnits()
+	// above - SetIsElite() below null-checks before use.
+	virtual UPointLightComponent* GetEliteTrimLightComponent() const { return nullptr; }
 
 	// TActorIterator, not UGameplayStatics::GetPlayerPawn() - the latter needs a
 	// driven World->BeginPlay() pass this module's Automation tests never run.

@@ -96,6 +96,22 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(Runner->EnemyTypeIndicatorComponent->EnemyType),
 		static_cast<uint8>(EEnemyType::RU_NNR));
 
+	// (b3) Elite trim light (issue #19): exists, attached to MeshComponent, colour
+	// non-reserved. Checked here (early, on the original un-GC'd Runner) rather than
+	// at the end of this test after dozens more NewObject<>() instances and several
+	// CreateNewMap() calls have run - a NewObject<>()-constructed actor held only by
+	// a local pointer has no GC roots, and asserting on it this late risked it having
+	// already been collected by an incidental GC pass triggered by the later, heavier
+	// cases (reproduced empirically: intermittent null failures when checked late).
+	if (TestNotNull(TEXT("ARunnerEnemy should have an EliteTrimLightComponent"), Runner->EliteTrimLightComponent.Get()))
+	{
+		TestTrue(TEXT("EliteTrimLightComponent should be attached to MeshComponent"),
+			Runner->EliteTrimLightComponent->GetAttachParent() == Mesh);
+		TestFalse(TEXT("EliteTrimLightComponent colour should not collide with a reserved gameplay-information colour"),
+			ReservedGameplayColours::GetAll().ContainsByPredicate(
+				[Runner](const FLinearColor& Reserved) { return Reserved.Equals(Runner->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
+	}
+
 	// Drives a runner from Idle straight through to Attack via two zero/mid-distance
 	// detection checks (Idle -> Alert -> Attack) - shared by every case below that
 	// needs a runner already in Attack.
