@@ -25,6 +25,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "AbilityCooldownTrayWidget.h"
+#include "AbilityData.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Blueprint/WidgetTree.h"
@@ -71,6 +72,8 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		if (TestNotNull(*FString::Printf(TEXT("SlotIconBorders[%d] content should be a UTextBlock"), Index), IconLabel))
 		{
 			TestEqual(*FString::Printf(TEXT("Slot %d label text"), Index), IconLabel->GetText().ToString(), FString(ExpectedSlotLabels[Index]));
+			TestEqual(*FString::Printf(TEXT("Slot %d icon label colour should match AbilityData's reserved colour"), Index),
+				IconLabel->GetColorAndOpacity().GetSpecifiedColor(), AbilityData::Get(static_cast<EAbilitySlot>(Index)).Colour);
 		}
 	}
 
@@ -79,6 +82,25 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	// must not drift onto one of those values.
 	TestEqual(TEXT("Icon border background should match the reserved-colour-safe chrome constant"),
 		Widget->SlotIconBorders[0]->GetBrushColor(), FLinearColor(0.05f, 0.05f, 0.05f, 0.92f));
+
+	// (a3) Shape/glyph distinctness (PRD 13 REQ-7 / issue #76) - each slot's label
+	// text differs from every other slot's, independent of whatever colour is
+	// applied, so a colourblind player can identify a slot from text alone.
+	for (int32 i = 0; i < UAbilityCooldownTrayWidget::NumAbilitySlots; ++i)
+	{
+		for (int32 j = i + 1; j < UAbilityCooldownTrayWidget::NumAbilitySlots; ++j)
+		{
+			TestNotEqual(*FString::Printf(TEXT("Slot %d and %d label text should be distinct"), i, j),
+				Widget->GetSlotIconLabelText(static_cast<EAbilitySlot>(i)).ToString(),
+				Widget->GetSlotIconLabelText(static_cast<EAbilitySlot>(j)).ToString());
+		}
+	}
+	for (int32 Index = 0; Index < UAbilityCooldownTrayWidget::NumAbilitySlots; ++Index)
+	{
+		const EAbilitySlot Slot = static_cast<EAbilitySlot>(Index);
+		TestEqual(*FString::Printf(TEXT("Slot %d GetSlotIconTintColour should match AbilityData"), Index),
+			Widget->GetSlotIconTintColour(Slot), AbilityData::Get(Slot).Colour);
+	}
 
 	// (b) Initial placeholder state - all 5 slots seeded on cooldown, with distinct
 	// durations, immediately after construction.
@@ -188,6 +210,8 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("Unbuilt widget should report 0 remaining seconds"), UnbuiltWidget->GetSlotRemainingSeconds(EAbilitySlot::Stun), 0.0f);
 	TestFalse(TEXT("Unbuilt widget should report not on cooldown"), UnbuiltWidget->IsSlotOnCooldown(EAbilitySlot::Stun));
 	TestTrue(TEXT("Unbuilt widget should report empty display text"), UnbuiltWidget->GetSlotCooldownDisplayText(EAbilitySlot::Stun).IsEmpty());
+	TestTrue(TEXT("Unbuilt widget should report empty icon label text"), UnbuiltWidget->GetSlotIconLabelText(EAbilitySlot::Stun).IsEmpty());
+	TestEqual(TEXT("Unbuilt widget should report black icon tint colour"), UnbuiltWidget->GetSlotIconTintColour(EAbilitySlot::Stun), FLinearColor::Black);
 	UnbuiltWidget->AdvanceCooldowns(1.0f);
 	UnbuiltWidget->StartCooldown(EAbilitySlot::Stun, 2.0f);
 	TestTrue(TEXT("AdvanceCooldowns()/StartCooldown() on an unbuilt tree should not crash"), true);

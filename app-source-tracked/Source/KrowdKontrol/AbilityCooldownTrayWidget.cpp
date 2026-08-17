@@ -8,12 +8,15 @@
 #include "Components/OverlaySlot.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
+#include "AbilityData.h"
 
 namespace
 {
-	// Short text labels, same order as EAbilitySlot - shape/text redundancy rather
-	// than colour-coded icons (no real ability art pipeline exists yet for this
-	// widget's scope).
+	// Short text labels, same order as EAbilitySlot - the shape/text differentiator
+	// (issue #66), now paired with a per-slot colour tint sourced from
+	// AbilityData::Get() (issue #76 / PRD 13 REQ-7). No real ability art pipeline
+	// exists yet for this widget's scope, so the label itself stays a text
+	// placeholder - only its colour changed.
 	const TCHAR* SlotLabels[UAbilityCooldownTrayWidget::NumAbilitySlots] = { TEXT("STN"), TEXT("SLP"), TEXT("ROT"), TEXT("FER"), TEXT("SNR") };
 }
 
@@ -92,6 +95,7 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 
 	SlotIconBorders.SetNum(NumAbilitySlots);
 	SlotCooldownTexts.SetNum(NumAbilitySlots);
+	SlotIconLabels.SetNum(NumAbilitySlots);
 	SlotCooldownRemaining.SetNum(NumAbilitySlots);
 	SlotCooldownDuration.SetNum(NumAbilitySlots);
 
@@ -106,8 +110,9 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 		IconBorder->SetBrushColor(ChromeBackgroundColor);
 		SlotOverlay->AddChildToOverlay(IconBorder);
 
+		const EAbilitySlot CurrentSlot = static_cast<EAbilitySlot>(Index);
 		UTextBlock* IconLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), *FString::Printf(TEXT("SlotIconLabel_%d"), Index));
-		IconLabel->SetColorAndOpacity(TextColor);
+		IconLabel->SetColorAndOpacity(FSlateColor(AbilityData::Get(CurrentSlot).Colour));
 		IconLabel->SetText(FText::FromString(SlotLabels[Index]));
 		IconBorder->SetContent(IconLabel);
 
@@ -118,6 +123,7 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 
 		SlotIconBorders[Index] = IconBorder;
 		SlotCooldownTexts[Index] = CooldownText;
+		SlotIconLabels[Index] = IconLabel;
 	}
 }
 
@@ -207,4 +213,24 @@ FText UAbilityCooldownTrayWidget::GetSlotCooldownDisplayText(EAbilitySlot Abilit
 		return FText::GetEmpty();
 	}
 	return SlotCooldownTexts[Index]->GetText();
+}
+
+FText UAbilityCooldownTrayWidget::GetSlotIconLabelText(EAbilitySlot AbilitySlot) const
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	if (!SlotIconLabels.IsValidIndex(Index) || !SlotIconLabels[Index])
+	{
+		return FText::GetEmpty();
+	}
+	return SlotIconLabels[Index]->GetText();
+}
+
+FLinearColor UAbilityCooldownTrayWidget::GetSlotIconTintColour(EAbilitySlot AbilitySlot) const
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	if (!SlotIconLabels.IsValidIndex(Index) || !SlotIconLabels[Index])
+	{
+		return FLinearColor::Black;
+	}
+	return SlotIconLabels[Index]->GetColorAndOpacity().GetSpecifiedColor();
 }
