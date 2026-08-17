@@ -6,6 +6,9 @@
 #include "ReservedGameplayColours.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
+#include "Sound/SoundBase.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/AudioComponent.h"
 
 ASniperEnemy::ASniperEnemy()
 {
@@ -84,6 +87,22 @@ void ASniperEnemy::OnAttackEntry()
 	AttackTellLightComponent->SetIntensity(AttackTellIntensity);
 	RemainingTelegraphSeconds = AttackTelegraphSeconds;
 	bShotFiredForCurrentAttack = false;
+
+	// Placeholder-first (MISSION.md): AttackTellSound left unset is a normal,
+	// non-error state until a real, per-enemy-type-distinguishable sound asset is
+	// sourced - same graceful, one-shot-warning shape as
+	// UMusicSubsystem::PlayTrackForState's CalmTrack/CombatTrack handling.
+	if (USoundBase* TellSound = AttackTellSound.LoadSynchronous())
+	{
+		AttackTellAudioComponent = UGameplayStatics::SpawnSoundAtLocation(this, TellSound, GetActorLocation());
+	}
+	else if (!bHasWarnedMissingAttackTellSound)
+	{
+		bHasWarnedMissingAttackTellSound = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ASniperEnemy: no AttackTellSound configured on '%s' - attack telegraph will be silent."),
+			*GetNameSafe(this));
+	}
 }
 
 void ASniperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)

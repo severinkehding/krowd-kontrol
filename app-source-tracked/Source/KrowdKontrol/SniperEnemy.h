@@ -7,6 +7,8 @@
 class UStaticMeshComponent;
 class UPointLightComponent;
 class UEnemyTypeIndicatorComponent;
+class USoundBase;
+class UAudioComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSniperShotFired);
 
@@ -60,6 +62,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
 	float AttackTellIntensity = 2000.0f;
 
+	// Placeholder-first (MISSION.md): left unset is a normal, non-error state until a
+	// real sound distinguishable from the other 3 enemy types' tells is sourced - same
+	// rationale UMusicSubsystem::CalmTrack/CombatTrack document.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
+	TSoftObjectPtr<USoundBase> AttackTellSound;
+
 	// Fires once the attack telegraph elapses.
 	UPROPERTY(BlueprintAssignable, Category = "Sniper")
 	FOnSniperShotFired OnSniperShotFired;
@@ -75,4 +83,14 @@ private:
 
 	float RemainingTelegraphSeconds = 0.0f;
 	bool bShotFiredForCurrentAttack = false;
+
+	// Test-visible via the existing FKrowdKontrolSniperEnemyTest friend grant above -
+	// set by OnAttackEntry() when AttackTellSound resolves, so the Automation test can
+	// assert the audio cue actually spawned without querying real audio hardware.
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> AttackTellAudioComponent;
+
+	// One-shot guard so an unset AttackTellSound only logs once per ASniperEnemy
+	// instance, not once per Attack entry - mirrors UMusicSubsystem::bHasWarnedMissingTrack.
+	bool bHasWarnedMissingAttackTellSound = false;
 };
