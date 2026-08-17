@@ -6,6 +6,7 @@
 #include "AbilityCooldownTrayWidget.generated.h"
 
 class UBorder;
+class UAbilityUnlockComponent;
 class UTextBlock;
 class UCanvasPanel;
 
@@ -59,6 +60,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
 	bool IsSlotLocked(EAbilitySlot AbilitySlot) const;
 
+	// Production wiring for issue #69's level-gated unlocks: initializes every slot's
+	// locked visual from the component's current unlock state (Stun unlocked, the
+	// rest locked at run start) and keeps it live by subscribing to OnAbilityUnlocked,
+	// so a slot flips to unlocked the moment its level is reached. The HUD wiring
+	// issue (#132) calls this once at widget creation with the player pawn's
+	// component; until that lands the Automation test drives it directly.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
+	void BindAbilityUnlockComponent(UAbilityUnlockComponent* UnlockComponent);
+
 	// Read-only accessor for what's currently displayed - used by the Automation
 	// Framework test, also generally useful to anything that wants to confirm the
 	// tray's state without re-deriving formatting.
@@ -86,6 +96,9 @@ protected:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
+	UFUNCTION()
+	void HandleAbilityUnlocked(EAbilitySlot Ability);
+
 	void BuildWidgetTree();
 
 	// Builds the widget tree exactly once, regardless of which of
