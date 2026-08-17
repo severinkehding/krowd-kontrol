@@ -39,6 +39,12 @@ bool UGizmoNarrativeSubsystem::HasBarkFired(FName BarkID) const
 
 void UGizmoNarrativeSubsystem::RegisterPlaceholderMilestoneBarks()
 {
+	if (bHasRegisteredPlaceholderMilestoneBarks)
+	{
+		return;
+	}
+	bHasRegisteredPlaceholderMilestoneBarks = true;
+
 	FGizmoBark MeetKrowd;
 	MeetKrowd.BarkID = TEXT("Milestone.MeetKrowd");
 	MeetKrowd.Lines = {

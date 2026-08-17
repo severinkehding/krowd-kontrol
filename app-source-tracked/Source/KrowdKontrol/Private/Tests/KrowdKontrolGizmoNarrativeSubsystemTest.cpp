@@ -102,6 +102,12 @@ bool FKrowdKontrolGizmoNarrativeSubsystemTest::RunTest(const FString& Parameters
 	// instances get it from Initialize().
 	Subsystem->RegisterPlaceholderMilestoneBarks();
 
+	// Detach the earlier sections' listeners so their bindings can't silently observe
+	// milestone broadcasts - ReentrantListener in particular would otherwise re-invoke
+	// TriggerBark(ReentrantID) on every trigger below.
+	Subsystem->OnBarkTriggered.RemoveDynamic(Listener, &UGizmoBarkTestListener::HandleBarkTriggered);
+	Subsystem->OnBarkTriggered.RemoveDynamic(ReentrantListener, &UGizmoBarkTestListener::HandleBarkTriggered);
+
 	// A fresh listener keeps this section's CallCount self-contained, since Listener
 	// above already has a non-zero CallCount from the earlier TestBark.* assertions.
 	UGizmoBarkTestListener* MilestoneListener = NewObject<UGizmoBarkTestListener>();
@@ -150,6 +156,14 @@ bool FKrowdKontrolGizmoNarrativeSubsystemTest::RunTest(const FString& Parameters
 		}
 	}
 	TestTrue(TEXT("KrowdAgeReveal's Lines should contain the age-203 reveal"), bAgeRevealMentions203);
+
+	// TriggerBarkForMilestone with an unregistered tag inherits TriggerBark's
+	// unknown-ID no-op-with-warning guarantee unmodified - pinned here directly rather
+	// than relying solely on section (3)'s transitive coverage via TriggerBark itself.
+	const FName UnknownMilestoneTag = TEXT("Milestone.NeverRegistered");
+	AddExpectedError(TEXT("unknown bark ID"), EAutomationExpectedErrorFlags::Contains, 1);
+	Subsystem->TriggerBarkForMilestone(UnknownMilestoneTag);
+	TestEqual(TEXT("CallCount should be unaffected by an unknown milestone tag"), MilestoneListener->CallCount, 6);
 
 	return true;
 }
