@@ -1,6 +1,7 @@
 // Confirms ABomberEnemy (issue #15, PRD 03) satisfies B0-0MR's AC, mirroring
 // KrowdKontrolSniperEnemyTest.cpp's structure (NewObject + friend access for most
-// cases, a real UWorld only for (m)/(n)/(o)/(p)/(q)/(r)). New vs. Sniper: the
+// cases, a real UWorld for (m)/(o)/(p)/(q)/(r) - deliberately not for (n), which
+// proves the no-UWorld path doesn't crash). New vs. Sniper: the
 // explosion's player-damage hookup is clamped/non-lethal by construction. Case (j) is
 // a structural proxy, same caveat as Sniper's own case (j). Cases (p)/(q)/(r) (issue
 // #33) mirror Sniper's own (n)/(o)/(p): a configured AttackTellSound spawns an audio
@@ -264,6 +265,12 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 		{
 			TestFalse(TEXT("AttackTellSound should default to a configured placeholder asset, not be left unset"),
 				DefaultSoundBomber->AttackTellSound.IsNull());
+			TestEqual(TEXT("AttackTellSound should default to the WhiteNoise placeholder, not some other asset"),
+				DefaultSoundBomber->AttackTellSound.ToSoftObjectPath().ToString(),
+				FString(TEXT("/Engine/EngineSounds/WhiteNoise.WhiteNoise")));
+			TestNotEqual(TEXT("Bomber's default tell must differ from Sniper's, so the two enemies are audibly distinct"),
+				DefaultSoundBomber->AttackTellSound.ToSoftObjectPath().ToString(),
+				FString(TEXT("/Engine/EngineSounds/1kSineTonePing.1kSineTonePing")));
 			AdvanceToAttack(DefaultSoundBomber, ZeroDistanceLocation);
 			TestNotNull(TEXT("Entering Attack with the default AttackTellSound should spawn an audio cue"),
 				DefaultSoundBomber->AttackTellAudioComponent.Get());
