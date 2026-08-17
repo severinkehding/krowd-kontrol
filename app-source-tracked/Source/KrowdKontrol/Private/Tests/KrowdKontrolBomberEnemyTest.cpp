@@ -230,13 +230,15 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// (p) OnAttackEntry spawns the attack-tell audio cue when AttackTellSound is
-	// configured - needs a real UWorld (SpawnSoundAtLocation resolves it via the
-	// actor's outer), same shape as case (m). NewObject<USoundWave>() (no .uasset) is
-	// sufficient, per KrowdKontrolSniperEnemyTest.cpp case (n)'s precedent.
+	// (p)/(q)/(r) OnAttackEntry's audio-cue spawning - needs a real UWorld
+	// (SpawnSoundAtLocation resolves it via the actor's outer), same shape as case (m),
+	// and shares one World across the three cases the same way (m)/(n)/(o) do above.
+	// NewObject<USoundWave>() (no .uasset) is sufficient, per
+	// KrowdKontrolSniperEnemyTest.cpp case (n)'s precedent.
 	UWorld* AudioWorld = FAutomationEditorCommonUtils::CreateNewMap();
-	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the audio test"), AudioWorld))
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the audio tests"), AudioWorld))
 	{
+		// (p) OnAttackEntry spawns the attack-tell audio cue when AttackTellSound is configured.
 		ABomberEnemy* AudioBomber = AudioWorld->SpawnActor<ABomberEnemy>();
 		if (TestNotNull(TEXT("ABomberEnemy should spawn into the audio test World"), AudioBomber))
 		{
@@ -251,16 +253,12 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 					static_cast<USoundBase*>(ConfiguredSound));
 			}
 		}
-	}
 
-	// (q) AttackTellSound now defaults to a real placeholder asset (constructor's
-	// AttackTellSoundFinder, issue #33 AC: "a distinct sound effect plays" out of the
-	// box) rather than being left unset, so a freshly spawned, unconfigured
-	// ABomberEnemy must actually spawn an audio cue on Attack entry.
-	UWorld* DefaultSoundWorld = FAutomationEditorCommonUtils::CreateNewMap();
-	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the default-audio test"), DefaultSoundWorld))
-	{
-		ABomberEnemy* DefaultSoundBomber = DefaultSoundWorld->SpawnActor<ABomberEnemy>();
+		// (q) AttackTellSound now defaults to a real placeholder asset (constructor's
+		// AttackTellSoundFinder, issue #33 AC: "a distinct sound effect plays" out of the
+		// box) rather than being left unset, so a freshly spawned, unconfigured
+		// ABomberEnemy must actually spawn an audio cue on Attack entry.
+		ABomberEnemy* DefaultSoundBomber = AudioWorld->SpawnActor<ABomberEnemy>();
 		if (TestNotNull(TEXT("ABomberEnemy should spawn into the default-audio test World"), DefaultSoundBomber))
 		{
 			TestFalse(TEXT("AttackTellSound should default to a configured placeholder asset, not be left unset"),
@@ -275,17 +273,13 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("Entering Attack with the default AttackTellSound should spawn an audio cue"),
 				DefaultSoundBomber->AttackTellAudioComponent.Get());
 		}
-	}
 
-	// (r) the graceful, no-crash fallback is still exercised for the defensive case an
-	// explicit override (Blueprint/Details panel) clears AttackTellSound back to unset -
-	// same placeholder-first shape UMusicSubsystem's CalmTrack/CombatTrack document. No
-	// assertion on the warning log itself (no existing test in this module asserts
-	// UE_LOG output).
-	UWorld* SilentWorld = FAutomationEditorCommonUtils::CreateNewMap();
-	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the silent-audio test"), SilentWorld))
-	{
-		ABomberEnemy* SilentBomber = SilentWorld->SpawnActor<ABomberEnemy>();
+		// (r) the graceful, no-crash fallback is still exercised for the defensive case
+		// an explicit override (Blueprint/Details panel) clears AttackTellSound back to
+		// unset - same placeholder-first shape UMusicSubsystem's CalmTrack/CombatTrack
+		// document. No assertion on the warning log itself (no existing test in this
+		// module asserts UE_LOG output).
+		ABomberEnemy* SilentBomber = AudioWorld->SpawnActor<ABomberEnemy>();
 		if (TestNotNull(TEXT("ABomberEnemy should spawn into the silent-audio test World"), SilentBomber))
 		{
 			SilentBomber->AttackTellSound = nullptr;
