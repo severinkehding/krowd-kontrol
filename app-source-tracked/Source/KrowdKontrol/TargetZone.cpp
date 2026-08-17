@@ -16,6 +16,12 @@ ATargetZone::ATargetZone()
 	// setup.
 	ZoneCollisionComponent->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 	ZoneCollisionComponent->SetGenerateOverlapEvents(true);
+	// KNOWN GAP: this fires once per overlapping component, not once per actor. An
+	// IHerdable actor with more than one collision component overlapping the zone
+	// simultaneously would broadcast OnActorBanked once per component instead of once
+	// per actor. No current fixture has more than one collision component, so this is
+	// untested; revisit once a production IHerdable actor with multiple physical
+	// components exists.
 	ZoneCollisionComponent->OnComponentBeginOverlap.AddUniqueDynamic(this, &ATargetZone::HandleZoneOverlap);
 }
 
