@@ -42,10 +42,12 @@ public:
 	// Explicit level-progression signal a caller (today, a test double; later, a real
 	// level-progression subsystem - PRD 05/03 don't expose one yet, per issue #69's
 	// Notes) invokes once per level reached. Idempotent per level: unlocking the
-	// ability mapped to LevelIndex only happens once, repeat calls are no-ops. Levels
-	// <= 1 (Stun, already unlocked at construction) or > 5 (out of range) are no-ops,
-	// not warnings - a real level-progression signal firing once per level transition
-	// will naturally include level 1 as an expected call.
+	// ability mapped to LevelIndex only happens once, repeat calls are no-ops. Level 1
+	// (Stun, already unlocked at construction) is a silent no-op - a real
+	// level-progression signal firing once per level transition will naturally include
+	// level 1 as an expected call. Any other value outside the 2-5 mapped range (0,
+	// negative, or > 5) is still a no-op but logs a warning, since those aren't
+	// expected from a real level-progression signal.
 	UFUNCTION(BlueprintCallable, Category = "Ability Unlock")
 	void NotifyLevelReached(int32 LevelIndex);
 
