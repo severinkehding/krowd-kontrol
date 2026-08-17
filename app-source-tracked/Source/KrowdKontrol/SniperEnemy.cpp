@@ -6,6 +6,9 @@
 #include "ReservedGameplayColours.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
+#include "Sound/SoundBase.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/AudioComponent.h"
 
 ASniperEnemy::ASniperEnemy()
 {
@@ -48,6 +51,18 @@ ASniperEnemy::ASniperEnemy()
 
 	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
 	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::SN_1PR;
+
+	// Placeholder-first default (MISSION.md) so issue #36's "a distinct sound effect
+	// plays" AC holds without waiting on a designer to configure AttackTellSound - a
+	// short, clean built-in tone, distinct from CalmTrack/CombatTrack (music loops) and
+	// from any future ability-cast/UI sound. Still Details-panel/Blueprint overridable
+	// once a real per-enemy-type tell is sourced.
+	static ConstructorHelpers::FObjectFinder<USoundBase> AttackTellSoundFinder(
+		TEXT("/Engine/EngineSounds/1kSineTonePing.1kSineTonePing"));
+	if (AttackTellSoundFinder.Succeeded())
+	{
+		AttackTellSound = AttackTellSoundFinder.Object;
+	}
 }
 
 float ASniperEnemy::GetAttackRangeUnits() const
@@ -84,6 +99,21 @@ void ASniperEnemy::OnAttackEntry()
 	AttackTellLightComponent->SetIntensity(AttackTellIntensity);
 	RemainingTelegraphSeconds = AttackTelegraphSeconds;
 	bShotFiredForCurrentAttack = false;
+
+	// AttackTellSound defaults to a placeholder engine tone (see the constructor), so
+	// this resolves normally out of the box; the else-branch below is a defensive
+	// fallback for the case a Blueprint/Details-panel override explicitly clears it.
+	if (USoundBase* TellSound = AttackTellSound.LoadSynchronous())
+	{
+		AttackTellAudioComponent = UGameplayStatics::SpawnSoundAtLocation(this, TellSound, GetActorLocation());
+	}
+	else if (!bHasWarnedMissingAttackTellSound)
+	{
+		bHasWarnedMissingAttackTellSound = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ASniperEnemy: no AttackTellSound configured on '%s' - attack telegraph will be silent."),
+			*GetNameSafe(this));
+	}
 }
 
 void ASniperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)

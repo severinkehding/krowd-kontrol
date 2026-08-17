@@ -1,8 +1,13 @@
 // Confirms ABomberEnemy (issue #15, PRD 03) satisfies B0-0MR's AC, mirroring
 // KrowdKontrolSniperEnemyTest.cpp's structure (NewObject + friend access for most
-// cases, a real UWorld only for (m)/(n)/(o)). New vs. Sniper: the explosion's
-// player-damage hookup is clamped/non-lethal by construction. Case (j) is a
-// structural proxy, same caveat as Sniper's own case (j).
+// cases, a real UWorld for (m)/(o)/(p)/(q)/(r) - deliberately not for (n), which
+// proves the no-UWorld path doesn't crash). New vs. Sniper: the
+// explosion's player-damage hookup is clamped/non-lethal by construction. Case (j) is
+// a structural proxy, same caveat as Sniper's own case (j). Cases (p)/(q)/(r) (issue
+// #33) mirror Sniper's own (n)/(o)/(p): a configured AttackTellSound spawns an audio
+// cue with the matching asset, the constructor's WhiteNoise default also spawns a cue
+// out of the box, and an explicitly-cleared AttackTellSound spawns nothing without
+// crashing.
 
 #include "Misc/AutomationTest.h"
 #include "BomberEnemy.h"
@@ -15,6 +20,8 @@
 #include "BomberExplodedTestListener.h"
 #include "PlayerEnergyComponent.h"
 #include "GameFramework/Pawn.h"
+#include "Sound/SoundWave.h"
+#include "Components/AudioComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -219,6 +226,107 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 				AttackingBomber->AdvanceAttackTelegraph(AttackingBomber->AttackTelegraphSeconds);
 				TestEqual(TEXT("energy drops by MaxDamagePerHit, not raw ExplosionDamageAmount"), Energy->GetCurrentEnergy(), Energy->MaxEnergy - Energy->MaxDamagePerHit);
 				TestTrue(TEXT("energy never driven negative/lethal"), Energy->GetCurrentEnergy() >= 0.0f);
+			}
+		}
+	}
+
+	// (p)/(q)/(r) OnAttackEntry's audio-cue spawning - needs a real UWorld
+	// (SpawnSoundAtLocation resolves it via the actor's outer), same shape as case (m),
+	// and shares one World across the three cases the same way (m)/(n)/(o) do above.
+	// NewObject<USoundWave>() (no .uasset) is sufficient, per
+	// KrowdKontrolSniperEnemyTest.cpp case (n)'s precedent.
+	UWorld* AudioWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the audio tests"), AudioWorld))
+	{
+		// (p) OnAttackEntry spawns the attack-tell audio cue when AttackTellSound is configured.
+		ABomberEnemy* AudioBomber = AudioWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the audio test World"), AudioBomber))
+		{
+			USoundWave* ConfiguredSound = NewObject<USoundWave>();
+			AudioBomber->AttackTellSound = ConfiguredSound;
+			AdvanceToAttack(AudioBomber, ZeroDistanceLocation);
+			if (TestNotNull(TEXT("Entering Attack with a configured AttackTellSound should spawn an audio cue"),
+				AudioBomber->AttackTellAudioComponent.Get()))
+			{
+				TestEqual(TEXT("The spawned audio cue should play the configured AttackTellSound, not some other sound"),
+					static_cast<USoundBase*>(AudioBomber->AttackTellAudioComponent->Sound.Get()),
+					static_cast<USoundBase*>(ConfiguredSound));
+			}
+		}
+
+		// (q) AttackTellSound now defaults to a real placeholder asset (constructor's
+		// AttackTellSoundFinder, issue #33 AC: "a distinct sound effect plays" out of the
+		// box) rather than being left unset, so a freshly spawned, unconfigured
+		// ABomberEnemy must actually spawn an audio cue on Attack entry.
+		ABomberEnemy* DefaultSoundBomber = AudioWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the default-audio test World"), DefaultSoundBomber))
+		{
+			TestFalse(TEXT("AttackTellSound should default to a configured placeholder asset, not be left unset"),
+				DefaultSoundBomber->AttackTellSound.IsNull());
+			TestEqual(TEXT("AttackTellSound should default to the WhiteNoise placeholder, not some other asset"),
+				DefaultSoundBomber->AttackTellSound.ToSoftObjectPath().ToString(),
+				FString(TEXT("/Engine/EngineSounds/WhiteNoise.WhiteNoise")));
+			// Issue #33 AC: "distinguishable from existing ability-cast/UI sounds". As of
+			// this PR the codebase has no ability-cast/UI sound system at all - no
+			// USoundBase/USoundCue/USoundWave/UAudioComponent usage anywhere outside
+			// BomberEnemy/SniperEnemy/MusicSubsystem - so there is no such asset to
+			// compare against yet (tracked separately; see the PR's "Not in scope" note).
+			// The one other sound asset hardcoded anywhere in this codebase today is
+			// ASniperEnemy's own tell, checked below; this is the strongest distinctness
+			// proof currently possible and should gain more entries if a real
+			// ability-cast/UI sound is ever hardcoded the same way.
+			TestNotEqual(TEXT("Bomber's default tell must differ from Sniper's, so the two enemies are audibly distinct"),
+				DefaultSoundBomber->AttackTellSound.ToSoftObjectPath().ToString(),
+				FString(TEXT("/Engine/EngineSounds/1kSineTonePing.1kSineTonePing")));
+			AdvanceToAttack(DefaultSoundBomber, ZeroDistanceLocation);
+			TestNotNull(TEXT("Entering Attack with the default AttackTellSound should spawn an audio cue"),
+				DefaultSoundBomber->AttackTellAudioComponent.Get());
+		}
+
+		// (r) the graceful, no-crash fallback is still exercised for the defensive case
+		// an explicit override (Blueprint/Details panel) clears AttackTellSound back to
+		// unset - same placeholder-first shape UMusicSubsystem's CalmTrack/CombatTrack
+		// document. No assertion on the warning log itself (no existing test in this
+		// module asserts UE_LOG output).
+		ABomberEnemy* SilentBomber = AudioWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the silent-audio test World"), SilentBomber))
+		{
+			SilentBomber->AttackTellSound = nullptr;
+			AdvanceToAttack(SilentBomber, ZeroDistanceLocation);
+			TestNull(TEXT("Entering Attack with AttackTellSound explicitly cleared should not spawn an audio cue"),
+				SilentBomber->AttackTellAudioComponent.Get());
+		}
+
+		// (s) Issue #33 AC: the attack-tell audio "is not replayed if the attack is
+		// interrupted or the enemy is controlled mid-telegraph". EnemyBase.cpp's state
+		// machine is strictly linear (Idle->Alert->Attack->Controlled->Banked, no edges
+		// back - see EnemyBase.h's transition table) and AdvanceToAttack() itself guards
+		// on CurrentState == Alert, so once ReceiveControl() has moved an actor to
+		// Controlled mid-telegraph, no further TickCheckDetection() call can ever drive
+		// it back into Attack and re-invoke OnAttackEntry() - structurally, not just "in
+		// practice" (mirrors the bHasWarnedMissingAttackTellSound comment in
+		// BomberEnemy.h). This proves the audio cue captured on first entry is never
+		// replaced/re-spawned, the same guarantee case (l) above already proves for the
+		// visual tell and the explosion.
+		ABomberEnemy* ReplayGuardBomber = AudioWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the replay-guard test World"), ReplayGuardBomber))
+		{
+			AdvanceToAttack(ReplayGuardBomber, ZeroDistanceLocation);
+			UAudioComponent* FirstAudioComponent = ReplayGuardBomber->AttackTellAudioComponent.Get();
+			if (TestNotNull(TEXT("Entering Attack should spawn the attack-tell audio cue"), FirstAudioComponent))
+			{
+				ReplayGuardBomber->ReceiveControl(EAbilitySlot::Sleep); // interrupts mid-telegraph
+				TestEqual(TEXT("interrupted enemy is Controlled"),
+					static_cast<uint8>(ReplayGuardBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+				// Further detection checks (e.g. player still in range post-interrupt)
+				// must not drive the state machine back into Attack.
+				ReplayGuardBomber->TickCheckDetection(ZeroDistanceLocation);
+				ReplayGuardBomber->TickCheckDetection(ZeroDistanceLocation);
+				TestEqual(TEXT("state stays Controlled - no edge back to Attack exists"),
+					static_cast<uint8>(ReplayGuardBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+				TestEqual(TEXT("audio cue is not replaced/re-spawned after the interrupt"),
+					ReplayGuardBomber->AttackTellAudioComponent.Get(), FirstAudioComponent);
 			}
 		}
 	}

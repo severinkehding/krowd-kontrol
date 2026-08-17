@@ -28,6 +28,8 @@
 #include "Engine/World.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "SniperShotFiredTestListener.h"
+#include "Sound/SoundWave.h"
+#include "Components/AudioComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -237,6 +239,65 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 			TickedSniper->Tick(TickedSniper->AttackTelegraphSeconds);
 			TestEqual(TEXT("Tick() should drive the telegraph through to firing the shot"),
 				TickedListener->CallCount, 1);
+		}
+	}
+
+	// (n) OnAttackEntry spawns the attack-tell audio cue when AttackTellSound is
+	// configured - needs a real UWorld (SpawnSoundAtLocation resolves it via the actor's
+	// outer), same shape as case (m). NewObject<USoundWave>() (no .uasset) is sufficient,
+	// per KrowdKontrolMusicSubsystemTest.cpp case (j)'s precedent.
+	UWorld* AudioWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the audio test"), AudioWorld))
+	{
+		ASniperEnemy* AudioSniper = AudioWorld->SpawnActor<ASniperEnemy>();
+		if (TestNotNull(TEXT("ASniperEnemy should spawn into the audio test World"), AudioSniper))
+		{
+			USoundWave* ConfiguredSound = NewObject<USoundWave>();
+			AudioSniper->AttackTellSound = ConfiguredSound;
+			AdvanceToAttack(AudioSniper, ZeroDistanceLocation);
+			if (TestNotNull(TEXT("Entering Attack with a configured AttackTellSound should spawn an audio cue"),
+				AudioSniper->AttackTellAudioComponent.Get()))
+			{
+				TestEqual(TEXT("The spawned audio cue should play the configured AttackTellSound, not some other sound"),
+					static_cast<USoundBase*>(AudioSniper->AttackTellAudioComponent->Sound.Get()),
+					static_cast<USoundBase*>(ConfiguredSound));
+			}
+		}
+	}
+
+	// (o) AttackTellSound now defaults to a real placeholder asset (constructor's
+	// AttackTellSoundFinder, issue #36 AC: "a distinct sound effect plays" out of the
+	// box) rather than being left unset, so a freshly spawned, unconfigured
+	// ASniperEnemy must actually spawn an audio cue on Attack entry.
+	UWorld* DefaultSoundWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the default-audio test"), DefaultSoundWorld))
+	{
+		ASniperEnemy* DefaultSoundSniper = DefaultSoundWorld->SpawnActor<ASniperEnemy>();
+		if (TestNotNull(TEXT("ASniperEnemy should spawn into the default-audio test World"), DefaultSoundSniper))
+		{
+			TestFalse(TEXT("AttackTellSound should default to a configured placeholder asset, not be left unset"),
+				DefaultSoundSniper->AttackTellSound.IsNull());
+			AdvanceToAttack(DefaultSoundSniper, ZeroDistanceLocation);
+			TestNotNull(TEXT("Entering Attack with the default AttackTellSound should spawn an audio cue"),
+				DefaultSoundSniper->AttackTellAudioComponent.Get());
+		}
+	}
+
+	// (p) the graceful, no-crash fallback is still exercised for the defensive case an
+	// explicit override (Blueprint/Details panel) clears AttackTellSound back to unset -
+	// same placeholder-first shape UMusicSubsystem's CalmTrack/CombatTrack document. No
+	// assertion on the warning log itself (no existing test in this module asserts
+	// UE_LOG output).
+	UWorld* SilentWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the silent-audio test"), SilentWorld))
+	{
+		ASniperEnemy* SilentSniper = SilentWorld->SpawnActor<ASniperEnemy>();
+		if (TestNotNull(TEXT("ASniperEnemy should spawn into the silent-audio test World"), SilentSniper))
+		{
+			SilentSniper->AttackTellSound = nullptr;
+			AdvanceToAttack(SilentSniper, ZeroDistanceLocation);
+			TestNull(TEXT("Entering Attack with AttackTellSound explicitly cleared should not spawn an audio cue"),
+				SilentSniper->AttackTellAudioComponent.Get());
 		}
 	}
 

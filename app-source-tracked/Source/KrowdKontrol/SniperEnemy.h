@@ -7,6 +7,8 @@
 class UStaticMeshComponent;
 class UPointLightComponent;
 class UEnemyTypeIndicatorComponent;
+class USoundBase;
+class UAudioComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSniperShotFired);
 
@@ -14,10 +16,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSniperShotFired);
 // a long-range sniper. Extends AEnemyBase (issue #12) with a distinct cone
 // silhouette, a Blue-tinted "eye glow" light that intensifies only when Sleep is the
 // ability that put it into Controlled, a separate attack "tell" light plus a
-// telegraph countdown timer for the attack warning, and a large GetAttackRangeUnits()
-// override so it enters Attack almost as soon as it's Alert - the mechanical
-// definition of "long-range" in this state machine: it doesn't need to close distance
-// first. See issue #17.
+// telegraph countdown timer for the attack warning, a one-shot attack-tell audio cue
+// (issue #36) fired from the same OnAttackEntry() extension point, and a large
+// GetAttackRangeUnits() override so it enters Attack almost as soon as it's Alert -
+// the mechanical definition of "long-range" in this state machine: it doesn't need to
+// close distance first. See issue #17.
 UCLASS()
 class KROWDKONTROL_API ASniperEnemy : public AEnemyBase
 {
@@ -60,6 +63,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
 	float AttackTellIntensity = 2000.0f;
 
+	// Defaults to /Engine/EngineSounds/1kSineTonePing (set in the constructor via
+	// ConstructorHelpers::FObjectFinder, same pattern as MeshComponent's ConeMeshFinder
+	// below) so issue #36's "a distinct sound effect plays" AC is met out of the box,
+	// not left silent pending designer configuration - unlike
+	// UMusicSubsystem::CalmTrack/CombatTrack, which are legitimately Config-driven
+	// because a designer places real music later. This is still placeholder-first
+	// (MISSION.md): a primitive built-in engine tone standing in until a real,
+	// per-enemy-type-distinguishable sound is sourced. Still Blueprint/Details-panel
+	// overridable.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
+	TSoftObjectPtr<USoundBase> AttackTellSound;
+
 	// Fires once the attack telegraph elapses.
 	UPROPERTY(BlueprintAssignable, Category = "Sniper")
 	FOnSniperShotFired OnSniperShotFired;
@@ -75,4 +90,17 @@ private:
 
 	float RemainingTelegraphSeconds = 0.0f;
 	bool bShotFiredForCurrentAttack = false;
+
+	// Test-visible via the existing FKrowdKontrolSniperEnemyTest friend grant above -
+	// set by OnAttackEntry() when AttackTellSound resolves, so the Automation test can
+	// assert the audio cue actually spawned without querying real audio hardware.
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> AttackTellAudioComponent;
+
+	// Defensive one-shot guard, mirroring UMusicSubsystem::bHasWarnedMissingTrack's shape -
+	// currently unreachable a second time in practice, since EnemyBase's linear state
+	// machine (EnemyBase.h) only ever calls OnAttackEntry() once per instance. Kept so a
+	// future change that made Attack re-enterable wouldn't silently start spamming this
+	// warning.
+	bool bHasWarnedMissingAttackTellSound = false;
 };
