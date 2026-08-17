@@ -56,6 +56,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
 	FText GetSlotCooldownDisplayText(EAbilitySlot AbilitySlot) const;
 
+	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
+	FText GetSlotIconLabelText(EAbilitySlot AbilitySlot) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
+	FLinearColor GetSlotIconTintColour(EAbilitySlot AbilitySlot) const;
+
 protected:
 	// Fires synchronously from CreateWidget(), before any Slate/viewport realization -
 	// matters for the -nullrhi headless Automation run this project's tests use (see
@@ -90,6 +96,9 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UTextBlock>> SlotCooldownTexts;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UTextBlock>> SlotIconLabels;
 
 	// Runtime state, not designer config - hence no EditDefaultsOnly/EditAnywhere, and
 	// private so no code path - Blueprint or C++ - can mutate it except through
