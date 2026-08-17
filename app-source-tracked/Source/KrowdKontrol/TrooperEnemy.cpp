@@ -4,8 +4,6 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
-#include "EnemyTypeIndicatorComponent.h"
-#include "EnemyType.h"
 
 ATrooperEnemy::ATrooperEnemy()
 {
@@ -45,9 +43,6 @@ ATrooperEnemy::ATrooperEnemy()
 	AttackTellLightComponent->SetLightColor(FLinearColor(1.0f, 0.1f, 0.6f));
 	AttackTellLightComponent->SetIntensity(0.0f); // off until Attack entry
 	AttackTellLightComponent->SetAttenuationRadius(300.0f);
-
-	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
-	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::TR_UPR;
 }
 
 float ATrooperEnemy::GetAttackRangeUnits() const

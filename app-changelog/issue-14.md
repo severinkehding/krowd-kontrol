@@ -16,11 +16,16 @@ and all 5 reserved gameplay colours.
 | `app/Source/KrowdKontrol/TrooperEnemy.h` | CREATE | `ATrooperEnemy` declaration: mesh/glow/tell components, `FOnTrooperRayFired` delegate, telegraph state, `GetAttackRangeUnits`/`OnControlledEntry`/`OnAttackEntry`/`Tick` overrides |
 | `app/Source/KrowdKontrol/TrooperEnemy.cpp` | CREATE | Implementation: Plane-mesh silhouette, Teal glow (Root-only intensify), magenta attack tell, 700.0f medium attack range, self-re-arming `AdvanceAttackTelegraph` (no fire-once guard) |
 | `app/Source/KrowdKontrol/Private/Tests/TrooperRayFiredTestListener.h`/`.cpp` | CREATE | Dynamic-delegate test listener for `OnTrooperRayFired`, mirroring `SniperShotFiredTestListener` |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolTrooperEnemyTest.cpp` | CREATE | `KrowdKontrol.Unit.TrooperEnemy` — 13 cases (a-m) covering silhouette, glow, tell, rapid re-fire, range, colour non-collision, controlled-interrupt, and real-`Tick()` wiring |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolTrooperEnemyTest.cpp` | CREATE | `KrowdKontrol.Unit.TrooperEnemy` — 14 cases (a-m, plus h2) covering silhouette, glow, tell, rapid re-fire (including a small-delta post-fire re-arm check and an oversized-delta single-fire check), range, colour non-collision, controlled-interrupt, and real-`Tick()` wiring |
+| `app/Source/KrowdKontrol/EnemyBase.h` | MODIFY | Added `friend class FKrowdKontrolTrooperEnemyTest;` alongside the existing Sniper/Bomber grants, so the new test's `AdvanceToAttack` helper can call the private `TickCheckDetection` |
 
-No existing file needed modification — `EEnemyType::TR_UPR` already existed and
-`ARoomActor`/`UWaveSpawnerComponent` already accept any `EEnemyType` value
-generically.
+`EEnemyType::TR_UPR` already existed and `ARoomActor`/`UWaveSpawnerComponent`
+already accept any `EEnemyType` value generically, so neither needed touching.
+`ATrooperEnemy` does **not** construct a `UEnemyTypeIndicatorComponent` (issue #77's
+colourblind-safe text marker) — that class lives only on the unmerged
+`archon/task-fix-issue-77` branch, not on `main` or in this PR's history, and a
+constructor reference to it would leave this diff unable to compile on its own. Wiring
+`ATrooperEnemy` up to it is deferred to whichever PR lands second once #77 merges.
 
 ## Acceptance criteria
 
@@ -42,10 +47,37 @@ generically.
 
 ## Validation
 
+**The originally-pasted evidence below this line in earlier revisions of this file was
+inaccurate** — not just because of the two compile-blocking review findings fixed
+below, but because `harness/run_ue_automation.sh` boots the already-built Editor
+binary and never invokes `UnrealBuildTool`; a stale `.dll` from before this PR's files
+existed reports `GATE_OK` just as happily as a correct one (`KrowdKontrol.Unit.` ran
+against **34** tests both before and immediately after this PR's own diff — the same
+count, meaning `KrowdKontrol.Unit.TrooperEnemy` was never actually in the binary being
+tested either time). Filed as a follow-up (see PR discussion) since it's a gap in the
+shared harness script, out of scope for this issue to fix.
+
+Two real review findings plus one further compile error only a real rebuild could
+surface were fixed on this branch before the evidence below was captured:
+1. Removed the `UEnemyTypeIndicatorComponent` member/include/construction from
+   `TrooperEnemy.h`/`.cpp` — that class exists only on the unmerged issue #77 branch.
+2. Added `friend class FKrowdKontrolTrooperEnemyTest;` to `EnemyBase.h` so the test's
+   `AdvanceToAttack` helper can call the private `TickCheckDetection`.
+3. Test case (j) called the *protected* `GetAttackRangeUnits()` on `ABomberEnemy`/
+   `ASniperEnemy` instances it isn't friended to — neither review agent caught this
+   because it's a real UBT compile error, invisible to a stale-binary gate run.
+   Fixed by comparing against those classes' own known return values (150.0f/1400.0f)
+   instead of a live cross-class call.
+
+Evidence below is from a genuine `UnrealBuildTool` rebuild (`dotnet.exe` +
+`UnrealBuildTool.dll KrowdKontrolEditor Win64 Development`, `Result: Succeeded`)
+followed by a fresh `python harness/ci.py` run against that rebuilt binary — not a
+stale one:
+
 ```
 HARNESS_START mode=full driver=cli
 STATIC_SKIPPED no 'static' command in harness.config.json
-UNIT_PASSED tests=34
+UNIT_PASSED tests=35
 APP_STARTED driver=cli
 UE_AUTOMATION_RESULT passed=1 total=1
 UE_AUTOMATION_OK
@@ -55,11 +87,14 @@ MUTATIONS_ABSENT no harness/mutations/run.py - this gate has never been shown to
 GATE_OK mode=full
 ```
 
-Gate passed clean on the first run, no fixes needed. Hard invariants reviewed by
-inspection: no damage/kill logic (#2), Teal used exclusively via
-`ReservedGameplayColours::GetTeal()` and intensified only on Root (#3), TR-UPR fills
-an already-enumerated roster slot rather than adding a 5th type (#5), and the diff
-lands entirely under `app-source-tracked/` source copies (#8).
+`tests=35` (up from the stale 34) confirms `KrowdKontrol.Unit.TrooperEnemy` is now
+genuinely compiled in and passing — confirmed directly in
+`app/Saved/Logs/KrowdKontrol.log`: `Test Completed. Result={Success} Name={TrooperEnemy}
+Path={KrowdKontrol.Unit.TrooperEnemy}`. Hard invariants reviewed by inspection: no
+damage/kill logic (#2), Teal used exclusively via `ReservedGameplayColours::GetTeal()`
+and intensified only on Root (#3), TR-UPR fills an already-enumerated roster slot
+rather than adding a 5th type (#5), and the diff lands entirely under
+`app-source-tracked/` source copies (#8).
 
 ---
 

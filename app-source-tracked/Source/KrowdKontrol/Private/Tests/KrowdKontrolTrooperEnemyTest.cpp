@@ -12,8 +12,6 @@
 
 #include "Misc/AutomationTest.h"
 #include "TrooperEnemy.h"
-#include "SniperEnemy.h"
-#include "BomberEnemy.h"
 #include "ReservedGameplayColours.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
@@ -138,6 +136,11 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	// genuinely exists.
 	TellTrooper->AdvanceAttackTelegraph(TellTrooper->AttackTelegraphSeconds);
 	TestEqual(TEXT("OnTrooperRayFired should have fired exactly once"), RayListener->CallCount, 1);
+	// A small delta right after a fire must NOT immediately re-fire - proves the
+	// re-arm resets to the full cadence, not to <= 0 (the runaway-broadcast risk this
+	// class's deliberately-omitted fire-once guard raises).
+	TellTrooper->AdvanceAttackTelegraph(0.01f);
+	TestEqual(TEXT("A small delta immediately after a fire should not re-fire"), RayListener->CallCount, 1);
 	TellTrooper->AdvanceAttackTelegraph(TellTrooper->AttackTelegraphSeconds);
 	TestEqual(TEXT("OnTrooperRayFired should re-fire on a second full-interval advance"), RayListener->CallCount, 2);
 	TellTrooper->AdvanceAttackTelegraph(TellTrooper->AttackTelegraphSeconds);
@@ -162,6 +165,18 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The telegraph should fire once the accumulated partial advances cross AttackTelegraphSeconds"),
 		AccumulatingListener->CallCount, 1);
 
+	// (h2) documents current behavior for a single oversized delta (e.g. a frame
+	// hitch spanning multiple telegraph periods): it still fires exactly once per
+	// call, and the overshoot past AttackTelegraphSeconds is discarded rather than
+	// carried into the next cycle - AdvanceAttackTelegraph only ever re-arms to the
+	// full AttackTelegraphSeconds, never AttackTelegraphSeconds - overshoot.
+	ATrooperEnemy* HitchTrooper = NewObject<ATrooperEnemy>();
+	AdvanceToAttack(HitchTrooper, ZeroDistanceLocation);
+	UTrooperRayFiredTestListener* HitchListener = NewObject<UTrooperRayFiredTestListener>();
+	HitchTrooper->OnTrooperRayFired.AddDynamic(HitchListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
+	HitchTrooper->AdvanceAttackTelegraph(HitchTrooper->AttackTelegraphSeconds * 3.0f);
+	TestEqual(TEXT("A single oversized delta should still fire only once"), HitchListener->CallCount, 1);
+
 	// (i) advancing the telegraph while not in Attack is a no-op.
 	ATrooperEnemy* IdleTrooper = NewObject<ATrooperEnemy>();
 	UTrooperRayFiredTestListener* IdleListener = NewObject<UTrooperRayFiredTestListener>();
@@ -170,19 +185,18 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("AdvanceAttackTelegraph should be a no-op while not in Attack"),
 		IdleListener->CallCount, 0);
 
-	// (j) GetAttackRangeUnits() is medium - strictly between ABomberEnemy's short and
-	// ASniperEnemy's long values. Both sibling concrete classes now exist in this
-	// codebase, so this is a genuine numeric proof, not the structural proxy both
-	// siblings' own case (j) had to settle for.
+	// (j) GetAttackRangeUnits() is medium - strictly between ABomberEnemy's short
+	// (150.0f, BomberEnemy.cpp) and ASniperEnemy's long (1400.0f, SniperEnemy.cpp)
+	// values. GetAttackRangeUnits() is protected on both sibling classes and this
+	// test isn't (and shouldn't be) friended to either, so the comparison is against
+	// their own known return values rather than a live call on a foreign instance.
 	ATrooperEnemy* RangeTrooper = NewObject<ATrooperEnemy>();
 	TestEqual(TEXT("GetAttackRangeUnits() should return TR-UPR's medium-range value"),
 		RangeTrooper->GetAttackRangeUnits(), 700.0f);
-	ABomberEnemy* RangeBomber = NewObject<ABomberEnemy>();
-	ASniperEnemy* RangeSniper = NewObject<ASniperEnemy>();
 	TestTrue(TEXT("TR-UPR's attack range should be greater than B0-0MR's short range"),
-		RangeTrooper->GetAttackRangeUnits() > RangeBomber->GetAttackRangeUnits());
+		RangeTrooper->GetAttackRangeUnits() > 150.0f);
 	TestTrue(TEXT("TR-UPR's attack range should be less than SN-1PR's long range"),
-		RangeTrooper->GetAttackRangeUnits() < RangeSniper->GetAttackRangeUnits());
+		RangeTrooper->GetAttackRangeUnits() < 1400.0f);
 
 	// (k) the attack tell colour must not collide with any of MISSION.md Hard
 	// Invariant 3's five reserved gameplay-information colours - hand-verified against

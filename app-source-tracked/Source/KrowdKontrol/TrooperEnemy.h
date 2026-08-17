@@ -6,7 +6,6 @@
 
 class UStaticMeshComponent;
 class UPointLightComponent;
-class UEnemyTypeIndicatorComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnTrooperRayFired);
 
@@ -44,11 +43,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Trooper")
 	TObjectPtr<UPointLightComponent> AttackTellLightComponent;
 
-	// Colourblind-safe non-colour marker (PRD 13 REQ-7, issue #77) - "TR-UPR" text
-	// floating above the mesh, independent of GlowLightComponent's Teal.
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Trooper")
-	TObjectPtr<UEnemyTypeIndicatorComponent> EnemyTypeIndicatorComponent;
-
 	// Rapid cadence - clearly shorter than Sniper's 1.2f and Bomber's 2.0f, reflecting
 	// "rapid" in the PRD table.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trooper", meta = (ClampMin = "0.0"))
@@ -63,7 +57,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trooper")
 	float AttackTellIntensity = 2000.0f;
 
-	// Fires once per ray, repeatedly for as long as Attack persists.
+	// Broadcasts repeatedly while Attack persists, unlike ASniperEnemy/ABomberEnemy's
+	// fire-once delegates.
 	UPROPERTY(BlueprintAssignable, Category = "Trooper")
 	FOnTrooperRayFired OnTrooperRayFired;
 
