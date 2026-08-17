@@ -34,12 +34,10 @@ struct FRoomEnemyTypeCount
 //
 // EnemyTypeBudget/TargetZoneCounts use TArray<FRoomEnemyTypeCount>, not
 // TMap<EEnemyType, int32>, despite a TMap looking like the obvious fit: a confirmed,
-// still-open Unreal Editor bug (forums.unrealengine.com "TMap Struct value is not
-// editable in components inherited from C++", tracked as UE-39260) makes
-// struct-valued TMap UPROPERTYs on a UActorComponent unreliable to edit in the
-// Details panel, and a second, separately-tracked bug (UE-219729) corrupts
-// enum-keyed TMap entries on delete-then-add. TArray<FRoomEnemyTypeCount> avoids both
-// and matches ARoomActor::FRoomTargetZone's already-established pattern.
+// still-open Unreal Editor bug (UE-219729) corrupts enum-keyed TMap entries on
+// delete-then-add in the Details panel, which would affect the EEnemyType key here
+// regardless of value type. TArray<FRoomEnemyTypeCount> avoids it and matches
+// ARoomActor::FRoomTargetZone's already-established enum-tag-plus-payload pattern.
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KROWDKONTROL_API URoomMetadataComponent : public UActorComponent
 {
@@ -48,13 +46,17 @@ class KROWDKONTROL_API URoomMetadataComponent : public UActorComponent
 public:
 	URoomMetadataComponent();
 
-	// How many enemies of each locked type this room spawns.
+	// How many enemies of each locked type this room spawns. TArray does not enforce
+	// per-EnemyType uniqueness the way a TMap key would - a designer (or future code)
+	// adding a second entry for the same EnemyType is possible, and lookups like
+	// FindEntry() in this component's test only ever see the first match.
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Room Metadata")
 	TArray<FRoomEnemyTypeCount> EnemyTypeBudget;
 
 	// How many target zones of each locked type this room has. Hand-authored to match
 	// the room's actual ARoomActor::GetTargetZones() content, not derived from it -
 	// see this issue's Notes on scope (metadata storage only, no cross-validation).
+	// Same TArray uniqueness caveat as EnemyTypeBudget above applies here too.
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Room Metadata")
 	TArray<FRoomEnemyTypeCount> TargetZoneCounts;
 

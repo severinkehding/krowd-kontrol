@@ -12,8 +12,11 @@ not `TMap<EEnemyType, int32>`, to avoid two confirmed, still-open Unreal Editor 
 Details panel — mirrors `ARoomActor::FRoomTargetZone`'s existing enum-tag-plus-payload
 pattern instead.
 
-## Files changed (all under `app/`, gitignored per D-003 — this is the tracked-repo
-record of that change, see the closing note below)
+## Files changed
+
+All paths are under `app/` (gitignored per D-003) — this table and the matching
+`app-source-tracked/` copy are the tracked-repo record of that change; see the
+closing note below.
 
 | File | Action | What it contains |
 |------|--------|-------------------|

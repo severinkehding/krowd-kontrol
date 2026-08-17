@@ -59,6 +59,23 @@ bool FKrowdKontrolRoomMetadataComponentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("DifficultyTier should default to Easy"), static_cast<uint8>(Component->DifficultyTier), static_cast<uint8>(ERoomDifficultyTier::Easy));
 	TestEqual(TEXT("RequiredAbility should default to None"), static_cast<uint8>(Component->RequiredAbility), static_cast<uint8>(ERoomAbilityGate::None));
 
+	for (EEnemyType Type : { EEnemyType::RU_NNR, EEnemyType::TR_UPR, EEnemyType::B0_0MR, EEnemyType::SN_1PR })
+	{
+		FRoomEnemyTypeCount* BudgetDefault = FindEntry(Component->EnemyTypeBudget, Type);
+		TestNotNull(TEXT("EnemyTypeBudget should contain an entry for every locked enemy type"), BudgetDefault);
+		if (BudgetDefault)
+		{
+			TestEqual(TEXT("Default EnemyTypeBudget entry should start at count 0"), BudgetDefault->Count, 0);
+		}
+
+		FRoomEnemyTypeCount* ZoneDefault = FindEntry(Component->TargetZoneCounts, Type);
+		TestNotNull(TEXT("TargetZoneCounts should contain an entry for every locked enemy type"), ZoneDefault);
+		if (ZoneDefault)
+		{
+			TestEqual(TEXT("Default TargetZoneCounts entry should start at count 0"), ZoneDefault->Count, 0);
+		}
+	}
+
 	// (b) Set every field, then read each back.
 	FRoomEnemyTypeCount* BudgetEntry = FindEntry(Component->EnemyTypeBudget, EEnemyType::TR_UPR);
 	if (!TestNotNull(TEXT("EnemyTypeBudget should contain an entry for TR_UPR"), BudgetEntry))
