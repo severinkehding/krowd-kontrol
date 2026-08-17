@@ -156,6 +156,30 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	InterruptedBomber->AdvanceAttackTelegraph(InterruptedBomber->AttackTelegraphSeconds);
 	TestEqual(TEXT("interrupted explosion never fires"), InterruptedListener->CallCount, 0);
 
+	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
+	// MovementSpeed (200.0f), not AEnemyBase's own base default (600.0f) - the
+	// direct proof that issue #122's "per-type speeds are actually read" holds.
+	ABomberEnemy* SpeedBomber = NewObject<ABomberEnemy>();
+	TestEqual(TEXT("Bomber's movement speed override returns its declared MovementSpeed"),
+		SpeedBomber->GetMovementSpeedUnitsPerSecond(), SpeedBomber->MovementSpeed);
+	TestEqual(TEXT("Bomber's declared MovementSpeed is 200.0f"), SpeedBomber->MovementSpeed, 200.0f);
+	TestNotEqual(TEXT("Bomber's movement speed differs from AEnemyBase's base default"),
+		SpeedBomber->GetMovementSpeedUnitsPerSecond(), 600.0f);
+
+	// (l3) driving TickChaseMovement (friend-accessible, same as TickCheckDetection)
+	// during Alert advances the bomber at exactly its own 200 u/s, not 600 u/s -
+	// proves the override is genuinely consulted by the tick step, not just present.
+	ABomberEnemy* ChasingBomber = NewObject<ABomberEnemy>();
+	const FVector FarPlayerLocation(1000.0f, 0.0f, 0.0f);
+	ChasingBomber->TickCheckDetection(FarPlayerLocation); // Idle -> Alert (1000 <= 1500)
+	TestEqual(TEXT("precondition: bomber is Alert"),
+		static_cast<uint8>(ChasingBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	const FVector BeforeChase = ChasingBomber->GetActorLocation();
+	ChasingBomber->TickChaseMovement(FarPlayerLocation, 0.5f);
+	const float DistanceMoved = FVector::Dist(ChasingBomber->GetActorLocation(), BeforeChase);
+	TestEqual(TEXT("bomber chase advances at its own MovementSpeed * DeltaSeconds"),
+		DistanceMoved, ChasingBomber->MovementSpeed * 0.5f);
+
 	// (m) the real Tick() override wires the telegraph into the per-frame loop.
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))

@@ -95,6 +95,14 @@ protected:
 	// its own); a concrete subclass overrides this per issue #12's AC.
 	virtual float GetAttackRangeUnits() const { return 0.0f; }
 
+	// Chase speed, in units/second, applied while CurrentState == Alert (closing
+	// distance so Attack range can be reached). Overridable per concrete enemy type
+	// (issue #122, PRD 03's per-type speed column) - same "protected virtual, safe
+	// base default" shape as GetAttackRangeUnits() above. Base default matches
+	// UCharacterMovementComponent's engine-default MaxWalkSpeed (600.0f), the same
+	// "normal" reference point BomberEnemy.h's MovementSpeed comment already cites.
+	virtual float GetMovementSpeedUnitsPerSecond() const { return 600.0f; }
+
 	// TActorIterator, not UGameplayStatics::GetPlayerPawn() - the latter needs a
 	// driven World->BeginPlay() pass this module's Automation tests never run.
 	// Assumes exactly one live APawn carries UPlayerEnergyComponent (true today;
@@ -115,6 +123,14 @@ private:
 	// in exactly one place. TickCheckDetection is private (not protected) for the same
 	// reason.
 	void TickCheckDetection(const FVector& PlayerLocation);
+
+	// Moves the actor in a straight line toward PlayerLocation at
+	// GetMovementSpeedUnitsPerSecond() units/second, clamped so it never overshoots
+	// past the player within one tick. No-op outside Alert - Idle hasn't detected the
+	// player yet, and Attack/Controlled/Banked have no PRD-specified reason to keep
+	// closing distance once attack range is reached (REQ-2: no pathfinding, straight-
+	// line only). Private/friend-testable, same shape as TickCheckDetection above.
+	void TickChaseMovement(const FVector& PlayerLocation, float DeltaSeconds);
 	void AdvanceToAlert();
 	void AdvanceToAttack();
 

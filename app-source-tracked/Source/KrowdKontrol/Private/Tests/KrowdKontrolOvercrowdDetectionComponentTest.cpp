@@ -183,12 +183,10 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 		RadiusEnemies.Add(Enemy);
 	}
-	// AEnemyBase carries no RootComponent (no visual representation yet - see its
-	// placeholder-actor-first construction), so AActor::SetActorLocation() alone is
-	// a silent no-op: it early-outs whenever RootComponent is null (Actor.cpp).
-	// Give this one test enemy its own minimal scene root purely so the test can
-	// move it independently of the others, without changing the shared
-	// AEnemyBaseTestActor/AEnemyBase production classes.
+	// AEnemyBaseTestActor now has a default RootComponent (issue #122), but this test
+	// still gives this one enemy its own scene root, swapped in via
+	// SetRootComponent(), purely so the test can move it independently of the others
+	// without disturbing the shared default root the other RadiusEnemies rely on.
 	USceneComponent* MovableRoot = NewObject<USceneComponent>(RadiusEnemies[0]);
 	MovableRoot->RegisterComponent();
 	RadiusEnemies[0]->SetRootComponent(MovableRoot);
