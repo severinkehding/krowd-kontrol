@@ -22,7 +22,13 @@ class ATargetZoneTestActor : public AActor, public IHerdable
 public:
 	ATargetZoneTestActor();
 
+	// BlueprintCallable so a live-Editor/PIE session (not just this class's own
+	// C++ automation test) can independently construct the positive/negative
+	// IHerdable cases that KrowdKontrolTargetZoneTest.cpp exercises in C++.
+	UFUNCTION(BlueprintCallable, Category = "Test")
 	void SetControlled(bool bNewControlled);
+
+	UFUNCTION(BlueprintCallable, Category = "Test")
 	void SetHerdColourTag(FName NewColourTag);
 
 	virtual bool IsControlled() const override;
