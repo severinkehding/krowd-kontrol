@@ -27,6 +27,8 @@
 #include "Engine/World.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "DrainRayFiredTestListener.h"
+#include "EnemyTypeIndicatorComponent.h"
+#include "EnemyType.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -81,6 +83,14 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("DrainGlowLightComponent attenuation radius should match the placeholder value"),
 		DrainGlow->AttenuationRadius, 300.0f);
 
+	// (b2) EnemyTypeIndicatorComponent is wired to RU_NNR - PRD 13 REQ-7's colourblind-
+	// safe marker. Not implied by the component's own field default (which happens to
+	// also be RU_NNR) - this proves the constructor's explicit assignment, not the
+	// default, is what's in effect.
+	TestEqual(TEXT("EnemyTypeIndicatorComponent should report RU_NNR"),
+		static_cast<uint8>(Runner->EnemyTypeIndicatorComponent->EnemyType),
+		static_cast<uint8>(EEnemyType::RU_NNR));
+
 	// Drives a runner from Idle straight through to Attack via two zero/mid-distance
 	// detection checks (Idle -> Alert -> Attack) - shared by every case below that
 	// needs a runner already in Attack.
@@ -129,7 +139,8 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 		TellLight->AttenuationRadius, 300.0f);
 
 	AdvanceToAttack(TellRunner, ZeroDistanceLocation);
-	TestTrue(TEXT("Attack tell should be visibly on once Attack is entered"), TellLight->Intensity > 0.0f);
+	TestEqual(TEXT("Attack tell should reach configured intensity once Attack is entered"),
+		TellLight->Intensity, TellRunner->AttackTellIntensity);
 
 	UDrainRayFiredTestListener* DrainListener = NewObject<UDrainRayFiredTestListener>();
 	TellRunner->OnRunnerDrainFired.AddDynamic(DrainListener, &UDrainRayFiredTestListener::HandleDrainRayFired);
