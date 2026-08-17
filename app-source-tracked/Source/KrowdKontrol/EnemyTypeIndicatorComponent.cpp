@@ -43,6 +43,14 @@ void UEnemyTypeIndicatorComponent::InitializeMarkerVisual()
 	MarkerTextComponent->SetupAttachment(Owner->GetRootComponent());
 	MarkerTextComponent->RegisterComponent();
 	MarkerTextComponent->SetRelativeLocation(FVector(0.0f, 0.0f, MarkerHeightOffset));
+	// UTextRenderComponent's default local rotation is legible from its local -X side;
+	// both of this project's fixed top-down camera rigs (FlatCamera3DPrototypePawn's
+	// -80deg boom pitch, Paper2DPrototypePawn's -90deg boom pitch - see each pawn's
+	// constructor) view the actor from the opposite (+X) side, so the unrotated default
+	// renders mirror-flipped (issue #134, e.g. "B0-0MR" as "ЯM0-08"). A fixed 180deg
+	// Yaw flip is pitch-independent, so this single rotation reads correctly under both
+	// locked camera pitches without per-rig logic.
+	MarkerTextComponent->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
 	MarkerTextComponent->SetHorizontalAlignment(EHTA_Center);
 	MarkerTextComponent->SetWorldSize(48.0f);
 	// Neutral placeholder colour, deliberately not one of MISSION.md Hard Invariant 3's

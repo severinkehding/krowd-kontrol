@@ -130,6 +130,23 @@ bool FKrowdKontrolEnemyTypeIndicatorComponentTest::RunTest(const FString& Parame
 		}
 	}
 
+	// (c2) Regression guard for issue #134: MarkerTextComponent must be rotated to
+	// face this project's fixed top-down camera rigs, not left at
+	// UTextRenderComponent's engine-default orientation - the default renders
+	// mirror-flipped under both FlatCamera3DPrototypePawn's -80deg and
+	// Paper2DPrototypePawn's -90deg boom pitch (both view the actor from the
+	// component's local +X side; see EnemyTypeIndicatorComponent.cpp's own comment
+	// at the SetRelativeRotation call for the full derivation).
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		UTextRenderComponent* Marker = AllIndicators[Index]->MarkerTextComponent;
+		if (TestNotNull(*FString::Printf(TEXT("AllIndicators[%d]->MarkerTextComponent should be non-null"), Index), Marker))
+		{
+			TestTrue(*FString::Printf(TEXT("AllIndicators[%d]'s MarkerTextComponent should be Yaw-flipped 180 degrees to face the top-down camera rigs"), Index),
+				Marker->GetRelativeRotation().Equals(FRotator(0.0f, 180.0f, 0.0f), 0.01f));
+		}
+	}
+
 	// (d) AC #1: each of the 4 core enemy types has mutually distinct marker text.
 	TArray<FString> AllMarkerTexts;
 	for (UEnemyTypeIndicatorComponent* Indicator : AllIndicators)
