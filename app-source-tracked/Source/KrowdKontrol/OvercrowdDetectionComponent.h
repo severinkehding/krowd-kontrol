@@ -45,6 +45,12 @@ class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 	// AdvancePanicOverloadState for why.
 	friend class FKrowdKontrolOvercrowdDetectionComponentTest;
 
+	// Same grant, for UOvercrowdAudioSubsystem's own test (issue #38), which also drives
+	// this component to Active via AdvancePanicOverloadState rather than a real tick loop.
+	// Non-transitive - see MusicSubsystem.h's friend-class comment for why each test class
+	// needs its own explicit grant.
+	friend class FKrowdKontrolOvercrowdAudioSubsystemTest;
+
 public:
 	UOvercrowdDetectionComponent();
 
