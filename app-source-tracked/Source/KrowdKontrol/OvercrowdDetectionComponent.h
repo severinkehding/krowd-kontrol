@@ -17,6 +17,30 @@ enum class EPanicOverloadState : uint8
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPanicOverloadStateChanged, EPanicOverloadState, NewState);
 
+// One per-level override for UOvercrowdDetectionComponent's 3 trigger thresholds
+// (PRD 08 REQ-1, issue #23): NotifyLevelReached(LevelIndex) looks up the entry
+// whose LevelIndex matches and overwrites OvercrowdCrowdThreshold/RadiusUnits/
+// UncontrolledDurationSeconds with it. Mirrors FWaveEntry (WaveSpawnerComponent.h)
+// - an embedded, EditDefaultsOnly config struct owned by the component that reads
+// it, not a separate UDataAsset (no precedent for one in this codebase yet).
+USTRUCT(BlueprintType)
+struct FOvercrowdLevelThreshold
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "1"))
+	int32 LevelIndex = 1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "1"))
+	int32 CrowdThreshold = 5;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "0.0"))
+	float RadiusUnits = 800.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "0.0"))
+	float UncontrolledDurationSeconds = 2.0f;
+};
+
 // Detects "overcrowd" (PRD 08 Punishment 3, MISSION.md `08`, issue #16): counts how
 // many hot-and-uncontrolled enemies (AEnemyBase::GetEnemyState() == Alert || Attack -
 // explicitly NOT Controlled, unlike IThreatState::GetThreatState()'s Hot, which reads
@@ -51,6 +75,11 @@ class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 	// needs its own explicit grant.
 	friend class FKrowdKontrolOvercrowdAudioSubsystemTest;
 
+	// Same grant, for the per-level-threshold test (issue #23), which also drives
+	// this component to Active via AdvancePanicOverloadState after calling
+	// NotifyLevelReached - non-transitive, same rationale as the two grants above.
+	friend class FKrowdKontrolOvercrowdLevelThresholdTest;
+
 public:
 	UOvercrowdDetectionComponent();
 
@@ -71,6 +100,28 @@ public:
 	// default, not a locked design value.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "0.0"))
 	float OvercrowdUncontrolledDurationSeconds = 2.0f;
+
+	// Per-level overrides for the 3 fields above. Empty by default - an empty array
+	// makes NotifyLevelReached() a silent no-op, so existing placements that never
+	// call it keep behaving exactly as they do today, off the 3 fields' own
+	// EditDefaultsOnly values. Not required to cover every level; only levels that
+	// need their own tuning need an entry here.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd")
+	TArray<FOvercrowdLevelThreshold> LevelThresholds;
+
+	// Explicit level-progression signal a caller (today, an Automation test; later,
+	// a real level-progression subsystem - same not-yet-built status as
+	// UAbilityUnlockComponent::NotifyLevelReached's own caller, per that function's
+	// header comment) invokes once per level reached. Looks up LevelThresholds for
+	// LevelIndex and overwrites OvercrowdCrowdThreshold/OvercrowdRadiusUnits/
+	// OvercrowdUncontrolledDurationSeconds with the match, resetting
+	// UncontrolledSeconds to 0 (an in-progress accumulation measured against the old
+	// thresholds is meaningless against the new ones). No match and a non-empty
+	// LevelThresholds logs a warning and changes nothing, mirroring
+	// UAbilityUnlockComponent::NotifyLevelReached's out-of-range warning. An empty
+	// LevelThresholds is a silent no-op.
+	UFUNCTION(BlueprintCallable, Category = "Overcrowd")
+	void NotifyLevelReached(int32 LevelIndex);
 
 	EPanicOverloadState GetPanicOverloadState() const { return CurrentState; }
 
