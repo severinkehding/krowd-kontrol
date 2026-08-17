@@ -122,7 +122,13 @@ nodes:
     command: dark-factory-triage-classify
     depends_on: [fetch-issues, fetch-rules, fetch-open-prs]
     model: sonnet
-    allowed_tools: [Write]
+    # Read/Glob/Grep added 2026-08-17: with [Write] only, the classifier had no way
+    # to check whether a claimed dependency actually exists in the codebase, so it
+    # hedged with "can't confirm X exists" and re-rejected issues whose blockers had
+    # long since merged (confirmed live on #65/#80/#61/#59/#49/#48/#50/#46/#36/#33 -
+    # every one cited a dependency already on main). Read-only access, Write stays
+    # for the decisions artifact.
+    allowed_tools: [Write, Read, Glob, Grep]
 
   # --- Layer 2: apply decisions deterministically ---
 
