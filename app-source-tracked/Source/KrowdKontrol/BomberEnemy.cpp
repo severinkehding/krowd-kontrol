@@ -5,6 +5,8 @@
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
 #include "PlayerEnergyComponent.h"
+#include "EnemyTypeIndicatorComponent.h"
+#include "EnemyType.h"
 
 ABomberEnemy::ABomberEnemy()
 {
@@ -33,6 +35,9 @@ ABomberEnemy::ABomberEnemy()
 	AttackTellLightComponent->SetLightColor(FLinearColor(1.0f, 0.15f, 0.05f));
 	AttackTellLightComponent->SetIntensity(0.0f); // off until Attack entry
 	AttackTellLightComponent->SetAttenuationRadius(300.0f);
+
+	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
+	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::B0_0MR;
 }
 
 float ABomberEnemy::GetAttackRangeUnits() const
@@ -40,6 +45,13 @@ float ABomberEnemy::GetAttackRangeUnits() const
 	// Small relative to DetectionRangeUnits's default (1500.0f) - the mechanical
 	// definition of "short-range", the opposite of ASniperEnemy's own override.
 	return 150.0f;
+}
+
+float ABomberEnemy::GetMovementSpeedUnitsPerSecond() const
+{
+	// Per-type override (issue #122) - B0-0MR's slow-movement AC (issue #15) now
+	// actually drives AEnemyBase::TickChaseMovement, not just a declared value.
+	return MovementSpeed;
 }
 
 void ABomberEnemy::OnControlledEntry(EAbilitySlot Ability)

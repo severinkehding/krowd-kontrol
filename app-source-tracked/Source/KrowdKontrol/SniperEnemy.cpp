@@ -4,6 +4,8 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
+#include "EnemyTypeIndicatorComponent.h"
+#include "EnemyType.h"
 
 ASniperEnemy::ASniperEnemy()
 {
@@ -43,6 +45,9 @@ ASniperEnemy::ASniperEnemy()
 	AttackTellLightComponent->SetLightColor(FLinearColor(1.0f, 0.85f, 0.1f));
 	AttackTellLightComponent->SetIntensity(0.0f); // off until Attack entry
 	AttackTellLightComponent->SetAttenuationRadius(300.0f);
+
+	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
+	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::SN_1PR;
 }
 
 float ASniperEnemy::GetAttackRangeUnits() const

@@ -50,6 +50,32 @@ if [ ! -f "$UE_CMD" ]; then
 fi
 
 UPROJECT_WIN="$(wslpath -w "$REPO_ROOT/app/KrowdKontrol.uproject")"
+
+# Rebuild the module before testing (2026-08-17). Nothing in this gate compiled
+# before — it silently tested whatever DLL the last build (from ANY branch's run)
+# left behind, which produced three confirmed-false E2E/validation verdicts in one
+# day: PR #126 was escalated for a component "missing from the loaded module" that
+# was simply not in the stale binary, and PRs #120/#125 had findings partially
+# rooted in observing another branch's build. An up-to-date build is a no-op
+# (~8-10s with UBA); a stale one gets corrected right here, so the tests below
+# always run against the source actually on disk. Skippable for callers that just
+# built (KROWD_KONTROL_SKIP_UBT=1), and a failed compile is a loud gate failure —
+# exactly what "loud, never silent" demands.
+if [ "${KROWD_KONTROL_SKIP_UBT:-0}" != "1" ]; then
+  UBT_DOTNET="${KROWD_KONTROL_UBT_DOTNET:-/mnt/c/Program Files/Epic Games/UE_5.8/Engine/Binaries/ThirdParty/DotNet/10.0/win-x64/dotnet.exe}"
+  UBT_DLL="${KROWD_KONTROL_UBT_DLL:-C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\DotNET\\UnrealBuildTool\\UnrealBuildTool.dll}"
+  if [ -f "$UBT_DOTNET" ]; then
+    echo "UE_BUILD_START KrowdKontrolEditor Win64 Development"
+    if ! "$UBT_DOTNET" "$UBT_DLL" KrowdKontrolEditor Win64 Development -project="$UPROJECT_WIN" -WaitMutex >/dev/null 2>&1; then
+      echo "UE_AUTOMATION_ERROR UnrealBuildTool compile failed — tests would run against a stale binary. Re-run the build directly for the compiler output." >&2
+      exit 1
+    fi
+    echo "UE_BUILD_OK"
+  else
+    echo "UE_BUILD_SKIPPED dotnet not found at $UBT_DOTNET (set KROWD_KONTROL_UBT_DOTNET) — testing existing binaries" >&2
+  fi
+fi
+
 REPORT_DIR="$(mktemp -d)"
 trap 'rm -rf "$REPORT_DIR"' EXIT
 REPORT_DIR_WIN="$(wslpath -w "$REPORT_DIR")"

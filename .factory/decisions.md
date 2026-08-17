@@ -852,3 +852,61 @@ root cause but the same shape: something that looks like an ending (workflow exi
 label update, PR closes) doesn't actually reach the step that was supposed to signal
 it. Worth treating "is anything stuck with no error and no visible cause" as its own
 recurring category to sweep for, not just individual bugs to fix one at a time.
+
+## D-016: `harness/run_ue_automation.sh` never rebuilds — a "green gate" can mean the
+PR's own source was never compiled
+
+**2026-08-17.** Found while self-fixing PR #125's review findings (issue #122). One
+finding asked to re-verify a suspect test case by actually running `harness/ci.py`
+full mode. Doing that for real (not just re-reading the changelog's claimed output)
+surfaced that `harness/run_ue_automation.sh` launches `UnrealEditor-Cmd.exe` directly
+against whatever `Binaries/Win64/UnrealEditor-KrowdKontrol.dll` already exists on
+disk — it never invokes UnrealBuildTool. Checked timestamps: that DLL was last built
+09:56 that morning, a full hour before PR #125's own commit (11:07). Its
+"`UNIT_PASSED tests=31`"/"`GATE_OK mode=full`" changelog claim was real output from a
+real run, but of a binary that predated the PR's own source changes entirely — the
+gate was green because it validated old code, not because the new code worked.
+
+Manually invoking `Engine/Build/BatchFiles/Build.bat` (via
+`/mnt/c/Windows/System32/cmd.exe`, callable from WSL through interop; needed a
+temp-`.bat` wrapper file since inline `cmd /c "..."` quoting kept mis-splitting on
+`C:\Program Files\...` paths) rebuilt for real and immediately surfaced two genuine
+bugs in the PR's own test additions that neither the harness nor the prior code
+review had caught, because neither had ever actually compiled this source:
+1. `TestEqual(..., FVector::Dist(...), 0.0f)` — `FVector::Dist` returns `double`;
+   comparing it directly against a `float` literal is an ambiguous overload (`C2666`)
+   between `TestEqual`'s `FString`/`TCHAR*` parameter forms. Every one of this PR's
+   new test cases using this exact shape failed to compile.
+2. `UGameplayStatics::GetPlayerPawn` needs the test's manually-spawned
+   `APlayerController` registered in `World::PlayerControllerList`, which normally
+   happens via `AController::PostInitializeComponents` — `CreateNewMap()`'s editor
+   world never drives that pass, so `Controller->Possess(Pawn)` alone (the fix a
+   code-review pass had recommended, citing an existing sibling test as precedent)
+   was not sufficient; a direct `World->AddController()` call was required. Compounding
+   it, the raw `APawn` used as "the player" has no default `RootComponent`, so
+   `SetActorLocation()` on it was a silent no-op the whole time.
+
+**Separately, and higher-stakes:** `app/` is a single symlink to one physical
+directory on the Windows host (`CLAUDE.md`'s Environment section), shared by every
+worktree that links it — not scoped per-branch, per-PR, or per-worktree. Mid-fix,
+removing this PR's accidentally-bundled `IThreatState`/`GetThreatState()` code (see
+PR #125's own review findings) broke the live build, because `MusicSubsystem.cpp/.h`
+and its test — real, in-progress work for issue #25, sitting only as uncommitted
+files on the shared filesystem, in no branch, no commit, anywhere in this repo's git
+history — already depended on it. The two tasks were never in the same worktree or
+branch; they collided purely because `app/` is shared mutable state. Resolved this
+time by restoring the live `app/EnemyBase.h`/`.cpp` to keep that code (protecting
+issue #25's in-flight work) while keeping the git-tracked `app-source-tracked/`
+mirror correctly scoped without it — an intentional, documented divergence between
+the two, not a mistake. This is the same concurrency-isolation problem D-003/D-004
+already named as unsolved; this is a second, concrete instance of it actually
+destroying a colleague's uncommitted work, not just a theoretical risk.
+
+**Not fixed here** (out of scope for a PR-review self-fix; both need deliberate
+follow-up):
+- `harness/run_ue_automation.sh` (or `ci.py`/`harness.config.json`) should invoke a
+  real build before running Automation tests, or the gate should refuse to claim
+  `GATE_OK` off a binary older than the source it's meant to validate.
+- `app/`'s shared-filesystem concurrency problem needs an actual fix (per-worktree
+  checkout of the live project, a lock, or similar) — CLAUDE.md's `app-source-tracked/`
+  carve-out (D-009) solved the "can't open a PR" symptom but not this one.

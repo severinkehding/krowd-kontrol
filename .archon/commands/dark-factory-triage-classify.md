@@ -51,6 +51,19 @@ For each decision, also assign:
 
 - Default to `reject` when uncertain. Do not accept anything you wouldn't bet
   $100 an autonomous agent can complete without clarification.
+- **Verify dependency claims against the codebase before rejecting for them.**
+  You have read-only access (Read/Glob/Grep) to this repo, and the real gameplay
+  source is mirrored under `app-source-tracked/Source/KrowdKontrol/` (see
+  CLAUDE.md's Environment section). If an issue names a prerequisite system,
+  class, or interface (e.g. "depends on IHerdable", "needs the Boss base actor"),
+  Grep/Glob for it there FIRST. Reject for a missing dependency only when the
+  search actually comes up empty, and say what you searched for. Never reject
+  with "can't confirm X exists" - that phrasing means you didn't look, and it
+  has caused whole batches of legitimately-unblocked issues to bounce (found
+  live 2026-08-17: ten reopened issues re-rejected for dependencies that were
+  verifiably merged - AbilityData, IHerdable, GizmoNarrativeSubsystem,
+  ARoomActor, ABossBase, enemy telegraphs - every one present in
+  app-source-tracked/).
 - Reject any issue asking to modify MISSION.md, FACTORY_RULES.md, or `.archon/`.
 - If an open PR already addresses the issue, reject with `duplicate_of` set to
   the PR number.

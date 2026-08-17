@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class UPointLightComponent;
+class UEnemyTypeIndicatorComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBomberExploded);
 
@@ -37,6 +38,11 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bomber")
 	TObjectPtr<UPointLightComponent> AttackTellLightComponent;
 
+	// Colourblind-safe non-colour marker (PRD 13 REQ-7, issue #77) - "B0-0MR" text
+	// floating above the mesh, independent of CoreGlowLightComponent's Orange.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bomber")
+	TObjectPtr<UEnemyTypeIndicatorComponent> EnemyTypeIndicatorComponent;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0"))
 	float AttackTelegraphSeconds = 2.0f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber")
@@ -50,14 +56,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber")
 	float ExplosionDamageAmount = 999.0f;
 
-	// "Slow movement" AC sub-clause (issue #15, PRD 03's table). The Enemy AI state
-	// machine is proximity-only today (see EnemyBase.h's TickCheckDetection) - no
-	// movement/pathing component exists anywhere yet, so this isn't wired to a live
-	// nav system. Exposed as a plain tunable, well below UCharacterMovementComponent's
-	// engine default MaxWalkSpeed (600.0f) - the closest "normal" reference point
-	// available, since ASniperEnemy (long-range; never needs to close distance) has no
-	// comparable property of its own - so the clause is at least testably addressed
-	// pending that integration.
+	// "Slow movement" AC sub-clause (issue #15, PRD 03's table), genuinely wired into
+	// AEnemyBase::TickChaseMovement via GetMovementSpeedUnitsPerSecond() below (issue
+	// #122) - no longer a declared-but-inert value. Well below
+	// UCharacterMovementComponent's engine default MaxWalkSpeed (600.0f, also
+	// AEnemyBase::GetMovementSpeedUnitsPerSecond()'s own base default), the closest
+	// "normal" reference point available, since ASniperEnemy (long-range; never needs
+	// to close distance) deliberately keeps that base default rather than declaring
+	// its own override.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0"))
 	float MovementSpeed = 200.0f;
 
@@ -67,6 +73,7 @@ public:
 
 protected:
 	virtual float GetAttackRangeUnits() const override;
+	virtual float GetMovementSpeedUnitsPerSecond() const override;
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
 	virtual void Tick(float DeltaTime) override;

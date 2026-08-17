@@ -17,8 +17,8 @@ public class KrowdKontrol : ModuleRules
 
 		// Paper2D for APaper2DPrototypePawn (issue #55) - the Paper2D half of PRD 14 REQ-1's
 		// Paper2D-vs-flat-camera-3D pipeline comparison. Paper2D is EnabledByDefault in its
-		// own .uplugin, so only this module dependency is needed - no .uproject Plugins
-		// array entry.
+		// .uplugin, so no KrowdKontrol.uproject Plugins-array entry is needed - only this
+		// module dependency, to make UPaperSpriteComponent/UPaperSprite visible to C++.
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "Paper2D" });
 
 		// UMG for UPostRunSummaryWidget (issue #74). No Widget Blueprint asset involved;
@@ -27,6 +27,14 @@ public class KrowdKontrol : ModuleRules
 		// UAbilityCooldownTrayWidget/UEnergyMeterWidget, whose own app-source-tracked/
 		// Build.cs mirror was never updated for it until now.
 		PrivateDependencyModuleNames.AddRange(new string[] { "UMG", "Slate", "SlateCore" });
+
+		// EngineSettings for UGameMapsSettings (Runtime/EngineSettings/Classes/GameMapsSettings.h),
+		// used by KrowdKontrolGameModeTest.cpp. Found as a pre-existing link failure (LNK2019
+		// on UGameMapsSettings::GetGlobalDefaultGameMode) while validating an unrelated issue
+		// #11 change - app/ is shared, uncommitted state across worktrees (CLAUDE.md's
+		// Environment section, .factory/decisions.md D-016), so this dependency gap was
+		// blocking every build off the shared project, not just this one.
+		PrivateDependencyModuleNames.Add("EngineSettings");
 
 		if (Target.bBuildEditor)
 		{
