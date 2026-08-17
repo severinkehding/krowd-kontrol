@@ -17,6 +17,16 @@ ABomberEnemy::ABomberEnemy()
 
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	RootComponent = MeshComponent;
+
+	EliteTrimLightComponent = CreateDefaultSubobject<UPointLightComponent>(TEXT("BomberEliteTrimLightComponent"));
+	EliteTrimLightComponent->SetupAttachment(MeshComponent);
+	// PLACEHOLDER COLOUR - see RunnerEnemy.cpp's constructor comment for the full
+	// rationale (colour choice, and why this is inline rather than a shared
+	// AEnemyBase helper).
+	EliteTrimLightComponent->SetLightColor(FLinearColor(0.1f, 1.0f, 0.15f));
+	EliteTrimLightComponent->SetIntensity(0.0f); // off unless bIsElite
+	EliteTrimLightComponent->SetAttenuationRadius(300.0f);
+
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	if (SphereMeshFinder.Succeeded())
 	{

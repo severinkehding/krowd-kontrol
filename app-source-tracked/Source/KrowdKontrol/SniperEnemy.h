@@ -46,6 +46,13 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
 	TObjectPtr<UPointLightComponent> AttackTellLightComponent;
 
+	// Elite configuration (PRD 03 REQ-4, issue #19): non-reserved secondary trim
+	// light, lit only while AEnemyBase::bIsElite is true - see
+	// AEnemyBase::GetEliteTrimLightComponent()'s comment for why this is declared
+	// per-subclass rather than once on AEnemyBase.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
+	TObjectPtr<UPointLightComponent> EliteTrimLightComponent;
+
 	// Colourblind-safe non-colour marker (PRD 13 REQ-7, issue #77) - "SN-1PR" text
 	// floating above the mesh, independent of EyeGlowLightComponent's Blue.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
@@ -81,6 +88,7 @@ public:
 
 protected:
 	virtual float GetAttackRangeUnits() const override;
+	virtual UPointLightComponent* GetEliteTrimLightComponent() const override { return EliteTrimLightComponent; }
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
 	virtual void Tick(float DeltaTime) override;

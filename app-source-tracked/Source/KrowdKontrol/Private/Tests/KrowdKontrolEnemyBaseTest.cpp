@@ -19,11 +19,14 @@
 #include "Misc/AutomationTest.h"
 #include "EnemyBase.h"
 #include "EnemyBaseTestActor.h"
+#include "EnemyBaseNoTrimLightTestActor.h"
 #include "EnemyBankedTestListener.h"
 #include "PlayerEnergyComponent.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "ReservedGameplayColours.h"
+#include "Components/PointLightComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -42,6 +45,59 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Default enemy state should be Idle"),
 		static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Idle));
+
+	// (v)-(y) Elite state (issue #19). Checked here (early, on freshly-constructed
+	// actors) rather than at the end of this test after dozens more NewObject<>()
+	// instances and several CreateNewMap() calls have run - a NewObject<>()-constructed
+	// actor held only by a local pointer has no GC roots, and asserting on it this late
+	// risked it having already been collected by an incidental GC pass triggered by the
+	// later, heavier cases (reproduced empirically: intermittent null failures when
+	// checked late - see app-changelog/issue-19.md's "Design note" and the same
+	// rationale comment in KrowdKontrolBomberEnemyTest.cpp etc.).
+
+	// (v) default Elite state: bIsElite false, effective speed equals the base
+	// GetMovementSpeedUnitsPerSecond() unmultiplied, trim light off.
+	AEnemyBaseTestActor* EliteDefaultEnemy = NewObject<AEnemyBaseTestActor>();
+	TestFalse(TEXT("bIsElite should default to false"), EliteDefaultEnemy->bIsElite);
+	TestEqual(TEXT("Default effective movement speed should equal the unmultiplied base speed"),
+		EliteDefaultEnemy->GetEffectiveMovementSpeedUnitsPerSecond(), 600.0f);
+	if (TestNotNull(TEXT("EliteTrimLightComponent should exist"), EliteDefaultEnemy->EliteTrimLightComponent.Get()))
+	{
+		TestEqual(TEXT("Elite trim light should be off by default"),
+			EliteDefaultEnemy->EliteTrimLightComponent->Intensity, 0.0f);
+	}
+
+	// (w) SetIsElite(true) turns the trim light on and multiplies effective speed.
+	AEnemyBaseTestActor* EliteEnemy = NewObject<AEnemyBaseTestActor>();
+	EliteEnemy->SetIsElite(true);
+	TestTrue(TEXT("SetIsElite(true) should set bIsElite"), EliteEnemy->bIsElite);
+	TestEqual(TEXT("Elite trim light should turn on once bIsElite is true"),
+		EliteEnemy->EliteTrimLightComponent->Intensity, EliteEnemy->EliteTrimIntensity);
+	TestEqual(TEXT("Effective movement speed should be multiplied while Elite"),
+		EliteEnemy->GetEffectiveMovementSpeedUnitsPerSecond(), 600.0f * EliteEnemy->EliteMovementSpeedMultiplier);
+
+	// (x) SetIsElite(false) reverts both the flag and the light intensity.
+	EliteEnemy->SetIsElite(false);
+	TestFalse(TEXT("SetIsElite(false) should clear bIsElite"), EliteEnemy->bIsElite);
+	TestEqual(TEXT("Elite trim light should turn back off once bIsElite is false"),
+		EliteEnemy->EliteTrimLightComponent->Intensity, 0.0f);
+	TestEqual(TEXT("Effective movement speed should revert to the unmultiplied base speed"),
+		EliteEnemy->GetEffectiveMovementSpeedUnitsPerSecond(), 600.0f);
+
+	// (y) Elite trim colour must not collide with any of the 5 reserved gameplay-
+	// information colours.
+	TestFalse(TEXT("EliteTrimLightComponent colour should not collide with a reserved colour"),
+		ReservedGameplayColours::GetAll().ContainsByPredicate(
+			[EliteEnemy](const FLinearColor& Reserved) { return Reserved.Equals(EliteEnemy->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
+
+	// (z) SetIsElite() on a subclass that doesn't override GetEliteTrimLightComponent()
+	// (base default nullptr) must not crash, and must still flip bIsElite - the
+	// trim-light half of SetIsElite() is null-guarded specifically so a future concrete
+	// subclass that forgets the override doesn't dereference a null component.
+	AEnemyBaseNoTrimLightTestActor* NoTrimLightEnemy = NewObject<AEnemyBaseNoTrimLightTestActor>();
+	NoTrimLightEnemy->SetIsElite(true);
+	TestTrue(TEXT("SetIsElite(true) should set bIsElite even with no trim light component"),
+		NoTrimLightEnemy->bIsElite);
 
 	// (b) far outside DetectionRangeUnits leaves state at Idle.
 	const FVector FarAwayLocation(Enemy->DetectionRangeUnits + 500.0f, 0.0f, 0.0f);

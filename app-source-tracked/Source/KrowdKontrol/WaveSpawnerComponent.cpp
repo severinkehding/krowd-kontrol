@@ -1,6 +1,8 @@
 #include "WaveSpawnerComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "EnemyBase.h"
+#include "EliteEligibility.h"
 
 UWaveSpawnerComponent::UWaveSpawnerComponent()
 {
@@ -88,6 +90,20 @@ void UWaveSpawnerComponent::SpawnWave(int32 WaveIndex)
 				if (AActor* SpawnedActor = World->SpawnActor<AActor>(Entry.EnemyClass))
 				{
 					SpawnedActors.Add(SpawnedActor);
+
+					if (Entry.bIsElite && EliteEligibility::IsEligibleAtLevel(LevelIndex))
+					{
+						if (AEnemyBase* SpawnedEnemy = Cast<AEnemyBase>(SpawnedActor))
+						{
+							SpawnedEnemy->SetIsElite(true);
+						}
+						else
+						{
+							UE_LOG(LogTemp, Warning,
+								TEXT("UWaveSpawnerComponent: Waves[%d] is flagged bIsElite but its EnemyClass ('%s') does not derive from AEnemyBase - ignoring the flag for this spawn."),
+								WaveIndex, *GetNameSafe(Entry.EnemyClass));
+						}
+					}
 				}
 			}
 		}

@@ -28,6 +28,16 @@ struct FWaveEntry
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Wave", meta = (ClampMin = "0.0"))
 	float DelaySeconds = 0.0f;
+
+	// When true, SpawnWave() calls AEnemyBase::SetIsElite(true) on this entry's
+	// spawned actors after spawning, but only if the spawner's LevelIndex passes
+	// EliteEligibility::IsEligibleAtLevel() (issue #19, PRD 03 REQ-4) - below that
+	// level the flag is ignored and the actor spawns as a normal enemy. No-op (with a
+	// warning, see .cpp) if EnemyClass doesn't derive from AEnemyBase - this field has
+	// no opinion on which EnemyClass is assigned, matching EnemyType's own "tag only,
+	// resolving to a class is the caller's job" philosophy.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Wave")
+	bool bIsElite = false;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWaveSpawned, int32, WaveIndex);
@@ -57,6 +67,15 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Wave Spawner")
 	TArray<FWaveEntry> Waves;
+
+	// The level this spawner's waves belong to (PRD 03 REQ-4). SpawnWave() consults
+	// EliteEligibility::IsEligibleAtLevel(LevelIndex) before honoring an entry's
+	// bIsElite flag - no live level-progression subsystem exists yet, so the caller
+	// (level setup, e.g. a room or boss encounter) supplies this explicitly, matching
+	// UAbilityUnlockComponent::NotifyLevelReached()'s "caller supplies LevelIndex"
+	// convention.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Wave Spawner")
+	int32 LevelIndex = 1;
 
 	// Fires each time a wave finishes spawning, with its index in Waves.
 	UPROPERTY(BlueprintAssignable, Category = "Wave Spawner")
