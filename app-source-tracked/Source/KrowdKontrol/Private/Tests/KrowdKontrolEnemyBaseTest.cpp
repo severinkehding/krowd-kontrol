@@ -5,10 +5,13 @@
 // one transition per TickCheckDetection call, and (3) ReceiveControl works from both
 // Alert and Attack, recording the ability that triggered it.
 //
-// Uses NewObject rather than spawning into a UWorld: AEnemyBase never calls
-// GetWorld()/SpawnActor in its testable paths (Tick() does, but TickCheckDetection is
-// called directly via the friend, with an explicit FVector player location, never
-// through Tick() itself), same rationale KrowdKontrolBossBaseTest.cpp documents.
+// Uses NewObject rather than spawning into a UWorld for most cases: AEnemyBase never
+// calls GetWorld()/SpawnActor in its testable paths (Tick() does, but
+// TickCheckDetection is called directly via the friend, with an explicit FVector
+// player location, never through Tick() itself), same rationale
+// KrowdKontrolBossBaseTest.cpp documents. Cases (k)/(m)/(n) are the exceptions: they
+// exercise the real Tick() override and FindPlayerEnergyComponent()'s
+// TActorIterator/GetWorld() usage respectively, both of which need a real World.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -17,8 +20,10 @@
 #include "EnemyBase.h"
 #include "EnemyBaseTestActor.h"
 #include "EnemyBankedTestListener.h"
+#include "PlayerEnergyComponent.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -176,6 +181,103 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	ReentrantEnemy->TransitionToBanked();
 	TestEqual(TEXT("Re-entrant TransitionToBanked() during broadcast must not re-fire"),
 		ReentrantListener->CallCount, 1);
+
+	// (m) FindPlayerEnergyComponent finds the world's UPlayerEnergyComponent when a
+	// pawn carries one. Shared with issue #15's Bomber-enemy work-in-progress (see
+	// app-changelog/issue-25.md's "Deviations from plan"); tested here since this is
+	// the only AEnemyBase capability in this PR's tracked diff with no prior coverage.
+	UWorld* EnergyWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), EnergyWorld))
+	{
+		AEnemyBaseTestActor* EnergyEnemy = EnergyWorld->SpawnActor<AEnemyBaseTestActor>();
+		APawn* PlayerPawn = EnergyWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), EnergyEnemy)
+			&& TestNotNull(TEXT("APawn should spawn into the test World"), PlayerPawn))
+		{
+			UPlayerEnergyComponent* Energy = NewObject<UPlayerEnergyComponent>(PlayerPawn);
+			Energy->RegisterComponent();
+
+			TestEqual(TEXT("FindPlayerEnergyComponent should find the pawn's UPlayerEnergyComponent"),
+				EnergyEnemy->FindPlayerEnergyComponent(), Energy);
+		}
+	}
+
+	// (n) not-found path: no pawn with the component anywhere in the world returns
+	// nullptr (and logs a warning) rather than crashing.
+	UWorld* EmptyWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), EmptyWorld))
+	{
+		AEnemyBaseTestActor* LonelyEnemy = EmptyWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), LonelyEnemy))
+		{
+			AddExpectedError(TEXT("found no APawn with a UPlayerEnergyComponent"), EAutomationExpectedErrorFlags::Contains, 1);
+			TestNull(TEXT("FindPlayerEnergyComponent should return nullptr when no pawn carries the component"),
+				LonelyEnemy->FindPlayerEnergyComponent());
+		}
+	}
+
+	// (o) GetMovementSpeedUnitsPerSecond() base default matches the engine's own
+	// MaxWalkSpeed default (600.0f) - the "normal" reference point BomberEnemy.h's
+	// MovementSpeed comment cites.
+	AEnemyBaseTestActor* SpeedEnemy = NewObject<AEnemyBaseTestActor>();
+	TestEqual(TEXT("base default movement speed is 600.0f"),
+		SpeedEnemy->GetMovementSpeedUnitsPerSecond(), 600.0f);
+
+	// (p) TickChaseMovement is a no-op outside Alert: Idle.
+	AEnemyBaseTestActor* IdleChaser = NewObject<AEnemyBaseTestActor>();
+	const FVector StartLocation = IdleChaser->GetActorLocation();
+	const FVector FarPlayerLocation(5000.0f, 0.0f, 0.0f);
+	IdleChaser->TickChaseMovement(FarPlayerLocation, 1.0f);
+	TestEqual(TEXT("TickChaseMovement while Idle should not move the actor"),
+		FVector::Dist(IdleChaser->GetActorLocation(), StartLocation), 0.0f);
+
+	// (q) TickChaseMovement moves the actor toward the player at the base default
+	// speed while in Alert, advancing exactly speed*DeltaSeconds in one tick.
+	AEnemyBaseTestActor* AlertChaser = NewObject<AEnemyBaseTestActor>();
+	AlertChaser->TickCheckDetection(FVector(1000.0f, 0.0f, 0.0f)); // Idle -> Alert
+	TestEqual(TEXT("precondition: chaser is Alert"),
+		static_cast<uint8>(AlertChaser->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	const FVector BeforeChase = AlertChaser->GetActorLocation();
+	AlertChaser->TickChaseMovement(FVector(1000.0f, 0.0f, 0.0f), 0.5f);
+	const float DistanceMoved = FVector::Dist(AlertChaser->GetActorLocation(), BeforeChase);
+	TestEqual(TEXT("Alert-state chase moves at base default speed * DeltaSeconds"),
+		DistanceMoved, 600.0f * 0.5f);
+
+	// (r) TickChaseMovement is a no-op outside Alert: Attack.
+	AEnemyBaseTestActor* AttackChaser = NewObject<AEnemyBaseTestActor>();
+	AttackChaser->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	AttackChaser->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	const FVector AttackStart = AttackChaser->GetActorLocation();
+	AttackChaser->TickChaseMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	TestEqual(TEXT("TickChaseMovement while Attack should not move the actor"),
+		FVector::Dist(AttackChaser->GetActorLocation(), AttackStart), 0.0f);
+
+	// (s) no-overshoot clamp: a player closer than speed*DeltaSeconds is reached
+	// exactly, not overshot past.
+	AEnemyBaseTestActor* CloseChaser = NewObject<AEnemyBaseTestActor>();
+	CloseChaser->TickCheckDetection(FVector(50.0f, 0.0f, 0.0f)); // Idle -> Alert (within DetectionRangeUnits, outside base 0.0f attack range)
+	CloseChaser->TickChaseMovement(FVector(50.0f, 0.0f, 0.0f), 1.0f); // would move 600 units at base speed - player is only 50 away
+	TestEqual(TEXT("chase clamps to the player's location instead of overshooting"),
+		FVector::Dist(CloseChaser->GetActorLocation(), FVector(50.0f, 0.0f, 0.0f)), 0.0f);
+
+	// (t) the real Tick() override wires TickChaseMovement into the per-frame loop,
+	// same World-backed shape as case (k)'s detection-only Tick() coverage.
+	UWorld* ChaseWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), ChaseWorld))
+	{
+		AEnemyBaseTestActor* TickedChaser = ChaseWorld->SpawnActor<AEnemyBaseTestActor>();
+		APawn* ChasePlayerPawn = ChaseWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), TickedChaser)
+			&& TestNotNull(TEXT("APawn should spawn into the test World"), ChasePlayerPawn))
+		{
+			ChasePlayerPawn->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f));
+			TickedChaser->TickCheckDetection(ChasePlayerPawn->GetActorLocation()); // Idle -> Alert
+			const FVector BeforeTick = TickedChaser->GetActorLocation();
+			TickedChaser->Tick(0.1f);
+			TestTrue(TEXT("Tick() should move the chaser toward the player"),
+				FVector::Dist(TickedChaser->GetActorLocation(), BeforeTick) > 0.0f);
+		}
+	}
 
 	return true;
 }
