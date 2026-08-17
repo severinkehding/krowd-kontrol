@@ -19,6 +19,20 @@ namespace
 	// exists yet for this widget's scope, so the label itself stays a text
 	// placeholder - only its colour changed.
 	const TCHAR* SlotLabels[UAbilityCooldownTrayWidget::NumAbilitySlots] = { TEXT("STN"), TEXT("SLP"), TEXT("ROT"), TEXT("FER"), TEXT("SNR") };
+
+	// Locked-state label (PRD 13 REQ-3) - replaces the slot's ability abbreviation
+	// entirely rather than being appended/overlaid, so a locked slot reads as a
+	// distinct state at a glance, not a modified cooldown.
+	const TCHAR* LockedSlotLabel = TEXT("LCK");
+
+	// Desaturated dark red - reads as a "warning/blocked" treatment without becoming
+	// a 6th saturated gameplay-information colour (MISSION.md Hard Invariant 3 /
+	// PRD 13 REQ-4). Combined with the LCK label swap below, this makes the locked
+	// state distinguishable via more than colour alone (PRD 13 REQ-3/REQ-7's spirit).
+	FLinearColor GetLockedBorderColor()
+	{
+		return FLinearColor(0.35f, 0.05f, 0.05f, 0.92f);
+	}
 }
 
 void UAbilityCooldownTrayWidget::NativeOnInitialized()
@@ -69,9 +83,6 @@ void UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()
 
 void UAbilityCooldownTrayWidget::BuildWidgetTree()
 {
-	// Chrome background/text come from HUDChromeColours (issue #93), shared across all
-	// HUD widgets.
-	const FLinearColor ChromeBackgroundColor = HUDChromeColours::GetBackground();
 	const FSlateColor TextColor(HUDChromeColours::GetText());
 
 	// First use of UCanvasPanel in this codebase - needed because corner anchoring
@@ -96,6 +107,7 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 	SlotIconLabels.SetNum(NumAbilitySlots);
 	SlotCooldownRemaining.SetNum(NumAbilitySlots);
 	SlotCooldownDuration.SetNum(NumAbilitySlots);
+	SlotLocked.SetNum(NumAbilitySlots);
 
 	for (int32 Index = 0; Index < NumAbilitySlots; ++Index)
 	{
@@ -105,7 +117,7 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 		SlotsBoxSlot->SetPadding(FMargin(4.0f));
 
 		UBorder* IconBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), *FString::Printf(TEXT("SlotIconBorder_%d"), Index));
-		IconBorder->SetBrushColor(ChromeBackgroundColor);
+		IconBorder->SetBrushColor(HUDChromeColours::GetBackground());
 		SlotOverlay->AddChildToOverlay(IconBorder);
 
 		const EAbilitySlot CurrentSlot = static_cast<EAbilitySlot>(Index);
@@ -150,6 +162,20 @@ void UAbilityCooldownTrayWidget::StartCooldown(EAbilitySlot AbilitySlot, float D
 	UpdateSlotVisual(AbilitySlot);
 }
 
+void UAbilityCooldownTrayWidget::SetSlotLocked(EAbilitySlot AbilitySlot, bool bLocked)
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	if (!SlotLocked.IsValidIndex(Index))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityCooldownTrayWidget::SetSlotLocked: index %d invalid on '%s' (tray not yet built?) - lock state dropped."),
+			Index, *GetNameSafe(this));
+		return;
+	}
+	SlotLocked[Index] = bLocked;
+	UpdateSlotVisual(AbilitySlot);
+}
+
 void UAbilityCooldownTrayWidget::AdvanceCooldowns(float DeltaSeconds)
 {
 	for (int32 Index = 0; Index < SlotCooldownRemaining.Num(); ++Index)
@@ -179,6 +205,40 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 		return;
 	}
 
+	const bool bLocked = SlotLocked.IsValidIndex(Index) && SlotLocked[Index];
+
+	if (SlotIconBorders.IsValidIndex(Index) && SlotIconBorders[Index])
+	{
+		SlotIconBorders[Index]->SetBrushColor(bLocked ? GetLockedBorderColor() : HUDChromeColours::GetBackground());
+	}
+	else if (SlotIconBorders.IsValidIndex(Index))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityCooldownTrayWidget: SlotIconBorders[%d] is null on '%s' - locked/chrome border colour will not update."),
+			Index, *GetNameSafe(this));
+	}
+	if (SlotIconLabels.IsValidIndex(Index) && SlotIconLabels[Index])
+	{
+		SlotIconLabels[Index]->SetText(FText::FromString(bLocked ? LockedSlotLabel : SlotLabels[Index]));
+	}
+	else if (SlotIconLabels.IsValidIndex(Index))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityCooldownTrayWidget: SlotIconLabels[%d] is null on '%s' - label will not update."),
+			Index, *GetNameSafe(this));
+	}
+
+	if (bLocked)
+	{
+		// Locked overrides the cooldown countdown entirely (PRD 13 REQ-3) - a locked
+		// slot isn't "ready soon", it's inaccessible, so a numeric ETA would be
+		// actively misleading regardless of any cooldown time still counting down
+		// underneath.
+		CooldownText->SetText(FText::GetEmpty());
+		CooldownText->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
 	if (SlotCooldownRemaining[Index] > 0.0f)
 	{
 		CooldownText->SetText(FText::AsNumber(FMath::CeilToInt(SlotCooldownRemaining[Index])));
@@ -201,6 +261,12 @@ bool UAbilityCooldownTrayWidget::IsSlotOnCooldown(EAbilitySlot AbilitySlot) cons
 {
 	const int32 Index = static_cast<int32>(AbilitySlot);
 	return SlotCooldownRemaining.IsValidIndex(Index) && SlotCooldownRemaining[Index] > 0.0f;
+}
+
+bool UAbilityCooldownTrayWidget::IsSlotLocked(EAbilitySlot AbilitySlot) const
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	return SlotLocked.IsValidIndex(Index) && SlotLocked[Index];
 }
 
 FText UAbilityCooldownTrayWidget::GetSlotCooldownDisplayText(EAbilitySlot AbilitySlot) const
