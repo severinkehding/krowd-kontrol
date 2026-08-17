@@ -200,6 +200,8 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Root).IsEmpty());
 	TestEqual(TEXT("Root remaining cooldown time should be unchanged by locking (suppression is display-only)"),
 		Widget->GetSlotRemainingSeconds(EAbilitySlot::Root), 5.0f);
+	TestEqual(TEXT("Root icon tint colour should be unaffected by locking"),
+		Widget->GetSlotIconTintColour(EAbilitySlot::Root), AbilityData::Get(EAbilitySlot::Root).Colour);
 
 	// (f5) Locked border colour is reserved-colour-safe (MISSION.md Hard Invariant 3 /
 	// PRD 13 REQ-4).
@@ -219,6 +221,61 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Root).ToString(), FString(TEXT("5")));
 	TestEqual(TEXT("Root remaining cooldown time should still be 5s - unlocking must not have cleared it"),
 		Widget->GetSlotRemainingSeconds(EAbilitySlot::Root), 5.0f);
+	TestEqual(TEXT("Root icon tint colour should still be unaffected after unlocking"),
+		Widget->GetSlotIconTintColour(EAbilitySlot::Root), AbilityData::Get(EAbilitySlot::Root).Colour);
+
+	// (f7) AdvanceCooldowns() while locked - underlying timer keeps ticking silently
+	// (locked suppresses only the display, per UpdateSlotVisual's locked branch), and
+	// unlocking reveals the updated remaining time rather than a stale pre-lock value.
+	Widget->StartCooldown(EAbilitySlot::Sleep, 5.0f);
+	Widget->SetSlotLocked(EAbilitySlot::Sleep, true);
+	Widget->AdvanceCooldowns(2.0f);
+	TestEqual(TEXT("Locked slot's underlying cooldown should still advance"),
+		Widget->GetSlotRemainingSeconds(EAbilitySlot::Sleep), 3.0f);
+	TestTrue(TEXT("Locked slot's cooldown display should stay suppressed while advancing"),
+		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Sleep).IsEmpty());
+	Widget->SetSlotLocked(EAbilitySlot::Sleep, false);
+	TestEqual(TEXT("Unlocking after AdvanceCooldowns() should reveal the updated remaining time"),
+		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Sleep).ToString(), FString(TEXT("3")));
+
+	// (f8) Underlying cooldown can fully exhaust while locked; unlocking should then show
+	// "ready", not a stale non-zero display.
+	Widget->StartCooldown(EAbilitySlot::Sleep, 1.0f);
+	Widget->SetSlotLocked(EAbilitySlot::Sleep, true);
+	Widget->AdvanceCooldowns(5.0f);
+	Widget->SetSlotLocked(EAbilitySlot::Sleep, false);
+	TestFalse(TEXT("Slot whose cooldown exhausted while locked should not be on cooldown after unlocking"),
+		Widget->IsSlotOnCooldown(EAbilitySlot::Sleep));
+	TestTrue(TEXT("Slot whose cooldown exhausted while locked should show empty display after unlocking"),
+		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Sleep).IsEmpty());
+
+	// (f9) Locking a slot that isn't currently on cooldown (idle) - distinct branch
+	// combination from (f4)-(f8), which all lock a slot with an active cooldown. Fear
+	// was cleared by block (e)'s large-delta AdvanceCooldowns(100.0f) above.
+	TestFalse(TEXT("Fear should be idle (not on cooldown) before the idle-lock check"),
+		Widget->IsSlotOnCooldown(EAbilitySlot::Fear));
+	Widget->SetSlotLocked(EAbilitySlot::Fear, true);
+	TestTrue(TEXT("Fear should report locked after locking an idle slot"), Widget->IsSlotLocked(EAbilitySlot::Fear));
+	TestEqual(TEXT("Fear label should swap to LCK when locked while idle"),
+		Widget->GetSlotIconLabelText(EAbilitySlot::Fear).ToString(), FString(TEXT("LCK")));
+	TestTrue(TEXT("Fear cooldown display should stay empty when locked while idle"),
+		Widget->GetSlotCooldownDisplayText(EAbilitySlot::Fear).IsEmpty());
+	Widget->SetSlotLocked(EAbilitySlot::Fear, false);
+	TestFalse(TEXT("Fear should report unlocked after unlocking"), Widget->IsSlotLocked(EAbilitySlot::Fear));
+	TestEqual(TEXT("Fear label should revert to FER after unlocking an idle-locked slot"),
+		Widget->GetSlotIconLabelText(EAbilitySlot::Fear).ToString(), FString(TEXT("FER")));
+
+	// (f10) Idempotent SetSlotLocked() calls - locking an already-locked slot, or
+	// unlocking an already-unlocked slot, should leave state/visuals unchanged.
+	Widget->SetSlotLocked(EAbilitySlot::Fear, true);
+	const FText FearLabelAfterFirstLock = Widget->GetSlotIconLabelText(EAbilitySlot::Fear);
+	Widget->SetSlotLocked(EAbilitySlot::Fear, true);
+	TestTrue(TEXT("Fear should still report locked after a repeated lock call"), Widget->IsSlotLocked(EAbilitySlot::Fear));
+	TestEqual(TEXT("Fear label should be unchanged by a repeated lock call"),
+		Widget->GetSlotIconLabelText(EAbilitySlot::Fear).ToString(), FearLabelAfterFirstLock.ToString());
+	Widget->SetSlotLocked(EAbilitySlot::Fear, false);
+	Widget->SetSlotLocked(EAbilitySlot::Fear, false);
+	TestFalse(TEXT("Fear should still report unlocked after a repeated unlock call"), Widget->IsSlotLocked(EAbilitySlot::Fear));
 
 	// (g) Corner anchoring - the tray's single canvas child is actually anchored
 	// bottom-right, not just visually eyeballed.

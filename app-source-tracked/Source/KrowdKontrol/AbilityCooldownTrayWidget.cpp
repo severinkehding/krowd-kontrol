@@ -220,9 +220,21 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 	{
 		SlotIconBorders[Index]->SetBrushColor(bLocked ? GetLockedBorderColor() : GetChromeBackgroundColor());
 	}
+	else if (SlotIconBorders.IsValidIndex(Index))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityCooldownTrayWidget: SlotIconBorders[%d] is null on '%s' - locked/chrome border colour will not update."),
+			Index, *GetNameSafe(this));
+	}
 	if (SlotIconLabels.IsValidIndex(Index) && SlotIconLabels[Index])
 	{
 		SlotIconLabels[Index]->SetText(FText::FromString(bLocked ? LockedSlotLabel : SlotLabels[Index]));
+	}
+	else if (SlotIconLabels.IsValidIndex(Index))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityCooldownTrayWidget: SlotIconLabels[%d] is null on '%s' - label will not update."),
+			Index, *GetNameSafe(this));
 	}
 
 	if (bLocked)

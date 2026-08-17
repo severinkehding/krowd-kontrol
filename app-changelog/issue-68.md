@@ -68,6 +68,49 @@ near-black/desaturated dark red, not a 6th saturated information colour, and the
 locked state is made distinguishable primarily via the `"LCK"` label swap with colour
 as a secondary cue only. No other Hard Invariant is touched by this diff.
 
+## Post-review fixes
+
+The consolidated review (`REQUEST_CHANGES`, 2 HIGH + 1 MEDIUM + 4 LOW findings) flagged
+two real gaps, both addressed here:
+
+- **HIGH — silent no-op on null icon widgets.** `UpdateSlotVisual()`'s new
+  `SlotIconBorders[Index]`/`SlotIconLabels[Index]` branches had no `else`, unlike the
+  pre-existing `CooldownText` null check three lines above. Added matching `UE_LOG`
+  warnings so a null icon widget at lock time leaves a diagnostic trail instead of
+  silently failing the feature's own "locked must be visually unmistakable" criterion.
+- **HIGH — `AdvanceCooldowns()` while locked was never exercised under elapsed time.**
+  Added `(f7)`/`(f8)` test blocks proving the underlying cooldown timer keeps advancing
+  silently while a slot is locked (display stays suppressed), including the
+  fully-exhausts-while-locked zero-crossing case.
+- **MEDIUM — icon tint untested across lock/unlock.** Added `GetSlotIconTintColour()`
+  assertions to the existing `(f4)`/`(f6)` blocks, confirming the per-ability reserved
+  hue is unaffected by locking, closing the exact question review scope raised.
+- **LOW — idle-slot lock and idempotent lock/unlock untested.** Added `(f9)` (locking
+  an already-idle slot) and `(f10)` (repeated `SetSlotLocked(true)`/`SetSlotLocked(false)`
+  calls) blocks.
+
+Skipped (both per the review's own recommendation, not blocking):
+- `SetSlotLocked()`'s dropped-call warning omitting the `bLocked` value — mirrors an
+  identical pre-existing omission in `StartCooldown()`'s guard; fixing only the new API
+  would create a stylistic inconsistency, better done as a follow-up touching both.
+- PR draft status — a process/metadata question for the author, not a code change.
+
+Full gate re-run after fixes:
+
+```
+$ python harness/ci.py
+HARNESS_START mode=full driver=cli
+STATIC_SKIPPED no 'static' command in harness.config.json
+UNIT_PASSED tests=33
+APP_STARTED driver=cli
+UE_AUTOMATION_RESULT passed=1 total=1
+UE_AUTOMATION_OK
+E2E_PASSED steps=1
+HOLDOUT_ABSENT no .factory/holdout/run.py - NOTHING above the independence line ran.
+MUTATIONS_ABSENT no harness/mutations/run.py - this gate has never been shown to fail.
+GATE_OK mode=full
+```
+
 ---
 
 The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
