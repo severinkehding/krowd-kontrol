@@ -43,10 +43,11 @@ class KROWDKONTROL_API UOvercrowdAudioSubsystem : public UTickableWorldSubsystem
 {
 	GENERATED_BODY()
 
-	// Grants the Automation Framework test no special access beyond what's already public
-	// (GetMuffleState(), TryBindOvercrowdComponent()) - declared for parity with
-	// MusicSubsystem/OvercrowdDetectionComponent's friend-test convention in case a future
-	// change needs private access; currently unused by the test itself.
+	// Grants the Automation Framework test access to MuffleFilterPreset, which it reads
+	// directly to assert the low-pass filter type/frequency are wired correctly - beyond
+	// that, no special access beyond what's already public (GetMuffleState(),
+	// TryBindOvercrowdComponent()), declared for parity with MusicSubsystem/
+	// OvercrowdDetectionComponent's friend-test convention.
 	friend class FKrowdKontrolOvercrowdAudioSubsystemTest;
 
 public:
