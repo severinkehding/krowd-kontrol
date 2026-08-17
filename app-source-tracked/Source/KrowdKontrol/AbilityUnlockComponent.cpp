@@ -36,6 +36,12 @@ void UAbilityUnlockComponent::NotifyLevelReached(int32 LevelIndex)
 	const EAbilitySlot* Found = GetLevelToAbilityMap().Find(LevelIndex);
 	if (!Found)
 	{
+		if (LevelIndex < 1 || LevelIndex > NumAbilitySlots)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UAbilityUnlockComponent::NotifyLevelReached: level %d out of range on '%s'."),
+				LevelIndex, *GetNameSafe(this));
+		}
 		return;
 	}
 	UnlockAbility(*Found);

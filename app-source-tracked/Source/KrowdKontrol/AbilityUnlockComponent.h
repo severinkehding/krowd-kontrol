@@ -28,8 +28,11 @@ public:
 
 	static constexpr int32 NumAbilitySlots = static_cast<int32>(EAbilitySlot::Count);
 
-	// Fires exactly once per ability, in unlock order (Sleep, Root, Fear, Snare), the
-	// first time NotifyLevelReached() reaches that ability's mapped level.
+	// Fires exactly once per ability, the first time NotifyLevelReached() reaches that
+	// ability's mapped level. Broadcast order tracks call order, not a fixed internal
+	// sequence - callers invoking NotifyLevelReached with ascending level values (2, 3,
+	// 4, 5) will see Sleep, Root, Fear, Snare in that order, but nothing here enforces
+	// ascending calls.
 	UPROPERTY(BlueprintAssignable, Category = "Ability Unlock")
 	FOnAbilityUnlocked OnAbilityUnlocked;
 

@@ -103,6 +103,23 @@ bool FKrowdKontrolAbilityUnlockSequenceTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Fear should still be locked on the fresh component"), FreshComponent->IsAbilityUnlocked(EAbilitySlot::Fear));
 	TestFalse(TEXT("Snare should still be locked on the fresh component"), FreshComponent->IsAbilityUnlocked(EAbilitySlot::Snare));
 
+	// (h) Reaching a later level without the intermediate ones only unlocks that level's
+	// ability - no catch-up. Catch-up unlocking is explicitly out of scope (issue #69).
+	UAbilityUnlockComponent* SkipComponent = NewObject<UAbilityUnlockComponent>();
+	if (!TestNotNull(TEXT("A skip-ahead UAbilityUnlockComponent should construct"), SkipComponent))
+	{
+		return false;
+	}
+	UAbilityUnlockTestListener* SkipListener = NewObject<UAbilityUnlockTestListener>();
+	SkipComponent->OnAbilityUnlocked.AddDynamic(SkipListener, &UAbilityUnlockTestListener::HandleAbilityUnlocked);
+
+	SkipComponent->NotifyLevelReached(5);
+	TestTrue(TEXT("Snare should unlock from a direct NotifyLevelReached(5)"), SkipComponent->IsAbilityUnlocked(EAbilitySlot::Snare));
+	TestFalse(TEXT("Sleep should NOT catch-up unlock from a level-5 signal alone"), SkipComponent->IsAbilityUnlocked(EAbilitySlot::Sleep));
+	TestFalse(TEXT("Root should NOT catch-up unlock from a level-5 signal alone"), SkipComponent->IsAbilityUnlocked(EAbilitySlot::Root));
+	TestFalse(TEXT("Fear should NOT catch-up unlock from a level-5 signal alone"), SkipComponent->IsAbilityUnlocked(EAbilitySlot::Fear));
+	TestEqual(TEXT("Exactly one unlock event should fire for the skipped-ahead call"), SkipListener->UnlockedOrder.Num(), 1);
+
 	return true;
 }
 
