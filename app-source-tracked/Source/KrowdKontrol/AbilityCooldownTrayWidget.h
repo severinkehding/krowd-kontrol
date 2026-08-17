@@ -44,11 +44,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
 	void AdvanceCooldowns(float DeltaSeconds);
 
+	// The wiring point a future Punishment 1 lockout system (PRD 08, not yet built)
+	// calls to (un)lock a slot. No real lockout gameplay logic exists yet - this is a
+	// placeholder driver only, mirroring StartCooldown()'s own precedent above.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
+	void SetSlotLocked(EAbilitySlot AbilitySlot, bool bLocked);
+
 	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
 	float GetSlotRemainingSeconds(EAbilitySlot AbilitySlot) const;
 
 	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
 	bool IsSlotOnCooldown(EAbilitySlot AbilitySlot) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
+	bool IsSlotLocked(EAbilitySlot AbilitySlot) const;
 
 	// Read-only accessor for what's currently displayed - used by the Automation
 	// Framework test, also generally useful to anything that wants to confirm the
@@ -108,6 +117,15 @@ private:
 
 	UPROPERTY()
 	TArray<float> SlotCooldownDuration;
+
+	// Runtime state, not designer config - hence no EditDefaultsOnly/EditAnywhere, and
+	// private so no code path - Blueprint or C++ - can mutate it except through
+	// SetSlotLocked(). Punishment 1's ability lockout (PRD 08, not yet built) is meant
+	// to look structurally distinct from an ordinary cooldown, not just be a longer
+	// one - see AbilityCooldownComponent.h for why that separation stays out of this
+	// widget's cooldown-tracking arrays entirely.
+	UPROPERTY()
+	TArray<bool> SlotLocked;
 
 	// Distinct placeholder durations (Stun/Sleep/Root/Fear/Snare) - not real ability
 	// balance data (issue #71 owns that) - chosen distinct so each slot's countdown and

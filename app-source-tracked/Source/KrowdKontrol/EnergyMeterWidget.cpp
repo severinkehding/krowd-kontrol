@@ -1,5 +1,6 @@
 #include "EnergyMeterWidget.h"
 #include "PlayerEnergyComponent.h"
+#include "HUDChromeColours.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -44,16 +45,14 @@ void UEnergyMeterWidget::EnsureWidgetTreeBuilt()
 
 void UEnergyMeterWidget::BuildWidgetTree()
 {
-	// Desaturated near-black background + light-gray (not pure white) text -
-	// MISSION.md Hard Invariant 3 / PRD 13 REQ-4 / PRD 11 REQ-1 reserve
-	// Purple/Teal/Orange/Blue/White for gameplay information; this meter's chrome must
-	// not use any of them. Same already-reviewed palette as the other HUD widgets. The
-	// fill colour is new (no precedent uses a filled bar yet) - a saturated green,
-	// clearly outside the reserved palette, since the fill IS informational (unlike
-	// the chrome) and benefits from being visually distinct at a glance.
-	const FLinearColor ChromeBackgroundColor(0.05f, 0.05f, 0.05f, 0.92f);
+	// Chrome background/text come from HUDChromeColours (issue #93), shared across all
+	// HUD widgets. The fill colour is new (no precedent uses a filled bar yet) - a
+	// saturated green, clearly outside the reserved palette (MISSION.md Hard
+	// Invariant 3 / PRD 13 REQ-4), since the fill IS informational (unlike the chrome)
+	// and benefits from being visually distinct at a glance.
+	const FLinearColor ChromeBackgroundColor = HUDChromeColours::GetBackground();
 	const FLinearColor FillColor(0.25f, 0.85f, 0.35f, 1.0f);
-	const FSlateColor TextColor(FLinearColor(0.85f, 0.85f, 0.85f, 1.0f));
+	const FSlateColor TextColor(HUDChromeColours::GetText());
 
 	UCanvasPanel* RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("MeterRootCanvas"));
 	WidgetTree->RootWidget = RootCanvas;
