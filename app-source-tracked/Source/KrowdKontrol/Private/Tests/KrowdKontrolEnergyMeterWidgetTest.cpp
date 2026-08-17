@@ -30,6 +30,7 @@
 #include "Misc/AutomationTest.h"
 #include "EnergyMeterWidget.h"
 #include "PlayerEnergyComponent.h"
+#include "HUDChromeColours.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Blueprint/WidgetTree.h"
@@ -177,7 +178,7 @@ bool FKrowdKontrolEnergyMeterWidgetTest::RunTest(const FString& Parameters)
 	// Purple/Teal/Orange/Blue/White for gameplay information; the meter's background
 	// must not drift onto one of those values.
 	TestEqual(TEXT("Background border colour should match the reserved-colour-safe chrome constant"),
-		Widget->BackgroundBorder->GetBrushColor(), FLinearColor(0.05f, 0.05f, 0.05f, 0.92f));
+		Widget->BackgroundBorder->GetBrushColor(), HUDChromeColours::GetBackground());
 
 	// (11) Initialize() guard - must not rebuild the tree when NativeOnInitialized()
 	// already ran.
