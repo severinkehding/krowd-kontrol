@@ -13,6 +13,9 @@
 #include "AbilityCooldownComponent.h"
 #include "AbilityCastComponent.h"
 #include "AbilityCastVFXComponent.h"
+#include "GizmoFirstContactComponent.h"
+#include "FirstStunBeaconComponent.h"
+#include "AbilityMatchupSignalComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
@@ -54,6 +57,15 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	// SetUpdatedComponent above) rather than a lookup-by-class in BeginPlay -
 	// both components are guaranteed to exist by this point in the constructor.
 	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityCastVFXComponent, &UAbilityCastVFXComponent::HandleAbilityCastApplied);
+
+	GizmoFirstContactComponent = CreateDefaultSubobject<UGizmoFirstContactComponent>(TEXT("GizmoFirstContactComponent"));
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(GizmoFirstContactComponent, &UGizmoFirstContactComponent::HandleAbilityCastApplied);
+
+	FirstStunBeaconComponent = CreateDefaultSubobject<UFirstStunBeaconComponent>(TEXT("FirstStunBeaconComponent"));
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(FirstStunBeaconComponent, &UFirstStunBeaconComponent::HandleAbilityCastApplied);
+
+	AbilityMatchupSignalComponent = CreateDefaultSubobject<UAbilityMatchupSignalComponent>(TEXT("AbilityMatchupSignalComponent"));
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityMatchupSignalComponent, &UAbilityMatchupSignalComponent::HandleAbilityCastApplied);
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
