@@ -68,6 +68,8 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolOvercrowdLevelThresholdTest;
 	friend class FKrowdKontrolAbilityVFXColourTest;
 	friend class FKrowdKontrolGizmoFirstContactComponentTest;
+	friend class FKrowdKontrolSleepShieldBossTest;
+	friend class FKrowdKontrolFirstStunBeaconComponentTest;
 
 public:
 	AEnemyBase();
@@ -181,6 +183,16 @@ protected:
 	// - see issue #121's SN-1PR/Sleep=7s case).
 	virtual float GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const { return -1.0f; }
 
+	// BlueprintReadOnly so reflection-based inspection (e.g. the MCP property
+	// toolset) can observe these directly - GetEnemyState()/GetControllingAbility()
+	// above are plain C++ accessors with no UPROPERTY backing of their own. Protected,
+	// not private - UHT rejects BlueprintReadOnly on private members.
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy")
+	EEnemyState CurrentState = EEnemyState::Idle;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy")
+	EAbilitySlot ControllingAbility = EAbilitySlot::Stun;
+
 private:
 	// Internal transition-guard logic, never subclass-overridable directly - keeps the
 	// state machine's own invariants (proximity in, no direct state writes) enforced
@@ -203,10 +215,6 @@ private:
 	// in the transition table above. No-op in every other state, same state-guard
 	// shape TickCheckDetection/TickChaseMovement already use.
 	void TickControlledDuration(float DeltaSeconds);
-
-	EEnemyState CurrentState = EEnemyState::Idle;
-
-	EAbilitySlot ControllingAbility = EAbilitySlot::Stun;
 
 	float RemainingControlledSeconds = 0.0f;
 };
