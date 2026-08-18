@@ -4,10 +4,12 @@
 #include "Components/ActorComponent.h"
 #include "OvercrowdDetectionComponent.generated.h"
 
-// Exactly 2 states: Inactive (default) and Active, one-directional in this issue's
-// scope - recovery (Active -> Inactive) is deferred to a separate, later issue that
-// depends on this state existing first. See MusicSubsystem.h's EMusicState for the
-// mirrored enum/delegate placement convention.
+class AEnemyBase;
+
+// Exactly 2 states: Inactive (default) and Active. Active reverts to Inactive once
+// recovery is satisfied (issue #18, PRD 08 REQ-2) - see UOvercrowdDetectionComponent's
+// class comment below for the exact recovery condition. See MusicSubsystem.h's
+// EMusicState for the mirrored enum/delegate placement convention.
 UENUM(BlueprintType)
 enum class EPanicOverloadState : uint8
 {
@@ -16,6 +18,30 @@ enum class EPanicOverloadState : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPanicOverloadStateChanged, EPanicOverloadState, NewState);
+
+// One per-level override for UOvercrowdDetectionComponent's 3 trigger thresholds
+// (PRD 08 REQ-1, issue #23): NotifyLevelReached(LevelIndex) looks up the entry
+// whose LevelIndex matches and overwrites OvercrowdCrowdThreshold/RadiusUnits/
+// UncontrolledDurationSeconds with it. Mirrors FWaveEntry (WaveSpawnerComponent.h)
+// - an embedded, EditDefaultsOnly config struct owned by the component that reads
+// it, not a separate UDataAsset (no precedent for one in this codebase yet).
+USTRUCT(BlueprintType)
+struct FOvercrowdLevelThreshold
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "1"))
+	int32 LevelIndex = 1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "1"))
+	int32 CrowdThreshold = 5;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "0.0"))
+	float RadiusUnits = 800.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "0.0"))
+	float UncontrolledDurationSeconds = 2.0f;
+};
 
 // Detects "overcrowd" (PRD 08 Punishment 3, MISSION.md `08`, issue #16): counts how
 // many hot-and-uncontrolled enemies (AEnemyBase::GetEnemyState() == Alert || Attack -
@@ -30,11 +56,19 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPanicOverloadStateChanged, EPanic
 // reading GetOwner()'s location directly rather than re-deriving "find the player
 // pawn" the way AEnemyBase::FindPlayerEnergyComponent() has to.
 //
-// The state transition is one-directional in this issue's scope: once Active,
-// CurrentState never reverts on its own - recovery is a separate, later issue. The
+// Recovery (issue #18, PRD 08 REQ-2): the instant CurrentState flips to Active, the
+// qualifying enemy set at that moment is snapshotted into ConvergedEnemies - "the
+// current convergence." While Active, every AdvancePanicOverloadState() call checks
+// whether any surviving member of ConvergedEnemies now reports
+// AEnemyBase::GetEnemyState() == Controlled (i.e. a CC ability landed on it via
+// ReceiveControl()). The first tick that's true, CurrentState reverts to Inactive,
+// UncontrolledSeconds resets to 0.0f (the crowd must re-arm from scratch), and
+// ConvergedEnemies is cleared. ConvergedEnemies is captured once and not refreshed
+// while Active - an enemy that wanders into range afterward is not part of "the
+// current convergence" and CC landed on it does not end Panic Overload. The
 // pre-trigger duration timer still resets if the qualifying count drops below
 // OvercrowdCrowdThreshold before the duration elapses; that is detection-arming
-// logic, not recovery.
+// logic, unrelated to recovery.
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 {
@@ -50,6 +84,11 @@ class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 	// Non-transitive - see MusicSubsystem.h's friend-class comment for why each test class
 	// needs its own explicit grant.
 	friend class FKrowdKontrolOvercrowdAudioSubsystemTest;
+
+	// Same grant, for the per-level-threshold test (issue #23), which also drives
+	// this component to Active via AdvancePanicOverloadState after calling
+	// NotifyLevelReached - non-transitive, same rationale as the two grants above.
+	friend class FKrowdKontrolOvercrowdLevelThresholdTest;
 
 public:
 	UOvercrowdDetectionComponent();
@@ -72,9 +111,34 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd", meta = (ClampMin = "0.0"))
 	float OvercrowdUncontrolledDurationSeconds = 2.0f;
 
+	// Per-level overrides for the 3 fields above. Empty by default - an empty array
+	// makes NotifyLevelReached() a silent no-op, so existing placements that never
+	// call it keep behaving exactly as they do today, off the 3 fields' own
+	// EditDefaultsOnly values. Not required to cover every level; only levels that
+	// need their own tuning need an entry here.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overcrowd")
+	TArray<FOvercrowdLevelThreshold> LevelThresholds;
+
+	// Explicit level-progression signal a caller (today, an Automation test; later,
+	// a real level-progression subsystem - same not-yet-built status as
+	// UAbilityUnlockComponent::NotifyLevelReached's own caller, per that function's
+	// header comment) invokes once per level reached. Looks up LevelThresholds for
+	// LevelIndex and overwrites OvercrowdCrowdThreshold/OvercrowdRadiusUnits/
+	// OvercrowdUncontrolledDurationSeconds with the match, resetting
+	// UncontrolledSeconds to 0 (an in-progress accumulation measured against the old
+	// thresholds is meaningless against the new ones). No match and a non-empty
+	// LevelThresholds logs a warning and changes nothing, mirroring
+	// UAbilityUnlockComponent::NotifyLevelReached's out-of-range warning. An empty
+	// LevelThresholds is a silent no-op.
+	UFUNCTION(BlueprintCallable, Category = "Overcrowd")
+	void NotifyLevelReached(int32 LevelIndex);
+
 	EPanicOverloadState GetPanicOverloadState() const { return CurrentState; }
 
-	// Fires exactly once, on the transition into Active only.
+	// Broadcasts once on every Inactive->Active transition and once on every
+	// Active->Inactive recovery transition (issue #18); since recovery re-arms
+	// detection rather than latching a "done" state, this pair can repeat any
+	// number of times over the component's life. Not a lifetime-firing cap.
 	UPROPERTY(BlueprintAssignable, Category = "Overcrowd")
 	FOnPanicOverloadStateChanged OnPanicOverloadStateChanged;
 
@@ -91,12 +155,29 @@ private:
 	// bypass the duration requirement.
 	void AdvancePanicOverloadState(float DeltaSeconds);
 
-	// Counts hot-and-uncontrolled AEnemyBase instances (Alert or Attack, never
-	// Controlled) within OvercrowdRadiusUnits of GetOwner().
-	int32 CountHotUncontrolledEnemiesNearby() const;
+	// Returns the hot-and-uncontrolled AEnemyBase instances (Alert or Attack, never
+	// Controlled) within OvercrowdRadiusUnits of GetOwner(). Returning the actual
+	// actors (not just a count) lets the caller snapshot them into ConvergedEnemies
+	// on the Inactive->Active transition.
+	TArray<TWeakObjectPtr<AEnemyBase>> GetHotUncontrolledEnemiesNearby() const;
+
+	// True if any surviving member of ConvergedEnemies (captured at the Inactive->Active
+	// transition) currently reports GetEnemyState() == Controlled - i.e. a CC ability
+	// (ReceiveControl) landed on it. Only meaningful while CurrentState == Active; the
+	// caller (AdvancePanicOverloadState) only invokes this then.
+	bool HasConvergedEnemyBeenControlled() const;
 
 	EPanicOverloadState CurrentState = EPanicOverloadState::Inactive;
 
-	// Resets to 0 the instant the qualifying count drops below OvercrowdCrowdThreshold.
+	// Snapshot of GetHotUncontrolledEnemiesNearby()'s result at the exact moment
+	// CurrentState flipped to Active - "the current convergence" per PRD 08 REQ-2. Not
+	// refreshed while Active; an enemy entering range afterward is not part of this
+	// convergence and CC landed on it does not end Panic Overload. Cleared on the
+	// Active->Inactive recovery transition.
+	TArray<TWeakObjectPtr<AEnemyBase>> ConvergedEnemies;
+
+	// Resets to 0 the instant the qualifying count drops below OvercrowdCrowdThreshold,
+	// and also on the Active->Inactive recovery transition (issue #18), so the crowd
+	// must re-arm from scratch either way.
 	float UncontrolledSeconds = 0.0f;
 };
