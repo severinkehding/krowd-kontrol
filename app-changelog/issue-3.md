@@ -28,8 +28,15 @@ D-009, at `app-source-tracked/<same path under app/Source/>`.
 
 ## Acceptance criteria
 
-- [x] **A timer starts when a level begins and stops when the level is cleared.**
-      `StartLevelTimer(FName LevelID)` / `StopLevelTimerAndRecordClear(FName LevelID)`.
+- [x] **A timer starts when a level begins and stops when the level is cleared, as a
+      callable API.** `StartLevelTimer(FName LevelID)` / `StopLevelTimerAndRecordClear(FName LevelID)`
+      implement the start/stop/elapsed-time logic itself. **Wiring these calls to a real
+      level-begin/level-clear event is explicitly out of scope for this issue** — no such
+      event exists anywhere in this codebase yet (PRD 05's level-progression system isn't
+      built; the same "foundation, no live wiring yet" gap already documented on
+      `UGizmoNarrativeSubsystem` (issue #57), `AbilityUnlockComponent`, and
+      `OvercrowdDetectionComponent`). A follow-up issue, filed once PRD 05 lands a real
+      level-begin/clear signal, will call these from that event.
 - [x] **On clear, elapsed time is compared against the level's stored best; if faster
       (or no best exists), it's saved as the new personal best.** `RecordClearTime` —
       unit tested for "first clear becomes best" (a), "slower clear doesn't overwrite"
