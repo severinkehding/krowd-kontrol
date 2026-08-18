@@ -51,6 +51,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sleep Shield Boss")
 	float ShieldTellIntensity = 3000.0f;
 
+	// Mirrors inherited HasShield()/GetBossState(), which are plain C++ accessors
+	// with no UPROPERTY backing and so aren't visible to reflection-based inspection
+	// (e.g. the MCP property toolset). Kept in sync from OnShieldChanged() (fires
+	// only on an actual HasShield() change - see ABossBase::SetHasShield's guard)
+	// and from BeginPlay()/CheckShieldState() (the only two places this subclass
+	// advances boss state).
+	UPROPERTY(BlueprintReadOnly, Category = "Sleep Shield Boss")
+	bool bHasShieldReflected = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Sleep Shield Boss")
+	EBossState BossStateReflected = EBossState::Idle;
+
 protected:
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnShieldChanged(bool bNewHasShield) override;

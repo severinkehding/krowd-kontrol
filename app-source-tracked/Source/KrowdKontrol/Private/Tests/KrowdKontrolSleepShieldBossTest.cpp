@@ -14,9 +14,9 @@
 // KrowdKontrolOvercrowdDetectionComponentTest.cpp/KrowdKontrolEnemyBaseTest.cpp
 // document for their own directly-driven private methods.
 //
-// No World->InitializeActorsForPlay(FURL()) call is needed here (unlike
-// KrowdKontrolDualZoneBossTest.cpp) - ASleepShieldBoss binds no dynamic delegate to
-// another AActor in BeginPlay(); OnShieldChanged is a plain C++ virtual override.
+// No World->InitializeActorsForPlay(FURL()) call is needed here - ASleepShieldBoss
+// binds no dynamic delegate to another AActor in BeginPlay(); OnShieldChanged is a
+// plain C++ virtual override.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -27,7 +27,6 @@
 #include "AbilitySlot.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
-#include "Components/SceneComponent.h"
 #include "Components/PointLightComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -67,9 +66,6 @@ bool FKrowdKontrolSleepShieldBossTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	USceneComponent* WrongAbilityRoot = NewObject<USceneComponent>(WrongAbilityMinion);
-	WrongAbilityRoot->RegisterComponent();
-	WrongAbilityMinion->SetRootComponent(WrongAbilityRoot);
 	WrongAbilityMinion->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 	WrongAbilityMinion->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled, wrong ability
 	WrongAbilityMinion->SetActorLocation(Boss->GetActorLocation());
@@ -86,9 +82,6 @@ bool FKrowdKontrolSleepShieldBossTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	USceneComponent* FarRoot = NewObject<USceneComponent>(FarMinion);
-	FarRoot->RegisterComponent();
-	FarMinion->SetRootComponent(FarRoot);
 	FarMinion->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 	FarMinion->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled, right ability
 	FarMinion->SetActorLocation(Boss->GetActorLocation() + FVector(Boss->ShieldDropRadiusUnits * 10.0f, 0.0f, 0.0f));
@@ -106,9 +99,6 @@ bool FKrowdKontrolSleepShieldBossTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	USceneComponent* BoundaryRoot = NewObject<USceneComponent>(BoundaryMinion);
-	BoundaryRoot->RegisterComponent();
-	BoundaryMinion->SetRootComponent(BoundaryRoot);
 	BoundaryMinion->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 	BoundaryMinion->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled, right ability
 	BoundaryMinion->SetActorLocation(Boss->GetActorLocation() + FVector(Boss->ShieldDropRadiusUnits, 0.0f, 0.0f));
@@ -148,9 +138,6 @@ bool FKrowdKontrolSleepShieldBossTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	USceneComponent* ExpiredRoot = NewObject<USceneComponent>(ExpiredMinion);
-	ExpiredRoot->RegisterComponent();
-	ExpiredMinion->SetRootComponent(ExpiredRoot);
 	ExpiredMinion->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 	ExpiredMinion->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled, right ability
 	ExpiredMinion->SetActorLocation(Boss->GetActorLocation()); // well within radius
@@ -179,9 +166,6 @@ bool FKrowdKontrolSleepShieldBossTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	USceneComponent* BankedMinionRoot = NewObject<USceneComponent>(MinionNearBankedBoss);
-	BankedMinionRoot->RegisterComponent();
-	MinionNearBankedBoss->SetRootComponent(BankedMinionRoot);
 	MinionNearBankedBoss->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 	MinionNearBankedBoss->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled, right ability
 	MinionNearBankedBoss->SetActorLocation(BankedBoss->GetActorLocation());
@@ -208,9 +192,6 @@ bool FKrowdKontrolSleepShieldBossTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	USceneComponent* TickMinionRoot = NewObject<USceneComponent>(MinionNearTickBoss);
-	TickMinionRoot->RegisterComponent();
-	MinionNearTickBoss->SetRootComponent(TickMinionRoot);
 	MinionNearTickBoss->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 	MinionNearTickBoss->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled, right ability
 	MinionNearTickBoss->SetActorLocation(TickBoss->GetActorLocation());

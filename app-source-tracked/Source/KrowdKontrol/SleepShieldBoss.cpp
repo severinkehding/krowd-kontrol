@@ -20,17 +20,15 @@
 
 ASleepShieldBoss::ASleepShieldBoss()
 {
-	// Unlike ABossBase (never ticks; every transition is externally driven) and
-	// ADualZoneBoss (purely event-driven via delegate broadcasts), this subclass
-	// must self-scan for nearby Sleep-controlled minions every frame - deliberate,
-	// not an oversight, same divergence AEnemyBase's own constructor comment
-	// documents for itself.
+	// Unlike ABossBase (never ticks; every transition is externally driven), this
+	// subclass must self-scan for nearby Sleep-controlled minions every frame -
+	// deliberate, not an oversight, same divergence AEnemyBase's own constructor
+	// comment documents for itself.
 	PrimaryActorTick.bCanEverTick = true;
 
 	// Boss actors have no mesh/visual representation yet anywhere in this codebase
-	// (ABossBase/ADualZoneBoss are pure logic actors) - this tell light becomes
-	// RootComponent rather than attaching to a mesh, matching that placeholder-
-	// art-first state.
+	// (ABossBase is a pure logic actor) - this tell light becomes RootComponent
+	// rather than attaching to a mesh, matching that placeholder-art-first state.
 	ShieldTellLightComponent = CreateDefaultSubobject<UPointLightComponent>(TEXT("ShieldTellLightComponent"));
 	RootComponent = ShieldTellLightComponent;
 	// PLACEHOLDER COLOUR - deliberately NOT one of MISSION.md Hard Invariant 3's
@@ -49,11 +47,12 @@ void ASleepShieldBoss::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Immediate, not timer-delayed: BeginPlay() is fight start (mirrors
-	// ADualZoneBoss::BeginPlay()'s identical reasoning) - trivially within issue
-	// #48 AC #3's "first 10 seconds" window without new FTimerManager machinery.
+	// Immediate, not timer-delayed: BeginPlay() is fight start - trivially within
+	// issue #48 AC #3's "first 10 seconds" window without new FTimerManager
+	// machinery.
 	AdvanceToArmed();
 	SetHasShield(true);
+	BossStateReflected = GetBossState();
 }
 
 void ASleepShieldBoss::Tick(float DeltaTime)
@@ -80,6 +79,7 @@ void ASleepShieldBoss::CheckShieldState()
 		// No-op once already past Armed - see ABossBase::AdvanceToVulnerable.
 		AdvanceToVulnerable();
 	}
+	BossStateReflected = GetBossState();
 }
 
 bool ASleepShieldBoss::HasNearbySleepControlledMinion() const
@@ -107,4 +107,5 @@ bool ASleepShieldBoss::HasNearbySleepControlledMinion() const
 void ASleepShieldBoss::OnShieldChanged(bool bNewHasShield)
 {
 	ShieldTellLightComponent->SetIntensity(bNewHasShield ? ShieldTellIntensity : 0.0f);
+	bHasShieldReflected = bNewHasShield;
 }
