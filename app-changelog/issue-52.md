@@ -21,7 +21,8 @@ type — see `plan.md` for the full scope rationale.
 
 - [x] `ADualZoneBoss` exposes `ZoneA`/`ZoneB`, marks itself split via `SetIsSplit(true)` (AC #1)
 - [x] Tracks per-zone banked count, enters Enrage when imbalance exceeds `EnrageImbalanceThreshold` (AC #2)
-- [x] Reaches `Armed` immediately in `BeginPlay()`, well within 10s (AC #3)
+- [x] Reaches `Armed` immediately in `BeginPlay()`, well within 10s (AC #3, timing half)
+- [ ] Visual "arming" tell (AC #3, visual half) — explicitly deferred, see scope exclusions above
 - [x] Only ever defeated via `Banked` — no alternate defeat path exists (AC #4, structural)
 - [x] `KrowdKontrol.Unit.DualZoneBoss` confirms Enrage triggers on lopsided banking, not on balanced banking (AC #5)
 - [x] Level 1-3 validation commands pass with exit 0

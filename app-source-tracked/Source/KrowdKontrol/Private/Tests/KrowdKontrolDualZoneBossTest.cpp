@@ -2,8 +2,11 @@
 // and reaches Armed within the first moment of BeginPlay() (well inside the issue's
 // 10 second AC window), (2) balanced banking across ZoneA/ZoneB - including the exact
 // imbalance-equals-threshold boundary - never triggers Enrage, (3) banking driven
-// strictly past EnrageImbalanceThreshold in one zone does trigger Enrage, and (4) the
-// two zones' banked counts are tracked independently, not combined into one tally.
+// strictly past EnrageImbalanceThreshold in one zone does trigger Enrage, (4) the
+// two zones' banked counts are tracked independently, not combined into one tally,
+// (5) ZoneB leading the imbalance enrages too, pinning the abs() check's symmetry,
+// and (6) an unwired ZoneA/ZoneB never crashes and never receives banked events -
+// BeginPlay()'s null-guard branches for a misconfigured level placement.
 //
 // Deviation from the investigation artifact: the plan's Mandatory Reading section
 // claimed TargetZoneBankedTestListener.cpp already established that
@@ -104,6 +107,39 @@ bool FKrowdKontrolDualZoneBossTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("BankedCountA should equal the total ZoneA broadcasts"), Boss->GetBankedCountA(), 6);
 	TestEqual(TEXT("BankedCountB should equal the total ZoneB broadcasts"), Boss->GetBankedCountB(), 2);
+
+	// (d) ZoneB leading the imbalance also enrages - pins symmetry of the
+	// FMath::Abs(BankedCountA - BankedCountB) check, not just the ZoneA-leading
+	// direction exercised above.
+	ADualZoneBoss* BBoss = World->SpawnActor<ADualZoneBoss>();
+	if (!TestNotNull(TEXT("A second ADualZoneBoss should spawn into the test World"), BBoss))
+	{
+		return false;
+	}
+	BBoss->ZoneA = ZoneA;
+	BBoss->ZoneB = ZoneB;
+	BBoss->EnrageImbalanceThreshold = 3;
+	BBoss->DispatchBeginPlay();
+	for (int32 i = 0; i < 4; ++i)
+	{
+		ZoneB->OnActorBanked.Broadcast(DummyActor);
+	}
+	TestTrue(TEXT("Boss should be enraged when ZoneB leads past the threshold"), BBoss->IsEnraged());
+
+	// (e) BeginPlay()'s null-guard branches for an unwired ZoneA/ZoneB never crash and
+	// never fire handlers - the exact path that protects against a level designer
+	// forgetting to wire one of these EditInstanceOnly references.
+	ADualZoneBoss* UnwiredBoss = World->SpawnActor<ADualZoneBoss>();
+	if (!TestNotNull(TEXT("A third ADualZoneBoss should spawn into the test World"), UnwiredBoss))
+	{
+		return false;
+	}
+	// ZoneA/ZoneB intentionally left unassigned.
+	UnwiredBoss->DispatchBeginPlay();
+	TestEqual(TEXT("An unwired boss's BankedCountA should stay 0 with no ZoneA bound"),
+		UnwiredBoss->GetBankedCountA(), 0);
+	TestEqual(TEXT("An unwired boss's BankedCountB should stay 0 with no ZoneB bound"),
+		UnwiredBoss->GetBankedCountB(), 0);
 
 	return true;
 }

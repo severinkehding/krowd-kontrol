@@ -17,13 +17,30 @@ void ADualZoneBoss::BeginPlay()
 	// resolved once this actor is placed and wired in a level, unlike ATargetZone's
 	// own overlap handler (bound in ITS constructor because that binding is to a
 	// component this class itself owns and constructs).
+	//
+	// AddDynamic, not ATargetZone's AddUniqueDynamic (TargetZone.cpp) - BeginPlay() only
+	// ever runs once per ADualZoneBoss instance today (no EndPlay()/re-init path exists
+	// on ABossBase or this subclass), so duplicate-binding protection has no case to guard
+	// against yet; revisit if that stops being true.
 	if (ZoneA)
 	{
 		ZoneA->OnActorBanked.AddDynamic(this, &ADualZoneBoss::HandleZoneABanked);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ADualZoneBoss '%s': ZoneA is unset - this side of the encounter will never bank."),
+			*GetName());
+	}
 	if (ZoneB)
 	{
 		ZoneB->OnActorBanked.AddDynamic(this, &ADualZoneBoss::HandleZoneBBanked);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ADualZoneBoss '%s': ZoneB is unset - this side of the encounter will never bank."),
+			*GetName());
 	}
 
 	// Immediate, not timer-delayed: BeginPlay() is fight start (no earlier/later
