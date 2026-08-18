@@ -39,7 +39,9 @@ under `Content/`) — only the new `.cpp` test file is mirrored below.
       per-room in the new test.
 - [x] **Enemy presence represented via placeholder markers — concrete enemy-class
       instances placed statically, no live AI required** — `ARunnerEnemy`/
-      `ATrooperEnemy`/`ABomberEnemy` placed as static content only.
+      `ATrooperEnemy`/`ABomberEnemy` placed as static content only. Not asserted by
+      automation (structural scope per issue #42/PRD 05 covers room/door/target-zone
+      only) — verified manually in-editor at authoring time.
 - [x] **`KrowdKontrol.Unit.Level01Structure` confirms the level loads without errors
       and its room count (3) matches the design target** — passes, 1/1.
 - [x] **Level 1-3 validation commands pass with exit 0** — see Validation below.

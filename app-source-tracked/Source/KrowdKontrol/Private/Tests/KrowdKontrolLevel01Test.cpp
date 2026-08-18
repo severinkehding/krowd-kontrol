@@ -55,9 +55,40 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 		Doors.Add(*It);
 	}
 	TestEqual(TEXT("L_Level01 should have 2 doors connecting its 3 rooms in a chain"), Doors.Num(), 2);
+
+	// Count/individual-validity checks above don't rule out both doors wiring the same
+	// pair of rooms and leaving the third unreachable - walk the door graph to confirm
+	// every room is actually reachable, not just that door count/validity look right.
+	TMap<ARoomActor*, TArray<ARoomActor*>> Adjacency;
 	for (ADoorConnectorActor* Door : Doors)
 	{
 		TestTrue(TEXT("Each door should connect two valid, distinct rooms"), Door->ConnectsValidRooms());
+		if (Door->ConnectsValidRooms())
+		{
+			Adjacency.FindOrAdd(Door->RoomA).Add(Door->RoomB);
+			Adjacency.FindOrAdd(Door->RoomB).Add(Door->RoomA);
+		}
+	}
+
+	if (Rooms.Num() > 0)
+	{
+		TSet<ARoomActor*> Visited;
+		TArray<ARoomActor*> Frontier = { Rooms[0] };
+		Visited.Add(Rooms[0]);
+		while (Frontier.Num() > 0)
+		{
+			ARoomActor* Current = Frontier.Pop();
+			for (ARoomActor* Neighbor : Adjacency.FindRef(Current))
+			{
+				if (!Visited.Contains(Neighbor))
+				{
+					Visited.Add(Neighbor);
+					Frontier.Add(Neighbor);
+				}
+			}
+		}
+		TestEqual(TEXT("All rooms should be reachable via doors (no room isolated from the chain)"),
+			Visited.Num(), Rooms.Num());
 	}
 
 	for (ARoomActor* Room : Rooms)
