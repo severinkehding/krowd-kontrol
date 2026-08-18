@@ -4,7 +4,7 @@
 // subsequent Stun casts (second and later) must not re-trigger it, and a non-Stun
 // ability cast must never trigger it at all.
 //
-// The no-zone-in-world case (b) runs against its own CreateNewMap() World, before the
+// The no-zone-in-world case (a) runs against its own CreateNewMap() World, before the
 // shared World used by every later case is created - FAutomationEditorCommonUtils::
 // CreateNewMap() tears down whatever World preceded it (confirmed via
 // UWorld::CleanupWorld in the log when this test originally called it a second time
@@ -36,6 +36,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FKrowdKontrolFirstStunBeaconComponentTest::RunTest(const FString& Parameters)
 {
+	// Casting Stun on the real pawn also fires the later-merged cast listeners
+	// (UGizmoFirstContactComponent, issue #59; UAbilityMatchupSignalComponent, issue
+	// #37), which each log a graceful-degradation warning in a bare test world (no
+	// narrative subsystem, test enemies without a type indicator). Those warnings are
+	// their documented no-op behavior, not this test's concern - expect any number of
+	// them so this test doesn't fail on its neighbors' logging. Occurrences=0 means
+	// "any count"; IsRegex=false per the D-012 AddExpectedError convention.
+	AddExpectedError(TEXT("no UGizmoNarrativeSubsystem available"), EAutomationExpectedErrorFlags::Contains, 0, false);
+	AddExpectedError(TEXT("has no UEnemyTypeIndicatorComponent"), EAutomationExpectedErrorFlags::Contains, 0, false);
+
 	// (a) No APlaceholderTargetZoneActor in the world: HandleAbilityCastApplied must
 	// not crash - reaching the assertion below is itself the proof. Run first, against
 	// its own empty World, before any target zone exists anywhere in this test.
@@ -54,6 +64,19 @@ bool FKrowdKontrolFirstStunBeaconComponentTest::RunTest(const FString& Parameter
 		EmptyWorldBeaconComponent->RegisterComponent();
 		EmptyWorldBeaconComponent->HandleAbilityCastApplied(EAbilitySlot::Stun, nullptr);
 		TestTrue(TEXT("HandleAbilityCastApplied must not crash when no APlaceholderTargetZoneActor exists"), true);
+
+		// A no-zone miss on the first successful Stun must burn the one-shot guard
+		// permanently, not leave it retryable - see FirstStunBeaconComponent.cpp's
+		// "Set before attempting the zone lookup" comment. A zone appearing afterward
+		// (e.g. late level streaming) must never retroactively intensify.
+		APlaceholderTargetZoneActor* LateZone = EmptyWorld->SpawnActor<APlaceholderTargetZoneActor>();
+		if (!TestNotNull(TEXT("A late-spawned APlaceholderTargetZoneActor should spawn into the empty test World"), LateZone))
+		{
+			return false;
+		}
+		EmptyWorldBeaconComponent->HandleAbilityCastApplied(EAbilitySlot::Stun, nullptr);
+		TestEqual(TEXT("A zone spawned after a no-zone miss must not be retroactively intensified"),
+			LateZone->BeaconLightComponent->Intensity, LateZone->BeaconBaselineIntensity);
 	}
 
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
@@ -181,6 +204,48 @@ bool FKrowdKontrolFirstStunBeaconComponentTest::RunTest(const FString& Parameter
 		bWiringCastResult);
 	TestEqual(TEXT("The pawn's real constructor-time AddDynamic binding must reach FirstStunBeaconComponent"),
 		WiringZone->BeaconLightComponent->Intensity, WiringZone->BeaconIntensifiedIntensity);
+
+	// (f) Two target zones at an exact distance tie from Owner: FindNearestTargetZone()
+	// uses strict less-than, so exactly one of the tied zones wins deterministically -
+	// but which one depends on TActorIterator's iteration order, which is not
+	// documented to match spawn order (confirmed empirically: it does not always).
+	// Pin the actual contract - exactly one zone wins, never both and never neither -
+	// rather than asserting a specific zone that iteration order doesn't guarantee.
+	// TieOwner is a bare APawn with no RootComponent, same as Owner/SecondOwner above,
+	// so SetActorLocation() on it is a no-op and it stays at the World origin - the
+	// tied zones are placed closer to the origin than every other zone spawned above
+	// (nearest of those, NonStunZone, is 50 units out) so this case's tie is the only
+	// one FindNearestTargetZone() can find.
+	APawn* TieOwner = World->SpawnActor<APawn>();
+	if (!TestNotNull(TEXT("A tie-test APawn should spawn into the test World"), TieOwner))
+	{
+		return false;
+	}
+	TieOwner->SetActorLocation(FVector::ZeroVector);
+	UFirstStunBeaconComponent* TieBeaconComponent = NewObject<UFirstStunBeaconComponent>(TieOwner);
+	TieBeaconComponent->RegisterComponent();
+
+	APlaceholderTargetZoneActor* TiedZoneA = World->SpawnActor<APlaceholderTargetZoneActor>();
+	if (!TestNotNull(TEXT("First tied APlaceholderTargetZoneActor should spawn into the test World"), TiedZoneA))
+	{
+		return false;
+	}
+	TiedZoneA->SetActorLocation(FVector(10.0f, 0.0f, 0.0f));
+
+	APlaceholderTargetZoneActor* TiedZoneB = World->SpawnActor<APlaceholderTargetZoneActor>();
+	if (!TestNotNull(TEXT("Second tied APlaceholderTargetZoneActor should spawn into the test World"), TiedZoneB))
+	{
+		return false;
+	}
+	TiedZoneB->SetActorLocation(FVector(0.0f, 10.0f, 0.0f)); // same distance from TieOwner as TiedZoneA
+
+	TieBeaconComponent->HandleAbilityCastApplied(EAbilitySlot::Stun, nullptr);
+	const bool bTiedZoneAIntensified = FMath::IsNearlyEqual(
+		TiedZoneA->BeaconLightComponent->Intensity, TiedZoneA->BeaconIntensifiedIntensity);
+	const bool bTiedZoneBIntensified = FMath::IsNearlyEqual(
+		TiedZoneB->BeaconLightComponent->Intensity, TiedZoneB->BeaconIntensifiedIntensity);
+	TestTrue(TEXT("On an exact distance tie, exactly one zone should be intensified, never both or neither"),
+		bTiedZoneAIntensified != bTiedZoneBIntensified);
 
 	return true;
 }
