@@ -33,6 +33,23 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Target Zone")
 	FName ZoneColourTag = NAME_None;
 
+	// True when this zone's approach is deliberately routed around an obstacle for
+	// moment-to-moment difficulty variation (PRD 01 REQ-5, P1). Level-authoring
+	// metadata only - no AI/pathfinding logic reads or enforces this flag yet; see
+	// this class's own issue (#83) for the explicit scope limit.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Target Zone")
+	bool bRequiresRouting = false;
+
+	// Per-placed-instance reference to the blocking volume/obstacle actor between this
+	// zone and its expected approach, not a Blueprint-class-default value - mirrors
+	// ADoorConnectorActor::RoomA/RoomB's own EditInstanceOnly pattern
+	// (DoorConnectorActor.h). Untyped AActor* rather than a narrower volume class, since
+	// the obstacle can be any placed actor a level designer chooses. Only meaningful
+	// when bRequiresRouting is true; the two fields are not cross-validated against each
+	// other - metadata only, per issue #83's scope.
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Target Zone")
+	TObjectPtr<AActor> RoutingObstacleActor;
+
 	// Fires when a controlled, colour-matched IHerdable actor overlaps this zone.
 	UPROPERTY(BlueprintAssignable, Category = "Target Zone")
 	FOnActorBanked OnActorBanked;
