@@ -23,6 +23,7 @@
 #include "AbilityUnlockComponent.h"
 #include "AbilityCooldownComponent.h"
 #include "EnemyBaseTestActor.h"
+#include "FlatCamera3DPrototypePawn.h"
 #include "Engine/GameInstance.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
@@ -68,6 +69,20 @@ bool FKrowdKontrolGizmoFirstContactComponentTest::RunTest(const FString& Paramet
 	UGizmoNarrativeSubsystem* NarrativeSubsystem = NewObject<UGizmoNarrativeSubsystem>(GameInstanceOuter);
 	FirstContactComponent->CachedNarrativeSubsystem = NarrativeSubsystem;
 
+	// This harness never drives the World through World->BeginPlay() (see
+	// KrowdKontrolWaveSpawnerComponentTest.cpp's DispatchBeginPlay note), so without an
+	// explicit drive here, BeginPlay()'s own call to InitializeFirstContactBark() would
+	// never be exercised by any test - every assertion below is otherwise reachable
+	// purely through the idempotent second call inside HandleAbilityCastApplied().
+	// AActor::DispatchBeginPlay() is the public, legal route (calling the component's
+	// BeginPlay() directly on an owner that never itself began play is not an option -
+	// see KrowdKontrolHUDWiringTest.cpp's note on the matching engine assert).
+	Owner->DispatchBeginPlay();
+	TestTrue(TEXT("BeginPlay() should register the bark ahead of any cast"),
+		NarrativeSubsystem->IsBarkRegistered(TEXT("FirstContact.Stun")));
+	TestFalse(TEXT("BeginPlay() should only register the bark, never trigger it"),
+		NarrativeSubsystem->HasBarkFired(TEXT("FirstContact.Stun")));
+
 	UGizmoBarkTestListener* Listener = NewObject<UGizmoBarkTestListener>();
 	NarrativeSubsystem->OnBarkTriggered.AddDynamic(Listener, &UGizmoBarkTestListener::HandleBarkTriggered);
 
@@ -108,7 +123,25 @@ bool FKrowdKontrolGizmoFirstContactComponentTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("A third simulated Stun cast must not re-trigger the bark"),
 		Listener->CallCount, 1);
 
-	// (c) A non-Stun ability cast must never trigger the bark at all, even before any
+	// (c) The respawn/relevel "no reset" safety guarantee: a second
+	// UGizmoFirstContactComponent instance (as a fresh pawn respawn/relevel would
+	// construct) sharing the SAME already-fired UGizmoNarrativeSubsystem must not
+	// re-register FirstContact.Stun and reset it back to unfired -
+	// UGizmoNarrativeSubsystem::RegisterBark's own comment documents that
+	// re-registering an already-fired BarkID resets bHasBeenTriggered via a plain
+	// TMap::Add overwrite, which is exactly the hazard InitializeFirstContactBark()'s
+	// IsBarkRegistered() guard exists to prevent.
+	UGizmoFirstContactComponent* RespawnedComponent = NewObject<UGizmoFirstContactComponent>(Owner);
+	RespawnedComponent->RegisterComponent();
+	RespawnedComponent->CachedNarrativeSubsystem = NarrativeSubsystem;
+
+	RespawnedComponent->InitializeFirstContactBark();
+	TestEqual(TEXT("A respawned component's own re-registration attempt must not replay the bark"),
+		Listener->CallCount, 1);
+	TestTrue(TEXT("FirstContact.Stun must still be marked fired after a respawned component's init"),
+		NarrativeSubsystem->HasBarkFired(TEXT("FirstContact.Stun")));
+
+	// (d) A non-Stun ability cast must never trigger the bark at all, even before any
 	// Stun cast has happened.
 	UGameInstance* SecondGameInstanceOuter = NewObject<UGameInstance>();
 	UGizmoNarrativeSubsystem* SecondNarrativeSubsystem = NewObject<UGizmoNarrativeSubsystem>(SecondGameInstanceOuter);
@@ -124,6 +157,54 @@ bool FKrowdKontrolGizmoFirstContactComponentTest::RunTest(const FString& Paramet
 		SecondListener->CallCount, 0);
 	TestFalse(TEXT("A non-Stun cast must not even register the bark"),
 		SecondNarrativeSubsystem->IsBarkRegistered(TEXT("FirstContact.Stun")));
+
+	// (e) With no CachedNarrativeSubsystem injected, ResolveNarrativeSubsystem() falls
+	// through to World->GetGameInstance() - which CreateNewMap()'s editor World does
+	// not have (this file's own header comment; no other test in the codebase
+	// exercises this call either). HandleAbilityCastApplied must degrade safely: no
+	// crash, and reaching the assertion below is itself the proof this survived.
+	UGizmoFirstContactComponent* UnresolvedComponent = NewObject<UGizmoFirstContactComponent>(Owner);
+	UnresolvedComponent->RegisterComponent();
+	UnresolvedComponent->HandleAbilityCastApplied(EAbilitySlot::Stun, Enemy);
+	TestTrue(TEXT("HandleAbilityCastApplied must not crash when no UGizmoNarrativeSubsystem can be resolved"), true);
+
+	// (f) Real pawn-constructor wiring: AFlatCamera3DPrototypePawn's constructor binds
+	// AbilityCastComponent->OnAbilityCastApplied to its own GizmoFirstContactComponent
+	// via AddDynamic, directly below an identically-shaped AbilityCastVFXComponent
+	// bind - a copy-paste slip there (wrong instance/method/delegate) would compile
+	// cleanly and every other case above would still pass, since none of them go
+	// through the real pawn. This drives a real cast through the real pawn's own
+	// components and confirms the bind actually reaches GizmoFirstContactComponent.
+	AFlatCamera3DPrototypePawn* WiringPawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+	if (!TestNotNull(TEXT("AFlatCamera3DPrototypePawn should spawn into the test World"), WiringPawn))
+	{
+		return false;
+	}
+	if (!TestNotNull(TEXT("The real pawn's GizmoFirstContactComponent should be constructed"),
+		ToRawPtr(WiringPawn->GizmoFirstContactComponent)))
+	{
+		return false;
+	}
+
+	UGameInstance* WiringGameInstanceOuter = NewObject<UGameInstance>();
+	UGizmoNarrativeSubsystem* WiringNarrativeSubsystem = NewObject<UGizmoNarrativeSubsystem>(WiringGameInstanceOuter);
+	WiringPawn->GizmoFirstContactComponent->CachedNarrativeSubsystem = WiringNarrativeSubsystem;
+
+	UGizmoBarkTestListener* WiringListener = NewObject<UGizmoBarkTestListener>();
+	WiringNarrativeSubsystem->OnBarkTriggered.AddDynamic(WiringListener, &UGizmoBarkTestListener::HandleBarkTriggered);
+
+	AEnemyBaseTestActor* WiringEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("A second AEnemyBaseTestActor should spawn into the test World"), WiringEnemy))
+	{
+		return false;
+	}
+	WiringEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+	const bool bWiringCastResult = WiringPawn->AbilityCastComponent->TryCastAbility(EAbilitySlot::Stun);
+	TestTrue(TEXT("TryCastAbility(Stun) should succeed against an eligible in-range enemy via the real pawn"),
+		bWiringCastResult);
+	TestEqual(TEXT("The pawn's real constructor-time AddDynamic binding must reach GizmoFirstContactComponent"),
+		WiringListener->CallCount, 1);
 
 	return true;
 }

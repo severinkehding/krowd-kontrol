@@ -49,13 +49,15 @@ void UGizmoFirstContactComponent::InitializeFirstContactBark()
 	{
 		return;
 	}
-	bHasInitializedFirstContactBark = true;
 
 	UGizmoNarrativeSubsystem* Subsystem = ResolveNarrativeSubsystem();
 	if (!Subsystem)
 	{
+		// bHasInitializedFirstContactBark deliberately NOT set here - retryable, same
+		// as UAbilityCastVFXComponent::InitializeCastVFX().
 		return;
 	}
+	bHasInitializedFirstContactBark = true;
 
 	if (Subsystem->IsBarkRegistered(FirstContactBarkID))
 	{

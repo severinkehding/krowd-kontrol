@@ -18,9 +18,24 @@ production (non-test) call site for `GetSubsystem<UGizmoNarrativeSubsystem>()` a
       `UGizmoNarrativeSubsystem` (`KrowdKontrol.Unit.GizmoFirstContactComponent` case (a)).
 - [x] Second and later successful Stun casts do not re-trigger it (case (b): two further
       simulated casts, `CallCount` stays at 1).
+- [x] A pawn respawn/relevel (a fresh `UGizmoFirstContactComponent` instance sharing the same,
+      persistent `UGizmoNarrativeSubsystem`) cannot reset an already-fired bark back to unfired
+      (case (c) — added during review; closes a gap where `RegisterBark`'s overwrite semantics
+      were documented but never actually exercised by a test).
+- [x] A non-Stun ability cast never fires or registers the bark (case (d)).
+- [x] A missing `GameInstance`/unresolvable subsystem degrades safely — no crash (case (e), added
+      during review).
+- [x] The pawn's real constructor-time `AddDynamic` binding (not just a test-constructed
+      stand-in) actually reaches `GizmoFirstContactComponent` (case (f), added during review).
+- [x] `InitializeFirstContactBark()`'s guard flag is only latched after `ResolveNarrativeSubsystem()`
+      confirms success, matching `UAbilityCastVFXComponent::InitializeCastVFX()`'s and
+      `UEnemyTypeIndicatorComponent::InitializeMarkerVisual()`'s established retry-on-failure idiom
+      (bug found and fixed during review — the original code latched the guard unconditionally,
+      permanently disabling the documented retry path on a transient resolution failure).
 - [x] A `KrowdKontrol.Unit.` Automation Framework test
       (`KrowdKontrol.Unit.GizmoFirstContactComponent`) confirms the bark fires exactly once
-      across multiple simulated Stun casts.
+      across multiple simulated Stun casts, and now also covers the respawn-safety, missing-
+      subsystem, and real-pawn-wiring cases above.
 - [x] No changes to `UGizmoNarrativeSubsystem` or `UAbilityCastComponent` themselves — both
       already exposed everything needed (`RegisterBark`/`TriggerBark`/`IsBarkRegistered`,
       `OnAbilityCastApplied`).
@@ -37,21 +52,39 @@ production (non-test) call site for `GetSubsystem<UGizmoNarrativeSubsystem>()` a
   new component alongside the existing `AbilityCastVFXComponent`.
 - `Source/KrowdKontrol/Private/Tests/KrowdKontrolGizmoFirstContactComponentTest.cpp` (CREATE) —
   `KrowdKontrol.Unit.GizmoFirstContactComponent`.
-- `Source/KrowdKontrol/EnemyBase.h` (UPDATE, deviation from the plan) — added
-  `friend class FKrowdKontrolGizmoFirstContactComponentTest;` alongside the existing friend
-  grants (`FKrowdKontrolAbilityCastComponentTest`, `FKrowdKontrolAbilityVFXColourTest`, etc.),
-  required because `AEnemyBase::TickCheckDetection` is private and the new test drives a real
-  `AEnemyBaseTestActor` through Idle -> Alert directly, the same established pattern every other
-  `AEnemyBase`-driving test already uses.
+- `Source/KrowdKontrol/EnemyBase.h` (UPDATE, deviation from the plan) — added **two** new friend
+  grants, not one: `friend class FKrowdKontrolGizmoFirstContactComponentTest;` (this PR's own
+  test) and `friend class FKrowdKontrolAbilityVFXColourTest;`. Neither predates this PR — `main`'s
+  `EnemyBase.h` had neither. See "Deviations from the plan" below for why the second grant is in
+  this diff at all.
+- `Source/KrowdKontrol/AbilityCastVFXComponent.h` / `.cpp` (CREATE in `app-source-tracked/` only —
+  unmodified, pre-existing in `app/` since issue #67) and
+  `Source/KrowdKontrol/Private/Tests/KrowdKontrolAbilityVFXColourTest.cpp` (CREATE in
+  `app-source-tracked/` only, same reason) — backfilled into the tracked mirror during review, see
+  "Deviations from the plan" below.
 
 ## Deviations from the plan
 
-- **`EnemyBase.h` friend grant** (see above) — not listed in the plan's "Files to Change" table,
-  but required for the plan's own Task 4 test code to compile. Confirmed via a direct
-  `UnrealBuildTool` compile: fails with `C2248: 'AEnemyBase::TickCheckDetection': cannot access
-  private member` without it, builds clean with it. No other change to `EnemyBase.h`.
+- **`EnemyBase.h`'s `FKrowdKontrolGizmoFirstContactComponentTest` friend grant** — not listed in
+  the plan's "Files to Change" table, but required for the plan's own Task 4 test code to compile.
+  Confirmed via a direct `UnrealBuildTool` compile: fails with `C2248:
+  'AEnemyBase::TickCheckDetection': cannot access private member` without it, builds clean with
+  it.
+- **`EnemyBase.h`'s `FKrowdKontrolAbilityVFXColourTest` friend grant** — also new in this PR's
+  diff, and initially undocumented (review finding). It is **not** required by anything in this
+  PR's own scope — it's required by issue #67's `KrowdKontrolAbilityVFXColourTest.cpp`, which
+  calls `Enemy->TickCheckDetection(...)` (private) and was already live and passing against `app/`
+  before this PR (hence "no regressions in `KrowdKontrol.Unit.AbilityVFXColour`" below is accurate
+  against the real working copy). That test's own `.h`/`.cpp`/test-file trio was implemented
+  directly in `app/` for issue #67 and never went through `create-pr`'s `app-source-tracked/`
+  mirroring step, so this PR — being both the first to touch `EnemyBase.h`'s friend list since and
+  the first to add tracked source (`FlatCamera3DPrototypePawn`'s wiring) that structurally
+  references `UAbilityCastVFXComponent` — inherited the gap and is where it became visible. Fixed
+  during review: `AbilityCastVFXComponent.h/.cpp` and `KrowdKontrolAbilityVFXColourTest.cpp` are
+  now backfilled into `app-source-tracked/` (unmodified copies of the real, already-working `app/`
+  files), so both friend grants are now self-explanatory from the tracked repo alone.
 
-Everything else matches the plan exactly — no other deviations.
+Everything else matches the plan exactly.
 
 ## Validation evidence
 
