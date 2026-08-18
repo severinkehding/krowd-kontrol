@@ -11,27 +11,39 @@ UAbilityCastComponent::UAbilityCastComponent()
 
 bool UAbilityCastComponent::TryCastAbility(EAbilitySlot Ability)
 {
+	// Entry/exit logging so a live-PIE pass can tell "input never reached this
+	// function" apart from "reached it but was gated" - see issue #138 E2E follow-up.
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: entry, Ability=%s"),
+		*UEnum::GetValueAsString(Ability));
+
 	AActor* Owner = GetOwner();
 	if (!Owner)
 	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, no Owner"));
 		return false;
 	}
 
 	UAbilityUnlockComponent* UnlockComponent = Owner->FindComponentByClass<UAbilityUnlockComponent>();
 	if (!UnlockComponent || !UnlockComponent->IsAbilityUnlocked(Ability))
 	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s not unlocked"),
+			*UEnum::GetValueAsString(Ability));
 		return false;
 	}
 
 	UAbilityCooldownComponent* CooldownComponent = Owner->FindComponentByClass<UAbilityCooldownComponent>();
 	if (!CooldownComponent || CooldownComponent->IsOnCooldown(Ability))
 	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s on cooldown"),
+			*UEnum::GetValueAsString(Ability));
 		return false;
 	}
 
 	AEnemyBase* Target = FindNearestValidTarget();
 	if (!Target)
 	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s no eligible target in range"),
+			*UEnum::GetValueAsString(Ability));
 		return false;
 	}
 
@@ -39,11 +51,15 @@ bool UAbilityCastComponent::TryCastAbility(EAbilitySlot Ability)
 	{
 		// Defensive only - IsOnCooldown() was already checked above and nothing else
 		// can start a cooldown between the two calls in this single-threaded path.
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s TryStartCooldown failed unexpectedly"),
+			*UEnum::GetValueAsString(Ability));
 		return false;
 	}
 
 	Target->ReceiveControl(Ability);
 	OnAbilityCastApplied.Broadcast(Ability, Target);
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s applied to Target=%s"),
+		*UEnum::GetValueAsString(Ability), *GetNameSafe(Target));
 	return true;
 }
 
