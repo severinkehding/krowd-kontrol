@@ -1,7 +1,7 @@
 // Confirms L_Level01 (issue #42, PRD 05 REQ-1/REQ-2/REQ-3) - the smallest of the 5
 // hand-authored Alpha levels - loads without errors and matches its design target:
 // exactly 3 rooms, 2 doors each connecting two distinct rooms, and every room
-// carrying at least one target zone.
+// carrying at least one target zone matching each enemy type placed in it.
 //
 // Uses FAutomationEditorCommonUtils::LoadMap (not CreateNewMap) because this is
 // regression coverage for the shipped level asset itself, not the ARoomActor/
@@ -19,12 +19,68 @@
 #include "Misc/AutomationTest.h"
 #include "RoomActor.h"
 #include "DoorConnectorActor.h"
+#include "EnemyBase.h"
+#include "RunnerEnemy.h"
+#include "TrooperEnemy.h"
+#include "BomberEnemy.h"
+#include "SniperEnemy.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Editor.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+
+namespace
+{
+	// Maps a placed enemy actor to the locked EEnemyType its concrete class represents
+	// (RU-NNR=Runner, TR-UPR=Trooper, B0-0MR=Bomber, SN-1PR=Sniper - MISSION.md Hard
+	// Invariant 5), so REQ-2's "one target zone per enemy type present in that room"
+	// can be checked against what's actually placed, not just a non-zero target-zone
+	// count.
+	TOptional<EEnemyType> GetPlacedEnemyType(const AEnemyBase* Enemy)
+	{
+		if (Enemy->IsA<ARunnerEnemy>())
+		{
+			return EEnemyType::RU_NNR;
+		}
+		if (Enemy->IsA<ATrooperEnemy>())
+		{
+			return EEnemyType::TR_UPR;
+		}
+		if (Enemy->IsA<ABomberEnemy>())
+		{
+			return EEnemyType::B0_0MR;
+		}
+		if (Enemy->IsA<ASniperEnemy>())
+		{
+			return EEnemyType::SN_1PR;
+		}
+		return TOptional<EEnemyType>();
+	}
+
+	// Level01's enemies are statically placed within each room's spatial footprint -
+	// unlike target zones (attached to their room via AddTargetZone()), no explicit
+	// room/enemy link exists for static placeholder-density enemies, so nearest-room-
+	// by-distance is how "which room is this enemy in" is determined. Rooms in a
+	// hand-authored linear chain are spaced far enough apart that closest-room
+	// assignment is unambiguous.
+	ARoomActor* FindNearestRoom(const AActor* Enemy, const TArray<ARoomActor*>& Rooms)
+	{
+		ARoomActor* Nearest = nullptr;
+		float NearestDistSq = TNumericLimits<float>::Max();
+		for (ARoomActor* Room : Rooms)
+		{
+			const float DistSq = FVector::DistSquared(Enemy->GetActorLocation(), Room->GetActorLocation());
+			if (DistSq < NearestDistSq)
+			{
+				NearestDistSq = DistSq;
+				Nearest = Room;
+			}
+		}
+		return Nearest;
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FKrowdKontrolLevel01StructureTest,
@@ -91,9 +147,48 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 			Visited.Num(), Rooms.Num());
 	}
 
+	TMap<ARoomActor*, TSet<EEnemyType>> EnemyTypesByRoom;
+	TMap<ARoomActor*, int32> EnemyCountByRoom;
+	for (TActorIterator<AEnemyBase> It(World); It; ++It)
+	{
+		AEnemyBase* Enemy = *It;
+		ARoomActor* NearestRoom = FindNearestRoom(Enemy, Rooms);
+		if (!NearestRoom)
+		{
+			continue;
+		}
+		EnemyCountByRoom.FindOrAdd(NearestRoom, 0)++;
+		if (TOptional<EEnemyType> EnemyType = GetPlacedEnemyType(Enemy))
+		{
+			EnemyTypesByRoom.FindOrAdd(NearestRoom).Add(EnemyType.GetValue());
+		}
+	}
+
 	for (ARoomActor* Room : Rooms)
 	{
 		TestTrue(TEXT("Every room should have at least one target zone (REQ-2)"), Room->GetTargetZones().Num() >= 1);
+
+		// Lightweight per-room density check (PRD 05's "static placeholder-density
+		// enemies") - only asserts every room has *some* enemy presence, not a specific
+		// count, since a real per-level density target needs Levels 2-5 to exist for
+		// comparison and is out of this test's reach.
+		TestTrue(TEXT("Every room should have at least one enemy placeholder placed in it (placeholder density)"),
+			EnemyCountByRoom.FindRef(Room) >= 1);
+
+		const TSet<EEnemyType>* PlacedTypes = EnemyTypesByRoom.Find(Room);
+		if (!PlacedTypes)
+		{
+			continue;
+		}
+		for (EEnemyType PlacedType : *PlacedTypes)
+		{
+			const bool bHasMatchingTargetZone = Room->GetTargetZones().ContainsByPredicate(
+				[PlacedType](const FRoomTargetZone& Zone) { return Zone.EnemyType == PlacedType; });
+			TestTrue(
+				FString::Printf(TEXT("Room should have a target zone matching each enemy type placed in it (REQ-2) - missing for %s"),
+					*UEnum::GetDisplayValueAsText(PlacedType).ToString()),
+				bHasMatchingTargetZone);
+		}
 	}
 
 	return true;

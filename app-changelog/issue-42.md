@@ -22,7 +22,7 @@ record of that change, see the closing note below)
 | File | Action | What it contains |
 |------|--------|-------------------|
 | `app/Content/Maps/L_Level01.umap` | CREATE | Binary map asset (31518 bytes): 3 `ARoomActor` instances in a linear chain, 2 `ADoorConnectorActor` instances wiring adjacent rooms, one target zone per room via `AddTargetZone()` (RU-NNR, TR-UPR, B0-0MR), and 5 static placeholder-density enemy actors (1x `ARunnerEnemy`, 2x `ATrooperEnemy`, 2x `ABomberEnemy`) — no live AI/GameMode wiring |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolLevel01Test.cpp` | CREATE | `KrowdKontrol.Unit.Level01Structure` — loads `L_Level01`, asserts room count == 3, door count == 2 with each connecting two distinct rooms (`ConnectsValidRooms()`), and every room has >=1 target zone |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolLevel01Test.cpp` | CREATE, later UPDATE (pass-1 fix) | `KrowdKontrol.Unit.Level01Structure` — loads `L_Level01`, asserts room count == 3, door count == 2 with each connecting two distinct rooms (`ConnectsValidRooms()`), every room has >=1 target zone, every room has >=1 enemy placeholder placed in it (density), and every distinct enemy type placed in a room (matched to its nearest `ARoomActor` by distance, via `TActorIterator<AEnemyBase>`) has a target zone of the matching `EEnemyType` in that same room |
 
 Not mirrored here: `L_Level01.umap` itself is a binary asset, excluded from
 `app-source-tracked/` per CLAUDE.md's mirror rules (never `.uasset`/`.umap`/anything
@@ -36,12 +36,16 @@ under `Content/`) — only the new `.cpp` test file is mirrored below.
       `KrowdKontrol.Unit.Level01Structure`.
 - [x] **Every room has >=1 target-zone marker per enemy type present in that room
       (REQ-2), using `APlaceholderTargetZoneActor` via `AddTargetZone()`** — asserted
-      per-room in the new test.
+      per-room in the test, and (as of the pass-1 fix below) checked against the
+      *actual* distinct enemy types placed in each room, not just a non-zero
+      target-zone count.
 - [x] **Enemy presence represented via placeholder markers — concrete enemy-class
       instances placed statically, no live AI required** — `ARunnerEnemy`/
-      `ATrooperEnemy`/`ABomberEnemy` placed as static content only. Not asserted by
-      automation (structural scope per issue #42/PRD 05 covers room/door/target-zone
-      only) — verified manually in-editor at authoring time.
+      `ATrooperEnemy`/`ABomberEnemy` placed as static content only. Per-room
+      placeholder-density (>=1 enemy per room) is now asserted by automation (see
+      pass-1 fix below); a specific per-level density *target* is still deferred —
+      that needs Levels 2-5 to exist for the comparative ramp PRD 05 describes, which
+      is inherently out of reach for a single level's own test.
 - [x] **`KrowdKontrol.Unit.Level01Structure` confirms the level loads without errors
       and its room count (3) matches the design target** — passes, 1/1.
 - [x] **Level 1-3 validation commands pass with exit 0** — see Validation below.
@@ -77,6 +81,34 @@ MISSION.md Hard Invariants reviewed against the diff: no-kill rule, 5-colour loc
 is deliberately deferred to a later, denser level; `app/` not tracked in git (#8) — all
 new files stayed under the untracked `app/` symlink, mirrored here only as a plain-text
 source copy per D-009.
+
+## Pass-1 validation fix
+
+Pass-1 behavioral review flagged the REQ-2 test as weaker than the issue asked for
+(only checked `Room->GetTargetZones().Num() >= 1`, not a match per enemy type actually
+placed) and asked for a lightweight enemy-density check if feasible. Both addressed in
+`KrowdKontrolLevel01Test.cpp`:
+
+- Enemies are matched to their containing room by nearest-`ARoomActor`-by-distance
+  (via `TActorIterator<AEnemyBase>`) — there's no explicit room/enemy attachment for
+  static placeholder-density enemies (unlike target zones, which attach to their room
+  via `AddTargetZone()`), so distance is the only signal available, and the rooms in
+  this hand-authored linear chain are spaced far enough apart for it to be unambiguous.
+- For each room, every *distinct* enemy type found nearest to it must have a target
+  zone of the matching `EEnemyType` in that same room — this would now fail if a
+  multi-enemy-type room had only one target zone of the wrong type, which the old
+  `>= 1` count check could not catch.
+- A new per-room density check (`>= 1` enemy placed per room) — a level-wide,
+  cross-Alpha-level density *target* is still not asserted, since that comparison is
+  inherently unverifiable until Levels 2-5 exist.
+- Re-ran `python harness/ci.py --quick` against the real, live `L_Level01.umap` after
+  each change (not just a read of the diff) — `UNIT_PASSED tests=49`, confirming the
+  strengthened assertions actually hold against the shipped level data, not just that
+  they compile.
+
+Not addressed (correctly out of reach, not skipped): whether 3 rooms is genuinely the
+smallest room count among the 5 planned Alpha levels can't be verified until Levels 2-5
+exist to compare against — noted here as a known, expected gap, not deferred silently.
 
 ---
 
