@@ -45,8 +45,12 @@ void UAbilityCastVFXComponent::InitializeCastVFX()
 	}
 	bHasInitializedCastVFX = true;
 
+	// Deliberately not attached to Owner's root component: HandleAbilityCastApplied
+	// always repositions this light explicitly with SetWorldLocation() at the cast
+	// target, and it must stay world-fixed there even if the caster (player pawn)
+	// moves during the flash window - attaching it would drag the flash along with
+	// the player instead (PR #155 review finding).
 	CastFlashLightComponent = NewObject<UPointLightComponent>(Owner, TEXT("AbilityCastFlashLightComponent"));
-	CastFlashLightComponent->SetupAttachment(Owner->GetRootComponent());
 	CastFlashLightComponent->RegisterComponent();
 	CastFlashLightComponent->SetIntensity(0.0f); // off until a cast lands
 	CastFlashLightComponent->SetAttenuationRadius(CastFlashAttenuationRadius);

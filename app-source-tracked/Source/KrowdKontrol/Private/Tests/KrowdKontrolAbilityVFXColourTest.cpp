@@ -197,6 +197,14 @@ bool FKrowdKontrolAbilityVFXColourTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("The cast flash should be positioned at the target enemy's actual location"),
 			VFXComponent->CastFlashLightComponent->GetComponentLocation().Equals(ExpectedFlashLocation, 1.0f));
 
+		// Regression (PR #155 review): CastFlashLightComponent must stay world-fixed
+		// at the cast target even if the caster (player pawn) moves during the flash
+		// window, not drag along with the pawn - it must not be attached to Owner's
+		// root component.
+		Owner->SetActorLocation(FVector(-2000.0f, 750.0f, 0.0f));
+		TestTrue(TEXT("The cast flash should stay fixed at the target location after the caster pawn moves"),
+			VFXComponent->CastFlashLightComponent->GetComponentLocation().Equals(ExpectedFlashLocation, 1.0f));
+
 		// ClearCastFlash() (timer-driven in production) should zero the flash light's
 		// intensity back off. Called directly here via the friend-grant idiom already
 		// established in this PR (EnemyBase.h) since there's no existing precedent in
