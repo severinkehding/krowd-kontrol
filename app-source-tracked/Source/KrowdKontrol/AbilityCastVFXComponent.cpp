@@ -17,6 +17,15 @@ void UAbilityCastVFXComponent::BeginPlay()
 	InitializeCastVFX();
 }
 
+void UAbilityCastVFXComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(CastFlashTimerHandle);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
 void UAbilityCastVFXComponent::InitializeCastVFX()
 {
 	if (bHasInitializedCastVFX)
@@ -40,7 +49,7 @@ void UAbilityCastVFXComponent::InitializeCastVFX()
 	CastFlashLightComponent->SetupAttachment(Owner->GetRootComponent());
 	CastFlashLightComponent->RegisterComponent();
 	CastFlashLightComponent->SetIntensity(0.0f); // off until a cast lands
-	CastFlashLightComponent->SetAttenuationRadius(300.0f);
+	CastFlashLightComponent->SetAttenuationRadius(CastFlashAttenuationRadius);
 }
 
 void UAbilityCastVFXComponent::HandleAbilityCastApplied(EAbilitySlot Ability, AEnemyBase* TargetEnemy)

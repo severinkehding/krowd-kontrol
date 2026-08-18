@@ -28,6 +28,9 @@
 #include "GameFramework/PlayerController.h"
 #include "AbilityUnlockComponent.h"
 #include "EnemyBaseTestActor.h"
+#include "AbilityCastVFXComponent.h"
+#include "AbilityData.h"
+#include "Components/PointLightComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -351,6 +354,10 @@ bool FKrowdKontrolFlatCamera3DAbilityCastWiringTest::RunTest(const FString& Para
 		{
 			return false;
 		}
+		// This editor test World never runs BeginPlay(), so AbilityCastVFXComponent's
+		// CastFlashLightComponent must be driven deterministically here, same as
+		// KrowdKontrolAbilityVFXColourTest.cpp does for its own standalone components.
+		Pawn->AbilityCastVFXComponent->InitializeCastVFX();
 
 		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
 		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
@@ -366,6 +373,17 @@ bool FKrowdKontrolFlatCamera3DAbilityCastWiringTest::RunTest(const FString& Para
 			static_cast<uint8>(Enemy->GetControllingAbility()), static_cast<uint8>(Case.ExpectedAbility));
 		TestEqual(FString::Printf(TEXT("%s should move the target enemy to Controlled"), Case.WrapperName),
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+		// Confirm the pawn's own constructor-bound AbilityCastVFXComponent (not a
+		// hand-wired stand-in, per KrowdKontrolAbilityVFXColourTest.cpp) actually
+		// reacted to this real cast (issue #67).
+		if (TestNotNull(FString::Printf(TEXT("%s: Pawn->AbilityCastVFXComponent->CastFlashLightComponent should exist"), Case.WrapperName),
+			ToRawPtr(Pawn->AbilityCastVFXComponent->CastFlashLightComponent)))
+		{
+			TestTrue(FString::Printf(TEXT("%s should drive the pawn's real AbilityCastVFXComponent to the matching locked colour"), Case.WrapperName),
+				Pawn->AbilityCastVFXComponent->CastFlashLightComponent->GetLightColor().Equals(
+					AbilityData::Get(Case.ExpectedAbility).Colour, 0.01f));
+		}
 	}
 
 	return true;

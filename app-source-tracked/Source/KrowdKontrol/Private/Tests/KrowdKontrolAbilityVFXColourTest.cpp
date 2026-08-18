@@ -40,7 +40,7 @@ bool FKrowdKontrolAbilityVFXColourTest::RunTest(const FString& Parameters)
 		EAbilitySlot::Root, EAbilitySlot::Fear, EAbilitySlot::Snare };
 	const TArray<FLinearColor> AllReserved = ReservedGameplayColours::GetAll();
 
-	// (a)+(b) Direct-call mapping: for each of the 5 abilities, the cast flash's
+	// (a)+(b) Direct-call mapping and idempotency: for each of the 5 abilities, the cast flash's
 	// colour matches AbilityData::Get(Slot).Colour exactly, and is always one of the
 	// 5 reserved colours (Hard Invariant 3 regression guard - catches a hardcoded
 	// literal creeping into this component independently of AbilityData's own
@@ -70,6 +70,14 @@ bool FKrowdKontrolAbilityVFXColourTest::RunTest(const FString& Parameters)
 			return false;
 		}
 
+		// Idempotency regression: a second InitializeCastVFX() call must not create a
+		// duplicate CastFlashLightComponent. Mirrors
+		// KrowdKontrolEnemyTypeIndicatorComponentTest.cpp case (f).
+		UPointLightComponent* FirstLightComponent = VFXComponent->CastFlashLightComponent;
+		VFXComponent->InitializeCastVFX();
+		TestTrue(TEXT("A second InitializeCastVFX() call should not create a duplicate CastFlashLightComponent"),
+			VFXComponent->CastFlashLightComponent == FirstLightComponent);
+
 		for (const EAbilitySlot Slot : AllSlots)
 		{
 			VFXComponent->HandleAbilityCastApplied(Slot, nullptr);
@@ -82,7 +90,60 @@ bool FKrowdKontrolAbilityVFXColourTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// (c) End-to-end integration: a real UAbilityCastComponent::TryCastAbility success
+	// (c) Pre-initialization guard: HandleAbilityCastApplied firing before
+	// InitializeCastVFX() has ever succeeded (CastFlashLightComponent still null)
+	// must no-op, not crash.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		AActor* Owner = World->SpawnActor<AActor>();
+		if (!TestNotNull(TEXT("AActor owner should spawn into the test World"), Owner))
+		{
+			return false;
+		}
+
+		UAbilityCastVFXComponent* UninitializedVFXComponent = NewObject<UAbilityCastVFXComponent>(Owner);
+		UninitializedVFXComponent->RegisterComponent();
+		UninitializedVFXComponent->HandleAbilityCastApplied(EAbilitySlot::Stun, nullptr); // should no-op, not crash
+		TestNull(TEXT("HandleAbilityCastApplied before a successful InitializeCastVFX should stay a no-op"),
+			ToRawPtr(UninitializedVFXComponent->CastFlashLightComponent));
+	}
+
+	// (d) Regression: an owner with no RootComponent must warn, not crash, and must
+	// leave CastFlashLightComponent null - a later InitializeCastVFX() call should
+	// still retry rather than being permanently skipped (bHasInitializedCastVFX must
+	// not be set on this failure path). Mirrors
+	// KrowdKontrolEnemyTypeIndicatorComponentTest.cpp case (g).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		AActor* RootlessOwner = World->SpawnActor<AActor>();
+		if (!TestNotNull(TEXT("Rootless owner actor should spawn into the test World"), RootlessOwner))
+		{
+			return false;
+		}
+		TestNull(TEXT("Sanity: plain AActor should have no RootComponent by default"), RootlessOwner->GetRootComponent());
+
+		UAbilityCastVFXComponent* RootlessVFXComponent = NewObject<UAbilityCastVFXComponent>(RootlessOwner);
+		RootlessVFXComponent->RegisterComponent();
+
+		AddExpectedError(TEXT("found no Owner root component"), EAutomationExpectedErrorFlags::Contains, 2, false);
+		RootlessVFXComponent->InitializeCastVFX();
+		TestNull(TEXT("CastFlashLightComponent should stay null when the owner has no RootComponent"),
+			ToRawPtr(RootlessVFXComponent->CastFlashLightComponent));
+
+		RootlessVFXComponent->InitializeCastVFX();
+		TestNull(TEXT("A second InitializeCastVFX() call on a rootless owner should still leave CastFlashLightComponent null"),
+			ToRawPtr(RootlessVFXComponent->CastFlashLightComponent));
+	}
+
+	// (e) End-to-end integration: a real UAbilityCastComponent::TryCastAbility success
 	// broadcasts OnAbilityCastApplied, which - via the same AddDynamic binding
 	// AFlatCamera3DPrototypePawn's constructor uses in production - drives the VFX
 	// component's colour without the test calling HandleAbilityCastApplied directly.
@@ -121,6 +182,10 @@ bool FKrowdKontrolAbilityVFXColourTest::RunTest(const FString& Parameters)
 		{
 			return false;
 		}
+		// CastRangeUnits defaults to 1500 and Owner stays at the world origin, so this
+		// offset stays comfortably in range without needing to touch CastRangeUnits.
+		const FVector ExpectedFlashLocation(500.0f, 250.0f, 0.0f);
+		Enemy->SetActorLocation(ExpectedFlashLocation);
 		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 
 		const bool bCastResult = CastComponent->TryCastAbility(EAbilitySlot::Sleep);
@@ -129,6 +194,16 @@ bool FKrowdKontrolAbilityVFXColourTest::RunTest(const FString& Parameters)
 			VFXComponent->CastFlashLightComponent->GetLightColor().Equals(AbilityData::Get(EAbilitySlot::Sleep).Colour, 0.01f));
 		TestTrue(TEXT("The cast flash should be lit (non-zero intensity) immediately after a successful cast"),
 			VFXComponent->CastFlashLightComponent->Intensity > 0.0f);
+		TestTrue(TEXT("The cast flash should be positioned at the target enemy's actual location"),
+			VFXComponent->CastFlashLightComponent->GetComponentLocation().Equals(ExpectedFlashLocation, 1.0f));
+
+		// ClearCastFlash() (timer-driven in production) should zero the flash light's
+		// intensity back off. Called directly here via the friend-grant idiom already
+		// established in this PR (EnemyBase.h) since there's no existing precedent in
+		// this test suite for advancing a live FTimerManager.
+		VFXComponent->ClearCastFlash();
+		TestTrue(TEXT("ClearCastFlash should zero the flash light's intensity"),
+			VFXComponent->CastFlashLightComponent->Intensity == 0.0f);
 	}
 
 	return true;

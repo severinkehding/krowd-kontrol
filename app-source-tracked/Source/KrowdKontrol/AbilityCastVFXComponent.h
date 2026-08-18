@@ -30,6 +30,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast VFX")
 	float CastFlashDurationSeconds = 0.35f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast VFX")
+	float CastFlashAttenuationRadius = 300.0f;
+
 	// Lazily creates and attaches CastFlashLightComponent. Called automatically from
 	// BeginPlay(); exposed publicly (and made idempotent) so callers - including the
 	// Automation Framework test - can drive it deterministically without a full
@@ -46,10 +49,13 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	void ClearCastFlash();
 
 	FTimerHandle CastFlashTimerHandle;
 	bool bHasInitializedCastVFX = false;
+
+	friend class FKrowdKontrolAbilityVFXColourTest;
 };
