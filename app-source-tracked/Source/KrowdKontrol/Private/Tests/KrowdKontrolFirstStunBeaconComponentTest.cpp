@@ -36,6 +36,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FKrowdKontrolFirstStunBeaconComponentTest::RunTest(const FString& Parameters)
 {
+	// Casting Stun on the real pawn also fires the later-merged cast listeners
+	// (UGizmoFirstContactComponent, issue #59; UAbilityMatchupSignalComponent, issue
+	// #37), which each log a graceful-degradation warning in a bare test world (no
+	// narrative subsystem, test enemies without a type indicator). Those warnings are
+	// their documented no-op behavior, not this test's concern - expect any number of
+	// them so this test doesn't fail on its neighbors' logging. Occurrences=0 means
+	// "any count"; IsRegex=false per the D-012 AddExpectedError convention.
+	AddExpectedError(TEXT("no UGizmoNarrativeSubsystem available"), EAutomationExpectedErrorFlags::Contains, 0, false);
+	AddExpectedError(TEXT("has no UEnemyTypeIndicatorComponent"), EAutomationExpectedErrorFlags::Contains, 0, false);
+
 	// (a) No APlaceholderTargetZoneActor in the world: HandleAbilityCastApplied must
 	// not crash - reaching the assertion below is itself the proof. Run first, against
 	// its own empty World, before any target zone exists anywhere in this test.
