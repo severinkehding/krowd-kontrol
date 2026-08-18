@@ -12,6 +12,8 @@
 #include "PlayerEnergyComponent.h"
 #include "AbilityCooldownComponent.h"
 #include "AbilityCastComponent.h"
+#include "AbilityCastVFXComponent.h"
+#include "GizmoFirstContactComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
@@ -48,6 +50,14 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
 	AbilityCooldownComponent = CreateDefaultSubobject<UAbilityCooldownComponent>(TEXT("AbilityCooldownComponent"));
 	AbilityCastComponent = CreateDefaultSubobject<UAbilityCastComponent>(TEXT("AbilityCastComponent"));
+	AbilityCastVFXComponent = CreateDefaultSubobject<UAbilityCastVFXComponent>(TEXT("AbilityCastVFXComponent"));
+	// Explicit wiring at the call site (same idiom as MovementComponent's
+	// SetUpdatedComponent above) rather than a lookup-by-class in BeginPlay -
+	// both components are guaranteed to exist by this point in the constructor.
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityCastVFXComponent, &UAbilityCastVFXComponent::HandleAbilityCastApplied);
+
+	GizmoFirstContactComponent = CreateDefaultSubobject<UGizmoFirstContactComponent>(TEXT("GizmoFirstContactComponent"));
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(GizmoFirstContactComponent, &UGizmoFirstContactComponent::HandleAbilityCastApplied);
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
