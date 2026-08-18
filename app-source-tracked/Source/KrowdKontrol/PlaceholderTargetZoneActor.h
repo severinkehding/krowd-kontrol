@@ -28,4 +28,16 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
 	TObjectPtr<UPointLightComponent> BeaconLightComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Target Zone")
+	float BeaconBaselineIntensity = 3000.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Target Zone")
+	float BeaconIntensifiedIntensity = 9000.0f;
+
+	// Raises BeaconLightComponent's intensity to BeaconIntensifiedIntensity. Called
+	// externally by UFirstStunBeaconComponent (issue #29) on the first successful
+	// Stun cast of a session - mirrors AEnemyBase::ReceiveControl()'s "called
+	// externally by the cast component" idiom (see EnemyBase.h:98-99).
+	void IntensifyBeacon();
 };

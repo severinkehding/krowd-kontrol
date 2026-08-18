@@ -14,6 +14,7 @@
 #include "AbilityCastComponent.h"
 #include "AbilityCastVFXComponent.h"
 #include "GizmoFirstContactComponent.h"
+#include "FirstStunBeaconComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
@@ -58,6 +59,9 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	GizmoFirstContactComponent = CreateDefaultSubobject<UGizmoFirstContactComponent>(TEXT("GizmoFirstContactComponent"));
 	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(GizmoFirstContactComponent, &UGizmoFirstContactComponent::HandleAbilityCastApplied);
+
+	FirstStunBeaconComponent = CreateDefaultSubobject<UFirstStunBeaconComponent>(TEXT("FirstStunBeaconComponent"));
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(FirstStunBeaconComponent, &UFirstStunBeaconComponent::HandleAbilityCastApplied);
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }

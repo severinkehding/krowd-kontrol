@@ -79,6 +79,15 @@ bool FKrowdKontrolPlaceholderTargetZoneActorTest::RunTest(const FString& Paramet
 	TestTrue(TEXT("Beacon colour should be the chosen non-reserved green"),
 		Light->GetLightColor().Equals(FLinearColor(0.2f, 1.0f, 0.3f), 0.01f));
 
+	// IntensifyBeacon() (issue #29) raises the light from its baseline to its
+	// intensified intensity - mirrors ASniperEnemy's EyeGlow baseline/intensified
+	// assertion pair (KrowdKontrolSniperEnemyTest.cpp).
+	TestEqual(TEXT("BeaconLightComponent should start at BeaconBaselineIntensity"),
+		Light->Intensity, Actor->BeaconBaselineIntensity);
+	Actor->IntensifyBeacon();
+	TestEqual(TEXT("IntensifyBeacon should raise the beacon to its intensified intensity"),
+		Light->Intensity, Actor->BeaconIntensifiedIntensity);
+
 	return true;
 }
 
