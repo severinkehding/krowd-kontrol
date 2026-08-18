@@ -195,6 +195,48 @@ bool FKrowdKontrolFirstStunBeaconComponentTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("The pawn's real constructor-time AddDynamic binding must reach FirstStunBeaconComponent"),
 		WiringZone->BeaconLightComponent->Intensity, WiringZone->BeaconIntensifiedIntensity);
 
+	// (f) Two target zones at an exact distance tie from Owner: FindNearestTargetZone()
+	// uses strict less-than, so exactly one of the tied zones wins deterministically -
+	// but which one depends on TActorIterator's iteration order, which is not
+	// documented to match spawn order (confirmed empirically: it does not always).
+	// Pin the actual contract - exactly one zone wins, never both and never neither -
+	// rather than asserting a specific zone that iteration order doesn't guarantee.
+	// TieOwner is a bare APawn with no RootComponent, same as Owner/SecondOwner above,
+	// so SetActorLocation() on it is a no-op and it stays at the World origin - the
+	// tied zones are placed closer to the origin than every other zone spawned above
+	// (nearest of those, NonStunZone, is 50 units out) so this case's tie is the only
+	// one FindNearestTargetZone() can find.
+	APawn* TieOwner = World->SpawnActor<APawn>();
+	if (!TestNotNull(TEXT("A tie-test APawn should spawn into the test World"), TieOwner))
+	{
+		return false;
+	}
+	TieOwner->SetActorLocation(FVector::ZeroVector);
+	UFirstStunBeaconComponent* TieBeaconComponent = NewObject<UFirstStunBeaconComponent>(TieOwner);
+	TieBeaconComponent->RegisterComponent();
+
+	APlaceholderTargetZoneActor* TiedZoneA = World->SpawnActor<APlaceholderTargetZoneActor>();
+	if (!TestNotNull(TEXT("First tied APlaceholderTargetZoneActor should spawn into the test World"), TiedZoneA))
+	{
+		return false;
+	}
+	TiedZoneA->SetActorLocation(FVector(10.0f, 0.0f, 0.0f));
+
+	APlaceholderTargetZoneActor* TiedZoneB = World->SpawnActor<APlaceholderTargetZoneActor>();
+	if (!TestNotNull(TEXT("Second tied APlaceholderTargetZoneActor should spawn into the test World"), TiedZoneB))
+	{
+		return false;
+	}
+	TiedZoneB->SetActorLocation(FVector(0.0f, 10.0f, 0.0f)); // same distance from TieOwner as TiedZoneA
+
+	TieBeaconComponent->HandleAbilityCastApplied(EAbilitySlot::Stun, nullptr);
+	const bool bTiedZoneAIntensified = FMath::IsNearlyEqual(
+		TiedZoneA->BeaconLightComponent->Intensity, TiedZoneA->BeaconIntensifiedIntensity);
+	const bool bTiedZoneBIntensified = FMath::IsNearlyEqual(
+		TiedZoneB->BeaconLightComponent->Intensity, TiedZoneB->BeaconIntensifiedIntensity);
+	TestTrue(TEXT("On an exact distance tie, exactly one zone should be intensified, never both or neither"),
+		bTiedZoneAIntensified != bTiedZoneBIntensified);
+
 	return true;
 }
 

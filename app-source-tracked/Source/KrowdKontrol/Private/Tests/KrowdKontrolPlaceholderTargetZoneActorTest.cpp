@@ -88,6 +88,14 @@ bool FKrowdKontrolPlaceholderTargetZoneActorTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("IntensifyBeacon should raise the beacon to its intensified intensity"),
 		Light->Intensity, Actor->BeaconIntensifiedIntensity);
 
+	// A second call must remain safely idempotent - the only caller
+	// (UFirstStunBeaconComponent) already guards against calling this twice, so this
+	// pins the actor-side method's own contract explicitly rather than relying on that
+	// caller-side guard alone.
+	Actor->IntensifyBeacon();
+	TestEqual(TEXT("Calling IntensifyBeacon a second time should remain safely idempotent"),
+		Light->Intensity, Actor->BeaconIntensifiedIntensity);
+
 	return true;
 }
 
