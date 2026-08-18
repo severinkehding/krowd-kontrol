@@ -61,6 +61,7 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolMusicSubsystemTest;
 	friend class FKrowdKontrolOvercrowdDetectionComponentTest;
 	friend class FKrowdKontrolOvercrowdAudioSubsystemTest;
+	friend class FKrowdKontrolOvercrowdLevelThresholdTest;
 
 public:
 	AEnemyBase();

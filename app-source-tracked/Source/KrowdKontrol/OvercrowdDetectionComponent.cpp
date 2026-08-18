@@ -62,3 +62,25 @@ int32 UOvercrowdDetectionComponent::CountHotUncontrolledEnemiesNearby() const
 	}
 	return Count;
 }
+
+void UOvercrowdDetectionComponent::NotifyLevelReached(int32 LevelIndex)
+{
+	const FOvercrowdLevelThreshold* Found = LevelThresholds.FindByPredicate(
+		[LevelIndex](const FOvercrowdLevelThreshold& Entry) { return Entry.LevelIndex == LevelIndex; });
+
+	if (!Found)
+	{
+		if (!LevelThresholds.IsEmpty())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UOvercrowdDetectionComponent::NotifyLevelReached: no LevelThresholds entry for level %d on '%s'."),
+				LevelIndex, *GetNameSafe(this));
+		}
+		return;
+	}
+
+	OvercrowdCrowdThreshold = Found->CrowdThreshold;
+	OvercrowdRadiusUnits = Found->RadiusUnits;
+	OvercrowdUncontrolledDurationSeconds = Found->UncontrolledDurationSeconds;
+	UncontrolledSeconds = 0.0f;
+}
