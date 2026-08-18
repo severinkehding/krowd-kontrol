@@ -227,6 +227,29 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("TickControlledDuration after banking should not move the actor off Banked"),
 		static_cast<uint8>(BankedBeforeExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 
+	// (i4) duration-expiry reversion driven through the real Tick() override, not just
+	// the friend-called TickControlledDuration helper directly (as (i2)/(i3) above do) -
+	// proves the "not gated on a live player pawn" comment at EnemyBase.cpp:116-117
+	// actually holds at the Tick() call site itself. No PlayerController/pawn spawned
+	// in this World, matching case (k) below's same no-player-pawn setup.
+	UWorld* ExpiryTickWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), ExpiryTickWorld))
+	{
+		AEnemyBaseTestActor* TickedExpiryEnemy = ExpiryTickWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), TickedExpiryEnemy))
+		{
+			TickedExpiryEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+			TickedExpiryEnemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+			const float TickedStunDurationSeconds = AbilityData::Get(EAbilitySlot::Stun).BaseDurationSeconds;
+			for (float Elapsed = 0.0f; Elapsed < TickedStunDurationSeconds + 1.0f; Elapsed += 0.5f)
+			{
+				TickedExpiryEnemy->Tick(0.5f);
+			}
+			TestEqual(TEXT("Tick() alone, with no live player pawn, should still drive Controlled -> Alert reversion"),
+				static_cast<uint8>(TickedExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		}
+	}
+
 	// (j) actor is pacified, not destroyed - no code path in AEnemyBase ever calls
 	// Destroy(). Directly enforces MISSION.md Hard Invariant 2 (no enemy is ever
 	// killed).

@@ -64,6 +64,7 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolOvercrowdDetectionComponentTest;
 	friend class FKrowdKontrolOvercrowdAudioSubsystemTest;
 	friend class FKrowdKontrolAbilityCastComponentTest;
+	friend class FKrowdKontrolFlatCamera3DAbilityCastWiringTest;
 
 public:
 	AEnemyBase();
@@ -202,9 +203,6 @@ private:
 
 	EEnemyState CurrentState = EEnemyState::Idle;
 
-	// Only meaningful while CurrentState == Controlled; retains its last value
-	// otherwise (never reset on reversion or banking) - same "stale read, guarded by
-	// state" contract CurrentState itself guards every other accessor with.
 	EAbilitySlot ControllingAbility = EAbilitySlot::Stun;
 
 	float RemainingControlledSeconds = 0.0f;

@@ -22,18 +22,20 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAbilityCastApplied, EAbilitySlot
 // exactly once per successful cast so other systems (Gizmo bark trigger #59,
 // instrumentation #37 - neither wired up by this issue) can subscribe later.
 //
-// Attached to the player pawn (mirrors UOvercrowdDetectionComponent's placement -
-// never hardcoded into a concrete pawn C++ class beyond construction, see
-// FlatCamera3DPrototypePawn.cpp), reading GetOwner()'s location directly the same way.
+// Attached to the player pawn via CreateDefaultSubobject in
+// AFlatCamera3DPrototypePawn's constructor, alongside AbilityUnlockComponent and
+// AbilityCooldownComponent - not Blueprint-wired like UOvercrowdDetectionComponent,
+// since a cast input needs a guaranteed-present component on the one playable pawn.
+// Reads GetOwner()'s location directly, same as UOvercrowdDetectionComponent does.
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KROWDKONTROL_API UAbilityCastComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-	// Grants the Automation Framework test direct access to FindNearestValidTarget
-	// below, so a headless test can assert targeting selection directly rather than
-	// only indirectly through TryCastAbility's return value - same rationale every
-	// other component's own test-class friend grant in this module documents.
+	// Automation Framework test access. FindNearestValidTarget's targeting logic
+	// (nearest-of-two, out-of-range exclusion, wrong-state exclusion) is verified
+	// indirectly through TryCastAbility's return value and the target's resulting
+	// GetEnemyState() - see KrowdKontrolAbilityCastComponentTest.cpp cases (e)-(g).
 	friend class FKrowdKontrolAbilityCastComponentTest;
 
 public:

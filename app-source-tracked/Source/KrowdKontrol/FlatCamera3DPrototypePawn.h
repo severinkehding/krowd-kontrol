@@ -27,6 +27,13 @@ class KROWDKONTROL_API AFlatCamera3DPrototypePawn : public APawn
 {
 	GENERATED_BODY()
 
+	// Grants the Automation Framework test direct access to the 5 private Cast*Ability
+	// wrappers below, so a headless test can confirm each wrapper forwards to its own
+	// EAbilitySlot rather than only indirectly through SetupPlayerInputComponent's
+	// BindAction registrations - same rationale UAbilityCastComponent's
+	// FKrowdKontrolAbilityCastComponentTest friendship documents.
+	friend class FKrowdKontrolFlatCamera3DAbilityCastWiringTest;
+
 public:
 	AFlatCamera3DPrototypePawn();
 

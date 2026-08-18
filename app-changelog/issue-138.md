@@ -36,13 +36,14 @@ consume - not wired up by this issue.
 | `EnemyBase.h`/`.cpp` | UPDATE | `ControllingAbility` + `GetControllingAbility()`, `RemainingControlledSeconds`, protected virtual `GetControlledDurationOverrideSeconds()` (base default -1.0f = no override), private `TickControlledDuration()`; `ReceiveControl()` now arms the duration; `Tick()` calls `TickControlledDuration()` unconditionally; transition-table doc comment updated with the new `Controlled -> Alert` edge |
 | `SniperEnemy.h`/`.cpp` | UPDATE | Overrides `GetControlledDurationOverrideSeconds()`: Sleep = 7.0f (issue #121), all other abilities fall through to `Super::` |
 | `AbilityCastComponent.h`/`.cpp` | CREATE | `UAbilityCastComponent`: `TryCastAbility(EAbilitySlot)`, `FindNearestValidTarget()`, `OnAbilityCastApplied` delegate, `CastRangeUnits` (flat, all 5 abilities alike) |
-| `FlatCamera3DPrototypePawn.h`/`.cpp` | UPDATE | New `AbilityCooldownComponent`/`AbilityCastComponent` members (constructed alongside the existing `AbilityUnlockComponent`), 5 `BindAction` calls + 5 thin per-slot handler methods in `SetupPlayerInputComponent()` |
+| `FlatCamera3DPrototypePawn.h`/`.cpp` | UPDATE | New `AbilityCooldownComponent`/`AbilityCastComponent` members (constructed alongside the existing `AbilityUnlockComponent`), 5 `BindAction` calls + 5 thin per-slot handler methods in `SetupPlayerInputComponent()`; `.h` also gains a `FKrowdKontrolFlatCamera3DAbilityCastWiringTest` friend grant (self-fix, see Notes) |
 | `app/Config/DefaultInput.ini` | UPDATE (app/ only, no `app-source-tracked/` mirror - `.ini` is not `.h`/`.cpp`/`.Build.cs`) | 5 new `+ActionMappings=` entries: `CastStun`/`CastSleep`/`CastRoot`/`CastFear`/`CastSnare` bound to keys One-Five |
 | `Private/Tests/KrowdKontrolEnemyBaseTest.cpp` | UPDATE | `GetControllingAbility()` assertions extending the existing Alert/Attack `ReceiveControl` cases; new duration-expiry-reversion case (Stun, `AbilityData::Get(Stun).BaseDurationSeconds`); new case proving `TransitionToBanked()` before expiry prevents the reversion |
 | `Private/Tests/KrowdKontrolSniperEnemyTest.cpp` | UPDATE | Expiry-reversion case via Sleep, explicitly proving the 7s override (not the 5s `AbilityData` baseline) governs (6.9f stays Controlled, past 7.0f reverts to Alert) |
 | `Private/Tests/KrowdKontrolBomberEnemyTest.cpp`, `.../TrooperEnemyTest.cpp`, `.../RunnerEnemyTest.cpp` | UPDATE | One expiry-reversion case each, via that type's own `OnControlledEntry` ability (Fear/Root/Snare respectively), reading `AbilityData::BaseDurationSeconds` directly rather than a hardcoded magic number |
 | `Private/Tests/AbilityCastAppliedTestListener.h`/`.cpp` | CREATE | `FOnAbilityCastApplied` test listener, mirrors `GizmoBarkTestListener.h`'s shape |
 | `Private/Tests/KrowdKontrolAbilityCastComponentTest.cpp` | CREATE | 7 cases: locked-ability block, on-cooldown block, no-target-in-world (cooldown not consumed), successful cast (state + cooldown + broadcast), nearest-of-two selection, out-of-range exclusion, wrong-state (Idle/Controlled/Banked) exclusion |
+| `Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | UPDATE (self-fix, see Notes) | Existing smoke test's `BindAction` existence check extended to the 5 new `CastStun`.."CastSnare"` actions; new `FKrowdKontrolFlatCamera3DAbilityCastWiringTest` (`KrowdKontrol.Unit.FlatCamera3DPrototypePawnAbilityCastWiring`) proving each of the 5 `Cast*Ability` wrappers forwards to its own `EAbilitySlot`, not a neighboring one |
 
 ## Notes
 
@@ -50,6 +51,31 @@ consume - not wired up by this issue.
   (this issue's own test needs friend access to `TickCheckDetection`/
   `TickControlledDuration` via `AEnemyBaseTestActor`, the same pattern every other test
   class in this list already uses).
+- **Self-fix pass (review findings on this PR, applied 2026-08-18)**: addressed all 5
+  findings from the code-review/test-coverage/comment-quality agents' review of this
+  PR before merge:
+  - Corrected two `AbilityCastComponent.h` comments that made false claims: the
+    class-doc "mirrors `UOvercrowdDetectionComponent`'s placement" line (the two
+    components use opposite construction strategies - hardcoded `CreateDefaultSubobject`
+    vs. Blueprint-wired), and the `FKrowdKontrolAbilityCastComponentTest` friend-grant
+    comment (the test verifies `FindNearestValidTarget` indirectly via `TryCastAbility`,
+    not by calling it directly as the comment claimed).
+  - Removed a comment duplicated verbatim between `EnemyBase.h`'s public
+    `GetControllingAbility()` accessor and its private `ControllingAbility` field,
+    keeping it only on the accessor (matching this module's existing single-comment
+    convention).
+  - Added a new `(i4)` case to `KrowdKontrolEnemyBaseTest.cpp` driving the
+    `Controlled -> Alert` expiry-reversion through the real `Tick()` override (no
+    live player pawn in the World), not just the friend-called `TickControlledDuration`
+    helper the existing `(i2)`/`(i3)` cases use - closing the gap where a future edit
+    gating that call behind the nearby player-pawn null-check would pass every test in
+    this PR yet only surface in a live editor/PIE session.
+  - Added `FKrowdKontrolFlatCamera3DAbilityCastWiringTest` (new friend grant on both
+    `AFlatCamera3DPrototypePawn`, for the 5 private `Cast*Ability` wrappers, and
+    `AEnemyBase`, for `TickCheckDetection`) plus a `BindAction`-existence extension to
+    the existing smoke test, closing the previously-zero test coverage on the
+    player-facing input-to-ability-slot wiring - the exact shape (5 near-identical
+    wrappers, one enum value apart) most prone to a silent copy-paste swap.
 - **Known, deliberate divergence between `app/` and `app-source-tracked/`**: the live
   `app/EnemyBase.h` also carries `friend class FKrowdKontrolOvercrowdLevelThresholdTest;`,
   which this PR's tracked diff does not include. That grant is real, necessary,
@@ -94,19 +120,18 @@ consume - not wired up by this issue.
 ```
 $ python harness/ci.py --quick
 STATIC_SKIPPED no 'static' command in harness.config.json
-UNIT_PASSED tests=47
+UNIT_PASSED tests=48
 GATE_OK mode=quick
-
-$ bash harness/run_ue_automation.sh "KrowdKontrol.Unit."
-UE_BUILD_OK
-UE_AUTOMATION_RESULT passed=47 total=47
-UE_AUTOMATION_OK
 ```
 
 Test count went from the pre-existing 46 (per `app-changelog/issue-19.md`) to 47 - one
 new top-level Automation test (`KrowdKontrol.Unit.AbilityCastComponent`); the
 `EnemyBase`/`SniperEnemy`/`BomberEnemy`/`TrooperEnemy`/`RunnerEnemy` expiry-reversion
-coverage was added as additional cases inside their already-counted test functions.
+coverage was added as additional cases inside their already-counted test functions. The
+self-fix pass above (2026-08-18) added one more top-level test
+(`KrowdKontrol.Unit.FlatCamera3DPrototypePawnAbilityCastWiring`), bringing the count to
+48; its own `(i4)` and `BindAction`-existence additions were cases inside
+already-counted test functions, same as the original 46->47 additions.
 
 One review-fix during implementation: `KrowdKontrolAbilityCastComponentTest.cpp`'s
 out-of-range-exclusion case originally relocated `OutOfRangeEnemy` via
