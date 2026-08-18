@@ -1,7 +1,9 @@
 // Confirms AbilityData (issue #63, PRD 02 REQ-3) exposes exactly the 5 locked
 // per-ability base stats (duration, range, target type, colour) from the GDD table,
-// that only Stun is colour-neutral (MISSION.md Hard Invariant 4 - no countered-enemy
-// value), and that the 5 colours are mutually distinct.
+// that only Stun is colour-neutral (MISSION.md Hard Invariant 4 - Stun's countered-
+// enemy value is a don't-care), that the other 4 abilities' CounteredEnemyType
+// (issue #37) matches ReservedGameplayColours.h's locked pairing, and that the 5
+// colours are mutually distinct.
 //
 // No UWorld/CreateNewMap() needed - AbilityData::Get/GetAll are pure functions with
 // no engine-object dependency, unlike KrowdKontrolReservedGameplayColoursTest.cpp's
@@ -67,27 +69,32 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Sleep Range should be Long"), static_cast<uint8>(Sleep.Range), static_cast<uint8>(EAbilityRange::Long));
 	TestEqual(TEXT("Sleep TargetType should be Single"), static_cast<uint8>(Sleep.TargetType), static_cast<uint8>(EAbilityTargetType::Single));
 	TestEqual(TEXT("Sleep Colour should be the reserved Blue"), Sleep.Colour, ReservedGameplayColours::GetBlue());
+	TestEqual(TEXT("Sleep CounteredEnemyType should be SN-1PR"), static_cast<uint8>(Sleep.CounteredEnemyType), static_cast<uint8>(EEnemyType::SN_1PR));
 
 	const FAbilityData& Root = AbilityData::Get(EAbilitySlot::Root);
 	TestEqual(TEXT("Root BaseDurationSeconds should be 5.0"), Root.BaseDurationSeconds, 5.0f);
 	TestEqual(TEXT("Root Range should be Long"), static_cast<uint8>(Root.Range), static_cast<uint8>(EAbilityRange::Long));
 	TestEqual(TEXT("Root TargetType should be Single"), static_cast<uint8>(Root.TargetType), static_cast<uint8>(EAbilityTargetType::Single));
 	TestEqual(TEXT("Root Colour should be the reserved Teal"), Root.Colour, ReservedGameplayColours::GetTeal());
+	TestEqual(TEXT("Root CounteredEnemyType should be TR-UPR"), static_cast<uint8>(Root.CounteredEnemyType), static_cast<uint8>(EEnemyType::TR_UPR));
 
 	const FAbilityData& Fear = AbilityData::Get(EAbilitySlot::Fear);
 	TestEqual(TEXT("Fear BaseDurationSeconds should be 5.0"), Fear.BaseDurationSeconds, 5.0f);
 	TestEqual(TEXT("Fear Range should be Short"), static_cast<uint8>(Fear.Range), static_cast<uint8>(EAbilityRange::Short));
 	TestEqual(TEXT("Fear TargetType should be Area"), static_cast<uint8>(Fear.TargetType), static_cast<uint8>(EAbilityTargetType::Area));
 	TestEqual(TEXT("Fear Colour should be the reserved Orange"), Fear.Colour, ReservedGameplayColours::GetOrange());
+	TestEqual(TEXT("Fear CounteredEnemyType should be B0-0MR"), static_cast<uint8>(Fear.CounteredEnemyType), static_cast<uint8>(EEnemyType::B0_0MR));
 
 	const FAbilityData& Snare = AbilityData::Get(EAbilitySlot::Snare);
 	TestEqual(TEXT("Snare BaseDurationSeconds should be 4.0"), Snare.BaseDurationSeconds, 4.0f);
 	TestEqual(TEXT("Snare Range should be Medium"), static_cast<uint8>(Snare.Range), static_cast<uint8>(EAbilityRange::Medium));
 	TestEqual(TEXT("Snare TargetType should be Cone"), static_cast<uint8>(Snare.TargetType), static_cast<uint8>(EAbilityTargetType::Cone));
 	TestEqual(TEXT("Snare Colour should be the reserved Purple"), Snare.Colour, ReservedGameplayColours::GetPurple());
+	TestEqual(TEXT("Snare CounteredEnemyType should be RU-NNR"), static_cast<uint8>(Snare.CounteredEnemyType), static_cast<uint8>(EEnemyType::RU_NNR));
 
 	// (4) Stun is the only colour-neutral ability - the acceptance criterion "Stun has
-	// no countered-enemy value set."
+	// no countered-enemy value set." (Stun.CounteredEnemyType is deliberately not
+	// asserted here - it's a don't-care default, not a real counter.)
 	TestTrue(TEXT("Stun should be colour-neutral"), Stun.bIsColourNeutral);
 	TestFalse(TEXT("Sleep should not be colour-neutral"), Sleep.bIsColourNeutral);
 	TestFalse(TEXT("Root should not be colour-neutral"), Root.bIsColourNeutral);
