@@ -4,10 +4,12 @@
 #include "Components/ActorComponent.h"
 #include "OvercrowdDetectionComponent.generated.h"
 
-// Exactly 2 states: Inactive (default) and Active, one-directional in this issue's
-// scope - recovery (Active -> Inactive) is deferred to a separate, later issue that
-// depends on this state existing first. See MusicSubsystem.h's EMusicState for the
-// mirrored enum/delegate placement convention.
+class AEnemyBase;
+
+// Exactly 2 states: Inactive (default) and Active. Active reverts to Inactive once
+// recovery is satisfied (issue #18, PRD 08 REQ-2) - see UOvercrowdDetectionComponent's
+// class comment below for the exact recovery condition. See MusicSubsystem.h's
+// EMusicState for the mirrored enum/delegate placement convention.
 UENUM(BlueprintType)
 enum class EPanicOverloadState : uint8
 {
@@ -54,11 +56,19 @@ struct FOvercrowdLevelThreshold
 // reading GetOwner()'s location directly rather than re-deriving "find the player
 // pawn" the way AEnemyBase::FindPlayerEnergyComponent() has to.
 //
-// The state transition is one-directional in this issue's scope: once Active,
-// CurrentState never reverts on its own - recovery is a separate, later issue. The
+// Recovery (issue #18, PRD 08 REQ-2): the instant CurrentState flips to Active, the
+// qualifying enemy set at that moment is snapshotted into ConvergedEnemies - "the
+// current convergence." While Active, every AdvancePanicOverloadState() call checks
+// whether any surviving member of ConvergedEnemies now reports
+// AEnemyBase::GetEnemyState() == Controlled (i.e. a CC ability landed on it via
+// ReceiveControl()). The first tick that's true, CurrentState reverts to Inactive,
+// UncontrolledSeconds resets to 0.0f (the crowd must re-arm from scratch), and
+// ConvergedEnemies is cleared. ConvergedEnemies is captured once and not refreshed
+// while Active - an enemy that wanders into range afterward is not part of "the
+// current convergence" and CC landed on it does not end Panic Overload. The
 // pre-trigger duration timer still resets if the qualifying count drops below
 // OvercrowdCrowdThreshold before the duration elapses; that is detection-arming
-// logic, not recovery.
+// logic, unrelated to recovery.
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 {
@@ -125,7 +135,10 @@ public:
 
 	EPanicOverloadState GetPanicOverloadState() const { return CurrentState; }
 
-	// Fires exactly once, on the transition into Active only.
+	// Broadcasts once on every Inactive->Active transition and once on every
+	// Active->Inactive recovery transition (issue #18); since recovery re-arms
+	// detection rather than latching a "done" state, this pair can repeat any
+	// number of times over the component's life. Not a lifetime-firing cap.
 	UPROPERTY(BlueprintAssignable, Category = "Overcrowd")
 	FOnPanicOverloadStateChanged OnPanicOverloadStateChanged;
 
@@ -142,12 +155,29 @@ private:
 	// bypass the duration requirement.
 	void AdvancePanicOverloadState(float DeltaSeconds);
 
-	// Counts hot-and-uncontrolled AEnemyBase instances (Alert or Attack, never
-	// Controlled) within OvercrowdRadiusUnits of GetOwner().
-	int32 CountHotUncontrolledEnemiesNearby() const;
+	// Returns the hot-and-uncontrolled AEnemyBase instances (Alert or Attack, never
+	// Controlled) within OvercrowdRadiusUnits of GetOwner(). Returning the actual
+	// actors (not just a count) lets the caller snapshot them into ConvergedEnemies
+	// on the Inactive->Active transition.
+	TArray<TWeakObjectPtr<AEnemyBase>> GetHotUncontrolledEnemiesNearby() const;
+
+	// True if any surviving member of ConvergedEnemies (captured at the Inactive->Active
+	// transition) currently reports GetEnemyState() == Controlled - i.e. a CC ability
+	// (ReceiveControl) landed on it. Only meaningful while CurrentState == Active; the
+	// caller (AdvancePanicOverloadState) only invokes this then.
+	bool HasConvergedEnemyBeenControlled() const;
 
 	EPanicOverloadState CurrentState = EPanicOverloadState::Inactive;
 
-	// Resets to 0 the instant the qualifying count drops below OvercrowdCrowdThreshold.
+	// Snapshot of GetHotUncontrolledEnemiesNearby()'s result at the exact moment
+	// CurrentState flipped to Active - "the current convergence" per PRD 08 REQ-2. Not
+	// refreshed while Active; an enemy entering range afterward is not part of this
+	// convergence and CC landed on it does not end Panic Overload. Cleared on the
+	// Active->Inactive recovery transition.
+	TArray<TWeakObjectPtr<AEnemyBase>> ConvergedEnemies;
+
+	// Resets to 0 the instant the qualifying count drops below OvercrowdCrowdThreshold,
+	// and also on the Active->Inactive recovery transition (issue #18), so the crowd
+	// must re-arm from scratch either way.
 	float UncontrolledSeconds = 0.0f;
 };

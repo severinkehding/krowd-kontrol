@@ -11,9 +11,14 @@
 // KrowdKontrolAbilityCooldownTest.cpp/KrowdKontrolMusicSubsystemTest.cpp document.
 // Each scenario that needs an isolated enemy count uses its own
 // FAutomationEditorCommonUtils::CreateNewMap() World, since
-// CountHotUncontrolledEnemiesNearby() iterates every AEnemyBase in the component's
-// GetWorld() - reusing one World across scenarios would let an earlier scenario's
-// enemies leak into a later count.
+// GetHotUncontrolledEnemiesNearby() (formerly CountHotUncontrolledEnemiesNearby(),
+// renamed issue #18) iterates every AEnemyBase in the component's GetWorld() -
+// reusing one World across scenarios would let an earlier scenario's enemies leak
+// into a later count.
+//
+// Scenarios 6/7 (issue #18, PRD 08 REQ-2) cover recovery (Active -> Inactive):
+// landing a CC ability on a converged enemy ends Panic Overload immediately, while
+// CC on an enemy outside the triggering convergence does not.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -246,12 +251,121 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 		static_cast<uint8>(ControlledComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
 
 	// --- Scenario 5: no owning actor (GetOwner() null) must not crash and must leave
-	// the component Inactive - covers CountHotUncontrolledEnemiesNearby()'s defensive
+	// the component Inactive - covers GetHotUncontrolledEnemiesNearby()'s defensive
 	// early-out. Not RegisterComponent()'d, since that requires an owning Actor. ---
 	UOvercrowdDetectionComponent* OwnerlessComponent = NewObject<UOvercrowdDetectionComponent>();
 	OwnerlessComponent->AdvancePanicOverloadState(OwnerlessComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
 	TestEqual(TEXT("A component with no owning Actor should not crash and should stay Inactive"),
 		static_cast<uint8>(OwnerlessComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
+
+	// --- Scenario 6: recovery (issue #18, PRD 08 REQ-2) - landing a CC ability on a
+	// converged enemy immediately ends Panic Overload, resets the arming timer, and
+	// broadcasts exactly once more with Inactive. Fresh World, same reasoning as every
+	// other scenario above. ---
+	UWorld* RecoveryWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World for the recovery scenario"), RecoveryWorld))
+	{
+		return false;
+	}
+
+	APawn* RecoveryPlayerPawn = RecoveryWorld->SpawnActor<APawn>();
+	UOvercrowdDetectionComponent* RecoveryComponent = NewObject<UOvercrowdDetectionComponent>(RecoveryPlayerPawn);
+	RecoveryComponent->RegisterComponent();
+
+	UPanicOverloadStateTestListener* RecoveryListener = NewObject<UPanicOverloadStateTestListener>();
+	RecoveryComponent->OnPanicOverloadStateChanged.AddDynamic(RecoveryListener, &UPanicOverloadStateTestListener::HandlePanicOverloadStateChanged);
+
+	TArray<AEnemyBaseTestActor*> RecoveryEnemies;
+	for (int32 Index = 0; Index < RecoveryComponent->OvercrowdCrowdThreshold; ++Index)
+	{
+		AEnemyBaseTestActor* Enemy = RecoveryWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("Recovery-scenario AEnemyBaseTestActor should spawn"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		RecoveryEnemies.Add(Enemy);
+	}
+
+	RecoveryComponent->AdvancePanicOverloadState(RecoveryComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
+	TestEqual(TEXT("Recovery scenario should reach Active before testing recovery"),
+		static_cast<uint8>(RecoveryComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
+	TestEqual(TEXT("Recovery scenario's trigger should have broadcast exactly once"), RecoveryListener->CallCount, 1);
+
+	// Land a CC ability on one of the converged enemies.
+	RecoveryEnemies[0]->ReceiveControl(EAbilitySlot::Sleep);
+	RecoveryComponent->AdvancePanicOverloadState(0.01f);
+	TestEqual(TEXT("Landing CC on a converged enemy should immediately end Panic Overload"),
+		static_cast<uint8>(RecoveryComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
+	TestEqual(TEXT("Recovery should broadcast exactly once more (trigger + recovery = 2 total)"), RecoveryListener->CallCount, 2);
+	TestEqual(TEXT("Recovery broadcast should carry Inactive"),
+		static_cast<uint8>(RecoveryListener->LastState), static_cast<uint8>(EPanicOverloadState::Inactive));
+
+	// Keep the qualifying count AT threshold post-recovery (spawn a replacement for the
+	// now-Controlled enemy) so the below-threshold branch can't reset UncontrolledSeconds
+	// on its own - isolates proof that recovery's own reset is what's under test, rather
+	// than the count simply having dropped below OvercrowdCrowdThreshold.
+	AEnemyBaseTestActor* RecoveryReplacementEnemy = RecoveryWorld->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("Replacement enemy should spawn"), RecoveryReplacementEnemy))
+	{
+		return false;
+	}
+	RecoveryReplacementEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+	// Advance by less than the full re-arm duration: must NOT retrigger yet.
+	RecoveryComponent->AdvancePanicOverloadState(RecoveryComponent->OvercrowdUncontrolledDurationSeconds * 0.5f);
+	TestEqual(TEXT("Partial re-arm advance should not yet retrigger post-recovery"), RecoveryListener->CallCount, 2);
+
+	// Advance past the full duration from here: should retrigger now, proving the counter
+	// started from 0 at recovery rather than carrying stale accumulation.
+	RecoveryComponent->AdvancePanicOverloadState(RecoveryComponent->OvercrowdUncontrolledDurationSeconds * 0.6f);
+	TestEqual(TEXT("Full re-arm duration after recovery should retrigger"), RecoveryListener->CallCount, 3);
+
+	// --- Scenario 7 (Acceptance Criterion (c)): landing CC on an enemy that is NOT part
+	// of the convergence that triggered Panic Overload must not end it - this
+	// implementation tracks convergence membership (ConvergedEnemies), not "any CC hit
+	// anywhere". Fresh World, same reasoning as every other scenario above. ---
+	UWorld* NonMemberWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World for the non-member scenario"), NonMemberWorld))
+	{
+		return false;
+	}
+
+	APawn* NonMemberPlayerPawn = NonMemberWorld->SpawnActor<APawn>();
+	UOvercrowdDetectionComponent* NonMemberComponent = NewObject<UOvercrowdDetectionComponent>(NonMemberPlayerPawn);
+	NonMemberComponent->RegisterComponent();
+
+	UPanicOverloadStateTestListener* NonMemberListener = NewObject<UPanicOverloadStateTestListener>();
+	NonMemberComponent->OnPanicOverloadStateChanged.AddDynamic(NonMemberListener, &UPanicOverloadStateTestListener::HandlePanicOverloadStateChanged);
+
+	for (int32 Index = 0; Index < NonMemberComponent->OvercrowdCrowdThreshold; ++Index)
+	{
+		AEnemyBaseTestActor* Enemy = NonMemberWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("Non-member-scenario AEnemyBaseTestActor should spawn"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+	}
+
+	NonMemberComponent->AdvancePanicOverloadState(NonMemberComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
+	TestEqual(TEXT("Non-member scenario should reach Active before testing exclusion"),
+		static_cast<uint8>(NonMemberComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
+
+	// Spawn a fresh enemy AFTER the convergence snapshot was captured - it was never part
+	// of ConvergedEnemies, even though it is hot-and-uncontrolled and within radius.
+	AEnemyBaseTestActor* LateArrivalEnemy = NonMemberWorld->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("Late-arrival AEnemyBaseTestActor should spawn"), LateArrivalEnemy))
+	{
+		return false;
+	}
+	LateArrivalEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+	LateArrivalEnemy->ReceiveControl(EAbilitySlot::Root);
+	NonMemberComponent->AdvancePanicOverloadState(0.01f);
+	TestEqual(TEXT("Landing CC on an enemy outside the triggering convergence must not end Panic Overload"),
+		static_cast<uint8>(NonMemberComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
+	TestEqual(TEXT("No recovery broadcast should have fired"), NonMemberListener->CallCount, 1);
 
 	return true;
 }
