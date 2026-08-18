@@ -36,6 +36,11 @@ APlaceholderTargetZoneActor::APlaceholderTargetZoneActor()
 	// human design ruling before this placeholder is replaced with the real visual.
 	BeaconLightComponent->SetLightColor(FLinearColor(0.2f, 1.0f, 0.3f));
 	// Placeholder brightness/radius - not tuned against any real room scale yet.
-	BeaconLightComponent->SetIntensity(3000.0f);
+	BeaconLightComponent->SetIntensity(BeaconBaselineIntensity);
 	BeaconLightComponent->SetAttenuationRadius(300.0f);
+}
+
+void APlaceholderTargetZoneActor::IntensifyBeacon()
+{
+	BeaconLightComponent->SetIntensity(BeaconIntensifiedIntensity);
 }
