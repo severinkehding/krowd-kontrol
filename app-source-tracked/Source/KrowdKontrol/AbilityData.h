@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySlot.h"
+#include "EnemyType.h"
 
 // Single source of truth for PRD 02 REQ-3 / issue #63: the 5 crowd-control abilities'
 // locked base stats (duration, range category, target type, colour). These are locked
@@ -39,10 +40,15 @@ struct FAbilityData
 	FLinearColor Colour = FLinearColor::Black;
 
 	// True only for Stun (MISSION.md Hard Invariant 4: Stun has no countered-enemy
-	// colour matchup). No enemy-type field exists here or anywhere else in the
-	// codebase - adding one would itself be the enemy-targeting logic this issue's
-	// scope explicitly excludes.
+	// colour matchup). See CounteredEnemyType below for the actual countered-enemy
+	// value the other 4 abilities carry.
 	bool bIsColourNeutral = false;
+
+	// The EEnemyType this ability's colour is matched against (MISSION.md Hard
+	// Invariant 3's locked 5-colour channel). Only meaningful when
+	// !bIsColourNeutral - Stun's value is unused/arbitrary, since MISSION.md Hard
+	// Invariant 4 forbids giving Stun a real counter.
+	EEnemyType CounteredEnemyType = EEnemyType::RU_NNR;
 };
 
 namespace AbilityData
