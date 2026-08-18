@@ -1,5 +1,7 @@
 # krowd-kontrol
 
+> Herd them, don't hurt them — a neon-noir crowd-control game built by an AI factory.
+
 A [Dark Factory](https://github.com/coleam00/dark-factory-experiment) — a repo built,
 reviewed, and merged almost entirely by AI coding agents, running on
 [Archon](https://github.com/coleam00/archon) as the workflow harness.
