@@ -21,7 +21,7 @@ float ULevelClearTimeSubsystem::StopLevelTimerAndRecordClear(FName LevelID)
 		return 0.0f;
 	}
 
-	const float ElapsedSeconds = static_cast<float>(FPlatformTime::Seconds() - *StartTime);
+	const float ElapsedSeconds = FMath::Max(0.0f, static_cast<float>(FPlatformTime::Seconds() - *StartTime));
 	ActiveLevelStartTimes.Remove(LevelID);
 	RecordClearTime(LevelID, ElapsedSeconds);
 	return ElapsedSeconds;
@@ -71,6 +71,15 @@ ULevelClearTimeSaveGame* ULevelClearTimeSubsystem::LoadOrCreateSaveGame() const
 			{
 				return Typed;
 			}
+			UE_LOG(LogTemp, Warning,
+				TEXT("ULevelClearTimeSubsystem::LoadOrCreateSaveGame: save slot '%s' loaded but was not a ULevelClearTimeSaveGame - starting from an empty record."),
+				*SaveSlotName);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ULevelClearTimeSubsystem::LoadOrCreateSaveGame: save slot '%s' exists but failed to load - starting from an empty record."),
+				*SaveSlotName);
 		}
 	}
 	return CastChecked<ULevelClearTimeSaveGame>(UGameplayStatics::CreateSaveGameObject(ULevelClearTimeSaveGame::StaticClass()));

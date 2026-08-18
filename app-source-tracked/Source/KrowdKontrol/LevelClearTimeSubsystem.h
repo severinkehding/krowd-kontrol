@@ -48,7 +48,9 @@ public:
 	// best, false otherwise. Public and callable independently of Start/StopLevelTimer
 	// so callers that already measured elapsed time themselves (and this class's own
 	// Automation test, for exact deterministic values instead of a real wall-clock
-	// delta) can record a clear directly. Negative input is clamped to 0.
+	// delta) can record a clear directly. Negative input is clamped to 0. The return
+	// value reflects the in-memory best-time comparison only, not persistence success -
+	// see SaveGameToSlot's warn-and-continue handling in the .cpp.
 	UFUNCTION(BlueprintCallable, Category = "Level Clear Time")
 	bool RecordClearTime(FName LevelID, float ClearTimeSeconds);
 

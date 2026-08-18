@@ -59,6 +59,13 @@ bool FKrowdKontrolLevelClearTimeSubsystemTest::RunTest(const FString& Parameters
 	TestTrue(TEXT("A best time should now exist"), Subsystem->GetBestClearTimeSeconds(TestLevelID, OutBest));
 	TestEqual(TEXT("Best time should equal the first clear's time"), OutBest, 120.0f);
 
+	// An exact tie (equal to the existing best) does not overwrite it - bIsNewBest
+	// uses strict '<', so this is deliberately false, not true.
+	TestFalse(TEXT("A clear time exactly equal to the existing best should not become the new best"),
+		Subsystem->RecordClearTime(TestLevelID, 120.0f));
+	Subsystem->GetBestClearTimeSeconds(TestLevelID, OutBest);
+	TestEqual(TEXT("Best time should remain unchanged after an exact-tie clear"), OutBest, 120.0f);
+
 	// (b) A slower clear does not overwrite the best.
 	TestFalse(TEXT("A slower clear should not become the new best"),
 		Subsystem->RecordClearTime(TestLevelID, 150.0f));
@@ -70,6 +77,18 @@ bool FKrowdKontrolLevelClearTimeSubsystemTest::RunTest(const FString& Parameters
 		Subsystem->RecordClearTime(TestLevelID, 90.0f));
 	Subsystem->GetBestClearTimeSeconds(TestLevelID, OutBest);
 	TestEqual(TEXT("Best time should now be the faster clear"), OutBest, 90.0f);
+
+	// A negative ClearTimeSeconds is clamped to 0, never recorded as a negative best and
+	// never silently accepted as-is.
+	const FName ClampTestLevelID = TEXT("KrowdKontrol.Unit.LevelClearTimeSubsystem.ClampTestLevel");
+	TestTrue(TEXT("A negative clear time should still be treated as a new best (clamped to 0)"),
+		Subsystem->RecordClearTime(ClampTestLevelID, -5.0f));
+	float ClampedBest = 0.0f;
+	Subsystem->GetBestClearTimeSeconds(ClampTestLevelID, ClampedBest);
+	TestEqual(TEXT("A negative clear time should be clamped to 0, not stored as-is"), ClampedBest, 0.0f);
+
+	TestFalse(TEXT("No positive clear time can beat a clamped-to-0 best"),
+		Subsystem->RecordClearTime(ClampTestLevelID, 45.0f));
 
 	// Keyed per level, not global: a distinct level has no best time of its own.
 	const FName OtherLevelID = TEXT("KrowdKontrol.Unit.LevelClearTimeSubsystem.OtherTestLevel");
