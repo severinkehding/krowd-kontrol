@@ -251,7 +251,7 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 		static_cast<uint8>(ControlledComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
 
 	// --- Scenario 5: no owning actor (GetOwner() null) must not crash and must leave
-	// the component Inactive - covers CountHotUncontrolledEnemiesNearby()'s defensive
+	// the component Inactive - covers GetHotUncontrolledEnemiesNearby()'s defensive
 	// early-out. Not RegisterComponent()'d, since that requires an owning Actor. ---
 	UOvercrowdDetectionComponent* OwnerlessComponent = NewObject<UOvercrowdDetectionComponent>();
 	OwnerlessComponent->AdvancePanicOverloadState(OwnerlessComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
