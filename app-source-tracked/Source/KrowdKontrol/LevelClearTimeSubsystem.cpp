@@ -41,7 +41,7 @@ bool ULevelClearTimeSubsystem::RecordClearTime(FName LevelID, float ClearTimeSec
 		if (!UGameplayStatics::SaveGameToSlot(SaveGameObject, SaveSlotName, 0))
 		{
 			UE_LOG(LogTemp, Warning,
-				TEXT("ULevelClearTimeSubsystem::RecordClearTime: SaveGameToSlot failed for level '%s' - best time updated in memory only for this session."),
+				TEXT("ULevelClearTimeSubsystem::RecordClearTime: SaveGameToSlot failed for level '%s' - new best time was not persisted and will be lost."),
 				*LevelID.ToString());
 		}
 	}
