@@ -17,6 +17,8 @@ class UAbilityCooldownComponent;
 class UAbilityCastComponent;
 class UAbilityCastVFXComponent;
 class UGizmoFirstContactComponent;
+class UFirstStunBeaconComponent;
+class UAbilityMatchupSignalComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -89,6 +91,21 @@ public:
 	// the constructor below, alongside AbilityCastVFXComponent.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UGizmoFirstContactComponent> GizmoFirstContactComponent;
+
+	// New target-zone beacon hook (issue #29) - intensifies the nearest
+	// APlaceholderTargetZoneActor's beacon exactly once, the first time the player
+	// successfully casts Stun. Bound in the constructor below, alongside
+	// GizmoFirstContactComponent.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UFirstStunBeaconComponent> FirstStunBeaconComponent;
+
+	// New ability-vs-enemy colour-matchup instrumentation hook (issue #37, PRD 09
+	// REQ-5) - classifies every successful cast as colour-matched or not against the
+	// target's real EEnemyType. Bound in the constructor below, alongside the other
+	// OnAbilityCastApplied subscribers. No player-facing behavior yet - this issue is
+	// detection-only; see AbilityMatchupSignalComponent.h.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityMatchupSignalComponent> AbilityMatchupSignalComponent;
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
