@@ -63,6 +63,12 @@ void ASleepShieldBoss::Tick(float DeltaTime)
 
 void ASleepShieldBoss::CheckShieldState()
 {
+	// Mirror first, in every state - the Banked early-return below previously ran
+	// before this assignment, freezing BossStateReflected at its pre-Banked value
+	// forever (pass-2 review HIGH finding). The second assignment at the end of this
+	// method keeps same-tick freshness after AdvanceToVulnerable.
+	BossStateReflected = GetBossState();
+
 	// A boss already delivered to Banked (whatever future system calls
 	// TransitionToBanked() - out of scope here, see the plan's NOT Building
 	// section) has nothing left to shield; stop re-toggling.

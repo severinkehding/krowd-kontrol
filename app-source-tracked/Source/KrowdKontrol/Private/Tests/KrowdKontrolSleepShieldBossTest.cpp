@@ -201,6 +201,15 @@ bool FKrowdKontrolSleepShieldBossTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Tick() should advance the boss to Vulnerable via CheckShieldState()"),
 		static_cast<uint8>(TickBoss->GetBossState()), static_cast<uint8>(EBossState::Vulnerable));
 
+	// Regression (pass-2 review HIGH): BossStateReflected must not freeze at its
+	// pre-Banked value - the Banked early-return in CheckShieldState() previously
+	// ran before the mirror update, desyncing the reflected state forever after
+	// TransitionToBanked().
+	TickBoss->TransitionToBanked();
+	TickBoss->Tick(0.0f);
+	TestEqual(TEXT("BossStateReflected should sync to Banked on the next tick after TransitionToBanked()"),
+		static_cast<uint8>(TickBoss->BossStateReflected), static_cast<uint8>(EBossState::Banked));
+
 	return true;
 }
 
