@@ -72,6 +72,30 @@ No regressions in any pre-existing `KrowdKontrol.Unit.*` test (51/51 passed, bot
 before and after — additive-only change). No Hard Invariant from `MISSION.md` is
 touched by this change.
 
+## Post-review fix (self-fix, 2026-08-18)
+
+Code review and test-coverage agents converged on a HIGH bug: `ShuffleRooms()`
+documented that repeat calls "reset any doors spawned by a previous call," but the
+implementation only cleared the `SpawnedDoors` tracking array, never calling
+`Destroy()` on the actors themselves — every second call on the same component
+instance leaked the previous call's `ADoorConnectorActor` chain into the level.
+Fixed by destroying each tracked door before clearing the array
+(`RoomPoolShufflerComponent.cpp`). Added regression coverage in
+`KrowdKontrolRoomPoolShufflerComponentTest.cpp`:
+- (e) live-door-count assertion after a repeat `ShuffleRooms()` call, catching the
+  leak directly.
+- (f)/(g) zero-match (`Medium` tier, no tagged rooms) and single-match (one-room
+  pool) boundary cases for the door-chain spawn loop (MEDIUM finding).
+- A `nullptr` entry added to the test pool, exercising the filter loop's existing
+  null-guard (LOW finding).
+
+Two LOW docs-impact findings (missing `app-source-tracked/`/`app-changelog/` Repo
+Layout entries, and the still-TBD Conventions section) target `CLAUDE.md`, a
+protected path — left as standing follow-up for a human editor, not fixed here.
+
+Re-validated: `harness/ci.py` full mode → `GATE_OK`; isolated component test →
+`UE_AUTOMATION_RESULT passed=1 total=1`; full unit suite → `passed=51 total=51`.
+
 ---
 
 The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and

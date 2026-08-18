@@ -20,6 +20,7 @@
 #include "DoorConnectorActor.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -73,6 +74,10 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 		return false;
 	}
 	Pool.Add(UntaggedRoom);
+
+	// Editor-authored TArray properties commonly have unset (null) slots; the filter
+	// loop guards against this explicitly, so exercise it here.
+	Pool.Add(nullptr);
 
 	AActor* OwnerActor = World->SpawnActor<AActor>();
 	if (!TestNotNull(TEXT("Owner actor should spawn into the test World"), OwnerActor))
@@ -146,6 +151,38 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 	{
 		TestTrue(TEXT("Every room in the first sequence should also appear in the second"), SetB.Contains(Room));
 	}
+
+	// (e) Repeated calls must not leak the previous call's door actors: after (c)'s
+	// repeat ShuffleRooms() call above, the world should contain exactly as many live
+	// ADoorConnectorActor instances as the most recent call tracks, not the sum of
+	// every call made so far.
+	int32 LiveDoorCount = 0;
+	for (TActorIterator<ADoorConnectorActor> It(World); It; ++It)
+	{
+		++LiveDoorCount;
+	}
+	TestEqual(TEXT("World should not accumulate orphaned doors across repeated ShuffleRooms() calls"),
+		LiveDoorCount, Shuffler->GetSpawnedDoors().Num());
+
+	// (f) Zero-match tier: Medium is declared but never tagged on any room in Pool.
+	TArray<ARoomActor*> SequenceMedium = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Medium, /*Seed=*/1);
+	TestEqual(TEXT("Zero-match tier should return an empty sequence"), SequenceMedium.Num(), 0);
+	TestEqual(TEXT("Zero-match tier should spawn no doors"), Shuffler->GetSpawnedDoors().Num(), 0);
+
+	// (g) Single-match tier: exactly one Hard-tagged room in a fresh small pool.
+	ARoomActor* SoloRoom = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("Solo room should spawn into the test World"), SoloRoom))
+	{
+		return false;
+	}
+	URoomMetadataComponent* SoloMetadata = NewObject<URoomMetadataComponent>(SoloRoom);
+	SoloMetadata->RegisterComponent();
+	SoloMetadata->DifficultyTier = ERoomDifficultyTier::Hard;
+	TArray<ARoomActor*> SoloPool = { SoloRoom };
+
+	TArray<ARoomActor*> SequenceSolo = Shuffler->ShuffleRooms(SoloPool, ERoomDifficultyTier::Hard, /*Seed=*/1);
+	TestEqual(TEXT("Single-match tier should return that one room"), SequenceSolo.Num(), 1);
+	TestEqual(TEXT("Single-match tier should spawn no doors"), Shuffler->GetSpawnedDoors().Num(), 0);
 
 	return true;
 }

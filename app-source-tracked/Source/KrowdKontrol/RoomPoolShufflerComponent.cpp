@@ -12,6 +12,13 @@ URoomPoolShufflerComponent::URoomPoolShufflerComponent()
 
 TArray<ARoomActor*> URoomPoolShufflerComponent::ShuffleRooms(const TArray<ARoomActor*>& RoomPool, ERoomDifficultyTier TargetTier, int32 Seed)
 {
+	for (ADoorConnectorActor* Door : SpawnedDoors)
+	{
+		if (Door)
+		{
+			Door->Destroy();
+		}
+	}
 	SpawnedDoors.Reset();
 
 	UWorld* World = GetWorld();
