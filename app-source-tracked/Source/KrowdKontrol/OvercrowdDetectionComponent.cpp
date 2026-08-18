@@ -15,9 +15,30 @@ void UOvercrowdDetectionComponent::TickComponent(float DeltaTime, ELevelTick Tic
 
 void UOvercrowdDetectionComponent::AdvancePanicOverloadState(float DeltaSeconds)
 {
-	const int32 QualifyingCount = CountHotUncontrolledEnemiesNearby();
+	if (CurrentState == EPanicOverloadState::Active)
+	{
+		if (!HasConvergedEnemyBeenControlled())
+		{
+			return;
+		}
 
-	if (QualifyingCount < OvercrowdCrowdThreshold)
+		// Recovery (PRD 08 REQ-2, issue #18): landing any CC ability on a converged
+		// enemy immediately ends Panic Overload - no separate "panic button", the
+		// same 5 CC verbs recover it. Reset UncontrolledSeconds so the crowd must
+		// re-arm from zero rather than instantly re-triggering this same tick if the
+		// remaining nearby count is still >= OvercrowdCrowdThreshold.
+		// Flip before broadcasting (see MusicSubsystem::SetMusicState) so a
+		// re-entrant listener sees CurrentState already updated.
+		CurrentState = EPanicOverloadState::Inactive;
+		UncontrolledSeconds = 0.0f;
+		ConvergedEnemies.Reset();
+		OnPanicOverloadStateChanged.Broadcast(CurrentState);
+		return;
+	}
+
+	const TArray<TWeakObjectPtr<AEnemyBase>> QualifyingEnemies = GetHotUncontrolledEnemiesNearby();
+
+	if (QualifyingEnemies.Num() < OvercrowdCrowdThreshold)
 	{
 		UncontrolledSeconds = 0.0f;
 		return;
@@ -25,28 +46,29 @@ void UOvercrowdDetectionComponent::AdvancePanicOverloadState(float DeltaSeconds)
 
 	UncontrolledSeconds += DeltaSeconds;
 
-	if (CurrentState == EPanicOverloadState::Inactive
-		&& UncontrolledSeconds >= OvercrowdUncontrolledDurationSeconds)
+	if (UncontrolledSeconds >= OvercrowdUncontrolledDurationSeconds)
 	{
-		// Flip before broadcasting (see MusicSubsystem::SetMusicState) so a re-entrant
-		// listener sees CurrentState already updated.
+		// Flip before broadcasting (see MusicSubsystem::SetMusicState) so a
+		// re-entrant listener sees CurrentState already updated.
 		CurrentState = EPanicOverloadState::Active;
+		ConvergedEnemies = QualifyingEnemies;
 		OnPanicOverloadStateChanged.Broadcast(CurrentState);
 	}
 }
 
-int32 UOvercrowdDetectionComponent::CountHotUncontrolledEnemiesNearby() const
+TArray<TWeakObjectPtr<AEnemyBase>> UOvercrowdDetectionComponent::GetHotUncontrolledEnemiesNearby() const
 {
+	TArray<TWeakObjectPtr<AEnemyBase>> Result;
+
 	const AActor* Owner = GetOwner();
 	if (!Owner || !GetWorld())
 	{
-		return 0;
+		return Result;
 	}
 
 	const FVector OwnerLocation = Owner->GetActorLocation();
 	const float RadiusSquared = FMath::Square(OvercrowdRadiusUnits);
 
-	int32 Count = 0;
 	for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
 	{
 		const EEnemyState State = It->GetEnemyState();
@@ -57,8 +79,45 @@ int32 UOvercrowdDetectionComponent::CountHotUncontrolledEnemiesNearby() const
 		}
 		if (FVector::DistSquared(It->GetActorLocation(), OwnerLocation) <= RadiusSquared)
 		{
-			++Count;
+			Result.Add(TWeakObjectPtr<AEnemyBase>(*It));
 		}
 	}
-	return Count;
+	return Result;
+}
+
+bool UOvercrowdDetectionComponent::HasConvergedEnemyBeenControlled() const
+{
+	for (const TWeakObjectPtr<AEnemyBase>& Enemy : ConvergedEnemies)
+	{
+		if (const AEnemyBase* EnemyPtr = Enemy.Get())
+		{
+			if (EnemyPtr->GetEnemyState() == EEnemyState::Controlled)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+void UOvercrowdDetectionComponent::NotifyLevelReached(int32 LevelIndex)
+{
+	const FOvercrowdLevelThreshold* Found = LevelThresholds.FindByPredicate(
+		[LevelIndex](const FOvercrowdLevelThreshold& Entry) { return Entry.LevelIndex == LevelIndex; });
+
+	if (!Found)
+	{
+		if (!LevelThresholds.IsEmpty())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UOvercrowdDetectionComponent::NotifyLevelReached: no LevelThresholds entry for level %d on '%s'."),
+				LevelIndex, *GetNameSafe(this));
+		}
+		return;
+	}
+
+	OvercrowdCrowdThreshold = Found->CrowdThreshold;
+	OvercrowdRadiusUnits = Found->RadiusUnits;
+	OvercrowdUncontrolledDurationSeconds = Found->UncontrolledDurationSeconds;
+	UncontrolledSeconds = 0.0f;
 }
