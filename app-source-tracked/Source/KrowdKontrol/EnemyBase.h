@@ -66,6 +66,8 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolAbilityCastComponentTest;
 	friend class FKrowdKontrolFlatCamera3DAbilityCastWiringTest;
 	friend class FKrowdKontrolOvercrowdLevelThresholdTest;
+	friend class FKrowdKontrolAbilityVFXColourTest;
+	friend class FKrowdKontrolGizmoFirstContactComponentTest;
 
 public:
 	AEnemyBase();
