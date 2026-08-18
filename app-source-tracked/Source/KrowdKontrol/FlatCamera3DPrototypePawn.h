@@ -13,6 +13,8 @@ class UCameraComponent;
 class UInputComponent;
 class UAbilityUnlockComponent;
 class UPlayerEnergyComponent;
+class UAbilityCooldownComponent;
+class UAbilityCastComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -24,6 +26,13 @@ UCLASS()
 class KROWDKONTROL_API AFlatCamera3DPrototypePawn : public APawn
 {
 	GENERATED_BODY()
+
+	// Grants the Automation Framework test direct access to the 5 private Cast*Ability
+	// wrappers below, so a headless test can confirm each wrapper forwards to its own
+	// EAbilitySlot rather than only indirectly through SetupPlayerInputComponent's
+	// BindAction registrations - same rationale UAbilityCastComponent's
+	// FKrowdKontrolAbilityCastComponentTest friendship documents.
+	friend class FKrowdKontrolFlatCamera3DAbilityCastWiringTest;
 
 public:
 	AFlatCamera3DPrototypePawn();
@@ -54,9 +63,31 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UPlayerEnergyComponent> PlayerEnergyComponent;
 
+	// Backs the 5 ability-cast input bindings below (issue #138) - the only public
+	// gate a real cast can be blocked by short of an unlocked ability with no eligible
+	// target. See AbilityCooldownComponent.h: TryStartCooldown is the sole legal way
+	// to start a cooldown, and UAbilityCastComponent is the only caller.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityCooldownComponent> AbilityCooldownComponent;
+
+	// The single production entry point that finally calls
+	// AEnemyBase::ReceiveControl() from a real gameplay path (issue #138) - see
+	// AbilityCastComponent.h.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityCastComponent> AbilityCastComponent;
+
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 private:
 	void MoveForward(float Value);
 	void MoveRight(float Value);
+
+	// Thin wrappers, one per EAbilitySlot - BindAction requires a fixed no-argument
+	// member-function signature, so these can't be collapsed into one parameterized
+	// method without changing the input-binding approach entirely (out of scope).
+	void CastStunAbility();
+	void CastSleepAbility();
+	void CastRootAbility();
+	void CastFearAbility();
+	void CastSnareAbility();
 };

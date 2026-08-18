@@ -4,6 +4,7 @@
 #include "PlayerEnergyComponent.h"
 #include "EngineUtils.h"
 #include "Components/PointLightComponent.h"
+#include "AbilityData.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -21,6 +22,9 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 		return;
 	}
 	CurrentState = EEnemyState::Controlled;
+	ControllingAbility = Ability;
+	const float OverrideSeconds = GetControlledDurationOverrideSeconds(Ability);
+	RemainingControlledSeconds = OverrideSeconds >= 0.0f ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
 	OnControlledEntry(Ability);
 }
 
@@ -72,6 +76,23 @@ void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)
 	}
 }
 
+void AEnemyBase::TickControlledDuration(float DeltaSeconds)
+{
+	if (CurrentState != EEnemyState::Controlled)
+	{
+		return;
+	}
+	RemainingControlledSeconds = FMath::Max(0.0f, RemainingControlledSeconds - DeltaSeconds);
+	if (RemainingControlledSeconds <= 0.0f)
+	{
+		// Operator decision, issue #138, 2026-08-18: duration expiring before banking
+		// breaks the enemy free - it reverts to Alert and re-engages, never staying
+		// Controlled indefinitely and never treated as a kill (MISSION.md Hard
+		// Invariant 2). Banking within the window remains the only path to Banked.
+		CurrentState = EEnemyState::Alert;
+	}
+}
+
 void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSeconds)
 {
 	if (CurrentState != EEnemyState::Alert)
@@ -91,6 +112,10 @@ void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSec
 void AEnemyBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// Not gated on a live player pawn below - the Controlled-duration timer isn't
+	// player-position-dependent, unlike detection/chase.
+	TickControlledDuration(DeltaTime);
 
 	// GetPlayerPawn returns nullptr in a headless Automation test with no
 	// PlayerController spawned - this is fine and expected; TickCheckDetection and

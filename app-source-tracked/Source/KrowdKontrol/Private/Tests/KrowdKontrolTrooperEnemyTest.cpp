@@ -23,6 +23,7 @@
 #include "TrooperRayFiredTestListener.h"
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
+#include "AbilityData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -368,6 +369,21 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 		TestNull(TEXT("SpawnSoundAtLocation should no-op (not crash) for an actor with no real UWorld"),
 			WorldlessTrooper->AttackTellAudioComponent.Get());
 	}
+
+	// (r) issue #138: expiry-reversion via Root (Trooper's own OnControlledEntry
+	// ability, case (c) above), using AbilityData::Get(Root).BaseDurationSeconds
+	// directly rather than a hardcoded magic number - no per-enemy override exists for
+	// Trooper, so the base duration governs.
+	ATrooperEnemy* ExpiryTrooper = NewObject<ATrooperEnemy>();
+	AdvanceToAttack(ExpiryTrooper, ZeroDistanceLocation);
+	ExpiryTrooper->ReceiveControl(EAbilitySlot::Root); // Attack -> Controlled
+	const float RootDurationSeconds = AbilityData::Get(EAbilitySlot::Root).BaseDurationSeconds;
+	ExpiryTrooper->TickControlledDuration(RootDurationSeconds - 1.0f);
+	TestEqual(TEXT("Trooper should still be Controlled before the Root duration elapses"),
+		static_cast<uint8>(ExpiryTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	ExpiryTrooper->TickControlledDuration(1.5f);
+	TestEqual(TEXT("Trooper should revert to Alert once the Root duration elapses"),
+		static_cast<uint8>(ExpiryTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 
 	return true;
 }

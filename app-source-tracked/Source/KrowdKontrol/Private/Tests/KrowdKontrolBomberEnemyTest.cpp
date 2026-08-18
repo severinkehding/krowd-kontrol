@@ -22,6 +22,7 @@
 #include "GameFramework/Pawn.h"
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
+#include "AbilityData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -346,6 +347,21 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			}
 		}
 	}
+
+	// (t) issue #138: expiry-reversion via Fear (Bomber's own OnControlledEntry
+	// ability, case (c) above), using AbilityData::Get(Fear).BaseDurationSeconds
+	// directly rather than a hardcoded magic number - no per-enemy override exists for
+	// Bomber, so the base duration governs.
+	ABomberEnemy* ExpiryBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(ExpiryBomber, ZeroDistanceLocation);
+	ExpiryBomber->ReceiveControl(EAbilitySlot::Fear); // Attack -> Controlled
+	const float FearDurationSeconds = AbilityData::Get(EAbilitySlot::Fear).BaseDurationSeconds;
+	ExpiryBomber->TickControlledDuration(FearDurationSeconds - 1.0f);
+	TestEqual(TEXT("Bomber should still be Controlled before the Fear duration elapses"),
+		static_cast<uint8>(ExpiryBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	ExpiryBomber->TickControlledDuration(1.5f);
+	TestEqual(TEXT("Bomber should revert to Alert once the Fear duration elapses"),
+		static_cast<uint8>(ExpiryBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 
 	return true;
 }

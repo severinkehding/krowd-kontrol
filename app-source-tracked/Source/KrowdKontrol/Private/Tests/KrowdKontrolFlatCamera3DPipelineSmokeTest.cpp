@@ -26,6 +26,8 @@
 #include "EngineUtils.h"
 #include "Editor.h"
 #include "GameFramework/PlayerController.h"
+#include "AbilityUnlockComponent.h"
+#include "EnemyBaseTestActor.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -128,6 +130,29 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 
 	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveForward axis"), MoveForwardBinding != nullptr);
 	TestTrue(TEXT("SetupPlayerInputComponent should bind a MoveRight axis"), MoveRightBinding != nullptr);
+
+	// The 5 ability-cast action bindings (issue #138) - same existence-check shape as
+	// MoveForward/MoveRight above, extended to the new "CastStun".."CastSnare" actions
+	// so a BindAction name typo (mismatched against app/Config/DefaultInput.ini's actual
+	// key, which this repo's harness can't otherwise verify - .ini files have no
+	// app-source-tracked/ mirror) is at least localized to the .ini file alone rather
+	// than compounding with a silently-unregistered C++ binding too.
+	const TArray<FName> ExpectedCastActionNames = {
+		TEXT("CastStun"), TEXT("CastSleep"), TEXT("CastRoot"), TEXT("CastFear"), TEXT("CastSnare")
+	};
+	for (const FName& ExpectedActionName : ExpectedCastActionNames)
+	{
+		bool bFound = false;
+		for (int32 Index = 0; Index < InputComponent->GetNumActionBindings(); ++Index)
+		{
+			if (InputComponent->GetActionBinding(Index).GetActionName() == ExpectedActionName)
+			{
+				bFound = true;
+				break;
+			}
+		}
+		TestTrue(FString::Printf(TEXT("SetupPlayerInputComponent should bind a %s action"), *ExpectedActionName.ToString()), bFound);
+	}
 
 	// Invokes the bound delegates directly (as UPlayerInput::ProcessInputStack would
 	// each frame) and checks the deliberate world-space-vs-actor-relative design
@@ -275,6 +300,73 @@ bool FKrowdKontrolFlatCamera3DPipelineLevelTest::RunTest(const FString& Paramete
 		PlacedPawn->CameraBoom->bDoCollisionTest);
 	TestFalse(TEXT("Placed pawn's TopDownCamera rotation should also be locked, not player-controlled"),
 		PlacedPawn->TopDownCamera->bUsePawnControlRotation);
+
+	return true;
+}
+
+// Confirms each of the 5 private Cast*Ability wrappers (issue #138) forwards to its
+// own EAbilitySlot and no other - the wrappers are structurally identical except for
+// one enum value each, exactly the shape most prone to a silent copy-paste swap (e.g.
+// Fear<->Root) that would compile cleanly and pass every other test in this PR. Each
+// ability gets its own case with a fresh CreateNewMap() World, mirroring
+// KrowdKontrolAbilityCastComponentTest.cpp's same per-case World isolation (that
+// component's own FindNearestValidTarget() scans every AEnemyBase in the World, so
+// reusing one World across cases would let an earlier case's already-Controlled enemy
+// leak into a later case's target search).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolFlatCamera3DAbilityCastWiringTest,
+	"KrowdKontrol.Unit.FlatCamera3DPrototypePawnAbilityCastWiring",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolFlatCamera3DAbilityCastWiringTest::RunTest(const FString& Parameters)
+{
+	// Level index each ability unlocks at, per AbilityUnlockComponent.cpp's
+	// GetLevelToAbilityMap() (Stun is already unlocked at construction, level 1 is
+	// never a real NotifyLevelReached call for it).
+	struct FWiringCase
+	{
+		void (AFlatCamera3DPrototypePawn::*Wrapper)();
+		EAbilitySlot ExpectedAbility;
+		int32 UnlockLevel;
+		const TCHAR* WrapperName;
+	};
+	const FWiringCase Cases[] = {
+		{ &AFlatCamera3DPrototypePawn::CastStunAbility, EAbilitySlot::Stun, 1, TEXT("CastStunAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastSleepAbility, EAbilitySlot::Sleep, 2, TEXT("CastSleepAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastRootAbility, EAbilitySlot::Root, 3, TEXT("CastRootAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastFearAbility, EAbilitySlot::Fear, 4, TEXT("CastFearAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastSnareAbility, EAbilitySlot::Snare, 5, TEXT("CastSnareAbility") },
+	};
+
+	for (const FWiringCase& Case : Cases)
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		AFlatCamera3DPrototypePawn* Pawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+		if (!TestNotNull(TEXT("AFlatCamera3DPrototypePawn should spawn into the test World"), Pawn))
+		{
+			return false;
+		}
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert, within default CastRangeUnits
+
+		Pawn->AbilityUnlockComponent->NotifyLevelReached(Case.UnlockLevel);
+
+		(Pawn->*Case.Wrapper)();
+		TestEqual(FString::Printf(TEXT("%s should apply its own EAbilitySlot specifically, not a neighboring slot"), Case.WrapperName),
+			static_cast<uint8>(Enemy->GetControllingAbility()), static_cast<uint8>(Case.ExpectedAbility));
+		TestEqual(FString::Printf(TEXT("%s should move the target enemy to Controlled"), Case.WrapperName),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
 
 	return true;
 }
