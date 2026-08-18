@@ -38,6 +38,7 @@ public:
 private:
 	// One-shot guard so a target missing UEnemyTypeIndicatorComponent (currently: any
 	// ATrooperEnemy, or a bare test double) only logs once per component instance,
-	// matching AEnemyBase::FindPlayerEnergyComponent's convention.
+	// matching UGizmoFirstContactComponent::bHasWarnedMissingNarrativeSubsystem's
+	// convention.
 	bool bHasWarnedMissingEnemyTypeIndicator = false;
 };

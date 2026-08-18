@@ -113,10 +113,12 @@ bool FKrowdKontrolAbilityMatchupSignalComponentTest::RunTest(const FString& Para
 		TestFalse(TEXT("Sleep against RU-NNR should be reported as mismatched"), Listener->LastWasColourMatched);
 	}
 
-	// (c) Stun-is-never-matched: Stun is colour-neutral (MISSION.md Hard Invariant 4),
-	// so even against SN-1PR (which would otherwise be Sleep's own match) it must
-	// report false - this exercises the bIsColourNeutral short-circuit specifically,
-	// not just an accidental type mismatch.
+	// (c) Stun-is-never-matched: Stun's CounteredEnemyType defaults to RU_NNR (unset by
+	// GetStun()), so the target must be an ARunnerEnemy (RU_NNR) - the one type that
+	// WOULD register as a match on Data.CounteredEnemyType == Indicator->EnemyType
+	// alone. This makes the assertion actually depend on the bIsColourNeutral
+	// short-circuit, not just an accidental type mismatch (SN_1PR was previously used
+	// here and would pass whether or not the short-circuit exists).
 	{
 		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
@@ -137,17 +139,17 @@ bool FKrowdKontrolAbilityMatchupSignalComponentTest::RunTest(const FString& Para
 		UAbilityMatchupSignalTestListener* Listener = NewObject<UAbilityMatchupSignalTestListener>();
 		MatchupComponent->OnAbilityMatchupSignal.AddDynamic(Listener, &UAbilityMatchupSignalTestListener::HandleAbilityMatchupSignal);
 
-		ASniperEnemy* Sniper = World->SpawnActor<ASniperEnemy>();
-		if (!TestNotNull(TEXT("ASniperEnemy should spawn into the test World"), Sniper))
+		ARunnerEnemy* Runner = World->SpawnActor<ARunnerEnemy>();
+		if (!TestNotNull(TEXT("ARunnerEnemy should spawn into the test World"), Runner))
 		{
 			return false;
 		}
-		Sniper->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		Runner->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 
 		const bool bCastResult = CastComponent->TryCastAbility(EAbilitySlot::Stun);
 		TestTrue(TEXT("TryCastAbility(Stun) should succeed against an eligible in-range enemy"), bCastResult);
 		TestEqual(TEXT("The matchup signal should fire exactly once"), Listener->CallCount, 1);
-		TestFalse(TEXT("Stun must never be reported as colour-matched, regardless of target type"), Listener->LastWasColourMatched);
+		TestFalse(TEXT("Stun must never be reported as colour-matched, even against RU-NNR (its own CounteredEnemyType default)"), Listener->LastWasColourMatched);
 	}
 
 	// (d) Missing-indicator defensive case: a bare AEnemyBaseTestActor has no
@@ -220,6 +222,29 @@ bool FKrowdKontrolAbilityMatchupSignalComponentTest::RunTest(const FString& Para
 		TestEqual(TEXT("The pawn's real constructor-time AddDynamic binding must reach AbilityMatchupSignalComponent"),
 			WiringListener->CallCount, 1);
 		TestTrue(TEXT("The real-pawn cast should be reported as colour-matched"), WiringListener->LastWasColourMatched);
+	}
+
+	// (f) Null-target defensive case: HandleAbilityCastApplied must not crash if ever
+	// called with a null TargetEnemy (not reachable via the real
+	// UAbilityCastComponent::TryCastAbility broadcast today, which already gates on a
+	// non-null Target, but the handler is public specifically so tests can call it
+	// directly - same rationale as case (d)).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityMatchupSignalComponent* MatchupComponent = NewObject<UAbilityMatchupSignalComponent>(Owner);
+		MatchupComponent->RegisterComponent();
+
+		UAbilityMatchupSignalTestListener* Listener = NewObject<UAbilityMatchupSignalTestListener>();
+		MatchupComponent->OnAbilityMatchupSignal.AddDynamic(Listener, &UAbilityMatchupSignalTestListener::HandleAbilityMatchupSignal);
+
+		MatchupComponent->HandleAbilityCastApplied(EAbilitySlot::Sleep, nullptr);
+		TestEqual(TEXT("A null TargetEnemy must not produce a broadcast"), Listener->CallCount, 0);
+		TestTrue(TEXT("HandleAbilityCastApplied must not crash when TargetEnemy is null"), true);
 	}
 
 	return true;
