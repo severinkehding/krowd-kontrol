@@ -34,6 +34,7 @@
 #include "SniperEnemy.h"
 #include "BomberEnemy.h"
 #include "TrooperEnemy.h"
+#include "AbilityData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -389,6 +390,21 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 		TestNull(TEXT("SpawnSoundAtLocation should no-op (not crash) for an actor with no real UWorld"),
 			WorldlessRunner->AttackTellAudioComponent.Get());
 	}
+
+	// (s) issue #138: expiry-reversion via Snare (Runner's own OnControlledEntry
+	// ability, case (c) above), using AbilityData::Get(Snare).BaseDurationSeconds
+	// directly rather than a hardcoded magic number - no per-enemy override exists for
+	// Runner, so the base duration governs.
+	ARunnerEnemy* ExpiryRunner = NewObject<ARunnerEnemy>();
+	AdvanceToAttack(ExpiryRunner, ZeroDistanceLocation);
+	ExpiryRunner->ReceiveControl(EAbilitySlot::Snare); // Attack -> Controlled
+	const float SnareDurationSeconds = AbilityData::Get(EAbilitySlot::Snare).BaseDurationSeconds;
+	ExpiryRunner->TickControlledDuration(SnareDurationSeconds - 1.0f);
+	TestEqual(TEXT("Runner should still be Controlled before the Snare duration elapses"),
+		static_cast<uint8>(ExpiryRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	ExpiryRunner->TickControlledDuration(1.5f);
+	TestEqual(TEXT("Runner should revert to Alert once the Snare duration elapses"),
+		static_cast<uint8>(ExpiryRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 
 	return true;
 }

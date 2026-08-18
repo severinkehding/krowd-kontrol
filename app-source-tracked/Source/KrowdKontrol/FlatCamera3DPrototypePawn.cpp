@@ -10,6 +10,8 @@
 #include "Components/InputComponent.h"
 #include "AbilityUnlockComponent.h"
 #include "PlayerEnergyComponent.h"
+#include "AbilityCooldownComponent.h"
+#include "AbilityCastComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
@@ -44,6 +46,8 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	AbilityUnlockComponent = CreateDefaultSubobject<UAbilityUnlockComponent>(TEXT("AbilityUnlockComponent"));
 	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
+	AbilityCooldownComponent = CreateDefaultSubobject<UAbilityCooldownComponent>(TEXT("AbilityCooldownComponent"));
+	AbilityCastComponent = CreateDefaultSubobject<UAbilityCastComponent>(TEXT("AbilityCastComponent"));
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
@@ -54,6 +58,12 @@ void AFlatCamera3DPrototypePawn::SetupPlayerInputComponent(UInputComponent* Play
 
 	PlayerInputComponent->BindAxis(TEXT("MoveForward"), this, &AFlatCamera3DPrototypePawn::MoveForward);
 	PlayerInputComponent->BindAxis(TEXT("MoveRight"), this, &AFlatCamera3DPrototypePawn::MoveRight);
+
+	PlayerInputComponent->BindAction(TEXT("CastStun"), IE_Pressed, this, &AFlatCamera3DPrototypePawn::CastStunAbility);
+	PlayerInputComponent->BindAction(TEXT("CastSleep"), IE_Pressed, this, &AFlatCamera3DPrototypePawn::CastSleepAbility);
+	PlayerInputComponent->BindAction(TEXT("CastRoot"), IE_Pressed, this, &AFlatCamera3DPrototypePawn::CastRootAbility);
+	PlayerInputComponent->BindAction(TEXT("CastFear"), IE_Pressed, this, &AFlatCamera3DPrototypePawn::CastFearAbility);
+	PlayerInputComponent->BindAction(TEXT("CastSnare"), IE_Pressed, this, &AFlatCamera3DPrototypePawn::CastSnareAbility);
 }
 
 void AFlatCamera3DPrototypePawn::MoveForward(float Value)
@@ -67,4 +77,44 @@ void AFlatCamera3DPrototypePawn::MoveForward(float Value)
 void AFlatCamera3DPrototypePawn::MoveRight(float Value)
 {
 	AddMovementInput(FVector::RightVector, Value);
+}
+
+void AFlatCamera3DPrototypePawn::CastStunAbility()
+{
+	if (AbilityCastComponent)
+	{
+		AbilityCastComponent->TryCastAbility(EAbilitySlot::Stun);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::CastSleepAbility()
+{
+	if (AbilityCastComponent)
+	{
+		AbilityCastComponent->TryCastAbility(EAbilitySlot::Sleep);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::CastRootAbility()
+{
+	if (AbilityCastComponent)
+	{
+		AbilityCastComponent->TryCastAbility(EAbilitySlot::Root);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::CastFearAbility()
+{
+	if (AbilityCastComponent)
+	{
+		AbilityCastComponent->TryCastAbility(EAbilitySlot::Fear);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::CastSnareAbility()
+{
+	if (AbilityCastComponent)
+	{
+		AbilityCastComponent->TryCastAbility(EAbilitySlot::Snare);
+	}
 }

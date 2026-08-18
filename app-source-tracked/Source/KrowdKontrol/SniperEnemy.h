@@ -93,6 +93,10 @@ protected:
 	virtual void OnAttackEntry() override;
 	virtual void Tick(float DeltaTime) override;
 
+	// Issue #121: SN-1PR is specifically countered by Sleep with a 7s lock vs the 5s
+	// baseline every other enemy/ability combination uses.
+	virtual float GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const override;
+
 private:
 	void AdvanceAttackTelegraph(float DeltaSeconds);
 

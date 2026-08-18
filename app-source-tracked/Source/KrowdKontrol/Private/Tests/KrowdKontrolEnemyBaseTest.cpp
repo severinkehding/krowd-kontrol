@@ -27,6 +27,7 @@
 #include "GameFramework/Pawn.h"
 #include "ReservedGameplayColours.h"
 #include "Components/PointLightComponent.h"
+#include "AbilityData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -164,6 +165,8 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		AlertControlled->ControlledEntryCallCount, 1);
 	TestEqual(TEXT("LastControlledEntryAbility should record Sleep"),
 		static_cast<uint8>(AlertControlled->LastControlledEntryAbility), static_cast<uint8>(EAbilitySlot::Sleep));
+	TestEqual(TEXT("GetControllingAbility should report Sleep after ReceiveControl from Alert"),
+		static_cast<uint8>(AlertControlled->GetControllingAbility()), static_cast<uint8>(EAbilitySlot::Sleep));
 
 	AEnemyBaseTestActor* AttackControlled = NewObject<AEnemyBaseTestActor>();
 	AttackControlled->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
@@ -175,6 +178,8 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		AttackControlled->ControlledEntryCallCount, 1);
 	TestEqual(TEXT("LastControlledEntryAbility should record Root"),
 		static_cast<uint8>(AttackControlled->LastControlledEntryAbility), static_cast<uint8>(EAbilitySlot::Root));
+	TestEqual(TEXT("GetControllingAbility should report Root after ReceiveControl from Attack"),
+		static_cast<uint8>(AttackControlled->GetControllingAbility()), static_cast<uint8>(EAbilitySlot::Root));
 
 	// (h) TransitionToBanked from Controlled moves to Banked and fires OnEnemyBanked
 	// exactly once.
@@ -196,6 +201,31 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("TransitionToBanked after Banked should be a no-op"),
 		static_cast<uint8>(AlertControlled->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 	TestEqual(TEXT("OnEnemyBanked should still have fired exactly once"), Listener->CallCount, 1);
+
+	// (i2) duration-expiry reversion (issue #138): a Controlled enemy whose duration
+	// elapses before TransitionToBanked() is called reverts to Alert, not stuck, not
+	// Banked.
+	AEnemyBaseTestActor* ExpiryEnemy = NewObject<AEnemyBaseTestActor>();
+	ExpiryEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	ExpiryEnemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled, duration = AbilityData::Get(Stun).BaseDurationSeconds
+	const float StunDurationSeconds = AbilityData::Get(EAbilitySlot::Stun).BaseDurationSeconds;
+	ExpiryEnemy->TickControlledDuration(StunDurationSeconds - 1.0f);
+	TestEqual(TEXT("Controlled state should persist before the duration elapses"),
+		static_cast<uint8>(ExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	ExpiryEnemy->TickControlledDuration(1.5f); // total elapsed now exceeds StunDurationSeconds
+	TestEqual(TEXT("Controlled duration elapsing before banking should revert to Alert"),
+		static_cast<uint8>(ExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+	// (i3) banking before expiry prevents the reversion - TickControlledDuration is
+	// already guarded by CurrentState != Controlled, this proves it explicitly for the
+	// new method.
+	AEnemyBaseTestActor* BankedBeforeExpiryEnemy = NewObject<AEnemyBaseTestActor>();
+	BankedBeforeExpiryEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	BankedBeforeExpiryEnemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	BankedBeforeExpiryEnemy->TransitionToBanked(); // Controlled -> Banked
+	BankedBeforeExpiryEnemy->TickControlledDuration(10000.0f);
+	TestEqual(TEXT("TickControlledDuration after banking should not move the actor off Banked"),
+		static_cast<uint8>(BankedBeforeExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 
 	// (j) actor is pacified, not destroyed - no code path in AEnemyBase ever calls
 	// Destroy(). Directly enforces MISSION.md Hard Invariant 2 (no enemy is ever

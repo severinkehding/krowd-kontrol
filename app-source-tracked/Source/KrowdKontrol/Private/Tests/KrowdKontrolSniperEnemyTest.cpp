@@ -30,6 +30,7 @@
 #include "SniperShotFiredTestListener.h"
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
+#include "AbilityData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -316,6 +317,20 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 				SilentSniper->AttackTellAudioComponent.Get());
 		}
 	}
+
+	// (s) issue #138/#121: expiry-reversion via Sleep, and the 7s override specifically
+	// (not the 5s AbilityData::Get(Sleep).BaseDurationSeconds baseline) governs it.
+	ASniperEnemy* ExpirySniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(ExpirySniper, ZeroDistanceLocation);
+	ExpirySniper->ReceiveControl(EAbilitySlot::Sleep); // Attack -> Controlled, 7.0f override
+	TestNotEqual(TEXT("precondition: the Sleep override (7.0f) differs from the base Sleep duration"),
+		7.0f, AbilityData::Get(EAbilitySlot::Sleep).BaseDurationSeconds);
+	ExpirySniper->TickControlledDuration(6.9f);
+	TestEqual(TEXT("Sniper should still be Controlled just under the 7s override"),
+		static_cast<uint8>(ExpirySniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	ExpirySniper->TickControlledDuration(0.2f); // total 7.1f, past the 7s override
+	TestEqual(TEXT("Sniper should revert to Alert once the 7s Sleep override elapses"),
+		static_cast<uint8>(ExpirySniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 
 	return true;
 }

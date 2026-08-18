@@ -149,3 +149,14 @@ void ASniperEnemy::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	AdvanceAttackTelegraph(DeltaTime);
 }
+
+float ASniperEnemy::GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const
+{
+	// Issue #121: SN-1PR is specifically countered by Sleep with a 7s lock vs the 5s
+	// baseline every other enemy/ability combination uses.
+	if (Ability == EAbilitySlot::Sleep)
+	{
+		return 7.0f;
+	}
+	return Super::GetControlledDurationOverrideSeconds(Ability);
+}

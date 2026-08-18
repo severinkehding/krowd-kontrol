@@ -17,6 +17,8 @@ class UPointLightComponent;
 //     enemy type).
 //   Alert/Attack -> Controlled: ReceiveControl(EAbilitySlot) is called.
 //   Controlled -> Banked: TransitionToBanked() is called.
+//   Controlled -> Alert: the Controlled-state duration elapses before
+//     TransitionToBanked() is called (operator decision, issue #138, 2026-08-18).
 // See issue #12, PRD 03, MISSION.md Hard Invariant 2.
 UENUM(BlueprintType)
 enum class EEnemyState : uint8
@@ -61,6 +63,7 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolMusicSubsystemTest;
 	friend class FKrowdKontrolOvercrowdDetectionComponentTest;
 	friend class FKrowdKontrolOvercrowdAudioSubsystemTest;
+	friend class FKrowdKontrolAbilityCastComponentTest;
 
 public:
 	AEnemyBase();
@@ -75,6 +78,11 @@ public:
 	FOnEnemyBanked OnEnemyBanked;
 
 	EEnemyState GetEnemyState() const { return CurrentState; }
+
+	// Only meaningful while GetEnemyState() == Controlled; retains its last value
+	// otherwise (never reset on reversion or banking) - same "stale read, guarded by
+	// state" contract CurrentState itself guards every other accessor with.
+	EAbilitySlot GetControllingAbility() const { return ControllingAbility; }
 
 	// Idle->Alert proximity radius. Base-defined, not overridden per concrete type -
 	// issue #12's AC only calls out attack range as the per-type-overridable one.
@@ -163,6 +171,12 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) {}
 	virtual void OnAttackEntry() {}
 
+	// Issue #121's per-enemy/per-ability duration-override point. -1.0f (base default)
+	// means "no override, use AbilityData::BaseDurationSeconds unmodified"; a concrete
+	// subclass returns a non-negative value to override it (e.g. ASniperEnemy for Sleep
+	// - see issue #121's SN-1PR/Sleep=7s case).
+	virtual float GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const { return -1.0f; }
+
 private:
 	// Internal transition-guard logic, never subclass-overridable directly - keeps the
 	// state machine's own invariants (proximity in, no direct state writes) enforced
@@ -180,5 +194,18 @@ private:
 	void AdvanceToAlert();
 	void AdvanceToAttack();
 
+	// Decrements RemainingControlledSeconds while CurrentState == Controlled and
+	// reverts to Alert once it reaches zero - the Controlled -> Alert edge documented
+	// in the transition table above. No-op in every other state, same state-guard
+	// shape TickCheckDetection/TickChaseMovement already use.
+	void TickControlledDuration(float DeltaSeconds);
+
 	EEnemyState CurrentState = EEnemyState::Idle;
+
+	// Only meaningful while CurrentState == Controlled; retains its last value
+	// otherwise (never reset on reversion or banking) - same "stale read, guarded by
+	// state" contract CurrentState itself guards every other accessor with.
+	EAbilitySlot ControllingAbility = EAbilitySlot::Stun;
+
+	float RemainingControlledSeconds = 0.0f;
 };
