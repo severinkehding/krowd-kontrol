@@ -5,6 +5,7 @@
 #include "DualZoneBoss.generated.h"
 
 class ATargetZone;
+class UPointLightComponent;
 
 // Mid-boss 3 (PRD 04 Locked Design, issue #52): splits its fight room into two
 // ATargetZone instances (ZoneA/ZoneB, wired per-placed-instance like
@@ -31,6 +32,18 @@ public:
 
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Dual Zone Boss")
 	TObjectPtr<ATargetZone> ZoneB;
+
+	// Visual "arming" tell (issue #52 AC #3, PRD 04 REQ-2): lit the moment
+	// BeginPlay() calls AdvanceToArmed(), mirroring
+	// ASleepShieldBoss::ShieldTellLightComponent's off-by-default,
+	// RootComponent-standing-in-for-a-mesh pattern (SleepShieldBoss.h/.cpp) - the
+	// same placeholder-first shape this codebase already uses for every other boss
+	// visual tell. Non-reserved placeholder colour - see constructor.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Dual Zone Boss")
+	TObjectPtr<UPointLightComponent> ArmingTellLightComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Dual Zone Boss")
+	float ArmingTellIntensity = 3000.0f;
 
 	// abs(BankedCountA - BankedCountB) strictly greater than this triggers Enrage.
 	// Placeholder value, not a locked design value - matches this codebase's

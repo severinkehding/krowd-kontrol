@@ -116,6 +116,12 @@ bool FKrowdKontrolDualZoneBossTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	// Deliberately reuses the same ZoneA/ZoneB spawned above rather than spawning a
+	// fresh pair - this section only needs a second, independent ADualZoneBoss
+	// listening on OnActorBanked broadcasts to pin the abs() check's symmetry, not a
+	// second pair of zones, and Boss's own imbalance state above is already past its
+	// assertions by this point so BBoss's independent BankedCountA/BankedCountB
+	// tally doesn't interact with it.
 	BBoss->ZoneA = ZoneA;
 	BBoss->ZoneB = ZoneB;
 	BBoss->EnrageImbalanceThreshold = 3;
