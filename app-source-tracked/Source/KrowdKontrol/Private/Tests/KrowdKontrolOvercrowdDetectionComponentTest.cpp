@@ -301,13 +301,25 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 	TestEqual(TEXT("Recovery broadcast should carry Inactive"),
 		static_cast<uint8>(RecoveryListener->LastState), static_cast<uint8>(EPanicOverloadState::Inactive));
 
-	// A further advance must not re-broadcast, and the remaining still-qualifying count
-	// (threshold-1, since one enemy is now Controlled) must not instantly re-trigger even
-	// past the full duration - proves UncontrolledSeconds was reset to 0 on recovery, not
-	// left stale, and confirms the AC's "no separate panic button" reading holds even for
-	// the re-arm path.
-	RecoveryComponent->AdvancePanicOverloadState(RecoveryComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
-	TestEqual(TEXT("Post-recovery, a further advance should not re-broadcast (count is now below threshold)"), RecoveryListener->CallCount, 2);
+	// Keep the qualifying count AT threshold post-recovery (spawn a replacement for the
+	// now-Controlled enemy) so the below-threshold branch can't reset UncontrolledSeconds
+	// on its own - isolates proof that recovery's own reset is what's under test, rather
+	// than the count simply having dropped below OvercrowdCrowdThreshold.
+	AEnemyBaseTestActor* RecoveryReplacementEnemy = RecoveryWorld->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("Replacement enemy should spawn"), RecoveryReplacementEnemy))
+	{
+		return false;
+	}
+	RecoveryReplacementEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+	// Advance by less than the full re-arm duration: must NOT retrigger yet.
+	RecoveryComponent->AdvancePanicOverloadState(RecoveryComponent->OvercrowdUncontrolledDurationSeconds * 0.5f);
+	TestEqual(TEXT("Partial re-arm advance should not yet retrigger post-recovery"), RecoveryListener->CallCount, 2);
+
+	// Advance past the full duration from here: should retrigger now, proving the counter
+	// started from 0 at recovery rather than carrying stale accumulation.
+	RecoveryComponent->AdvancePanicOverloadState(RecoveryComponent->OvercrowdUncontrolledDurationSeconds * 0.6f);
+	TestEqual(TEXT("Full re-arm duration after recovery should retrigger"), RecoveryListener->CallCount, 3);
 
 	// --- Scenario 7 (Acceptance Criterion (c)): landing CC on an enemy that is NOT part
 	// of the convergence that triggered Panic Overload must not end it - this

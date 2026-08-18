@@ -25,6 +25,23 @@ record of that change, see the closing note below)
 
 No new dependencies, no `KrowdKontrol.Build.cs` change.
 
+**Review fix-up (post-review, same PR):** review flagged that an unrelated, unscoped
+feature (`FOvercrowdLevelThreshold`/`LevelThresholds`/`NotifyLevelReached()`, attributed
+in its own doc comments to issue #23) had been picked up into this PR's diff from the
+shared `app/` working tree. Confirmed via `git log`/`git show` against `main` and
+`archon/task-fix-issue-23` that this content is genuinely issue #23's own, already
+implemented and tested on that separate branch (open as PR #147) — not part of issue
+#18's scope or plan. Removed `FOvercrowdLevelThreshold`, `LevelThresholds`,
+`NotifyLevelReached()`, and the `FKrowdKontrolOvercrowdLevelThresholdTest` friend grant
+from `app-source-tracked/`'s `OvercrowdDetectionComponent.h`/`.cpp` so this PR's tracked
+diff matches its actual scope; left untouched in the physical `app/` copy since that
+code is PR #147's live, in-progress work sharing the same physical directory (deleting
+it there would destroy unmerged work belonging to a different, already-open PR). Also
+fixed two stale/misleading doc comments in the genuinely in-scope code
+(`OnPanicOverloadStateChanged`'s firing-cap wording, `UncontrolledSeconds`'s reset-path
+wording) and hardened Scenario 6's re-arm assertion to isolate the recovery reset from
+the (coincidentally identical) below-threshold reset, per review findings.
+
 ## Acceptance criteria
 
 - [x] **Landing any of the 5 CC abilities on a converged enemy immediately ends Panic
@@ -52,8 +69,6 @@ HARNESS_START mode=full driver=cli
 STATIC_SKIPPED no 'static' command in harness.config.json
 UNIT_PASSED tests=51
 APP_STARTED driver=cli
-UE_BUILD_START KrowdKontrolEditor Win64 Development
-UE_BUILD_OK
 UE_AUTOMATION_RESULT passed=1 total=1
 UE_AUTOMATION_OK
 E2E_PASSED steps=1
@@ -62,14 +77,17 @@ MUTATIONS_ABSENT no harness/mutations/run.py
 GATE_OK mode=full
 ```
 
-Gate passed clean on the first run, no fix cycle needed. A `KrowdKontrol.Unit.StationPowerUpComponent`
-failure seen on one earlier `--quick` run (a component this issue never touches) was
-isolated, reproduced as non-deterministic cross-test ordering flakiness unrelated to
-this diff, and did not recur on re-run — not investigated further as out of scope for
-this issue. MISSION.md Hard Invariants reviewed by inspection: the change is confined
-to `OvercrowdDetectionComponent`'s state machine and convergence-membership tracking;
-`grep` for `Destroy|Kill|SetActorHidden|K2_DestroyActor` in both changed files returned
-nothing, so the no-kill invariant is untouched.
+Re-run after the review fix-up above (post out-of-scope removal + comment fixes +
+Scenario 6 hardening): `UnrealBuildTool` compile re-verified separately (`Result:
+Succeeded`) before this gate run; still 51/51 `KrowdKontrol.Unit.*` tests passing,
+`GATE_OK mode=full`. A `KrowdKontrol.Unit.StationPowerUpComponent` failure seen on one
+earlier `--quick` run during initial development (a component this issue never
+touches) was isolated, reproduced as non-deterministic cross-test ordering flakiness
+unrelated to this diff, and did not recur on re-run — not investigated further as out
+of scope for this issue. MISSION.md Hard Invariants reviewed by inspection: the change
+is confined to `OvercrowdDetectionComponent`'s state machine and
+convergence-membership tracking; `grep` for `Destroy|Kill|SetActorHidden|K2_DestroyActor`
+in both changed files returned nothing, so the no-kill invariant is untouched.
 
 ---
 
