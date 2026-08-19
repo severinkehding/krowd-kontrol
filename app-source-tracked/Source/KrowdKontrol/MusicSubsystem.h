@@ -23,11 +23,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMusicStateChanged, EMusicState, N
 
 // Plays a calm placeholder track by default and crossfades to a combat placeholder
 // track the instant any AEnemyBase in the world reports IThreatState::Hot (issue #25,
-// PRD 12, MISSION.md `12`). Ticks every frame to poll enemy threat state via
-// TActorIterator, since no cross-actor aggregation of enemy state exists anywhere
-// else in this codebase yet. CalmTrack/CombatTrack are Config-driven (not a
-// per-instance Details panel slot, since subsystems are auto-instantiated, not
-// placed) - see DefaultGame.ini's [/Script/KrowdKontrol.MusicSubsystem] section.
+// PRD 12, MISSION.md `12`), or to a heightened-intensity boss placeholder track the
+// instant an engaged ABossBase's twist mechanic telegraphs (issue #41). Ticks every
+// frame to poll enemy/boss state via TActorIterator, since no cross-actor aggregation
+// of enemy/boss state exists anywhere else in this codebase yet. CalmTrack/
+// CombatTrack/BossIntensityTrack are Config-driven (not a per-instance Details panel
+// slot, since subsystems are auto-instantiated, not placed) - see DefaultGame.ini's
+// [/Script/KrowdKontrol.MusicSubsystem] section.
 UCLASS(Config = Game)
 class KROWDKONTROL_API UMusicSubsystem : public UTickableWorldSubsystem
 {
@@ -55,8 +57,10 @@ public:
 
 	EMusicState GetMusicState() const { return CurrentState; }
 
-	// Re-evaluates whether any enemy is Hot and crossfades if the aggregate state
-	// changed. Called automatically from Tick(); exposed publicly (mirroring
+	// Re-evaluates whether any enemy is Hot, any boss is engaged, or an engaged boss's
+	// twist mechanic is telegraphed, and crossfades if the aggregate state changed
+	// (BossIntensity takes priority over Combat, which takes priority over Calm).
+	// Called automatically from Tick(); exposed publicly (mirroring
 	// URoomEnemyBudgetController::InitializeRoom()'s rationale) so the Automation
 	// Framework test can drive it deterministically without relying on a real
 	// per-frame tick loop.
