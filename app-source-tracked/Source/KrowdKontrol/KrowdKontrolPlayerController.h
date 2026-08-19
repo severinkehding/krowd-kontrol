@@ -8,6 +8,7 @@
 
 class UAbilityCooldownTrayWidget;
 class UEnergyMeterWidget;
+class UOnScreenPromptWidget;
 class APlaceholderTargetZoneActor;
 
 // Owns and wires the project's persistent HUD widgets (PRD 13) into the viewport.
@@ -26,6 +27,14 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
 	TObjectPtr<UEnergyMeterWidget> EnergyMeterWidgetInstance;
+
+	// Backs the additional-help nudge (issue #40) and any future prompt-driven
+	// feature - a real, live UOnScreenPromptWidget instance for such consumers to
+	// find and drive. Unlike AbilityTrayWidget/EnergyMeterWidgetInstance above,
+	// nothing in WireWidgetsToPawn() binds a pawn component to this widget;
+	// consumers reach out to the controller instead (the opposite direction).
+	UPROPERTY(BlueprintReadOnly, Category = "HUD")
+	TObjectPtr<UOnScreenPromptWidget> OnScreenPromptWidgetInstance;
 
 	// Beacon hook (issue #132's third scoped deliverable, PRD 13 REQ-6): the live
 	// world-space target-zone beacons, collected at BeginPlay and re-collectable via
@@ -48,7 +57,7 @@ protected:
 	virtual void OnPossess(APawn* InPawn) override;
 
 private:
-	// Constructs both HUD widgets and adds them to the viewport. Idempotent - a repeat
+	// Constructs all HUD widgets and adds them to the viewport. Idempotent - a repeat
 	// call (e.g. accidental double BeginPlay) is a no-op if the widgets already exist.
 	void CreateHUDWidgets();
 
