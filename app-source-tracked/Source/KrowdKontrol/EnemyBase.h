@@ -72,6 +72,12 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolFirstStunBeaconComponentTest;
 	friend class FKrowdKontrolAbilityMatchupSignalComponentTest;
 
+	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
+	// sync test (issue #20), which drive a plain AEnemyBaseTestActor through the same
+	// Idle->Alert transition as FKrowdKontrolOvercrowdAudioSubsystemTest above.
+	friend class FKrowdKontrolOvercrowdVisualEffectSubsystemTest;
+	friend class FKrowdKontrolOvercrowdAudioVisualSyncTest;
+
 public:
 	AEnemyBase();
 
