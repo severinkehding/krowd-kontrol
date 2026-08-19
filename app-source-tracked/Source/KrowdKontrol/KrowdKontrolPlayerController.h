@@ -10,6 +10,8 @@ class UAbilityCooldownTrayWidget;
 class UEnergyMeterWidget;
 class UOnScreenPromptWidget;
 class APlaceholderTargetZoneActor;
+class ULevelClearTimeSubsystem;
+class ULevelFailComponent;
 
 // Owns and wires the project's persistent HUD widgets (PRD 13) into the viewport.
 // Neither playable level (L_FlatCamera3DPrototype, L_Paper2DPrototype) had any
@@ -20,6 +22,12 @@ UCLASS()
 class KROWDKONTROL_API AKrowdKontrolPlayerController : public APlayerController
 {
 	GENERATED_BODY()
+
+	// Grants the Automation Framework test direct access to CachedLevelClearTimeSubsystem,
+	// mirroring UGizmoFirstContactComponent's FKrowdKontrolGizmoFirstContactComponentTest
+	// precedent - GetGameInstance() is null in CreateNewMap() test Worlds, so the test
+	// injects a directly-constructed ULevelClearTimeSubsystem instead of resolving one.
+	friend class FKrowdKontrolLevelFailedTest;
 
 public:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
@@ -52,6 +60,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "HUD")
 	int32 RefreshTargetZoneBeacons();
 
+	// QA/E2E hook (issue #183 pass-1 feedback): drains the possessed pawn's
+	// UPlayerEnergyComponent to 0 entirely through repeated ApplyContactDamage() calls -
+	// never a direct setter - so PlayerEnergyComponent's "ApplyContactDamage is the only
+	// permitted mutator" invariant (see its header) stays intact. Lets a live PIE session
+	// (via the console or an MCP-driven console-command call) deterministically reach the
+	// zero-energy precondition and observe OnLevelFailed/DisableInput fire, instead of
+	// depending on which enemy types happen to be in a test scene. UFUNCTION(Exec) can't
+	// be wrapped in a UE_BUILD_SHIPPING preprocessor block (UHT rejects UFUNCTION inside
+	// non-WITH_EDITORONLY_DATA preprocessor blocks) - same as every other Exec cheat
+	// command in Unreal, it stays declared in Shipping and relies on Exec's own
+	// runtime-only dispatch (never reachable without an open console) rather than a
+	// compile-time guard.
+	UFUNCTION(Exec)
+	void Cheat_ZeroPlayerEnergy();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
@@ -65,4 +88,33 @@ private:
 	// (if present - FindComponentByClass returns nullptr otherwise, and both Bind*
 	// methods already tolerate nullptr) to the corresponding HUD widget.
 	void WireWidgetsToPawn(APawn* InPawn);
+
+	// Bound to each possessed pawn's ULevelFailComponent::OnLevelFailed in
+	// WireWidgetsToPawn (issue #171, PRD "Run Lifecycle & Progression Signals" REQ-3).
+	// Incapacitates the pawn (input disabled, no death animation/ragdoll per the
+	// issue's placeholder-first note) and discards - never records - the level's
+	// in-progress clear timer, since a failed run must never become a personal best.
+	UFUNCTION()
+	void HandleLevelFailed();
+
+	// Resolves (and caches) the current UGameInstance's ULevelClearTimeSubsystem,
+	// mirroring UGizmoFirstContactComponent::ResolveNarrativeSubsystem()'s exact
+	// pattern - GetGameInstance() is null in this project's CreateNewMap()-based
+	// Automation test worlds, so the Automation Framework test injects a
+	// directly-constructed instance into CachedLevelClearTimeSubsystem via the
+	// friendship above instead of going through this resolver.
+	ULevelClearTimeSubsystem* ResolveLevelClearTimeSubsystem();
+
+	UPROPERTY()
+	TObjectPtr<ULevelClearTimeSubsystem> CachedLevelClearTimeSubsystem;
+
+	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
+
+	// The LevelFailComponent WireWidgetsToPawn last bound HandleLevelFailed to.
+	// WireWidgetsToPawn runs on both BeginPlay and OnPossess, so a repossession
+	// (not built yet - REQ-4's restart flow will be the first caller) could otherwise
+	// leave a previous pawn's component still bound, letting a stale broadcast act on
+	// whatever pawn GetPawn() currently returns instead of the one that actually failed.
+	UPROPERTY()
+	TWeakObjectPtr<ULevelFailComponent> WiredLevelFailComponent;
 };
