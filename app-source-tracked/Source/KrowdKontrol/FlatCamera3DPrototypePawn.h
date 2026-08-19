@@ -19,6 +19,7 @@ class UAbilityCastVFXComponent;
 class UGizmoFirstContactComponent;
 class UFirstStunBeaconComponent;
 class UAbilityMatchupSignalComponent;
+class UAbilityMatchupNudgeComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -106,6 +107,14 @@ public:
 	// detection-only; see AbilityMatchupSignalComponent.h.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityMatchupSignalComponent> AbilityMatchupSignalComponent;
+
+	// New onboarding nudge hook (issue #40, PRD 09 REQ-5 / PRD 02 REQ-4) - shows a
+	// brief on-screen reminder the first time the player reaches 3 consecutive
+	// non-colour-matched successful casts. Bound in the constructor below, to
+	// AbilityMatchupSignalComponent's own OnAbilityMatchupSignal delegate rather than
+	// AbilityCastComponent's OnAbilityCastApplied directly.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityMatchupNudgeComponent> AbilityMatchupNudgeComponent;
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 

@@ -3,6 +3,7 @@
 #include "KrowdKontrolPlayerController.h"
 #include "AbilityCooldownTrayWidget.h"
 #include "EnergyMeterWidget.h"
+#include "OnScreenPromptWidget.h"
 #include "AbilityUnlockComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "Blueprint/UserWidget.h"
@@ -45,6 +46,14 @@ void AKrowdKontrolPlayerController::CreateHUDWidgets()
 		if (EnergyMeterWidgetInstance)
 		{
 			EnergyMeterWidgetInstance->AddToViewport();
+		}
+	}
+	if (!OnScreenPromptWidgetInstance)
+	{
+		OnScreenPromptWidgetInstance = CreateWidget<UOnScreenPromptWidget>(this, UOnScreenPromptWidget::StaticClass());
+		if (OnScreenPromptWidgetInstance)
+		{
+			OnScreenPromptWidgetInstance->AddToViewport();
 		}
 	}
 }
