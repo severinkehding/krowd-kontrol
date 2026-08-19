@@ -76,9 +76,14 @@ void AKrowdKontrolPlayerController::WireWidgetsToPawn(APawn* InPawn)
 	{
 		EnergyMeterWidgetInstance->BindToEnergyComponent(InPawn->FindComponentByClass<UPlayerEnergyComponent>());
 	}
+	if (ULevelFailComponent* PreviouslyWired = WiredLevelFailComponent.Get())
+	{
+		PreviouslyWired->OnLevelFailed.RemoveDynamic(this, &AKrowdKontrolPlayerController::HandleLevelFailed);
+	}
 	if (ULevelFailComponent* LevelFailComp = InPawn->FindComponentByClass<ULevelFailComponent>())
 	{
 		LevelFailComp->OnLevelFailed.AddUniqueDynamic(this, &AKrowdKontrolPlayerController::HandleLevelFailed);
+		WiredLevelFailComponent = LevelFailComp;
 	}
 }
 

@@ -34,6 +34,7 @@
 #include "LevelFailComponent.h"
 #include "LevelFailedTestListener.h"
 #include "FlatCamera3DPrototypePawn.h"
+#include "Paper2DPrototypePawn.h"
 #include "PlayerEnergyComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/Engine.h"
@@ -120,6 +121,63 @@ bool FKrowdKontrolLevelFailedTest::RunTest(const FString& Parameters)
 	// itself does not re-fire at the floor (see PlayerEnergyComponentTest case (d)).
 	Energy->ApplyContactDamage(10.0f, nullptr);
 	TestEqual(TEXT("A further hit at 0 energy should not re-fire OnLevelFailed"), Listener->CallCount, 1);
+
+	// (b) With no possessed pawn and no CachedLevelClearTimeSubsystem injected,
+	// ResolveLevelClearTimeSubsystem() falls through to GetGameInstance() - null in this
+	// CreateNewMap() World - and HandleLevelFailed must degrade safely: no crash, and the
+	// warning logs exactly once (warn-once). Mirrors
+	// KrowdKontrolGizmoFirstContactComponentTest.cpp's case (e) and this file's own
+	// possessed-pawn happy path above, minus the pawn - deliberately not spawning a
+	// second AutoPossessPlayer pawn/controller pair here to keep this case isolated from
+	// the possession machinery the happy path above already exercises.
+	AKrowdKontrolPlayerController* UnresolvedController = World->SpawnActor<AKrowdKontrolPlayerController>();
+	if (!TestNotNull(TEXT("A second AKrowdKontrolPlayerController should spawn"), UnresolvedController))
+	{
+		return false;
+	}
+
+	AddExpectedError(TEXT("no ULevelClearTimeSubsystem available"), EAutomationExpectedErrorFlags::Contains, 1);
+	UnresolvedController->HandleLevelFailed();
+	TestTrue(TEXT("HandleLevelFailed must not crash with no possessed pawn and no resolvable subsystem"), true);
+
+	// A second call must not log the warning again (warn-once).
+	UnresolvedController->HandleLevelFailed();
+
+	// (d) Real pawn-constructor wiring for the second prototype pawn: APaper2DPrototypePawn's
+	// constructor has a textually near-identical LevelFailComponent construct+bind to
+	// AFlatCamera3DPrototypePawn's - a copy-paste slip there (wrong instance/method/delegate)
+	// would compile cleanly and every case above would still pass, since none of them spawn
+	// this pawn class. Drives the same core scenario through the real pawn.
+	//
+	// AlwaysSpawn collision override: this World had InitializeActorsForPlay(FURL()) called
+	// on it up front (required for the dynamic-delegate dispatch above), which activates real
+	// collision checks - the default origin spawn location already has the first Pawn's
+	// StaticMeshComponent sitting there, and the default spawn-collision handling would refuse
+	// to spawn a second actor on top of it.
+	FActorSpawnParameters Paper2DSpawnParams;
+	Paper2DSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APaper2DPrototypePawn* Paper2DPawn = World->SpawnActor<APaper2DPrototypePawn>(
+		APaper2DPrototypePawn::StaticClass(), FTransform::Identity, Paper2DSpawnParams);
+	if (!TestNotNull(TEXT("APaper2DPrototypePawn should spawn"), Paper2DPawn))
+	{
+		return false;
+	}
+	ULevelFailComponent* Paper2DLevelFailComp = Paper2DPawn->FindComponentByClass<ULevelFailComponent>();
+	if (!TestNotNull(TEXT("Paper2DPrototypePawn should have a LevelFailComponent"), Paper2DLevelFailComp))
+	{
+		return false;
+	}
+	UPlayerEnergyComponent* Paper2DEnergy = Paper2DPawn->FindComponentByClass<UPlayerEnergyComponent>();
+	if (!TestNotNull(TEXT("Paper2DPrototypePawn should have a PlayerEnergyComponent"), Paper2DEnergy))
+	{
+		return false;
+	}
+	ULevelFailedTestListener* Paper2DListener = NewObject<ULevelFailedTestListener>();
+	Paper2DLevelFailComp->OnLevelFailed.AddDynamic(Paper2DListener, &ULevelFailedTestListener::HandleLevelFailed);
+	Paper2DEnergy->CurrentEnergy = 5.0f;
+	Paper2DEnergy->ApplyContactDamage(10.0f, nullptr);
+	TestEqual(TEXT("Paper2DPrototypePawn's LevelFailComponent should also fire on zero energy"),
+		Paper2DListener->CallCount, 1);
 
 	return true;
 }

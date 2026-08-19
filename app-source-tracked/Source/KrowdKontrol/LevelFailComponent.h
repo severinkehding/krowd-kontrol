@@ -28,4 +28,11 @@ public:
 	// constructor. Broadcasts OnLevelFailed when NewEnergy reaches the floor.
 	UFUNCTION()
 	void HandleEnergyChanged(float NewEnergy);
+
+private:
+	// Local exactly-once guard, matching UFirstStunBeaconComponent::bHasTriggeredBeacon.
+	// The header comment above documents that ApplyContactDamage's change-guard makes
+	// this naturally exactly-once today, but that's an upstream implementation detail
+	// this component shouldn't have to trust - this guard makes it correct on its own.
+	bool bHasFired = false;
 };

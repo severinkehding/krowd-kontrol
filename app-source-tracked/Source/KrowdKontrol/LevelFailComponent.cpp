@@ -7,8 +7,10 @@ ULevelFailComponent::ULevelFailComponent()
 
 void ULevelFailComponent::HandleEnergyChanged(float NewEnergy)
 {
-	if (NewEnergy <= 0.0f)
+	if (bHasFired || NewEnergy > 0.0f)
 	{
-		OnLevelFailed.Broadcast();
+		return;
 	}
+	bHasFired = true;
+	OnLevelFailed.Broadcast();
 }

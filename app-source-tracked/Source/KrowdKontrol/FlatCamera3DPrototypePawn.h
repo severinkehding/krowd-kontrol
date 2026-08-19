@@ -20,7 +20,6 @@ class UGizmoFirstContactComponent;
 class UFirstStunBeaconComponent;
 class UAbilityMatchupSignalComponent;
 class UAbilityMatchupNudgeComponent;
-class UPunishmentManagerComponent;
 class ULevelFailComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
@@ -69,13 +68,6 @@ public:
 	// AEnemyBase::FindPlayerEnergyComponent() have a live component to find.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UPlayerEnergyComponent> PlayerEnergyComponent;
-
-	// Punishment-trigger plumbing (issue #177, PRD "Punishment System" REQ-1) -
-	// fires OnPunishmentTriggered whenever PlayerEnergyComponent reports real
-	// contact damage. No punishment effect is applied by this pawn; future
-	// issues bind their own listeners to this component's delegate.
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
-	TObjectPtr<UPunishmentManagerComponent> PunishmentManagerComponent;
 
 	// Level-fail signal plumbing (issue #171, PRD "Run Lifecycle & Progression Signals"
 	// REQ-3) - fires OnLevelFailed exactly once when PlayerEnergyComponent's energy

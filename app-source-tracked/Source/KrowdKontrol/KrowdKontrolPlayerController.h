@@ -94,4 +94,12 @@ private:
 	TObjectPtr<ULevelClearTimeSubsystem> CachedLevelClearTimeSubsystem;
 
 	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
+
+	// The LevelFailComponent WireWidgetsToPawn last bound HandleLevelFailed to.
+	// WireWidgetsToPawn runs on both BeginPlay and OnPossess, so a repossession
+	// (not built yet - REQ-4's restart flow will be the first caller) could otherwise
+	// leave a previous pawn's component still bound, letting a stale broadcast act on
+	// whatever pawn GetPawn() currently returns instead of the one that actually failed.
+	UPROPERTY()
+	TWeakObjectPtr<ULevelFailComponent> WiredLevelFailComponent;
 };

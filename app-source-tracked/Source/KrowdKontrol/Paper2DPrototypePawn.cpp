@@ -10,7 +10,6 @@
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "PlayerEnergyComponent.h"
-#include "PunishmentManagerComponent.h"
 #include "LevelFailComponent.h"
 
 APaper2DPrototypePawn::APaper2DPrototypePawn()
@@ -72,8 +71,6 @@ APaper2DPrototypePawn::APaper2DPrototypePawn()
 	TopDownCamera->OrthoWidth = 1024.0f;
 
 	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
-	PunishmentManagerComponent = CreateDefaultSubobject<UPunishmentManagerComponent>(TEXT("PunishmentManagerComponent"));
-	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(PunishmentManagerComponent, &UPunishmentManagerComponent::HandleEnergyChanged);
 	LevelFailComponent = CreateDefaultSubobject<ULevelFailComponent>(TEXT("LevelFailComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(LevelFailComponent, &ULevelFailComponent::HandleEnergyChanged);
 

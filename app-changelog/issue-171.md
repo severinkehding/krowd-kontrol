@@ -20,6 +20,7 @@ is PRD "Run Lifecycle & Progression Signals" REQ-3 (P0).
 | `Paper2DPrototypePawn.h`/`.cpp` | UPDATE | Construct + bind `LevelFailComponent` |
 | `Private/Tests/LevelFailedTestListener.h`/`.cpp` | CREATE | Test-only dynamic-delegate listener |
 | `Private/Tests/KrowdKontrolLevelFailedTest.cpp` | CREATE | `KrowdKontrol.Unit.LevelFailed` — the full acceptance-criteria integration test |
+| `Private/Tests/KrowdKontrolLevelClearTimeSubsystemTest.cpp` | UPDATE | New `DiscardLevelTimer` no-op-on-missing-timer + discard-clears-state cases |
 
 ## Acceptance criteria
 
@@ -39,14 +40,25 @@ is PRD "Run Lifecycle & Progression Signals" REQ-3 (P0).
 - [x] No hard invariant violated — pure signal/input-state plumbing, no death/kill, no new
       gameplay colour, no new ability/enemy type, no networking.
 - [x] Issue #177's pre-existing, unrelated concurrent work in `app/`
-      (`PunishmentManagerComponent` and friends) left untouched, not included in this
-      issue's own mirrored diff — see validation.md's "Concurrent-task state check".
+      (`PunishmentManagerComponent` and friends) left untouched in `app/` itself, and
+      excluded from this issue's own mirrored diff — see "Deviations from plan" below;
+      an earlier pass of this PR had it leak into `app-source-tracked/`, caught and
+      reverted during review.
+- [x] `OnLevelFailed`'s exactly-once guarantee holds locally, not just via an upstream
+      implementation detail: `ULevelFailComponent` now carries its own `bHasFired` guard
+      (matching `UFirstStunBeaconComponent::bHasTriggeredBeacon`'s established pattern),
+      rather than relying solely on `PlayerEnergyComponent::ApplyContactDamage`'s
+      change-guard.
+- [x] `AKrowdKontrolPlayerController::WireWidgetsToPawn` unbinds the previously-wired
+      pawn's `LevelFailComponent` before rewiring a new one (`WiredLevelFailComponent`),
+      so a future repossession can't leave a stale binding acting on the wrong pawn.
 
 ## Validation evidence
 
-`harness/ci.py` full mode: `GATE_OK`, `UNIT_PASSED tests=66` (including the new
-`KrowdKontrol.Unit.LevelFailed`), `UE_AUTOMATION_RESULT passed=1 total=1`,
-`UE_AUTOMATION_OK`, `E2E_PASSED steps=1`. No hard invariants touched by this diff.
+`harness/ci.py` full mode: `GATE_OK`, `UNIT_PASSED tests=66` (including the expanded
+`KrowdKontrol.Unit.LevelFailed` and `KrowdKontrol.Unit.LevelClearTimeSubsystem`),
+`UE_AUTOMATION_RESULT passed=1 total=1`, `UE_AUTOMATION_OK`, `E2E_PASSED steps=1`. No
+hard invariants touched by this diff.
 
 ## Deviations from plan
 
@@ -58,3 +70,19 @@ is PRD "Run Lifecycle & Progression Signals" REQ-3 (P0).
   same established fix already used by `KrowdKontrolDualZoneBossTest.cpp` and
   `KrowdKontrolMusicSubsystemTest.cpp` for the identical gotcha. No test assertions changed,
   no production code affected. See validation.md for the full root-cause account.
+- Code review caught issue #177's `PunishmentManagerComponent` construction/delegate-bind
+  wiring (present as legitimate, uncommitted work in the shared `app/` symlink) leaked into
+  this PR's own `app-source-tracked/` mirror across both pawns and `PlayerEnergyComponent.h`'s
+  friend-class list. Reverted from `app-source-tracked/` only — `app/` itself was left
+  untouched since that WIP belongs to a different, concurrent task and isn't this PR's to
+  edit or destroy.
+- Review also flagged two test-coverage gaps (`ResolveLevelClearTimeSubsystem`'s
+  resolve-from-scratch/warn-once path, and `DiscardLevelTimer`'s no-op-on-missing-timer
+  contract) and a copy-paste-slip risk (`Paper2DPrototypePawn`'s wiring was never driven by
+  any test). All three now have coverage: `KrowdKontrolLevelFailedTest.cpp` gained a
+  no-pawn/no-subsystem degrade-safety case and a full `APaper2DPrototypePawn` wiring case;
+  `KrowdKontrolLevelClearTimeSubsystemTest.cpp` gained `DiscardLevelTimer` cases mirroring
+  its sibling method's existing "no active timer" coverage. The `APaper2DPrototypePawn`
+  spawn needed an explicit `AlwaysSpawn` collision override — this test's
+  `InitializeActorsForPlay` call activates real collision checks, and the default origin
+  spawn point already has the first test pawn's `StaticMeshComponent` sitting there.
