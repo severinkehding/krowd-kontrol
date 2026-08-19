@@ -185,7 +185,7 @@ bool FKrowdKontrolAbilityMatchupNudgeComponentTest::RunTest(const FString& Param
 	// all, so GetWorld()->GetFirstPlayerController() returns null. Must not crash and
 	// must warn exactly once.
 	{
-		AddExpectedError(TEXT("no OnScreenPromptWidget available"), EAutomationExpectedErrorFlags::Contains, 0, false);
+		AddExpectedError(TEXT("no OnScreenPromptWidget available"), EAutomationExpectedErrorFlags::Contains, 1, false);
 
 		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))

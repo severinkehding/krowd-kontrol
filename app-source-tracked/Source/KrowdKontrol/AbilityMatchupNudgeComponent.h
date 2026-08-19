@@ -41,10 +41,12 @@ public:
 
 private:
 	// Lazily resolves the world's AKrowdKontrolPlayerController-owned
-	// OnScreenPromptWidgetInstance - mirrors
-	// UGizmoFirstContactComponent::ResolveNarrativeSubsystem()'s "resolve external
-	// dependency lazily, cache once found, warn exactly once if never found, retry on
-	// every call until resolved" pattern.
+	// OnScreenPromptWidgetInstance - mirrors UGizmoFirstContactComponent::
+	// ResolveNarrativeSubsystem()'s "resolve external dependency lazily, cache once
+	// found, warn exactly once if never found" shape. Unlike that component, this one
+	// is never called more than once per instance: HandleAbilityMatchupSignal() sets
+	// bHasShownNudge before its single call here, so there is no retry-on-a-later-call
+	// path (matches UFirstStunBeaconComponent's set-before-attempt precedent instead).
 	UOnScreenPromptWidget* ResolvePromptWidget();
 
 	UPROPERTY()

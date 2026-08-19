@@ -57,7 +57,7 @@ protected:
 	virtual void OnPossess(APawn* InPawn) override;
 
 private:
-	// Constructs both HUD widgets and adds them to the viewport. Idempotent - a repeat
+	// Constructs all HUD widgets and adds them to the viewport. Idempotent - a repeat
 	// call (e.g. accidental double BeginPlay) is a no-op if the widgets already exist.
 	void CreateHUDWidgets();
 

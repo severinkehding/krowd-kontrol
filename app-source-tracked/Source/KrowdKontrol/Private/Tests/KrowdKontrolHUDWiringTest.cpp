@@ -67,6 +67,7 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 
 	TestNotNull(TEXT("BeginPlay should construct the ability tray widget"), ToRawPtr(Controller->AbilityTrayWidget));
 	TestNotNull(TEXT("BeginPlay should construct the energy meter widget"), ToRawPtr(Controller->EnergyMeterWidgetInstance));
+	TestNotNull(TEXT("BeginPlay should construct the on-screen prompt widget"), ToRawPtr(Controller->OnScreenPromptWidgetInstance));
 
 	// AddToViewport() is a documented no-op under this project's -nullrhi Automation
 	// run (no UGameViewportSubsystem target) - assert no-crash only, matching
