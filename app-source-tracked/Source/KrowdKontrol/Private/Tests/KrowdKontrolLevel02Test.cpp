@@ -74,6 +74,13 @@ bool FKrowdKontrolLevel02StructureTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("L_Level02's room count should be strictly greater than L_Level01's (REQ-3 difficulty ramp)"),
 		Rooms.Num() > Level01RoomCount);
+	// Exact-count check is intentionally in addition to (not instead of) the dynamic
+	// comparison above: L_Level02 is a hand-authored level with a fixed design target
+	// per PRD 05, not a procedurally generated one, so "4" here isn't a magic number
+	// at risk of drifting relative to some other live value - it's this specific
+	// level's own spec. The dynamic check guards the REQ-3 difficulty ramp against
+	// L_Level01 changing; this check guards L_Level02 itself against an unintended
+	// room being added/removed.
 	TestEqual(TEXT("L_Level02 room count should match its design target of 4"), Rooms.Num(), 4);
 
 	TArray<ADoorConnectorActor*> Doors;
@@ -111,6 +118,8 @@ bool FKrowdKontrolLevel02StructureTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("L_Level02's total enemy count should be strictly greater than L_Level01's (REQ-3 difficulty ramp)"),
 		TotalLevel02EnemyCount > Level01EnemyCount);
+	// See the room-count comment above: same rationale applies to this exact-count
+	// check alongside the dynamic difficulty-ramp comparison.
 	TestEqual(TEXT("L_Level02 total enemy count should match its design target of 8"), TotalLevel02EnemyCount, 8);
 
 	return true;
