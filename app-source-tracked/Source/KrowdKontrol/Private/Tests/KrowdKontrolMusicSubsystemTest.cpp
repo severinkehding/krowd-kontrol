@@ -45,6 +45,14 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	// Required up front, before spawning any actors, so the ADualZoneBoss spawned
+	// later in this test (scenario (q)) has dynamic-delegate dispatch working from
+	// the moment it exists - AActor::ProcessEvent gates reflection-dispatched calls
+	// (including dynamic multicast delegate broadcasts) on
+	// World->AreActorsInitialized(), same underlying reason
+	// KrowdKontrolDualZoneBossTest.cpp documents.
+	World->InitializeActorsForPlay(FURL());
+
 	UMusicSubsystem* MusicSubsystem = World->GetSubsystem<UMusicSubsystem>();
 	if (!TestNotNull(TEXT("UWorld should auto-instantiate UMusicSubsystem"), MusicSubsystem))
 	{
@@ -313,10 +321,10 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 	// (q) ADualZoneBoss's Enrage is a second, independent telegraph signal (not
 	// shield-based) that must also drive BossIntensity - proves IsTwistTelegraphed()'s
 	// per-boss-subclass override shape, not just ASleepShieldBoss's one path.
-	// ADualZoneBoss::BeginPlay() requires the world to have begun play for its
-	// component/tick registration; ZoneA/ZoneB are intentionally left unwired below
-	// so the delegate-binding branch itself isn't exercised by this test.
-	World->InitializeActorsForPlay(FURL());
+	// ZoneA/ZoneB are intentionally left unwired below so the delegate-binding
+	// branch itself isn't exercised by this test. World->InitializeActorsForPlay()
+	// was already called up front, before any actor in this test spawned - see that
+	// call's comment.
 	ADualZoneBoss* ZoneBoss = World->SpawnActor<ADualZoneBoss>();
 	if (!TestNotNull(TEXT("ADualZoneBoss should spawn into the test World"), ZoneBoss))
 	{

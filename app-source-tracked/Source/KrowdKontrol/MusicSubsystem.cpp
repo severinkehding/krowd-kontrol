@@ -94,8 +94,7 @@ bool UMusicSubsystem::IsAnyBossTwistTelegraphed() const
 	}
 	for (TActorIterator<ABossBase> It(GetWorld()); It; ++It)
 	{
-		const EBossState State = It->GetBossState();
-		if ((State == EBossState::Armed || State == EBossState::Vulnerable) && It->IsTwistTelegraphed())
+		if (It->IsTwistTelegraphed())
 		{
 			return true;
 		}
