@@ -25,11 +25,17 @@ class KROWDKONTROL_API UPlayerEnergyComponent : public UActorComponent
 	// Friendship isn't part of the public API, so this can't be used by gameplay code
 	// to bypass ApplyContactDamage the way a public setter could. Used by this
 	// component's own test, UEnergyMeterWidget's (issue #64, seeding a non-zero
-	// CurrentEnergy without a live BeginPlay()), and ABomberEnemy's (issue #15, same
-	// reason, proving its explosion clamps through ApplyContactDamage).
+	// CurrentEnergy without a live BeginPlay()), ABomberEnemy's (issue #15, same
+	// reason, proving its explosion clamps through ApplyContactDamage), and
+	// UPunishmentManagerComponent's (issue #177, driving CurrentEnergy to 0 to test
+	// the "no energy change means no punishment trigger" edge case), and
+	// ULevelFailComponent's (issue #171, seeding CurrentEnergy for a deterministic
+	// single-call floor-to-0 to test the "OnLevelFailed fires exactly once" case).
 	friend class FKrowdKontrolPlayerEnergyComponentTest;
 	friend class FKrowdKontrolEnergyMeterWidgetTest;
 	friend class FKrowdKontrolBomberEnemyTest;
+	friend class FKrowdKontrolPunishmentManagerComponentTest;
+	friend class FKrowdKontrolLevelFailedTest;
 
 public:
 	UPlayerEnergyComponent();

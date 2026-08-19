@@ -10,6 +10,8 @@ class UAbilityCooldownTrayWidget;
 class UEnergyMeterWidget;
 class UOnScreenPromptWidget;
 class APlaceholderTargetZoneActor;
+class ULevelClearTimeSubsystem;
+class ULevelFailComponent;
 
 // Owns and wires the project's persistent HUD widgets (PRD 13) into the viewport.
 // Neither playable level (L_FlatCamera3DPrototype, L_Paper2DPrototype) had any
@@ -20,6 +22,12 @@ UCLASS()
 class KROWDKONTROL_API AKrowdKontrolPlayerController : public APlayerController
 {
 	GENERATED_BODY()
+
+	// Grants the Automation Framework test direct access to CachedLevelClearTimeSubsystem,
+	// mirroring UGizmoFirstContactComponent's FKrowdKontrolGizmoFirstContactComponentTest
+	// precedent - GetGameInstance() is null in CreateNewMap() test Worlds, so the test
+	// injects a directly-constructed ULevelClearTimeSubsystem instead of resolving one.
+	friend class FKrowdKontrolLevelFailedTest;
 
 public:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
@@ -65,4 +73,25 @@ private:
 	// (if present - FindComponentByClass returns nullptr otherwise, and both Bind*
 	// methods already tolerate nullptr) to the corresponding HUD widget.
 	void WireWidgetsToPawn(APawn* InPawn);
+
+	// Bound to each possessed pawn's ULevelFailComponent::OnLevelFailed in
+	// WireWidgetsToPawn (issue #171, PRD "Run Lifecycle & Progression Signals" REQ-3).
+	// Incapacitates the pawn (input disabled, no death animation/ragdoll per the
+	// issue's placeholder-first note) and discards - never records - the level's
+	// in-progress clear timer, since a failed run must never become a personal best.
+	UFUNCTION()
+	void HandleLevelFailed();
+
+	// Resolves (and caches) the current UGameInstance's ULevelClearTimeSubsystem,
+	// mirroring UGizmoFirstContactComponent::ResolveNarrativeSubsystem()'s exact
+	// pattern - GetGameInstance() is null in this project's CreateNewMap()-based
+	// Automation test worlds, so the Automation Framework test injects a
+	// directly-constructed instance into CachedLevelClearTimeSubsystem via the
+	// friendship above instead of going through this resolver.
+	ULevelClearTimeSubsystem* ResolveLevelClearTimeSubsystem();
+
+	UPROPERTY()
+	TObjectPtr<ULevelClearTimeSubsystem> CachedLevelClearTimeSubsystem;
+
+	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
 };
