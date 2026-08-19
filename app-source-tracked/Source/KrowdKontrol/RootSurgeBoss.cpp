@@ -140,11 +140,18 @@ void ARootSurgeBoss::AdvanceAttackTelegraph(float DeltaSeconds)
 	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds);
 	if (RemainingTelegraphSeconds <= 0.0f)
 	{
-		AttackTellLightComponent->SetIntensity(AttackTellIntensity);
-
 		if (UPlayerEnergyComponent* Energy = FindPlayerEnergyComponent())
 		{
-			Energy->ApplyContactDamage(AttackDamageAmount, this);
+			// Range-gated (AC #2): same FVector::Dist-against-a-range-property pattern
+			// AEnemyBase::TickCheckDetection() uses against GetAttackRangeUnits(). Out of
+			// range, the telegraph still re-arms below but neither tells nor damages -
+			// the check is simply retried on the next AttackTelegraphSeconds interval.
+			const AActor* PlayerActor = Energy->GetOwner();
+			if (PlayerActor && FVector::Dist(GetActorLocation(), PlayerActor->GetActorLocation()) <= AttackRangeUnits)
+			{
+				AttackTellLightComponent->SetIntensity(AttackTellIntensity);
+				Energy->ApplyContactDamage(AttackDamageAmount, this);
+			}
 		}
 
 		// Rapid re-arm (mirrors ATrooperEnemy::AdvanceAttackTelegraph - no fire-once
@@ -167,5 +174,8 @@ UPlayerEnergyComponent* ARootSurgeBoss::FindPlayerEnergyComponent() const
 			return Found;
 		}
 	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("ARootSurgeBoss: FindPlayerEnergyComponent on '%s' found no APawn with a UPlayerEnergyComponent."),
+		*GetNameSafe(this));
 	return nullptr;
 }

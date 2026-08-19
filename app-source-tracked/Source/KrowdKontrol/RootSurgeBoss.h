@@ -65,14 +65,12 @@ public:
 	float WaveDelayAccelerationMultiplier = 0.5f;
 
 	// Longer range than any existing enemy (AC #2) - must exceed ASniperEnemy's
-	// 1400.0f, the current max. NOT YET RANGE-GATED: AdvanceAttackTelegraph() fires on
-	// a timer regardless of this value (no live player-distance check yet - this
-	// module's headless Automation tests never drive a real PlayerController/
-	// BeginPlay() pass, so a distance check would be untestable, same deferred-gating
-	// scope limit ASleepShieldBoss/ADualZoneBoss's own attack logic defers) - authored
-	// here so the number exists when that wiring lands, not because it currently does
-	// anything. Unlike AEnemyBase::GetAttackRangeUnits() (EnemyBase.h), which is a real,
-	// load-bearing Alert->Attack gate, this property is descriptive only.
+	// 1400.0f, the current max. Range-gated: AdvanceAttackTelegraph() only lights the
+	// tell and applies damage when the player pawn found via FindPlayerEnergyComponent()
+	// is within AttackRangeUnits at the moment the telegraph resolves (same
+	// FVector::Dist pattern AEnemyBase::TickCheckDetection() uses against
+	// GetAttackRangeUnits()); out of range, the timer still re-arms so the check is
+	// retried every AttackTelegraphSeconds rather than firing once and going silent.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Root Surge Boss", meta = (ClampMin = "0.0"))
 	float AttackRangeUnits = 1800.0f;
 
@@ -101,10 +99,11 @@ protected:
 	void CheckVulnerableState();
 
 	// Decrements RemainingTelegraphSeconds while this boss is not Banked; on reaching
-	// zero, lights AttackTellLightComponent, damages the player via
+	// zero, and only if the player is within AttackRangeUnits, lights
+	// AttackTellLightComponent and damages the player via
 	// UPlayerEnergyComponent::ApplyContactDamage() (mirroring
-	// ABomberEnemy::TriggerExplosion()), and re-arms immediately (rapid re-arm, no
-	// fire-once guard - mirrors ATrooperEnemy::AdvanceAttackTelegraph()).
+	// ABomberEnemy::TriggerExplosion()); re-arms immediately either way (rapid re-arm,
+	// no fire-once guard - mirrors ATrooperEnemy::AdvanceAttackTelegraph()).
 	void AdvanceAttackTelegraph(float DeltaSeconds);
 
 private:
@@ -118,7 +117,8 @@ private:
 	// Same TActorIterator<APawn> body as AEnemyBase::FindPlayerEnergyComponent()
 	// (EnemyBase.cpp), duplicated here because that method is protected on AEnemyBase
 	// and not reachable from a ABossBase subclass - no shared free function exists to
-	// call instead. Returns nullptr if no APawn carries a UPlayerEnergyComponent.
+	// call instead. Returns nullptr (logging a warning, same as AEnemyBase's version)
+	// if no APawn carries a UPlayerEnergyComponent.
 	UPlayerEnergyComponent* FindPlayerEnergyComponent() const;
 
 	float RemainingTelegraphSeconds = 0.0f;

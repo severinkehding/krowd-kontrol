@@ -12,8 +12,10 @@
 // UPlayerEnergyComponent by exactly UPlayerEnergyComponent::MaxDamagePerHit (not the
 // raw AttackDamageAmount) independently of wave-spawn state (AC #2), (9) a Banked boss
 // stops attacking and stops re-checking Vulnerable, (10) a never-spawned-into-a-world
-// instance does not crash, and (11) Tick() itself (not just CheckVulnerableState()
-// directly) drives the Vulnerable check.
+// instance does not crash, (11) Tick() itself (not just CheckVulnerableState()
+// directly) drives the Vulnerable check, and (12) the attack telegraph is
+// range-gated - a player beyond AttackRangeUnits takes no damage and the attack tell
+// does not light even once the telegraph timer fully elapses (AC #2).
 //
 // CheckVulnerableState()/AdvanceAttackTelegraph() are called directly where
 // determinism is needed (never via a real per-frame Tick() loop, except where Tick()
@@ -243,6 +245,34 @@ bool FKrowdKontrolRootSurgeBossTest::RunTest(const FString& Parameters)
 	TickBoss->Tick(0.0f);
 	TestEqual(TEXT("Tick() should advance the boss to Vulnerable via CheckVulnerableState()"),
 		static_cast<uint8>(TickBoss->GetBossState()), static_cast<uint8>(EBossState::Vulnerable));
+
+	// --- Scenario 12: the attack telegraph is range-gated (AC #2) - a player beyond
+	// AttackRangeUnits takes no damage and the attack tell does not light, even once
+	// the telegraph timer fully elapses. Reuses Scenario 8's PlayerPawn/Energy rather
+	// than spawning a second player pawn - FindPlayerEnergyComponent() returns the
+	// first UPlayerEnergyComponent-carrying APawn TActorIterator finds, not the
+	// nearest, so two such pawns in the World at once would make which one this
+	// scenario actually exercises ambiguous. Moves the BOSS away from the player
+	// (rather than the player away from the boss) - a bare APawn has no
+	// RootComponent, so SetActorLocation()/GetActorLocation() on PlayerPawn is a
+	// silent no-op (see AActor::TemplateGetActorLocation's nullptr-RootComponent
+	// fallback to FVector::ZeroVector); ARootSurgeBoss always has a real
+	// RootComponent (ArmingTellLightComponent), so moving it is reliable. ---
+	ARootSurgeBoss* OutOfRangeBoss = World->SpawnActor<ARootSurgeBoss>();
+	if (!TestNotNull(TEXT("Sixth ARootSurgeBoss for range-gating coverage should spawn"), OutOfRangeBoss))
+	{
+		return false;
+	}
+	OutOfRangeBoss->SetActorLocation(FVector(OutOfRangeBoss->AttackRangeUnits * 2.0f, 0.0f, 0.0f));
+	const float EnergyBeforeOutOfRangeAttack = Energy->GetCurrentEnergy();
+
+	OutOfRangeBoss->DispatchBeginPlay();
+	OutOfRangeBoss->Tick(OutOfRangeBoss->AttackTelegraphSeconds); // one tick covering the full telegraph
+
+	TestEqual(TEXT("Player energy should be unchanged when the player is beyond AttackRangeUnits"),
+		Energy->GetCurrentEnergy(), EnergyBeforeOutOfRangeAttack);
+	TestEqual(TEXT("Attack tell light should not light when the telegraph elapses out of range"),
+		OutOfRangeBoss->AttackTellLightComponent->Intensity, 0.0f);
 
 	return true;
 }
