@@ -14,6 +14,9 @@ void ULevelLifecycleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	Super::OnWorldBeginPlay(InWorld);
 	if (bHasFiredLevelBegin)
 	{
+		// The engine only invokes OnWorldBeginPlay() once per world through its normal
+		// path, but this guard also covers direct/manual invocation (as the Automation
+		// test does) - it's what keeps a second direct call from re-firing OnLevelBegin.
 		return;
 	}
 	bHasFiredLevelBegin = true;
@@ -33,7 +36,7 @@ TStatId ULevelLifecycleSubsystem::GetStatId() const
 
 void ULevelLifecycleSubsystem::RefreshLevelClearState()
 {
-	if (bHasFiredLevelClear)
+	if (!bHasFiredLevelBegin || bHasFiredLevelClear)
 	{
 		return;
 	}
@@ -60,6 +63,9 @@ void ULevelLifecycleSubsystem::RefreshLevelClearState()
 		return;
 	}
 
+	// TActorIterator<AActor> + GetComponents(), not a bare TObjectIterator<UWaveSpawnerComponent>:
+	// the latter walks every spawner across every loaded UWorld, which would let another
+	// concurrently-loaded Automation test world's spawner block this world's OnLevelClear.
 	for (TActorIterator<AActor> ActorIt(World); ActorIt; ++ActorIt)
 	{
 		TArray<UWaveSpawnerComponent*> Spawners;

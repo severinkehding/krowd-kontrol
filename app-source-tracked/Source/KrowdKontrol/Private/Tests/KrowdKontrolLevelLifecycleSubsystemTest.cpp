@@ -3,8 +3,9 @@
 // map name) and OnLevelClear exactly once, after OnLevelBegin, the moment every
 // AEnemyBase in the world (including ones spawned later by a UWaveSpawnerComponent)
 // is Banked and no spawner has a pending wave - and that it does NOT fire while zero
-// enemies have ever spawned, or while any spawner's IsWaveTimerActive() is true even
-// with every currently-spawned enemy already Banked.
+// enemies have ever spawned, while OnLevelBegin has never fired, or while any
+// spawner's IsWaveTimerActive() is true even with every currently-spawned enemy
+// already Banked. Also confirms OnLevelBegin's own re-entrancy guard.
 //
 // RefreshLevelClearState()/OnWorldBeginPlay() are called directly (never via a real
 // per-frame Tick() loop or World->BeginPlay()) for the same synchronous-determinism
@@ -85,9 +86,71 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 			Listener->LevelClearCallCount, 1);
 	}
 
-	// --- (c): wave-spawner blocks clear even with every current enemy Banked, and a
-	// wave-spawned enemy must itself reach Banked before OnLevelClear fires. A second,
-	// fresh CreateNewMap() world is needed because (a)/(b)'s subsystem instance already
+	// --- (e): bHasFiredLevelBegin's own guard, isolated via friend access. This World's
+	// OnWorldBeginPlay() is only ever called once here - calling Super::OnWorldBeginPlay()
+	// twice on the same World hard-errors in the engine itself (a separate, unrelated
+	// !bHasCalledBeginPlay ensure), so bHasFiredLevelBegin is force-set true *before* the
+	// one call to isolate just this subsystem's own early-return branch.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnLevelBegin.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelBegin);
+
+		Subsystem->bHasFiredLevelBegin = true; // friend access - simulate "already fired"
+		Subsystem->OnWorldBeginPlay(*World);
+		TestEqual(TEXT("OnWorldBeginPlay must not broadcast OnLevelBegin when bHasFiredLevelBegin is already set"),
+			Listener->LevelBeginCallCount, 0);
+	}
+
+	// --- (c): OnLevelClear must not fire before OnLevelBegin has ever fired, even if
+	// every currently-spawned enemy is already Banked. A fresh CreateNewMap() world is
+	// needed because block (a)/(b) already called OnWorldBeginPlay().
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
+		Enemy->TransitionToBanked();                      // -> Banked
+
+		// OnWorldBeginPlay() has NOT been called on this Subsystem.
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("OnLevelClear must not fire before OnLevelBegin has ever fired"),
+			Listener->LevelClearCallCount, 0);
+	}
+
+	// --- (d): wave-spawner blocks clear even with every current enemy Banked, and a
+	// wave-spawned enemy must itself reach Banked before OnLevelClear fires. A fresh
+	// CreateNewMap() world is needed because (a)/(b)'s subsystem instance already
 	// latched bHasFiredLevelClear.
 	{
 		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
@@ -104,6 +167,8 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 
 		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
 		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+
+		Subsystem->OnWorldBeginPlay(*World);
 
 		AEnemyBaseTestActor* FirstEnemy = World->SpawnActor<AEnemyBaseTestActor>();
 		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), FirstEnemy))
