@@ -175,6 +175,42 @@ bool FKrowdKontrolBossBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Re-entrant TransitionToBanked() during broadcast must not re-fire"),
 		ReentrantListener->CallCount, 1);
 
+	// (i) IsTwistTelegraphed() default tracks IsEnraged() only, gated on Armed/
+	// Vulnerable (issue #41) - HasShield()/IsSplit() must never leak in, per the
+	// architect's explicit exclusion documented in BossBase.h. Tested here in
+	// isolation, on a fresh actor, since KrowdKontrolMusicSubsystemTest.cpp only
+	// proves this transitively through ADualZoneBoss (always IsSplit()==true, and
+	// never driven all the way to Banked while still enraged in that test).
+	ABossBaseTestActor* TelegraphBoss = NewObject<ABossBaseTestActor>();
+	TelegraphBoss->AdvanceToArmed();
+	TestFalse(TEXT("Default IsTwistTelegraphed should be false while Armed and not enraged"),
+		TelegraphBoss->IsTwistTelegraphed());
+	TelegraphBoss->SetHasShield(true);
+	TestFalse(TEXT("IsTwistTelegraphed must not be affected by HasShield alone"), TelegraphBoss->IsTwistTelegraphed());
+	TelegraphBoss->SetIsSplit(true);
+	TestFalse(TEXT("IsTwistTelegraphed must not be affected by IsSplit alone"), TelegraphBoss->IsTwistTelegraphed());
+	TelegraphBoss->SetIsEnraged(true);
+	TestTrue(TEXT("IsTwistTelegraphed should become true once IsEnraged is true while Armed"),
+		TelegraphBoss->IsTwistTelegraphed());
+	TelegraphBoss->SetHasShield(false);
+	TelegraphBoss->SetIsSplit(false);
+	TestTrue(TEXT("IsTwistTelegraphed should remain true from IsEnraged alone, regardless of the other flags"),
+		TelegraphBoss->IsTwistTelegraphed());
+	TelegraphBoss->SetIsEnraged(false);
+	TestFalse(TEXT("IsTwistTelegraphed should revert to false once IsEnraged clears"), TelegraphBoss->IsTwistTelegraphed());
+
+	// IsEnraged never naturally clears in real gameplay (see DualZoneBoss.cpp) - the
+	// interesting regression case is a boss reaching Banked while still enraged, which
+	// must stop telegraphing since the fight is over. Proves the Armed/Vulnerable gate
+	// itself, not just that IsTwistTelegraphed() tracks IsEnraged().
+	TelegraphBoss->SetIsEnraged(true);
+	TelegraphBoss->AdvanceToVulnerable();
+	TestTrue(TEXT("IsTwistTelegraphed should remain true across Armed->Vulnerable while enraged"),
+		TelegraphBoss->IsTwistTelegraphed());
+	TelegraphBoss->TransitionToBanked();
+	TestFalse(TEXT("IsTwistTelegraphed should become false once Banked, even though IsEnraged never clears"),
+		TelegraphBoss->IsTwistTelegraphed());
+
 	return true;
 }
 

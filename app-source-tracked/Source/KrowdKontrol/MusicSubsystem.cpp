@@ -1,5 +1,6 @@
 #include "MusicSubsystem.h"
 #include "EnemyBase.h"
+#include "BossBase.h"
 #include "EngineUtils.h"
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -40,7 +41,15 @@ TStatId UMusicSubsystem::GetStatId() const
 
 void UMusicSubsystem::RefreshMusicState()
 {
-	const EMusicState DesiredState = IsAnyEnemyInCombat() ? EMusicState::Combat : EMusicState::Calm;
+	EMusicState DesiredState = EMusicState::Calm;
+	if (IsAnyEnemyInCombat() || IsAnyBossEngaged())
+	{
+		DesiredState = EMusicState::Combat;
+	}
+	if (IsAnyBossTwistTelegraphed())
+	{
+		DesiredState = EMusicState::BossIntensity;
+	}
 	SetMusicState(DesiredState);
 }
 
@@ -53,6 +62,39 @@ bool UMusicSubsystem::IsAnyEnemyInCombat() const
 	for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
 	{
 		if (It->GetThreatState() == EThreatState::Hot)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UMusicSubsystem::IsAnyBossEngaged() const
+{
+	if (!GetWorld())
+	{
+		return false;
+	}
+	for (TActorIterator<ABossBase> It(GetWorld()); It; ++It)
+	{
+		const EBossState State = It->GetBossState();
+		if (State == EBossState::Armed || State == EBossState::Vulnerable)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UMusicSubsystem::IsAnyBossTwistTelegraphed() const
+{
+	if (!GetWorld())
+	{
+		return false;
+	}
+	for (TActorIterator<ABossBase> It(GetWorld()); It; ++It)
+	{
+		if (It->IsTwistTelegraphed())
 		{
 			return true;
 		}
@@ -84,9 +126,19 @@ void UMusicSubsystem::PlayTrackForState(EMusicState State)
 		CurrentMusicComponent = nullptr;
 	}
 
-	USoundBase* NextTrack = (State == EMusicState::Combat)
-		? CombatTrack.LoadSynchronous()
-		: CalmTrack.LoadSynchronous();
+	USoundBase* NextTrack = nullptr;
+	if (State == EMusicState::BossIntensity)
+	{
+		NextTrack = BossIntensityTrack.LoadSynchronous();
+	}
+	else if (State == EMusicState::Combat)
+	{
+		NextTrack = CombatTrack.LoadSynchronous();
+	}
+	else
+	{
+		NextTrack = CalmTrack.LoadSynchronous();
+	}
 
 	if (NextTrack)
 	{
