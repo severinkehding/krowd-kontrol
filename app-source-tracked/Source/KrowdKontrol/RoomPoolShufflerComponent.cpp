@@ -2,6 +2,7 @@
 #include "RoomActor.h"
 #include "RoomMetadataComponent.h"
 #include "DoorConnectorActor.h"
+#include "AbilityUnlockComponent.h"
 #include "Engine/World.h"
 #include "Math/RandomStream.h"
 
@@ -10,7 +11,7 @@ URoomPoolShufflerComponent::URoomPoolShufflerComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-TArray<ARoomActor*> URoomPoolShufflerComponent::ShuffleRooms(const TArray<ARoomActor*>& RoomPool, ERoomDifficultyTier TargetTier, int32 Seed)
+TArray<ARoomActor*> URoomPoolShufflerComponent::ShuffleRooms(const TArray<ARoomActor*>& RoomPool, ERoomDifficultyTier TargetTier, int32 Seed, const UAbilityUnlockComponent* UnlockState)
 {
 	for (ADoorConnectorActor* Door : SpawnedDoors)
 	{
@@ -29,6 +30,12 @@ TArray<ARoomActor*> URoomPoolShufflerComponent::ShuffleRooms(const TArray<ARoomA
 		return TArray<ARoomActor*>();
 	}
 
+	if (!UnlockState)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("URoomPoolShufflerComponent::ShuffleRooms: null UnlockState, treating every ability-gated room as locked."));
+	}
+
 	TArray<ARoomActor*> Filtered;
 	for (ARoomActor* Room : RoomPool)
 	{
@@ -40,6 +47,16 @@ TArray<ARoomActor*> URoomPoolShufflerComponent::ShuffleRooms(const TArray<ARoomA
 		URoomMetadataComponent* Metadata = Room->FindComponentByClass<URoomMetadataComponent>();
 		if (Metadata && Metadata->DifficultyTier == TargetTier)
 		{
+			// ERoomAbilityGate shares EAbilitySlot's Stun/Sleep/Root/Fear/Snare order,
+			// offset by one slot for None (RoomAbilityGate.h) - never convert None.
+			if (Metadata->RequiredAbility != ERoomAbilityGate::None)
+			{
+				const EAbilitySlot RequiredSlot = static_cast<EAbilitySlot>(static_cast<uint8>(Metadata->RequiredAbility) - 1);
+				if (!UnlockState || !UnlockState->IsAbilityUnlocked(RequiredSlot))
+				{
+					continue;
+				}
+			}
 			Filtered.Add(Room);
 		}
 	}

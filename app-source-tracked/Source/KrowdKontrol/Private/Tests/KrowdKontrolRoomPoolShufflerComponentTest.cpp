@@ -4,7 +4,10 @@
 // connected chain of spawned ADoorConnectorActor instances matching the returned
 // order, reproduces the same order for the same seed, and produces a different order
 // (same room set) for a different seed - the issue's core acceptance criterion and
-// PRD 05's own success metric.
+// PRD 05's own success metric. Also confirms ability-gating (issue #53, PRD 05 REQ-5):
+// a room whose RequiredAbility is not yet unlocked is excluded from shuffle output,
+// becomes eligible once it is, and stays excluded (fail-closed) when UnlockState is
+// null.
 //
 // Needs a real UWorld to spawn into (ShuffleRooms() calls GetWorld()->SpawnActor for
 // the door chain), so uses the same FAutomationEditorCommonUtils::CreateNewMap()
@@ -18,6 +21,7 @@
 #include "RoomActor.h"
 #include "RoomMetadataComponent.h"
 #include "DoorConnectorActor.h"
+#include "AbilityUnlockComponent.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -92,8 +96,14 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 	}
 	Shuffler->RegisterComponent();
 
+	UAbilityUnlockComponent* DefaultUnlockState = NewObject<UAbilityUnlockComponent>();
+	if (!TestNotNull(TEXT("UAbilityUnlockComponent should construct"), DefaultUnlockState))
+	{
+		return false;
+	}
+
 	// (a) Filtering: only the 6 Easy-tagged rooms should come back.
-	TArray<ARoomActor*> SequenceA = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Easy, /*Seed=*/1);
+	TArray<ARoomActor*> SequenceA = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Easy, /*Seed=*/1, DefaultUnlockState);
 	TestEqual(TEXT("Shuffled sequence should contain exactly the 6 Easy-tagged rooms"), SequenceA.Num(), 6);
 	for (ARoomActor* Room : SequenceA)
 	{
@@ -121,7 +131,7 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 	}
 
 	// (c) Reproducibility: same seed reproduces the same order.
-	TArray<ARoomActor*> SequenceRepeat = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Easy, /*Seed=*/1);
+	TArray<ARoomActor*> SequenceRepeat = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Easy, /*Seed=*/1, DefaultUnlockState);
 	TestEqual(TEXT("Repeat shuffle with the same seed should return the same number of rooms"), SequenceRepeat.Num(), SequenceA.Num());
 	for (int32 Index = 0; Index < SequenceA.Num(); ++Index)
 	{
@@ -130,7 +140,7 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 
 	// (d) Different seeds differ (the issue's core acceptance criterion), while still
 	// containing the exact same set of rooms.
-	TArray<ARoomActor*> SequenceB = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Easy, /*Seed=*/987654321);
+	TArray<ARoomActor*> SequenceB = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Easy, /*Seed=*/987654321, DefaultUnlockState);
 	TestEqual(TEXT("Different-seed shuffle should still return all 6 Easy-tagged rooms"), SequenceB.Num(), SequenceA.Num());
 
 	bool bAnyIndexDiffers = false;
@@ -165,7 +175,7 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 		LiveDoorCount, Shuffler->GetSpawnedDoors().Num());
 
 	// (f) Zero-match tier: Medium is declared but never tagged on any room in Pool.
-	TArray<ARoomActor*> SequenceMedium = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Medium, /*Seed=*/1);
+	TArray<ARoomActor*> SequenceMedium = Shuffler->ShuffleRooms(Pool, ERoomDifficultyTier::Medium, /*Seed=*/1, DefaultUnlockState);
 	TestEqual(TEXT("Zero-match tier should return an empty sequence"), SequenceMedium.Num(), 0);
 	TestEqual(TEXT("Zero-match tier should spawn no doors"), Shuffler->GetSpawnedDoors().Num(), 0);
 
@@ -180,9 +190,76 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 	SoloMetadata->DifficultyTier = ERoomDifficultyTier::Hard;
 	TArray<ARoomActor*> SoloPool = { SoloRoom };
 
-	TArray<ARoomActor*> SequenceSolo = Shuffler->ShuffleRooms(SoloPool, ERoomDifficultyTier::Hard, /*Seed=*/1);
+	TArray<ARoomActor*> SequenceSolo = Shuffler->ShuffleRooms(SoloPool, ERoomDifficultyTier::Hard, /*Seed=*/1, DefaultUnlockState);
 	TestEqual(TEXT("Single-match tier should return that one room"), SequenceSolo.Num(), 1);
 	TestEqual(TEXT("Single-match tier should spawn no doors"), Shuffler->GetSpawnedDoors().Num(), 0);
+
+	// (h) Ability-gating (issue #53, PRD 05 REQ-5): a Root-gated room must be
+	// excluded from shuffle output until the player has unlocked Root, and become
+	// eligible once it is.
+	ARoomActor* PlainRoom = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("Plain Easy room should spawn into the test World"), PlainRoom))
+	{
+		return false;
+	}
+	URoomMetadataComponent* PlainMetadata = NewObject<URoomMetadataComponent>(PlainRoom);
+	PlainMetadata->RegisterComponent();
+	PlainMetadata->DifficultyTier = ERoomDifficultyTier::Easy;
+
+	ARoomActor* RootGatedRoom = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("Root-gated Easy room should spawn into the test World"), RootGatedRoom))
+	{
+		return false;
+	}
+	URoomMetadataComponent* RootGatedMetadata = NewObject<URoomMetadataComponent>(RootGatedRoom);
+	RootGatedMetadata->RegisterComponent();
+	RootGatedMetadata->DifficultyTier = ERoomDifficultyTier::Easy;
+	RootGatedMetadata->RequiredAbility = ERoomAbilityGate::Root;
+
+	TArray<ARoomActor*> GatingPool = { PlainRoom, RootGatedRoom };
+
+	UAbilityUnlockComponent* GatingUnlockState = NewObject<UAbilityUnlockComponent>();
+	if (!TestNotNull(TEXT("Gating-test UAbilityUnlockComponent should construct"), GatingUnlockState))
+	{
+		return false;
+	}
+	TestFalse(TEXT("Root should not be unlocked on a fresh UAbilityUnlockComponent"),
+		GatingUnlockState->IsAbilityUnlocked(EAbilitySlot::Root));
+
+	// (h-a) Root locked: the Root-gated room must be excluded, and no door should
+	// connect the single remaining room to anything.
+	TArray<ARoomActor*> SequenceRootLocked = Shuffler->ShuffleRooms(GatingPool, ERoomDifficultyTier::Easy, /*Seed=*/1, GatingUnlockState);
+	TestEqual(TEXT("Root-gated room should be excluded while Root is locked"), SequenceRootLocked.Num(), 1);
+	if (SequenceRootLocked.Num() == 1)
+	{
+		TestEqual(TEXT("Only the plain room should come back while Root is locked"), SequenceRootLocked[0], PlainRoom);
+	}
+	TestEqual(TEXT("Single filtered room should spawn no doors"), Shuffler->GetSpawnedDoors().Num(), 0);
+
+	// (h-b) Root unlocked (NotifyLevelReached(3) - AbilityUnlockComponent.cpp's
+	// GetLevelToAbilityMap() maps level 3 to Root): the Root-gated room becomes eligible.
+	GatingUnlockState->NotifyLevelReached(3);
+	TestTrue(TEXT("Root should be unlocked after NotifyLevelReached(3)"),
+		GatingUnlockState->IsAbilityUnlocked(EAbilitySlot::Root));
+
+	TArray<ARoomActor*> SequenceRootUnlocked = Shuffler->ShuffleRooms(GatingPool, ERoomDifficultyTier::Easy, /*Seed=*/1, GatingUnlockState);
+	TestEqual(TEXT("Both rooms should come back once Root is unlocked"), SequenceRootUnlocked.Num(), 2);
+	TSet<ARoomActor*> SetRootUnlocked(SequenceRootUnlocked);
+	TestTrue(TEXT("Root-gated room should be present once Root is unlocked"), SetRootUnlocked.Contains(RootGatedRoom));
+	TestTrue(TEXT("Plain room should still be present once Root is unlocked"), SetRootUnlocked.Contains(PlainRoom));
+	TestEqual(TEXT("Two filtered rooms should spawn exactly one connecting door"), Shuffler->GetSpawnedDoors().Num(), 1);
+
+	// (h-c) Null UnlockState fails closed: the Root-gated room stays excluded even
+	// though nothing here claims Root is locked - a caller that forgets to pass a
+	// real unlock state must never accidentally admit a gated room.
+	AddExpectedError(TEXT("null UnlockState"), EAutomationExpectedErrorFlags::Contains, 1, false);
+	TArray<ARoomActor*> SequenceNullUnlockState = Shuffler->ShuffleRooms(GatingPool, ERoomDifficultyTier::Easy, /*Seed=*/1, nullptr);
+	TestEqual(TEXT("Null UnlockState should exclude the Root-gated room"), SequenceNullUnlockState.Num(), 1);
+	if (SequenceNullUnlockState.Num() == 1)
+	{
+		TestEqual(TEXT("Only the plain room should come back with a null UnlockState"), SequenceNullUnlockState[0], PlainRoom);
+	}
+	TestEqual(TEXT("Single filtered room should spawn no doors with a null UnlockState"), Shuffler->GetSpawnedDoors().Num(), 0);
 
 	return true;
 }
