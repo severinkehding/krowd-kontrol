@@ -37,8 +37,16 @@ ARootSurgeBoss::ARootSurgeBoss()
 	AttackTellLightComponent->SetupAttachment(RootComponent);
 	// PLACEHOLDER COLOUR - deliberately distinct from ArmingTellLightComponent's own
 	// colour above, same "arming tell" vs. "attack tell" distinction ATrooperEnemy's
-	// GlowLightComponent/AttackTellLightComponent pair draws.
-	AttackTellLightComponent->SetLightColor(FLinearColor(1.0f, 0.1f, 0.6f));
+	// GlowLightComponent/AttackTellLightComponent pair draws. Also distinct from every
+	// tell colour already claimed elsewhere in this module (same cross-check as
+	// ArmingTellLightComponent above): TrooperEnemy (1.0,0.1,0.6), SniperEnemy
+	// (1.0,0.85,0.1), BomberEnemy (1.0,0.15,0.05), RunnerEnemy (0.6,1.0,0.2),
+	// ASleepShieldBoss's steel grey (0.55,0.6,0.65), ADualZoneBoss's violet
+	// (0.75,0.35,1.0), this boss's own ArmingTellLightComponent (0.95,0.55,0.85) - this
+	// boss's own WaveSpawnerComponent spawns ATrooperEnemy adds every wave, so reusing
+	// TrooperEnemy's attack-tell colour would make the boss's own attack indistinguishable
+	// from its adds' attacks during the fight; a crimson red reads as "boss attack".
+	AttackTellLightComponent->SetLightColor(FLinearColor(0.85f, 0.0f, 0.15f));
 	AttackTellLightComponent->SetIntensity(0.0f); // off until it fires
 	AttackTellLightComponent->SetAttenuationRadius(300.0f);
 

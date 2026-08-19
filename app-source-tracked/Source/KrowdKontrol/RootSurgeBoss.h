@@ -64,13 +64,23 @@ public:
 	float WaveDelayAccelerationMultiplier = 0.5f;
 
 	// Longer range than any existing enemy (AC #2) - must exceed ASniperEnemy's
-	// 1400.0f, the current max.
+	// 1400.0f, the current max. NOT YET RANGE-GATED: AdvanceAttackTelegraph() fires on
+	// a timer regardless of this value (no live player-distance check yet - this
+	// module's headless Automation tests never drive a real PlayerController/
+	// BeginPlay() pass, so a distance check would be untestable, same deferred-gating
+	// scope limit ASleepShieldBoss/ADualZoneBoss's own attack logic defers) - authored
+	// here so the number exists when that wiring lands, not because it currently does
+	// anything. Unlike AEnemyBase::GetAttackRangeUnits() (EnemyBase.h), which is a real,
+	// load-bearing Alert->Attack gate, this property is descriptive only.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Root Surge Boss", meta = (ClampMin = "0.0"))
 	float AttackRangeUnits = 1800.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Root Surge Boss", meta = (ClampMin = "0.0"))
 	float AttackTelegraphSeconds = 1.5f;
 
+	// Exceeds UPlayerEnergyComponent::MaxDamagePerHit (10.0f) - deliberately, same
+	// "non-lethality comes from the clamp, not this value" pattern as
+	// ABomberEnemy::ExplosionDamageAmount.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Root Surge Boss", meta = (ClampMin = "0.0"))
 	float AttackDamageAmount = 20.0f;
 

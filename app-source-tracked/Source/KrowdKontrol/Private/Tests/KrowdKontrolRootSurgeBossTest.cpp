@@ -9,9 +9,11 @@
 // spawned adds is found Controlled with Root (AC #4), (6) a wrong-ability-controlled
 // own-add does not trigger it, (7) Vulnerable never reverts even once the qualifying
 // add stops being Controlled, (8) the attack telegraph fires and damages the player's
-// UPlayerEnergyComponent independently of wave-spawn state (AC #2), (9) a Banked boss
-// stops attacking and stops re-checking Vulnerable, and (10) a never-spawned-into-a-
-// world instance does not crash.
+// UPlayerEnergyComponent by exactly UPlayerEnergyComponent::MaxDamagePerHit (not the
+// raw AttackDamageAmount) independently of wave-spawn state (AC #2), (9) a Banked boss
+// stops attacking and stops re-checking Vulnerable, (10) a never-spawned-into-a-world
+// instance does not crash, and (11) Tick() itself (not just CheckVulnerableState()
+// directly) drives the Vulnerable check.
 //
 // CheckVulnerableState()/AdvanceAttackTelegraph() are called directly where
 // determinism is needed (never via a real per-frame Tick() loop, except where Tick()
@@ -68,6 +70,10 @@ bool FKrowdKontrolRootSurgeBossTest::RunTest(const FString& Parameters)
 	// operator-clarified contract: config-level comparison, multiplier < 1.0). ---
 	TestTrue(TEXT("WaveDelayAccelerationMultiplier should be strictly less than 1.0"),
 		Boss->WaveDelayAccelerationMultiplier < 1.0f);
+	// AC #2: boss's own attack range must exceed every existing enemy's -
+	// ASniperEnemy::GetAttackRangeUnits() (SniperEnemy.cpp) is the current max at 1400.0f.
+	TestTrue(TEXT("AttackRangeUnits should exceed ASniperEnemy's 1400.0f (current max range)"),
+		Boss->AttackRangeUnits > 1400.0f);
 	TestEqual(TEXT("WaveSpawnerComponent should have one Waves entry per BaselineWaveDelaySeconds entry"),
 		Boss->WaveSpawnerComponent->Waves.Num(), Boss->BaselineWaveDelaySeconds.Num());
 	for (int32 i = 0; i < Boss->WaveSpawnerComponent->Waves.Num(); ++i)
@@ -182,8 +188,8 @@ bool FKrowdKontrolRootSurgeBossTest::RunTest(const FString& Parameters)
 	AttackingBoss->DispatchBeginPlay();
 	AttackingBoss->Tick(AttackingBoss->AttackTelegraphSeconds); // one tick covering the full telegraph
 
-	TestTrue(TEXT("Player energy should decrease once the boss's own attack telegraph fires"),
-		Energy->GetCurrentEnergy() < EnergyBeforeAttack);
+	TestEqual(TEXT("Player energy should drop by exactly MaxDamagePerHit, not the raw AttackDamageAmount"),
+		Energy->GetCurrentEnergy(), EnergyBeforeAttack - Energy->MaxDamagePerHit);
 	TestEqual(TEXT("Attack tell light should be lit once the telegraph fires"),
 		AttackingBoss->AttackTellLightComponent->Intensity, AttackingBoss->AttackTellIntensity);
 
@@ -208,6 +214,35 @@ bool FKrowdKontrolRootSurgeBossTest::RunTest(const FString& Parameters)
 	UnspawnedBoss->CheckVulnerableState();
 	UnspawnedBoss->AdvanceAttackTelegraph(1.0f);
 	TestTrue(TEXT("A never-spawned boss should not crash when checked"), true);
+
+	// --- Scenario 11: Tick() itself (not just CheckVulnerableState() directly) must
+	// drive the Vulnerable check - mirrors ASleepShieldBoss's own Tick()-driven
+	// regression coverage for the same two-call Tick() dispatcher shape. ---
+	ARootSurgeBoss* TickBoss = World->SpawnActor<ARootSurgeBoss>();
+	if (!TestNotNull(TEXT("Fifth ARootSurgeBoss for Tick()-driven Vulnerable coverage should spawn"), TickBoss))
+	{
+		return false;
+	}
+	TickBoss->WaveSpawnerComponent->Waves[0].EnemyClass = AEnemyBaseTestActor::StaticClass();
+	TickBoss->DispatchBeginPlay();
+	TickBoss->WaveSpawnerComponent->TriggerNextWave();
+
+	if (!TestEqual(TEXT("Wave 0 should have spawned exactly one actor for the Tick()-coverage boss"),
+		TickBoss->WaveSpawnerComponent->GetSpawnedActors().Num(), 1))
+	{
+		return false;
+	}
+	AEnemyBaseTestActor* TickBossAdd = Cast<AEnemyBaseTestActor>(TickBoss->WaveSpawnerComponent->GetSpawnedActors()[0]);
+	if (!TestNotNull(TEXT("TickBoss's own spawned add should be an AEnemyBaseTestActor"), TickBossAdd))
+	{
+		return false;
+	}
+	TickBossAdd->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+	TickBossAdd->ReceiveControl(EAbilitySlot::Root); // Alert -> Controlled, right ability
+
+	TickBoss->Tick(0.0f);
+	TestEqual(TEXT("Tick() should advance the boss to Vulnerable via CheckVulnerableState()"),
+		static_cast<uint8>(TickBoss->GetBossState()), static_cast<uint8>(EBossState::Vulnerable));
 
 	return true;
 }
