@@ -52,8 +52,14 @@ private:
 	UPROPERTY()
 	TObjectPtr<UOnScreenPromptWidget> CachedPromptWidget;
 
+	// VisibleAnywhere/BlueprintReadOnly so MCP-driven QA can inspect nudge-threshold
+	// progress on the live component instance instead of only confirming it's wired up.
+	// AllowPrivateAccess keeps these private in C++ (matches ARoomActor::TargetZones'
+	// precedent) while still exposing them to Blueprint/reflection-based inspection.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability Matchup Nudge", meta = (AllowPrivateAccess = "true"))
 	int32 ConsecutiveNonMatchedCasts = 0;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability Matchup Nudge", meta = (AllowPrivateAccess = "true"))
 	bool bHasShownNudge = false;
 
 	// One-shot guard so a missing OnScreenPromptWidgetInstance at resolve time only
