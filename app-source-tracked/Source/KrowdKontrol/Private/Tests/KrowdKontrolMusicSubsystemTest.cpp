@@ -23,6 +23,8 @@
 #include "MusicStateTestListener.h"
 #include "EnemyBaseTestActor.h"
 #include "AbilitySlot.h"
+#include "SleepShieldBoss.h"
+#include "DualZoneBoss.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Sound/SoundWave.h"
@@ -216,6 +218,79 @@ bool FKrowdKontrolMusicSubsystemTest::RunTest(const FString& Parameters)
 		Listener->CallCount, CallCountBeforeDestroy + 1);
 	TestEqual(TEXT("The reversion broadcast should carry Calm"),
 		static_cast<uint8>(Listener->LastState), static_cast<uint8>(EMusicState::Calm));
+
+	// (m) a boss reaching Armed with no other enemies and no twist telegraphed yet
+	// establishes the Combat baseline on its own (AC #2's "standard combat track"
+	// precondition) - ABossBase is not an AEnemyBase, so without this,
+	// IsAnyEnemyInCombat() alone would leave a boss-only fight silently at Calm.
+	ASleepShieldBoss* ShieldBoss = World->SpawnActor<ASleepShieldBoss>();
+	if (!TestNotNull(TEXT("ASleepShieldBoss should spawn into the test World"), ShieldBoss))
+	{
+		return false;
+	}
+	ShieldBoss->DispatchBeginPlay();
+	MusicSubsystem->RefreshMusicState();
+	TestEqual(TEXT("A boss reaching Armed (shield up, not yet telegraphing) should establish the Combat baseline"),
+		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::Combat));
+
+	// (n) the shield dropping (this boss's twist telegraph) switches to BossIntensity.
+	AEnemyBaseTestActor* SleepMinion = World->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("Sleep-controlled minion should spawn"), SleepMinion))
+	{
+		return false;
+	}
+	SleepMinion->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	SleepMinion->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled
+	SleepMinion->SetActorLocation(ShieldBoss->GetActorLocation());
+	ShieldBoss->CheckShieldState();
+	MusicSubsystem->RefreshMusicState();
+	TestEqual(TEXT("Shield dropping should switch music state to BossIntensity"),
+		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::BossIntensity));
+
+	// (o) the shield re-raising once the minion leaves reverts to Combat (the
+	// "standard track"), not all the way to Calm - the boss is still engaged
+	// (Vulnerable), matching AC #3's "revert... once the twist-mechanic window ends".
+	SleepMinion->SetActorLocation(ShieldBoss->GetActorLocation() + FVector(ShieldBoss->ShieldDropRadiusUnits * 10.0f, 0.0f, 0.0f));
+	ShieldBoss->CheckShieldState();
+	MusicSubsystem->RefreshMusicState();
+	TestEqual(TEXT("Shield re-raising should revert music state to Combat, not Calm, while the boss is still engaged"),
+		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::Combat));
+
+	// (p) the fight ending (Banked) reverts fully to Calm, matching AC #3's "or the
+	// fight ends" clause.
+	World->DestroyActor(SleepMinion);
+	ShieldBoss->TransitionToBanked();
+	MusicSubsystem->RefreshMusicState();
+	TestEqual(TEXT("A boss reaching Banked with no other enemies should revert music state to Calm"),
+		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::Calm));
+
+	// (q) ADualZoneBoss's Enrage is a second, independent telegraph signal (not
+	// shield-based) that must also drive BossIntensity - proves IsTwistTelegraphed()'s
+	// per-boss-subclass override shape, not just ASleepShieldBoss's one path.
+	World->InitializeActorsForPlay(FURL()); // ADualZoneBoss binds a dynamic delegate in BeginPlay()
+	ADualZoneBoss* ZoneBoss = World->SpawnActor<ADualZoneBoss>();
+	if (!TestNotNull(TEXT("ADualZoneBoss should spawn into the test World"), ZoneBoss))
+	{
+		return false;
+	}
+	ZoneBoss->DispatchBeginPlay(); // ZoneA/ZoneB left unwired - not needed to drive Enrage directly
+	MusicSubsystem->RefreshMusicState();
+	TestEqual(TEXT("ADualZoneBoss reaching Armed (not yet enraged) should hold the Combat baseline"),
+		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::Combat));
+
+	ZoneBoss->SetIsEnraged(true);
+	MusicSubsystem->RefreshMusicState();
+	TestEqual(TEXT("ADualZoneBoss enraging should switch music state to BossIntensity"),
+		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::BossIntensity));
+
+	// (r) ADualZoneBoss's fight ending also reverts to Calm - Enrage has no natural
+	// un-trigger (see DualZoneBoss.cpp), so this proves reversion works generically
+	// off GetBossState() == Banked, not off a boss-specific flag clearing.
+	ZoneBoss->AdvanceToVulnerable();
+	ZoneBoss->TransitionToBanked();
+	MusicSubsystem->RefreshMusicState();
+	TestEqual(TEXT("ADualZoneBoss reaching Banked should revert music state to Calm even though IsEnraged() stays true forever"),
+		static_cast<uint8>(MusicSubsystem->GetMusicState()), static_cast<uint8>(EMusicState::Calm));
 
 	return true;
 }

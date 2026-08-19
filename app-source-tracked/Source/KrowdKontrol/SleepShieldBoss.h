@@ -31,6 +31,11 @@ class KROWDKONTROL_API ASleepShieldBoss : public ABossBase
 	// FKrowdKontrolOvercrowdDetectionComponentTest friendships document.
 	friend class FKrowdKontrolSleepShieldBossTest;
 
+	// Same rationale as above: FKrowdKontrolMusicSubsystemTest (issue #41) also
+	// drives CheckShieldState() directly, to deterministically toggle this boss's
+	// shield (its twist telegraph) without a real per-frame Tick() loop.
+	friend class FKrowdKontrolMusicSubsystemTest;
+
 public:
 	ASleepShieldBoss();
 
@@ -66,6 +71,7 @@ public:
 protected:
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnShieldChanged(bool bNewHasShield) override;
+	virtual bool IsTwistTelegraphed() const override;
 
 private:
 	// Re-evaluates HasNearbySleepControlledMinion() every tick and calls

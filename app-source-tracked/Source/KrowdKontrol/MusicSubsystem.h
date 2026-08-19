@@ -7,14 +7,16 @@
 class UAudioComponent;
 class USoundBase;
 
-// Exactly 2 discrete states per issue #25's AC - no layering/dynamic stems. A 3rd
-// (boss-intensity) state is explicitly out of scope for this issue; see MISSION.md
-// `12`'s later, separate boss-fight-music-swap item.
+// 3 discrete states, no layering/dynamic stems - Calm/Combat per issue #25's AC,
+// BossIntensity added by issue #41 for the boss-fight music-intensity swap
+// MISSION.md `12` always intended as a later, separate item (see this header's
+// prior revision for the "explicitly out of scope" note this issue resolves).
 UENUM(BlueprintType)
 enum class EMusicState : uint8
 {
 	Calm,
-	Combat
+	Combat,
+	BossIntensity
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMusicStateChanged, EMusicState, NewState);
@@ -81,8 +83,25 @@ public:
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Music")
 	TSoftObjectPtr<USoundBase> CombatTrack;
 
+	// Heightened-intensity variant of CombatTrack (issue #41) - same mood/genre,
+	// higher energy, not a different song (AC #1). Resolved and played through the
+	// exact same PlayTrackForState() crossfade path as CalmTrack/CombatTrack.
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Music")
+	TSoftObjectPtr<USoundBase> BossIntensityTrack;
+
 private:
 	bool IsAnyEnemyInCombat() const;
+
+	// True if any ABossBase in the world is Armed or Vulnerable (i.e. its fight is
+	// underway) - needed because ABossBase is not an AEnemyBase, so a boss fight
+	// with no spawned adds (ADualZoneBoss, ASleepShieldBoss) would otherwise never
+	// register as Combat via IsAnyEnemyInCombat() alone (issue #41).
+	bool IsAnyBossEngaged() const;
+
+	// True if any Armed/Vulnerable ABossBase's IsTwistTelegraphed() is currently
+	// true (issue #41). Takes priority over Combat in RefreshMusicState().
+	bool IsAnyBossTwistTelegraphed() const;
+
 	void SetMusicState(EMusicState NewState);
 
 	// Shared by SetMusicState() and Initialize(): stops CurrentMusicComponent (if any),

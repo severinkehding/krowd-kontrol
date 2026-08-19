@@ -65,6 +65,18 @@ public:
 	void SetIsEnraged(bool bNewIsEnraged);
 	bool IsEnraged() const { return bIsEnraged; }
 
+	// Generic "this boss's twist mechanic is currently telegraphing" signal a
+	// poll-based system (UMusicSubsystem's boss-intensity music swap, issue #41) can
+	// bind to without needing to know which specific boss subclass or flag
+	// combination applies. Defaults to IsEnraged() - the one generic flag whose
+	// default (false) is always a safe "not telegraphing" for a subclass that never
+	// calls SetIsEnraged() (today, only ADualZoneBoss does). HasShield()/IsSplit()
+	// are deliberately NOT unioned in here: both also default false, so blindly
+	// OR-ing them would misreport "telegraphing" for any boss that simply never
+	// manages that flag - see ASleepShieldBoss::IsTwistTelegraphed(), where
+	// HasShield() dropping IS specifically that boss's telegraph.
+	virtual bool IsTwistTelegraphed() const { return bIsEnraged; }
+
 protected:
 	// C++-only (not BlueprintNativeEvent) until a real mid-boss subclass exists to
 	// inform whether these hooks need Blueprint override - same rationale

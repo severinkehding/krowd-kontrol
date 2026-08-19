@@ -115,3 +115,15 @@ void ASleepShieldBoss::OnShieldChanged(bool bNewHasShield)
 	ShieldTellLightComponent->SetIntensity(bNewHasShield ? ShieldTellIntensity : 0.0f);
 	bHasShieldReflected = bNewHasShield;
 }
+
+bool ASleepShieldBoss::IsTwistTelegraphed() const
+{
+	// Shield-down IS this boss's twist telegraph (issue #41's triage comment names
+	// this exact signal: "ASleepShieldBoss's shield drop"). Gated on Armed/
+	// Vulnerable (not just "!= Idle") so a Banked boss - whose HasShield() is
+	// simply frozen at whatever it last was, per CheckShieldState()'s Banked
+	// early-return - correctly stops reporting a telegraph once the fight ends,
+	// matching this issue's AC #3 ("or the fight ends").
+	const EBossState State = GetBossState();
+	return (State == EBossState::Armed || State == EBossState::Vulnerable) && !HasShield();
+}
