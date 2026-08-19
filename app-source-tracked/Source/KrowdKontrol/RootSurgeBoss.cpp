@@ -142,22 +142,7 @@ void ARootSurgeBoss::AdvanceAttackTelegraph(float DeltaSeconds)
 	{
 		AttackTellLightComponent->SetIntensity(AttackTellIntensity);
 
-		// FindPlayerEnergyComponent() is protected on AEnemyBase, not reachable from a
-		// ABossBase subclass - duplicated inline here, same TActorIterator<APawn> body
-		// EnemyBase.cpp:132-149 uses (no shared free function exists to call instead).
-		UPlayerEnergyComponent* Energy = nullptr;
-		if (GetWorld())
-		{
-			for (TActorIterator<APawn> It(GetWorld()); It; ++It)
-			{
-				if (UPlayerEnergyComponent* Found = It->FindComponentByClass<UPlayerEnergyComponent>())
-				{
-					Energy = Found;
-					break;
-				}
-			}
-		}
-		if (Energy)
+		if (UPlayerEnergyComponent* Energy = FindPlayerEnergyComponent())
 		{
 			Energy->ApplyContactDamage(AttackDamageAmount, this);
 		}
@@ -167,4 +152,20 @@ void ARootSurgeBoss::AdvanceAttackTelegraph(float DeltaSeconds)
 		// pressure" implies a repeating threat, not a single trap.
 		RemainingTelegraphSeconds = AttackTelegraphSeconds;
 	}
+}
+
+UPlayerEnergyComponent* ARootSurgeBoss::FindPlayerEnergyComponent() const
+{
+	if (!GetWorld())
+	{
+		return nullptr;
+	}
+	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
+	{
+		if (UPlayerEnergyComponent* Found = It->FindComponentByClass<UPlayerEnergyComponent>())
+		{
+			return Found;
+		}
+	}
+	return nullptr;
 }

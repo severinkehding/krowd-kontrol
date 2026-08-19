@@ -6,6 +6,7 @@
 
 class UPointLightComponent;
 class UWaveSpawnerComponent;
+class UPlayerEnergyComponent;
 
 // Mid-boss 2 (PRD 04 Locked Design, issue #50): spawns TR-UPR adds via
 // UWaveSpawnerComponent at an accelerated cadence (each Waves[i].DelaySeconds derived
@@ -113,6 +114,12 @@ private:
 	// GetControllingAbility() read, mirroring
 	// ASleepShieldBoss::HasNearbySleepControlledMinion()'s exact guard order.
 	bool HasRootLockedAdd() const;
+
+	// Same TActorIterator<APawn> body as AEnemyBase::FindPlayerEnergyComponent()
+	// (EnemyBase.cpp), duplicated here because that method is protected on AEnemyBase
+	// and not reachable from a ABossBase subclass - no shared free function exists to
+	// call instead. Returns nullptr if no APawn carries a UPlayerEnergyComponent.
+	UPlayerEnergyComponent* FindPlayerEnergyComponent() const;
 
 	float RemainingTelegraphSeconds = 0.0f;
 };
