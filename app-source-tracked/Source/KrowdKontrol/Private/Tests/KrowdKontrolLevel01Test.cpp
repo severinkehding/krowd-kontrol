@@ -58,40 +58,7 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("L_Level01 should have 2 doors connecting its 3 rooms in a chain"), Doors.Num(), 2);
 
-	// Count/individual-validity checks above don't rule out both doors wiring the same
-	// pair of rooms and leaving the third unreachable - walk the door graph to confirm
-	// every room is actually reachable, not just that door count/validity look right.
-	TMap<ARoomActor*, TArray<ARoomActor*>> Adjacency;
-	for (ADoorConnectorActor* Door : Doors)
-	{
-		TestTrue(TEXT("Each door should connect two valid, distinct rooms"), Door->ConnectsValidRooms());
-		if (Door->ConnectsValidRooms())
-		{
-			Adjacency.FindOrAdd(Door->RoomA).Add(Door->RoomB);
-			Adjacency.FindOrAdd(Door->RoomB).Add(Door->RoomA);
-		}
-	}
-
-	if (Rooms.Num() > 0)
-	{
-		TSet<ARoomActor*> Visited;
-		TArray<ARoomActor*> Frontier = { Rooms[0] };
-		Visited.Add(Rooms[0]);
-		while (Frontier.Num() > 0)
-		{
-			ARoomActor* Current = Frontier.Pop();
-			for (ARoomActor* Neighbor : Adjacency.FindRef(Current))
-			{
-				if (!Visited.Contains(Neighbor))
-				{
-					Visited.Add(Neighbor);
-					Frontier.Add(Neighbor);
-				}
-			}
-		}
-		TestEqual(TEXT("All rooms should be reachable via doors (no room isolated from the chain)"),
-			Visited.Num(), Rooms.Num());
-	}
+	KrowdKontrolLevelTestUtils::CheckAllRoomsReachableViaDoors(*this, Rooms, Doors);
 
 	TMap<ARoomActor*, TSet<EEnemyType>> EnemyTypesByRoom;
 	TMap<ARoomActor*, int32> EnemyCountByRoom;
@@ -110,32 +77,11 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	for (ARoomActor* Room : Rooms)
-	{
-		TestTrue(TEXT("Every room should have at least one target zone (REQ-2)"), Room->GetTargetZones().Num() >= 1);
-
-		// Lightweight per-room density check (PRD 05's "static placeholder-density
-		// enemies") - only asserts every room has *some* enemy presence, not a specific
-		// count, since a real per-level density target needs Levels 2-5 to exist for
-		// comparison and is out of this test's reach.
-		TestTrue(TEXT("Every room should have at least one enemy placeholder placed in it (placeholder density)"),
-			EnemyCountByRoom.FindRef(Room) >= 1);
-
-		const TSet<EEnemyType>* PlacedTypes = EnemyTypesByRoom.Find(Room);
-		if (!PlacedTypes)
-		{
-			continue;
-		}
-		for (EEnemyType PlacedType : *PlacedTypes)
-		{
-			const bool bHasMatchingTargetZone = Room->GetTargetZones().ContainsByPredicate(
-				[PlacedType](const FRoomTargetZone& Zone) { return Zone.EnemyType == PlacedType; });
-			TestTrue(
-				FString::Printf(TEXT("Room should have a target zone matching each enemy type placed in it (REQ-2) - missing for %s"),
-					*UEnum::GetDisplayValueAsText(PlacedType).ToString()),
-				bHasMatchingTargetZone);
-		}
-	}
+	// Lightweight per-room density check (PRD 05's "static placeholder-density
+	// enemies") - only asserts every room has *some* enemy presence, not a specific
+	// count, since a real per-level density target needs Levels 2-5 to exist for
+	// comparison and is out of this test's reach.
+	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
 
 	return true;
 }
