@@ -60,6 +60,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "HUD")
 	int32 RefreshTargetZoneBeacons();
 
+	// QA/E2E hook (issue #183 pass-1 feedback): drains the possessed pawn's
+	// UPlayerEnergyComponent to 0 entirely through repeated ApplyContactDamage() calls -
+	// never a direct setter - so PlayerEnergyComponent's "ApplyContactDamage is the only
+	// permitted mutator" invariant (see its header) stays intact. Lets a live PIE session
+	// (via the console or an MCP-driven console-command call) deterministically reach the
+	// zero-energy precondition and observe OnLevelFailed/DisableInput fire, instead of
+	// depending on which enemy types happen to be in a test scene. UFUNCTION(Exec) can't
+	// be wrapped in a UE_BUILD_SHIPPING preprocessor block (UHT rejects UFUNCTION inside
+	// non-WITH_EDITORONLY_DATA preprocessor blocks) - same as every other Exec cheat
+	// command in Unreal, it stays declared in Shipping and relies on Exec's own
+	// runtime-only dispatch (never reachable without an open console) rather than a
+	// compile-time guard.
+	UFUNCTION(Exec)
+	void Cheat_ZeroPlayerEnergy();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;

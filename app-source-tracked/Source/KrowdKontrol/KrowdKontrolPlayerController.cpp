@@ -135,3 +135,25 @@ int32 AKrowdKontrolPlayerController::RefreshTargetZoneBeacons()
 	}
 	return TargetZoneBeacons.Num();
 }
+
+void AKrowdKontrolPlayerController::Cheat_ZeroPlayerEnergy()
+{
+	APawn* ControlledPawn = GetPawn();
+	UPlayerEnergyComponent* Energy = ControlledPawn ? ControlledPawn->FindComponentByClass<UPlayerEnergyComponent>() : nullptr;
+	if (!Energy)
+	{
+		return;
+	}
+
+	// ApplyContactDamage clamps each call to MaxDamagePerHit, so fully draining a higher
+	// MaxEnergy can take several calls - looping through the sole legal mutator instead
+	// of adding a setter. Breaks on a zero-progress call (rather than a fixed iteration
+	// count) so a misconfigured MaxDamagePerHit of 0 can't spin this forever.
+	while (Energy->GetCurrentEnergy() > 0.0f)
+	{
+		if (Energy->ApplyContactDamage(Energy->GetCurrentEnergy(), this) <= 0.0f)
+		{
+			break;
+		}
+	}
+}

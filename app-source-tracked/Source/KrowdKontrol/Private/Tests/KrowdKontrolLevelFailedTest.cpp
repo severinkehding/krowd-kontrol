@@ -179,6 +179,56 @@ bool FKrowdKontrolLevelFailedTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Paper2DPrototypePawn's LevelFailComponent should also fire on zero energy"),
 		Paper2DListener->CallCount, 1);
 
+	// (e) AKrowdKontrolPlayerController::Cheat_ZeroPlayerEnergy() (issue #183 pass-1
+	// feedback): a QA/E2E hook that must reach the same zero-energy precondition purely
+	// through ApplyContactDamage() - never a direct setter - and drive the same
+	// OnLevelFailed/DisableInput live path as real combat damage. Fresh pawn+controller
+	// pair so this doesn't ride on the already-zeroed energy above.
+	FActorSpawnParameters CheatSpawnParams;
+	CheatSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AFlatCamera3DPrototypePawn* CheatPawn = World->SpawnActor<AFlatCamera3DPrototypePawn>(
+		AFlatCamera3DPrototypePawn::StaticClass(), FTransform::Identity, CheatSpawnParams);
+	if (!TestNotNull(TEXT("Cheat-command pawn should spawn"), CheatPawn))
+	{
+		return false;
+	}
+	AKrowdKontrolPlayerController* CheatController = World->SpawnActor<AKrowdKontrolPlayerController>();
+	if (!TestNotNull(TEXT("Cheat-command controller should spawn"), CheatController))
+	{
+		return false;
+	}
+	CheatController->Possess(CheatPawn);
+	CheatController->Player = NewObject<ULocalPlayer>(GEngine);
+	CheatController->SetAsLocalPlayerController();
+	CheatController->DispatchBeginPlay();
+
+	// Same injection as the happy-path Controller above (GetGameInstance() is null in
+	// this CreateNewMap() World) - otherwise HandleLevelFailed's no-subsystem warning
+	// would fire again here and break the UnresolvedController warn-once count check
+	// earlier in this test.
+	UGameInstance* CheatGameInstanceOuter = NewObject<UGameInstance>();
+	CheatController->CachedLevelClearTimeSubsystem = NewObject<ULevelClearTimeSubsystem>(CheatGameInstanceOuter);
+
+	UPlayerEnergyComponent* CheatEnergy = CheatPawn->FindComponentByClass<UPlayerEnergyComponent>();
+	if (!TestNotNull(TEXT("Cheat-command pawn should have a PlayerEnergyComponent"), CheatEnergy))
+	{
+		return false;
+	}
+	ULevelFailComponent* CheatLevelFailComp = CheatPawn->FindComponentByClass<ULevelFailComponent>();
+	if (!TestNotNull(TEXT("Cheat-command pawn should have a LevelFailComponent"), CheatLevelFailComp))
+	{
+		return false;
+	}
+	ULevelFailedTestListener* CheatListener = NewObject<ULevelFailedTestListener>();
+	CheatLevelFailComp->OnLevelFailed.AddDynamic(CheatListener, &ULevelFailedTestListener::HandleLevelFailed);
+
+	TestTrue(TEXT("Cheat-command pawn input should start enabled"), CheatPawn->InputEnabled());
+	CheatController->Cheat_ZeroPlayerEnergy();
+
+	TestEqual(TEXT("Cheat_ZeroPlayerEnergy should drain energy to exactly 0"), CheatEnergy->GetCurrentEnergy(), 0.0f);
+	TestEqual(TEXT("Cheat_ZeroPlayerEnergy should trigger OnLevelFailed exactly once"), CheatListener->CallCount, 1);
+	TestFalse(TEXT("Cheat_ZeroPlayerEnergy should disable pawn input"), CheatPawn->InputEnabled());
+
 	return true;
 }
 
