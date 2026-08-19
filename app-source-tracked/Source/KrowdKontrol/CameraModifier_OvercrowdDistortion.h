@@ -75,5 +75,12 @@ protected:
 
 private:
 	bool bIsEngaged = false;
+
+	// 0..1 linear progress toward the current target (bIsEngaged ? 1.0 : 0.0), accumulated
+	// directly from DeltaTime/EaseSeconds each frame. Drives CurrentAlpha via
+	// InterpEaseInOut every frame but is never itself fed through the ease curve - keeping
+	// this separate from CurrentAlpha avoids feeding an already-eased value back in as next
+	// frame's linear input, which would self-damp toward a near-zero fixed point.
+	float RawProgress = 0.0f;
 	float CurrentAlpha = 0.0f;
 };

@@ -7,17 +7,18 @@ void UCameraModifier_OvercrowdDistortion::ModifyPostProcess(float DeltaTime, flo
 	// isn't a no-op).
 	Super::ModifyPostProcess(DeltaTime, PostProcessBlendWeight, PostProcessSettings);
 
-	const float TargetAlpha = bIsEngaged ? 1.0f : 0.0f;
+	const float TargetProgress = bIsEngaged ? 1.0f : 0.0f;
 	const float EaseSeconds = bIsEngaged ? EaseInSeconds : EaseOutSeconds;
 	if (EaseSeconds > 0.0f)
 	{
 		const float Step = DeltaTime / EaseSeconds;
-		const float RawAlpha = FMath::Clamp(CurrentAlpha + (bIsEngaged ? Step : -Step), 0.0f, 1.0f);
-		CurrentAlpha = FMath::InterpEaseInOut(bIsEngaged ? 0.0f : 1.0f, bIsEngaged ? 1.0f : 0.0f, bIsEngaged ? RawAlpha : (1.0f - RawAlpha), EaseExponent);
+		RawProgress = FMath::Clamp(RawProgress + (bIsEngaged ? Step : -Step), 0.0f, 1.0f);
+		CurrentAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, RawProgress, EaseExponent);
 	}
 	else
 	{
-		CurrentAlpha = TargetAlpha;
+		RawProgress = TargetProgress;
+		CurrentAlpha = RawProgress;
 	}
 
 	// The override fields are always set to their max value; PostProcessBlendWeight is
