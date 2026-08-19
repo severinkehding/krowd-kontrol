@@ -35,6 +35,9 @@
 #include "EngineUtils.h"
 #include "Editor.h"
 #include "GameFramework/PlayerController.h"
+#include "PunishmentManagerComponent.h"
+#include "PlayerEnergyComponent.h"
+#include "PunishmentTriggeredTestListener.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -95,6 +98,22 @@ bool FKrowdKontrolPaper2DPipelineSmokeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("MovementComponent should drive PawnRoot, not SpriteComponent"),
 		static_cast<USceneComponent*>(MovementComponent->UpdatedComponent),
 		static_cast<USceneComponent*>(PawnRootComponent));
+
+	// Proves this pawn's PunishmentManagerComponent (issue #177) is genuinely bound
+	// to this same pawn's own PlayerEnergyComponent via constructor-time AddDynamic,
+	// not a copy-paste slip binding to the other prototype pawn's instance - the
+	// KrowdKontrol.Unit.PunishmentManagerComponent test alone can't catch this since
+	// it wires the component by hand, never through a pawn constructor.
+	UPunishmentManagerComponent* PunishmentManagerComponent = Pawn->PunishmentManagerComponent;
+	if (TestNotNull(TEXT("Pawn should have a PunishmentManagerComponent"), PunishmentManagerComponent))
+	{
+		UPunishmentTriggeredTestListener* Listener = NewObject<UPunishmentTriggeredTestListener>();
+		PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(Listener, &UPunishmentTriggeredTestListener::HandlePunishmentTriggered);
+
+		Pawn->PlayerEnergyComponent->ApplyContactDamage(7.0f, nullptr);
+		TestEqual(TEXT("Pawn's own PlayerEnergyComponent damage should trigger this pawn's own PunishmentManagerComponent"),
+			Listener->CallCount, 1);
+	}
 
 	TestTrue(TEXT("SpriteComponent should be rotated into the ground plane (<= -45 degrees pitch), not edge-on"),
 		SpriteComponent->GetRelativeRotation().Pitch <= -45.0f);
