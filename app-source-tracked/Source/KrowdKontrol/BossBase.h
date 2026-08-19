@@ -75,7 +75,15 @@ public:
 	// OR-ing them would misreport "telegraphing" for any boss that simply never
 	// manages that flag - see ASleepShieldBoss::IsTwistTelegraphed(), where
 	// HasShield() dropping IS specifically that boss's telegraph.
-	virtual bool IsTwistTelegraphed() const { return bIsEnraged; }
+	// Gated on Armed/Vulnerable so this default is self-consistent regardless of
+	// caller - bIsEnraged never clears once set (see SetIsEnraged()), so without
+	// this gate a Banked boss would report "telegraphing" forever post-fight to
+	// any caller that doesn't independently re-derive the same gate (as
+	// ASleepShieldBoss::IsTwistTelegraphed() already does for its own signal).
+	virtual bool IsTwistTelegraphed() const
+	{
+		return (CurrentState == EBossState::Armed || CurrentState == EBossState::Vulnerable) && bIsEnraged;
+	}
 
 protected:
 	// C++-only (not BlueprintNativeEvent) until a real mid-boss subclass exists to

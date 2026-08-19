@@ -39,3 +39,16 @@ real `app/` symlink carries the same edits as this mirror (no drift, no
 concurrent-task leakage). `ARootSurgeBoss` — unrelated in-flight work sharing the
 `app/` symlink — is untouched by this change. Full detail in this run's
 `validation.md`.
+
+## Known Follow-up
+
+`DefaultGame.ini`'s `BossIntensityTrack=/Game/Audio/Music/BossIntensityTrack.BossIntensityTrack`
+config path has no matching `.uasset` imported under `Content/Audio/Music` yet
+(unlike `CalmTrack.uasset`/`CombatTrack.uasset`, which both exist). The test suite
+proves `BossIntensityTrack`'s resolution/forced-looping code path via an in-memory
+injected `USoundWave` (mirroring the existing `CalmTrack`/`CombatTrack` in-memory
+case), but cannot yet also prove the real Config-driven asset path the way it does
+for the other two tracks, since asserting against a path that resolves to null
+would be a no-op test. Import the real asset and add the equivalent real-path
+assertion once it lands — see `KrowdKontrolMusicSubsystemTest.cpp` scenario (n2)'s
+comment.
