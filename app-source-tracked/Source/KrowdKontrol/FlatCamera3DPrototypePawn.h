@@ -20,6 +20,7 @@ class UGizmoFirstContactComponent;
 class UFirstStunBeaconComponent;
 class UAbilityMatchupSignalComponent;
 class UAbilityMatchupNudgeComponent;
+class UPunishmentManagerComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -67,6 +68,13 @@ public:
 	// AEnemyBase::FindPlayerEnergyComponent() have a live component to find.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UPlayerEnergyComponent> PlayerEnergyComponent;
+
+	// Punishment-trigger plumbing (issue #177, PRD "Punishment System" REQ-1) -
+	// fires OnPunishmentTriggered whenever PlayerEnergyComponent reports real
+	// contact damage. No punishment effect is applied by this pawn; future
+	// issues bind their own listeners to this component's delegate.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UPunishmentManagerComponent> PunishmentManagerComponent;
 
 	// Backs the 5 ability-cast input bindings below (issue #138) - the only public
 	// gate a real cast can be blocked by short of an unlocked ability with no eligible

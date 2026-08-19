@@ -17,6 +17,7 @@
 #include "FirstStunBeaconComponent.h"
 #include "AbilityMatchupSignalComponent.h"
 #include "AbilityMatchupNudgeComponent.h"
+#include "PunishmentManagerComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
@@ -51,6 +52,8 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	AbilityUnlockComponent = CreateDefaultSubobject<UAbilityUnlockComponent>(TEXT("AbilityUnlockComponent"));
 	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
+	PunishmentManagerComponent = CreateDefaultSubobject<UPunishmentManagerComponent>(TEXT("PunishmentManagerComponent"));
+	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(PunishmentManagerComponent, &UPunishmentManagerComponent::HandleEnergyChanged);
 	AbilityCooldownComponent = CreateDefaultSubobject<UAbilityCooldownComponent>(TEXT("AbilityCooldownComponent"));
 	AbilityCastComponent = CreateDefaultSubobject<UAbilityCastComponent>(TEXT("AbilityCastComponent"));
 	AbilityCastVFXComponent = CreateDefaultSubobject<UAbilityCastVFXComponent>(TEXT("AbilityCastVFXComponent"));
