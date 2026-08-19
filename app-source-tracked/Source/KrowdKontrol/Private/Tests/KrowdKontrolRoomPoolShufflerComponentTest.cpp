@@ -6,7 +6,8 @@
 // (same room set) for a different seed - the issue's core acceptance criterion and
 // PRD 05's own success metric. Also confirms ability-gating (issue #53, PRD 05 REQ-5):
 // a room whose RequiredAbility is not yet unlocked is excluded from shuffle output,
-// and becomes eligible once it is.
+// becomes eligible once it is, and stays excluded (fail-closed) when UnlockState is
+// null.
 //
 // Needs a real UWorld to spawn into (ShuffleRooms() calls GetWorld()->SpawnActor for
 // the door chain), so uses the same FAutomationEditorCommonUtils::CreateNewMap()
@@ -225,16 +226,18 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 	TestFalse(TEXT("Root should not be unlocked on a fresh UAbilityUnlockComponent"),
 		GatingUnlockState->IsAbilityUnlocked(EAbilitySlot::Root));
 
-	// (h-a) Root locked: the Root-gated room must be excluded.
+	// (h-a) Root locked: the Root-gated room must be excluded, and no door should
+	// connect the single remaining room to anything.
 	TArray<ARoomActor*> SequenceRootLocked = Shuffler->ShuffleRooms(GatingPool, ERoomDifficultyTier::Easy, /*Seed=*/1, GatingUnlockState);
 	TestEqual(TEXT("Root-gated room should be excluded while Root is locked"), SequenceRootLocked.Num(), 1);
 	if (SequenceRootLocked.Num() == 1)
 	{
 		TestEqual(TEXT("Only the plain room should come back while Root is locked"), SequenceRootLocked[0], PlainRoom);
 	}
+	TestEqual(TEXT("Single filtered room should spawn no doors"), Shuffler->GetSpawnedDoors().Num(), 0);
 
 	// (h-b) Root unlocked (NotifyLevelReached(3) - AbilityUnlockComponent.cpp's
-	// LevelToAbilityMap maps level 3 to Root): the Root-gated room becomes eligible.
+	// GetLevelToAbilityMap() maps level 3 to Root): the Root-gated room becomes eligible.
 	GatingUnlockState->NotifyLevelReached(3);
 	TestTrue(TEXT("Root should be unlocked after NotifyLevelReached(3)"),
 		GatingUnlockState->IsAbilityUnlocked(EAbilitySlot::Root));
@@ -244,16 +247,19 @@ bool FKrowdKontrolRoomPoolShufflerComponentTest::RunTest(const FString& Paramete
 	TSet<ARoomActor*> SetRootUnlocked(SequenceRootUnlocked);
 	TestTrue(TEXT("Root-gated room should be present once Root is unlocked"), SetRootUnlocked.Contains(RootGatedRoom));
 	TestTrue(TEXT("Plain room should still be present once Root is unlocked"), SetRootUnlocked.Contains(PlainRoom));
+	TestEqual(TEXT("Two filtered rooms should spawn exactly one connecting door"), Shuffler->GetSpawnedDoors().Num(), 1);
 
 	// (h-c) Null UnlockState fails closed: the Root-gated room stays excluded even
 	// though nothing here claims Root is locked - a caller that forgets to pass a
 	// real unlock state must never accidentally admit a gated room.
+	AddExpectedError(TEXT("null UnlockState"), EAutomationExpectedErrorFlags::Contains, 1, false);
 	TArray<ARoomActor*> SequenceNullUnlockState = Shuffler->ShuffleRooms(GatingPool, ERoomDifficultyTier::Easy, /*Seed=*/1, nullptr);
 	TestEqual(TEXT("Null UnlockState should exclude the Root-gated room"), SequenceNullUnlockState.Num(), 1);
 	if (SequenceNullUnlockState.Num() == 1)
 	{
 		TestEqual(TEXT("Only the plain room should come back with a null UnlockState"), SequenceNullUnlockState[0], PlainRoom);
 	}
+	TestEqual(TEXT("Single filtered room should spawn no doors with a null UnlockState"), Shuffler->GetSpawnedDoors().Num(), 0);
 
 	return true;
 }
