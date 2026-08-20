@@ -91,6 +91,8 @@ bool FKrowdKontrolLevel02StructureTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("L_Level02 should have 3 doors connecting its 4 rooms in a chain"), Doors.Num(), 3);
 
 	KrowdKontrolLevelTestUtils::CheckAllRoomsReachableViaDoors(*this, Rooms, Doors);
+	KrowdKontrolLevelTestUtils::CheckRoomsHaveFloorGeometry(*this, Rooms);
+	KrowdKontrolLevelTestUtils::CheckDoorsHaveConnectorGeometry(*this, Doors);
 
 	TMap<ARoomActor*, TSet<EEnemyType>> EnemyTypesByRoom;
 	TMap<ARoomActor*, int32> EnemyCountByRoom;

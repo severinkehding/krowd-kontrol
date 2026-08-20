@@ -9,6 +9,8 @@
 #include "TrooperEnemy.h"
 #include "BomberEnemy.h"
 #include "SniperEnemy.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 
 // Shared helpers for the KrowdKontrolLevel0*Test.cpp structural regression tests
 // (KrowdKontrolLevel01Test.cpp, KrowdKontrolLevel02Test.cpp, and future Level03-05
@@ -135,6 +137,55 @@ namespace KrowdKontrolLevelTestUtils
 						*UEnum::GetDisplayValueAsText(PlacedType).ToString()),
 					bHasMatchingTargetZone);
 			}
+		}
+	}
+
+	// Asserts every room has a floor mesh with a valid UStaticMesh set (REQ-3 - no
+	// void anywhere along the playable path) and that collision is split correctly:
+	// the floor keeps blocking collision, but walls stay non-blocking so they don't
+	// seal off connector paths (ARoomActor has no per-door "which wall side" data).
+	inline void CheckRoomsHaveFloorGeometry(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
+	{
+		for (ARoomActor* Room : Rooms)
+		{
+			Test.TestNotNull(TEXT("Room should have a floor mesh component (REQ-3)"), Room->FloorMeshComponent.Get());
+			if (Room->FloorMeshComponent)
+			{
+				UStaticMesh* FloorStaticMesh = Room->FloorMeshComponent->GetStaticMesh();
+				Test.TestNotNull(TEXT("Room's floor mesh component should have a static mesh set (REQ-3)"), FloorStaticMesh);
+				Test.TestTrue(TEXT("Room's floor should keep blocking collision (REQ-3)"),
+					Room->FloorMeshComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision);
+			}
+			for (UStaticMeshComponent* Wall : { Room->WallNorthMeshComponent.Get(), Room->WallSouthMeshComponent.Get(),
+				Room->WallEastMeshComponent.Get(), Room->WallWestMeshComponent.Get() })
+			{
+				if (Wall)
+				{
+					Test.TestEqual(TEXT("Room walls must not block connector paths (REQ-3)"),
+						Wall->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+				}
+			}
+		}
+	}
+
+	// Asserts every door that connects two valid, distinct rooms has a visible
+	// connector floor after RecomputeConnectorGeometry() is (re)called - safe/
+	// idempotent to call from a test, and necessary here because
+	// FAutomationEditorCommonUtils::LoadMap does not start play, so BeginPlay (and
+	// its call to RecomputeConnectorGeometry()) never fires under this test path.
+	inline void CheckDoorsHaveConnectorGeometry(FAutomationTestBase& Test, const TArray<ADoorConnectorActor*>& Doors)
+	{
+		for (ADoorConnectorActor* Door : Doors)
+		{
+			if (!Door->ConnectsValidRooms())
+			{
+				continue;
+			}
+			Door->RecomputeConnectorGeometry();
+			Test.TestTrue(TEXT("Door's connector floor mesh should be visible once it connects two valid rooms (REQ-3)"),
+				Door->ConnectorFloorMeshComponent->IsVisible());
+			Test.TestTrue(TEXT("Door's connector floor mesh should keep blocking collision (REQ-3)"),
+				Door->ConnectorFloorMeshComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision);
 		}
 	}
 }

@@ -2,6 +2,30 @@
 #include "PlaceholderTargetZoneActor.h"
 #include "Engine/World.h"
 #include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	// Shared by all 4 wall mesh components below - the engine's
+	// /Engine/BasicShapes/Cube.Cube is a 100x100x100uu cube, so scale = desired
+	// size-in-cm / 100. Walls have collision disabled: ARoomActor has no per-door
+	// "which wall side" data, so a solid wall on all 4 sides would seal off the very
+	// connector paths this issue also requires to be walkable.
+	void SetupWallMeshComponent(UStaticMeshComponent* WallMeshComponent, UStaticMesh* CubeMesh,
+		USceneComponent* RoomRoot, const FVector& Scale, const FVector& RelativeLocation)
+	{
+		WallMeshComponent->SetupAttachment(RoomRoot);
+		if (CubeMesh)
+		{
+			WallMeshComponent->SetStaticMesh(CubeMesh);
+		}
+		WallMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		WallMeshComponent->SetRelativeScale3D(Scale);
+		WallMeshComponent->SetRelativeLocation(RelativeLocation);
+	}
+}
 
 ARoomActor::ARoomActor()
 {
@@ -9,6 +33,43 @@ ARoomActor::ARoomActor()
 
 	USceneComponent* RoomRoot = CreateDefaultSubobject<USceneComponent>(TEXT("RoomRoot"));
 	RootComponent = RoomRoot;
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshFinder(
+		TEXT("/Engine/BasicShapes/Cube.Cube"));
+	UStaticMesh* CubeMesh = CubeMeshFinder.Succeeded() ? CubeMeshFinder.Object : nullptr;
+
+	// Floor: top face sits at local Z=0, where target zones/enemies are placed
+	// (RoomRoot's own origin). Collision is left at the mesh's engine default so the
+	// floor still acts as a visible/physical ground plane.
+	FloorMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FloorMeshComponent"));
+	FloorMeshComponent->SetupAttachment(RoomRoot);
+	if (CubeMesh)
+	{
+		FloorMeshComponent->SetStaticMesh(CubeMesh);
+	}
+	FloorMeshComponent->SetRelativeScale3D(FVector(
+		RoomFloorExtent.X * 2.f / 100.f, RoomFloorExtent.Y * 2.f / 100.f, RoomFloorThickness / 100.f));
+	FloorMeshComponent->SetRelativeLocation(FVector(0.f, 0.f, -RoomFloorThickness * 0.5f));
+
+	WallNorthMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WallNorthMeshComponent"));
+	SetupWallMeshComponent(WallNorthMeshComponent, CubeMesh, RoomRoot,
+		FVector(RoomFloorExtent.X * 2.f / 100.f, RoomWallThickness / 100.f, RoomWallHeight / 100.f),
+		FVector(0.f, RoomFloorExtent.Y, RoomWallHeight * 0.5f));
+
+	WallSouthMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WallSouthMeshComponent"));
+	SetupWallMeshComponent(WallSouthMeshComponent, CubeMesh, RoomRoot,
+		FVector(RoomFloorExtent.X * 2.f / 100.f, RoomWallThickness / 100.f, RoomWallHeight / 100.f),
+		FVector(0.f, -RoomFloorExtent.Y, RoomWallHeight * 0.5f));
+
+	WallEastMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WallEastMeshComponent"));
+	SetupWallMeshComponent(WallEastMeshComponent, CubeMesh, RoomRoot,
+		FVector(RoomWallThickness / 100.f, RoomFloorExtent.Y * 2.f / 100.f, RoomWallHeight / 100.f),
+		FVector(RoomFloorExtent.X, 0.f, RoomWallHeight * 0.5f));
+
+	WallWestMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WallWestMeshComponent"));
+	SetupWallMeshComponent(WallWestMeshComponent, CubeMesh, RoomRoot,
+		FVector(RoomWallThickness / 100.f, RoomFloorExtent.Y * 2.f / 100.f, RoomWallHeight / 100.f),
+		FVector(-RoomFloorExtent.X, 0.f, RoomWallHeight * 0.5f));
 }
 
 AActor* ARoomActor::AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> MarkerClass)
