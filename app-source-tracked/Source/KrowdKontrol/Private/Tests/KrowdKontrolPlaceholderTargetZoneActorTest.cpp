@@ -2,7 +2,9 @@
 // beacon - a mesh + point light pair - satisfying PRD 13 REQ-6's "target-zone
 // indicators are world-space UI, not screen-space HUD" requirement, and that the
 // beacon's colour is not one of MISSION.md Hard Invariant 3's five reserved
-// gameplay-information colours.
+// gameplay-information colours. Also confirms the taller BeaconColumnMeshComponent
+// (issue #190) that crowns the beacon with a relocated, brighter/farther-reaching
+// BeaconLightComponent so it reads from across a room, not just standing next to it.
 //
 // Uses FAutomationEditorCommonUtils::CreateNewMap() + World->SpawnActor(), mirroring
 // KrowdKontrolRoomEnemyBudgetControllerTest.cpp (issue #82), rather than a bare
@@ -56,10 +58,38 @@ bool FKrowdKontrolPlaceholderTargetZoneActorTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("BeaconMeshComponent should use the engine's cylinder mesh"),
 		StaticMesh->GetPathName(), FString(TEXT("/Engine/BasicShapes/Cylinder.Cylinder")));
 	TestTrue(TEXT("BeaconMeshComponent should be visible"), Mesh->IsVisible());
-	TestEqual(TEXT("BeaconMeshComponent should be the actor's root component"),
-		Actor->GetRootComponent(), static_cast<USceneComponent*>(Mesh));
+	// No longer the actor's root component (issue #190) - BeaconMeshComponent's own
+	// 0.05 Z-scale would otherwise compound into BeaconColumnMeshComponent's transform
+	// if the column were nested under it, so both now sit as siblings under a neutral
+	// root; check attachment to the root instead of root identity.
+	TestEqual(TEXT("BeaconMeshComponent should be attached to the actor's root component"),
+		Mesh->GetAttachParent(), Actor->GetRootComponent());
 	TestEqual(TEXT("BeaconMeshComponent should be flattened into a floor-marker disc"),
 		Mesh->GetRelativeScale3D(), FVector(1.5f, 1.5f, 0.05f));
+
+	UStaticMeshComponent* Column = Actor->BeaconColumnMeshComponent;
+	if (!TestNotNull(TEXT("PlaceholderTargetZoneActor should have a BeaconColumnMeshComponent"), Column))
+	{
+		return false;
+	}
+	UStaticMesh* ColumnStaticMesh = Column->GetStaticMesh();
+	if (!TestNotNull(TEXT("BeaconColumnMeshComponent should have a static mesh assigned"), ColumnStaticMesh))
+	{
+		return false;
+	}
+	TestEqual(TEXT("BeaconColumnMeshComponent should use the engine's cylinder mesh"),
+		ColumnStaticMesh->GetPathName(), FString(TEXT("/Engine/BasicShapes/Cylinder.Cylinder")));
+	TestTrue(TEXT("BeaconColumnMeshComponent should be visible"), Column->IsVisible());
+	TestEqual(TEXT("BeaconColumnMeshComponent should be attached to the actor's root component"),
+		Column->GetAttachParent(), Actor->GetRootComponent());
+	TestEqual(TEXT("BeaconColumnMeshComponent should be thin-and-tall, scaled from BeaconColumnHeight"),
+		Column->GetRelativeScale3D(), FVector(0.15f, 0.15f, Actor->BeaconColumnHeight / 100.f));
+	TestEqual(TEXT("BeaconColumnMeshComponent should have no collision so it never blocks the player"),
+		Column->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	// Structural comparison, not two independent literals, so this survives either
+	// constant changing independently later - RoomActor.h:59 documents 300.f.
+	TestTrue(TEXT("BeaconColumnHeight should exceed ARoomActor::RoomWallHeight so the column pokes above a room's walls"),
+		Actor->BeaconColumnHeight > 300.0f);
 
 	UPointLightComponent* Light = Actor->BeaconLightComponent;
 	if (!TestNotNull(TEXT("PlaceholderTargetZoneActor should have a BeaconLightComponent"), Light))
@@ -67,12 +97,12 @@ bool FKrowdKontrolPlaceholderTargetZoneActorTest::RunTest(const FString& Paramet
 		return false;
 	}
 	TestTrue(TEXT("BeaconLightComponent should be visible"), Light->IsVisible());
-	TestEqual(TEXT("BeaconLightComponent should be attached to BeaconMeshComponent"),
-		Light->GetAttachParent(), static_cast<USceneComponent*>(Mesh));
+	TestEqual(TEXT("BeaconLightComponent should be attached to BeaconColumnMeshComponent"),
+		Light->GetAttachParent(), static_cast<USceneComponent*>(Column));
 	TestEqual(TEXT("BeaconLightComponent should use the planned beacon intensity"),
-		Light->Intensity, 3000.0f);
+		Light->Intensity, Actor->BeaconBaselineIntensity);
 	TestEqual(TEXT("BeaconLightComponent should use the planned attenuation radius"),
-		Light->AttenuationRadius, 300.0f);
+		Light->AttenuationRadius, 900.0f);
 	// Colour goes through an 8-bit FColor round-trip inside ULightComponentBase, so an
 	// exact TestEqual would depend on incidental quantization rather than a designed
 	// guarantee - use a tolerance instead.

@@ -14,7 +14,9 @@ class UPointLightComponent;
 // any real target-zone mechanic (detection radius, banking) exists. This is not the
 // real ATargetZone that RoomEnemyBudgetController.h's comments already reserve for a
 // future "OnActorBanked" integration - this class only carries the beacon visual. See
-// issue #72 and PRD 13 REQ-6.
+// issue #72 and PRD 13 REQ-6. No longer just a flattened disc: it also carries a tall
+// column - mesh + point light crowning its top - so the beacon reads from farther away
+// and across rooms (issue #190).
 UCLASS()
 class KROWDKONTROL_API APlaceholderTargetZoneActor : public AActor
 {
@@ -27,13 +29,22 @@ public:
 	TObjectPtr<UStaticMeshComponent> BeaconMeshComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
+	TObjectPtr<UStaticMeshComponent> BeaconColumnMeshComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
 	TObjectPtr<UPointLightComponent> BeaconLightComponent;
 
+	// Taller than ARoomActor::RoomWallHeight (300.f, RoomActor.h:59) so the column
+	// physically pokes above a room's walls, making the beacon visible from an
+	// adjacent room or across open floor (issue #190).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Target Zone")
-	float BeaconBaselineIntensity = 3000.0f;
+	float BeaconColumnHeight = 400.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Target Zone")
-	float BeaconIntensifiedIntensity = 9000.0f;
+	float BeaconBaselineIntensity = 5000.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Target Zone")
+	float BeaconIntensifiedIntensity = 15000.0f;
 
 	// Raises BeaconLightComponent's intensity to BeaconIntensifiedIntensity. Called
 	// externally by UFirstStunBeaconComponent (issue #29) on the first successful
