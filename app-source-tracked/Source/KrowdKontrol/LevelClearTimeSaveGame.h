@@ -16,7 +16,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Clear Time")
 	TMap<FName, float> BestClearTimesByLevel;
 
-	// Crowd Mastery best (issue #174, PRD 06 REQ-2): the largest number of
+	// Crowd Mastery best (issue #174, docs/prd-run-lifecycle.md REQ-5): the largest number of
 	// simultaneously-Controlled AEnemyBase instances ever observed in a single level,
 	// keyed per level (FName) same as BestClearTimesByLevel above - persisted through
 	// the same save slot, not a separate save-game class.

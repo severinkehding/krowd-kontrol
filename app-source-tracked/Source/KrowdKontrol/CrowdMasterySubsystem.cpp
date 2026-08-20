@@ -6,6 +6,10 @@
 void UCrowdMasterySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	// Force ULevelLifecycleSubsystem to construct/Initialize() before we look it up
+	// below - FSubsystemCollectionBase does not otherwise guarantee sibling
+	// construction order between Initialize() calls.
+	Collection.InitializeDependency<ULevelLifecycleSubsystem>();
 	if (UWorld* World = GetWorld())
 	{
 		if (ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>())

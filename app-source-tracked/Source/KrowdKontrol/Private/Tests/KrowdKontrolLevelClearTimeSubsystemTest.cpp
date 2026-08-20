@@ -187,6 +187,15 @@ bool FKrowdKontrolLevelClearTimeSubsystemTest::RunTest(const FString& Parameters
 		SecondCrowdMasterySubsystem->GetBestCrowdMasteryCount(CrowdMasteryLevelID, SecondSessionBestCount));
 	TestEqual(TEXT("Persisted Crowd Mastery best should match what the first session saved"), SecondSessionBestCount, 8);
 
+	// Crowd Mastery writes share ULevelClearTimeSaveGame's save slot with clear-time
+	// records - re-read TestLevelID's clear-time best (set to 90.0f above) to confirm
+	// BestClearTimesByLevel wasn't clobbered by the BestCrowdMasteryByLevel writes above.
+	float ClearTimeAfterCrowdMasteryWrites = 0.0f;
+	TestTrue(TEXT("Clear-time best should survive unrelated Crowd Mastery writes to the same save object"),
+		Subsystem->GetBestClearTimeSeconds(TestLevelID, ClearTimeAfterCrowdMasteryWrites));
+	TestEqual(TEXT("Clear-time best should be unchanged by Crowd Mastery writes"),
+		ClearTimeAfterCrowdMasteryWrites, 90.0f);
+
 	// Clean up all real on-disk state this test created, so a repeat run starts from
 	// the same clean slate this run began with.
 	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);

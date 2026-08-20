@@ -1,4 +1,4 @@
-// Confirms UCrowdMasterySubsystem (issue #174, PRD 06 REQ-2, "Crowd Mastery") tracks a
+// Confirms UCrowdMasterySubsystem (issue #174, docs/prd-run-lifecycle.md REQ-5, "Crowd Mastery") tracks a
 // running max of simultaneously-Controlled AEnemyBase instances - sampled via
 // SampleControlledCount()/HandleAbilityCastApplied()/HandleEnemyControlledExpired(),
 // never decreasing once a peak is reached within a level - and resets that running max
@@ -146,6 +146,13 @@ bool FKrowdKontrolCrowdMasterySubsystemTest::RunTest(const FString& Parameters)
 		FirstEnemy->TickControlledDuration(1.5f); // FirstEnemy expires -> Alert
 		Subsystem->HandleEnemyControlledExpired();
 
+		// Only SecondEnemy is Controlled now (count = 1), strictly below the peak of 2
+		// reached above - would fail if SampleControlledCount() ever regressed from
+		// FMath::Max(...) to a plain assignment (the current count would overwrite the
+		// tracked peak here instead of leaving it at 2).
+		TestEqual(TEXT("Running max must not drop to the current (lower) count after a peak was reached"),
+			Subsystem->GetRunningMaxControlledCount(), 2);
+
 		AEnemyBaseTestActor* ThirdEnemy = World->SpawnActor<AEnemyBaseTestActor>();
 		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), ThirdEnemy))
 		{
@@ -199,11 +206,13 @@ bool FKrowdKontrolCrowdMasterySubsystemTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Running max should be 2 before a second OnLevelBegin"),
 			Subsystem->GetRunningMaxControlledCount(), 2);
 
-		// Simulate a second level-begin the way the sibling test's case (e) uses
-		// bHasFiredLevelBegin friend access to isolate a single behavior - here, via
-		// direct friend access to the real bound handler, proving the Initialize()-time
-		// AddDynamic binding fires it for real (this call IS that binding's handler).
-		Subsystem->HandleLevelBegin(FName(*World->GetMapName()));
+		// Fire OnLevelBegin for real a second time via Broadcast() (not
+		// OnWorldBeginPlay(), which is guarded by bHasFiredLevelBegin and won't re-fire
+		// on the same LifecycleSubsystem instance) - this actually exercises the
+		// Initialize()-time AddDynamic binding, proving
+		// UCrowdMasterySubsystem::HandleLevelBegin is really wired to
+		// ULevelLifecycleSubsystem::OnLevelBegin, not just callable standalone.
+		LifecycleSubsystem->OnLevelBegin.Broadcast(FName(*World->GetMapName()));
 
 		TestEqual(TEXT("Running max should reset to 0 after a fresh OnLevelBegin"),
 			Subsystem->GetRunningMaxControlledCount(), 0);

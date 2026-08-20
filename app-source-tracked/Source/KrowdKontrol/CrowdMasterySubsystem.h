@@ -7,7 +7,7 @@
 
 class AEnemyBase;
 
-// PRD 06 REQ-2, issue #174: keeps a running max of simultaneously-Controlled
+// docs/prd-run-lifecycle.md REQ-5, issue #174: keeps a running max of simultaneously-Controlled
 // AEnemyBase instances for the current level ("Crowd Mastery"). World-scoped (not a
 // UGameInstanceSubsystem like ULevelClearTimeSubsystem) because it needs to re-scan
 // this world's AEnemyBase population via TActorIterator, mirroring
@@ -21,10 +21,11 @@ class AEnemyBase;
 // drives ULevelLifecycleSubsystem::RefreshLevelClearState() directly rather than
 // through a real Tick() loop.
 //
-// Subscribes for real to ULevelLifecycleSubsystem::OnLevelBegin in Initialize() (both
-// are auto-instantiated per-world subsystems, so the sibling already exists in the
-// collection by then) to reset the running max - the one piece of real production
-// wiring this issue's AC requires. HandleAbilityCastApplied/
+// Subscribes for real to ULevelLifecycleSubsystem::OnLevelBegin in Initialize() (forces
+// the sibling to construct/Initialize() first via Collection.InitializeDependency(),
+// rather than assuming FSubsystemCollectionBase's registration order happens to work
+// out) to reset the running max - the one piece of real production wiring this issue's
+// AC requires. HandleAbilityCastApplied/
 // HandleEnemyControlledExpired are NOT bound to any real UAbilityCastComponent/
 // AEnemyBase instance by this issue - no registry of either exists yet (only one
 // UAbilityCastComponent ever exists, bound to the player pawn at construction time;
@@ -35,8 +36,6 @@ UCLASS()
 class KROWDKONTROL_API UCrowdMasterySubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()
-
-	friend class FKrowdKontrolCrowdMasterySubsystemTest;
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
