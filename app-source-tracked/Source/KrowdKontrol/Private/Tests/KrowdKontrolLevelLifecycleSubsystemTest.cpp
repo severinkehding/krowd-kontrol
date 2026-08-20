@@ -165,8 +165,15 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 			return false;
 		}
 
+		// FinalMapName set to this test world's own map, so OnRunComplete's suppression
+		// while a wave is pending isn't just implied by OnLevelClear's own gating (which
+		// (d) already proves above) - it's independently observed here too, per this
+		// class's early-return chain being the only thing standing between them.
+		Subsystem->FinalMapName = FName(*World->GetMapName());
+
 		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
 		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+		Subsystem->OnRunComplete.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleRunComplete);
 
 		Subsystem->OnWorldBeginPlay(*World);
 
@@ -204,11 +211,15 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 		Subsystem->RefreshLevelClearState();
 		TestEqual(TEXT("OnLevelClear must not fire while a spawner's IsWaveTimerActive() is true"),
 			Listener->LevelClearCallCount, 0);
+		TestEqual(TEXT("OnRunComplete must not fire while a spawner's IsWaveTimerActive() is true, even with FinalMapName matching"),
+			Listener->RunCompleteCallCount, 0);
 
 		Spawner->TriggerNextWave(); // spawns the wave's enemy immediately, clears the pending timer
 		Subsystem->RefreshLevelClearState();
 		TestEqual(TEXT("OnLevelClear must not fire while the newly wave-spawned enemy is not yet Banked"),
 			Listener->LevelClearCallCount, 0);
+		TestEqual(TEXT("OnRunComplete must not fire while the newly wave-spawned enemy is not yet Banked"),
+			Listener->RunCompleteCallCount, 0);
 
 		if (!TestEqual(TEXT("The wave should have spawned exactly one enemy"),
 			Spawner->GetSpawnedActors().Num(), 1))
@@ -228,6 +239,139 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 		Subsystem->RefreshLevelClearState();
 		TestEqual(TEXT("OnLevelClear should fire once every spawned enemy (including the wave-spawned one) is Banked and no spawner has a pending wave"),
 			Listener->LevelClearCallCount, 1);
+		TestEqual(TEXT("OnRunComplete should fire once OnLevelClear fires and FinalMapName matches, even though a wave was pending earlier in this same case"),
+			Listener->RunCompleteCallCount, 1);
+	}
+
+	// --- (f): OnRunComplete fires exactly once when OnLevelClear fires for a world
+	// whose map name matches the configured FinalMapName (issue #176, PRD REQ-7).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		Subsystem->FinalMapName = FName(*World->GetMapName());
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+		Subsystem->OnRunComplete.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleRunComplete);
+
+		Subsystem->OnWorldBeginPlay(*World);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
+		Enemy->TransitionToBanked();                      // -> Banked
+
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("OnLevelClear should still fire once the map matches FinalMapName"),
+			Listener->LevelClearCallCount, 1);
+		TestEqual(TEXT("OnRunComplete should fire exactly once when the cleared map matches FinalMapName"),
+			Listener->RunCompleteCallCount, 1);
+
+		// OnRunComplete's doc comment promises "immediately after OnLevelClear" - assert
+		// the actual call order, not just that both counts landed on 1, so a future
+		// refactor that reorders/splits the two Broadcast() calls fails this test.
+		const TArray<FString> ExpectedOrder = { TEXT("LevelClear"), TEXT("RunComplete") };
+		TestEqual(TEXT("OnRunComplete must fire immediately after OnLevelClear, not before or interleaved"),
+			Listener->CallOrder, ExpectedOrder);
+
+		// A second RefreshLevelClearState() call must not re-fire OnRunComplete, mirroring
+		// OnLevelClear's own re-entrancy guarantee it rides on.
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("A second RefreshLevelClearState() call must not re-fire OnRunComplete"),
+			Listener->RunCompleteCallCount, 1);
+	}
+
+	// --- (g): OnRunComplete must NOT fire on level-clear for a non-final map (issue
+	// #176 acceptance criteria's second required case).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		Subsystem->FinalMapName = FName(TEXT("SomeOtherMap_NotThisTestWorld"));
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+		Subsystem->OnRunComplete.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleRunComplete);
+
+		Subsystem->OnWorldBeginPlay(*World);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
+		Enemy->TransitionToBanked();                      // -> Banked
+
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("OnLevelClear should still fire for a non-final map"),
+			Listener->LevelClearCallCount, 1);
+		TestEqual(TEXT("OnRunComplete must not fire on level-clear for a non-final map"),
+			Listener->RunCompleteCallCount, 0);
+	}
+
+	// --- (h): default FinalMapName (NAME_None) must never fire OnRunComplete, even
+	// though it trivially can't equal any real map's FName either - this locks in the
+	// "unconfigured means off" default explicitly rather than leaving it implicit.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		TestEqual(TEXT("FinalMapName should default to NAME_None"), Subsystem->FinalMapName, FName(NAME_None));
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnRunComplete.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleRunComplete);
+
+		Subsystem->OnWorldBeginPlay(*World);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
+		Enemy->TransitionToBanked();                      // -> Banked
+
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("OnRunComplete must not fire with the default (NAME_None) FinalMapName"),
+			Listener->RunCompleteCallCount, 0);
 	}
 
 	return true;
