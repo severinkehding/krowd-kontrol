@@ -49,6 +49,11 @@ public:
 	UFUNCTION()
 	void HandlePunishmentTriggered();
 
+	// Test-support accessor, same rationale as WaveSpawnerComponent::IsWaveTimerActive():
+	// this harness never drives a real BeginPlay lifecycle, so the Automation test calls
+	// EndPlay() directly to verify its timer cleanup and needs a way to observe the result.
+	bool IsSpeedReductionTimerActive() const;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 

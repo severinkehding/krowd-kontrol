@@ -22,11 +22,11 @@ source, per D-009, at `app-source-tracked/<same path under app/Source/>`.
 
 | File (under `app-source-tracked/Source/KrowdKontrol/`) | Action | What it contains |
 |------|--------|-------------------|
-| `SpeedReductionPunishmentComponent.h` | CREATE | `USpeedReductionPunishmentComponent : public UActorComponent` — `SpeedMultiplierWhileActive`/`SpeedReductionDurationSeconds` tunables, `MovementComponent` runtime-wiring pointer, `HandlePunishmentTriggered()` UFUNCTION, private `RestoreOriginalSpeed`/`FTimerHandle`/`OriginalMaxSpeed`, test friend-grant |
-| `SpeedReductionPunishmentComponent.cpp` | CREATE | Constructor (tick disabled), `HandlePunishmentTriggered` (IsTimerActive-guarded capture+reduce, unconditional SetTimer refresh), `RestoreOriginalSpeed`, `EndPlay` (clear timer) |
+| `SpeedReductionPunishmentComponent.h` | CREATE | `USpeedReductionPunishmentComponent : public UActorComponent` — `SpeedMultiplierWhileActive`/`SpeedReductionDurationSeconds` tunables, `MovementComponent` runtime-wiring pointer, `HandlePunishmentTriggered()` UFUNCTION, public `IsSpeedReductionTimerActive()` test-support accessor (mirrors `WaveSpawnerComponent::IsWaveTimerActive()`), private `RestoreOriginalSpeed`/`FTimerHandle`/`OriginalMaxSpeed`, test friend-grant |
+| `SpeedReductionPunishmentComponent.cpp` | CREATE | Constructor (tick disabled), `HandlePunishmentTriggered` (IsTimerActive-guarded capture+reduce, unconditional SetTimer refresh, `UE_LOG` warning if `MovementComponent` is unwired), `RestoreOriginalSpeed` (`UE_LOG` warning on the same unwired case), `EndPlay` (clear timer), `IsSpeedReductionTimerActive` |
 | `FlatCamera3DPrototypePawn.h` / `.cpp` | UPDATE | Forward-declares/constructs `SpeedReductionPunishmentComponent`, wires it to this pawn's own `MovementComponent`, binds it to `PunishmentManagerComponent->OnPunishmentTriggered` via `AddDynamic` |
 | `Paper2DPrototypePawn.h` / `.cpp` | UPDATE | Same wiring as above, for the second prototype pawn |
-| `Private/Tests/KrowdKontrolSpeedReductionPunishmentComponentTest.cpp` | CREATE | `KrowdKontrol.Unit.SpeedReductionPunishmentComponent` — activation applies factor, re-trigger while active doesn't compound, expiry restores original `MaxSpeed`, sanity that `OriginalMaxSpeed` wasn't re-captured from an already-reduced value |
+| `Private/Tests/KrowdKontrolSpeedReductionPunishmentComponentTest.cpp` | CREATE | `KrowdKontrol.Unit.SpeedReductionPunishmentComponent` — activation applies factor, re-trigger while active doesn't compound, expiry restores original `MaxSpeed`, sanity that `OriginalMaxSpeed` wasn't re-captured from an already-reduced value, (d) `EndPlay()` clears a pending restore timer (`DispatchBeginPlay()` + `IsSpeedReductionTimerActive()`, mirroring `WaveSpawnerComponent`'s case (7) and its documented `check(bHasBegunPlay)` trap), (e) an unwired `MovementComponent` no-ops rather than crashes |
 | `Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | UPDATE | Extends the existing pawn-spawn smoke test with a pawn-level wiring assertion: this pawn's own real `ApplyContactDamage` call reduces this same pawn's own `MovementComponent->MaxSpeed` |
 | `Private/Tests/KrowdKontrolPaper2DPipelineSmokeTest.cpp` | UPDATE | Same, second pawn |
 
@@ -45,20 +45,45 @@ source, per D-009, at `app-source-tracked/<same path under app/Source/>`.
       `IsTimerActive` guard; covered by `KrowdKontrol.Unit.SpeedReductionPunishmentComponent`
       case (c).
 - [x] **Automation tests cover (a) factor applies on activation, (b) speed restores on
-      expiry, (c) re-triggering while active does not stack/compound.** All three in
-      `KrowdKontrolSpeedReductionPunishmentComponentTest.cpp`.
+      expiry, (c) re-triggering while active does not stack/compound, (d) `EndPlay()`
+      clears a pending restore timer, (e) an unwired `MovementComponent` no-ops.** All
+      five in `KrowdKontrolSpeedReductionPunishmentComponentTest.cpp`.
 - [x] **Level 1-3 validation passes.** `harness/ci.py` full mode: `UNIT_PASSED tests=70`,
       `UE_BUILD_OK`, `UE_AUTOMATION_RESULT passed=1 total=1`, `GATE_OK`.
 - [x] **Code mirrors existing patterns** — `AbilityCastVFXComponent`'s
       `FTimerHandle`/`SetTimer`/`ClearTimer`/`EndPlay` idiom, `WaveSpawnerComponent`'s
-      `IsTimerActive` guard idiom, `PunishmentManagerComponent`'s sibling-wiring idiom.
-- [x] **No regressions in the existing automation suite.** Two transient, unrelated
-      failures observed during validation (`KrowdKontrol.Unit.EnemyBase`,
-      `KrowdKontrol.Unit.LevelLifecycleSubsystem`) — both cleared on immediate rerun with
-      no code changes, confirming pre-existing test-suite flakiness unconnected to this
-      change (neither test file, nor anything they exercise, was touched here).
+      `IsTimerActive` guard idiom and `IsWaveTimerActive()`-accessor test-support idiom,
+      `PunishmentManagerComponent`'s sibling-wiring idiom, and both sibling components'
+      `UE_LOG(LogTemp, Warning, ...)`-on-unexpected-null-wiring idiom.
+- [x] **No regressions in the existing automation suite.** Post-review-fix validation hit
+      one transient, unrelated failure (`KrowdKontrol.Unit.OvercrowdDetectionComponent`,
+      untouched by this PR) that cleared on immediate rerun with no code changes —
+      consistent with the pre-existing suite flakiness already noted below from the
+      original pass (`KrowdKontrol.Unit.EnemyBase`, `KrowdKontrol.Unit.LevelLifecycleSubsystem`).
 - [x] **`app/` and `app-source-tracked/` copies of every changed/new file are identical**
       — confirmed via `diff` (no output) for all 9 touched files.
+
+## Review follow-up
+
+Self-fix pass addressing `consolidated-review.md` (PR #196 review artifacts):
+
+- **HIGH** — `EndPlay()`'s timer-clear had no regression test. Added a public
+  `IsSpeedReductionTimerActive()` accessor (mirrors `WaveSpawnerComponent::IsWaveTimerActive()`)
+  and test case (d), using `DispatchBeginPlay()` per the documented `check(bHasBegunPlay)`
+  trap this codebase already hit once with `WaveSpawnerComponent`'s own case (7).
+- **MEDIUM** — Both `MovementComponent`-null guards (`HandlePunishmentTriggered`,
+  `RestoreOriginalSpeed`) were silent no-ops with no logging, unlike the sibling
+  components this PR mirrors. Added `UE_LOG(LogTemp, Warning, ...)` to both, matching
+  `WaveSpawnerComponent`'s unset-`EnemyClass` precedent.
+- **LOW** — `HandlePunishmentTriggered()`'s null-`MovementComponent` early return was
+  untested. Added test case (e): an unwired component's trigger call completes without
+  crashing.
+- Fixing case (e) surfaced a real test-authoring bug caught during validation, not part
+  of the original review findings: it reused the test's original `World` pointer, but
+  case (d) had already called `FAutomationEditorCommonUtils::CreateNewMap()` again,
+  replacing the editor's current map and invalidating that pointer — reusing it hit an
+  engine-side `Assertion failed: CurrentLevel` (`LevelActor.cpp`) in `SpawnActor`. Fixed
+  by giving case (e) its own fresh `CreateNewMap()`, same as case (d).
 
 ## Validation evidence
 

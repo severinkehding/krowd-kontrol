@@ -67,6 +67,52 @@ bool FKrowdKontrolSpeedReductionPunishmentComponentTest::RunTest(const FString& 
 	TestEqual(TEXT("OriginalMaxSpeed should have captured the real pre-punishment value, not a reduced one"),
 		SpeedReduction->OriginalMaxSpeed, 1200.0f);
 
+	// (d) EndPlay() must clear a pending restore timer, mirroring
+	// WaveSpawnerComponent's case (7). This harness never drives the World through
+	// World->BeginPlay(), so DestroyComponent() alone never reaches EndPlay()
+	// (UActorComponent only calls it when bHasBegunPlay is true), and calling
+	// EndPlay() directly on a component that never began play hits UE 5.8's
+	// check(bHasBegunPlay) engine assert (ActorComponent.cpp) - see
+	// KrowdKontrolWaveSpawnerComponentTest.cpp's case (7) comment for the incident
+	// this caused previously. AActor::DispatchBeginPlay() is the legal route.
+	{
+		UWorld* EndPlayWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		AActor* EndPlayOwner = EndPlayWorld->SpawnActor<AActor>();
+
+		UFloatingPawnMovement* EndPlayMovement = NewObject<UFloatingPawnMovement>(EndPlayOwner);
+		EndPlayMovement->RegisterComponent();
+		EndPlayMovement->MaxSpeed = 1200.0f;
+
+		USpeedReductionPunishmentComponent* EndPlaySpeedReduction = NewObject<USpeedReductionPunishmentComponent>(EndPlayOwner);
+		EndPlaySpeedReduction->RegisterComponent();
+		EndPlaySpeedReduction->MovementComponent = EndPlayMovement;
+		EndPlayOwner->DispatchBeginPlay();
+
+		EndPlaySpeedReduction->HandlePunishmentTriggered();
+		TestTrue(TEXT("Restore timer should be pending right after activation"),
+			EndPlaySpeedReduction->IsSpeedReductionTimerActive());
+
+		EndPlaySpeedReduction->EndPlay(EEndPlayReason::Destroyed);
+
+		TestFalse(TEXT("EndPlay() should clear the pending restore timer"),
+			EndPlaySpeedReduction->IsSpeedReductionTimerActive());
+	}
+
+	// (e) MovementComponent left unwired must no-op, not crash - the pre-wiring
+	// guard both prototype pawns' constructors make unreachable in production but
+	// that any future adopter of this component depends on. Uses its own fresh
+	// CreateNewMap() rather than reusing the original World above - (d) already
+	// replaced the editor's current map with its own, and reusing a World from
+	// before the most recent CreateNewMap() call hits an engine-side
+	// "Assertion failed: CurrentLevel" (LevelActor.cpp) in SpawnActor.
+	{
+		UWorld* UnwiredWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		AActor* UnwiredOwner = UnwiredWorld->SpawnActor<AActor>();
+		USpeedReductionPunishmentComponent* Unwired = NewObject<USpeedReductionPunishmentComponent>(UnwiredOwner);
+		Unwired->RegisterComponent();
+		Unwired->HandlePunishmentTriggered(); // should no-op, not crash
+	}
+
 	return true;
 }
 

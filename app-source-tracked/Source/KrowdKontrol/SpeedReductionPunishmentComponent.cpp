@@ -12,6 +12,9 @@ void USpeedReductionPunishmentComponent::HandlePunishmentTriggered()
 {
 	if (!MovementComponent)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("USpeedReductionPunishmentComponent: MovementComponent is unset on '%s' - punishment trigger ignored."),
+			*GetNameSafe(GetOwner()));
 		return;
 	}
 
@@ -46,6 +49,12 @@ void USpeedReductionPunishmentComponent::RestoreOriginalSpeed()
 	{
 		MovementComponent->MaxSpeed = OriginalMaxSpeed;
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("USpeedReductionPunishmentComponent: MovementComponent is unset on '%s' - speed restore skipped."),
+			*GetNameSafe(GetOwner()));
+	}
 }
 
 void USpeedReductionPunishmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -55,4 +64,13 @@ void USpeedReductionPunishmentComponent::EndPlay(const EEndPlayReason::Type EndP
 		World->GetTimerManager().ClearTimer(SpeedReductionTimerHandle);
 	}
 	Super::EndPlay(EndPlayReason);
+}
+
+bool USpeedReductionPunishmentComponent::IsSpeedReductionTimerActive() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		return World->GetTimerManager().IsTimerActive(SpeedReductionTimerHandle);
+	}
+	return false;
 }
