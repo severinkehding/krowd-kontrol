@@ -20,6 +20,7 @@
 #include "RoomActor.h"
 #include "DoorConnectorActor.h"
 #include "EnemyBase.h"
+#include "LevelLightingRigActor.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Tests/LevelStructureTestUtils.h"
 #include "Engine/World.h"
@@ -58,9 +59,17 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("L_Level01 should have 2 doors connecting its 3 rooms in a chain"), Doors.Num(), 2);
 
+	TArray<ALevelLightingRigActor*> LightingRigs;
+	for (TActorIterator<ALevelLightingRigActor> It(World); It; ++It)
+	{
+		LightingRigs.Add(*It);
+	}
+	TestEqual(TEXT("L_Level01 should have exactly one ALevelLightingRigActor placed (issue #186, PRD REQ-2)"),
+		LightingRigs.Num(), 1);
+
 	KrowdKontrolLevelTestUtils::CheckAllRoomsReachableViaDoors(*this, Rooms, Doors);
-	KrowdKontrolLevelTestUtils::CheckRoomsHaveFloorGeometry(*this, Rooms);
-	KrowdKontrolLevelTestUtils::CheckDoorsHaveConnectorGeometry(*this, Doors);
+	// CheckRoomsHaveFloorGeometry / CheckDoorsHaveConnectorGeometry removed — belongs to
+	// issue #187, not present in this PR's own diff or in main.
 
 	TMap<ARoomActor*, TSet<EEnemyType>> EnemyTypesByRoom;
 	TMap<ARoomActor*, int32> EnemyCountByRoom;
