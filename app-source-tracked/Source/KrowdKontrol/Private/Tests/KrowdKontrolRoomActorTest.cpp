@@ -17,6 +17,8 @@
 #include "PlaceholderCubeActor.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -38,6 +40,22 @@ bool FKrowdKontrolRoomActorTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+
+	TestNotNull(TEXT("Room should have a floor mesh component"), Room->FloorMeshComponent.Get());
+	UStaticMesh* FloorStaticMesh = Room->FloorMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("Floor mesh component should have a static mesh set"), FloorStaticMesh);
+	TestNotNull(TEXT("Room should have a north wall mesh component"), Room->WallNorthMeshComponent.Get());
+	UStaticMesh* WallNorthStaticMesh = Room->WallNorthMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("North wall mesh component should have a static mesh set"), WallNorthStaticMesh);
+	TestNotNull(TEXT("Room should have a south wall mesh component"), Room->WallSouthMeshComponent.Get());
+	UStaticMesh* WallSouthStaticMesh = Room->WallSouthMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("South wall mesh component should have a static mesh set"), WallSouthStaticMesh);
+	TestNotNull(TEXT("Room should have an east wall mesh component"), Room->WallEastMeshComponent.Get());
+	UStaticMesh* WallEastStaticMesh = Room->WallEastMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("East wall mesh component should have a static mesh set"), WallEastStaticMesh);
+	TestNotNull(TEXT("Room should have a west wall mesh component"), Room->WallWestMeshComponent.Get());
+	UStaticMesh* WallWestStaticMesh = Room->WallWestMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("West wall mesh component should have a static mesh set"), WallWestStaticMesh);
 
 	AActor* MarkerActor = Room->AddTargetZone(EEnemyType::RU_NNR);
 	if (!TestNotNull(TEXT("AddTargetZone should spawn and return a marker actor"), MarkerActor))

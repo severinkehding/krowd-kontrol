@@ -9,6 +9,8 @@
 #include "TrooperEnemy.h"
 #include "BomberEnemy.h"
 #include "SniperEnemy.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 
 // Shared helpers for the KrowdKontrolLevel0*Test.cpp structural regression tests
 // (KrowdKontrolLevel01Test.cpp, KrowdKontrolLevel02Test.cpp, and future Level03-05
@@ -135,6 +137,43 @@ namespace KrowdKontrolLevelTestUtils
 						*UEnum::GetDisplayValueAsText(PlacedType).ToString()),
 					bHasMatchingTargetZone);
 			}
+		}
+	}
+
+	// Asserts every room has a floor mesh with a valid UStaticMesh set (REQ-3 - no
+	// void anywhere along the playable path). Wall components aren't checked here
+	// since they're guaranteed present unconditionally by ARoomActor's constructor,
+	// same as the floor - the floor check alone is sufficient signal that the
+	// constructor ran and produced real geometry on the actual placed room instance.
+	inline void CheckRoomsHaveFloorGeometry(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
+	{
+		for (ARoomActor* Room : Rooms)
+		{
+			Test.TestNotNull(TEXT("Room should have a floor mesh component (REQ-3)"), Room->FloorMeshComponent.Get());
+			if (Room->FloorMeshComponent)
+			{
+				UStaticMesh* FloorStaticMesh = Room->FloorMeshComponent->GetStaticMesh();
+				Test.TestNotNull(TEXT("Room's floor mesh component should have a static mesh set (REQ-3)"), FloorStaticMesh);
+			}
+		}
+	}
+
+	// Asserts every door that connects two valid, distinct rooms has a visible
+	// connector floor after RecomputeConnectorGeometry() is (re)called - safe/
+	// idempotent to call from a test, and necessary here because
+	// FAutomationEditorCommonUtils::LoadMap does not start play, so BeginPlay (and
+	// its call to RecomputeConnectorGeometry()) never fires under this test path.
+	inline void CheckDoorsHaveConnectorGeometry(FAutomationTestBase& Test, const TArray<ADoorConnectorActor*>& Doors)
+	{
+		for (ADoorConnectorActor* Door : Doors)
+		{
+			if (!Door->ConnectsValidRooms())
+			{
+				continue;
+			}
+			Door->RecomputeConnectorGeometry();
+			Test.TestTrue(TEXT("Door's connector floor mesh should be visible once it connects two valid rooms (REQ-3)"),
+				Door->ConnectorFloorMeshComponent->IsVisible());
 		}
 	}
 }
