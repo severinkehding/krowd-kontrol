@@ -16,6 +16,7 @@
 #include "EnemyType.h"
 #include "PlaceholderCubeActor.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "Tests/LevelStructureTestUtils.h"
 #include "Engine/World.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -41,9 +42,8 @@ bool FKrowdKontrolRoomActorTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	TestNotNull(TEXT("Room should have a floor mesh component"), Room->FloorMeshComponent.Get());
-	UStaticMesh* FloorStaticMesh = Room->FloorMeshComponent->GetStaticMesh();
-	TestNotNull(TEXT("Floor mesh component should have a static mesh set"), FloorStaticMesh);
+	KrowdKontrolLevelTestUtils::CheckRoomsHaveFloorGeometry(*this, { Room });
+
 	TestNotNull(TEXT("Room should have a north wall mesh component"), Room->WallNorthMeshComponent.Get());
 	UStaticMesh* WallNorthStaticMesh = Room->WallNorthMeshComponent->GetStaticMesh();
 	TestNotNull(TEXT("North wall mesh component should have a static mesh set"), WallNorthStaticMesh);
@@ -56,17 +56,6 @@ bool FKrowdKontrolRoomActorTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Room should have a west wall mesh component"), Room->WallWestMeshComponent.Get());
 	UStaticMesh* WallWestStaticMesh = Room->WallWestMeshComponent->GetStaticMesh();
 	TestNotNull(TEXT("West wall mesh component should have a static mesh set"), WallWestStaticMesh);
-
-	TestEqual(TEXT("North wall should have collision disabled"),
-		Room->WallNorthMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
-	TestEqual(TEXT("South wall should have collision disabled"),
-		Room->WallSouthMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
-	TestEqual(TEXT("East wall should have collision disabled"),
-		Room->WallEastMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
-	TestEqual(TEXT("West wall should have collision disabled"),
-		Room->WallWestMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
-	TestNotEqual(TEXT("Floor should keep default (blocking) collision, unlike the walls"),
-		Room->FloorMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	const FVector ExpectedFloorScale(
 		Room->RoomFloorExtent.X * 2.f / 100.f, Room->RoomFloorExtent.Y * 2.f / 100.f, Room->RoomFloorThickness / 100.f);

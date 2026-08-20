@@ -19,6 +19,7 @@
 #include "Misc/AutomationTest.h"
 #include "RoomActor.h"
 #include "DoorConnectorActor.h"
+#include "EnemyBase.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Tests/LevelStructureTestUtils.h"
 #include "Engine/World.h"
@@ -63,7 +64,20 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 
 	TMap<ARoomActor*, TSet<EEnemyType>> EnemyTypesByRoom;
 	TMap<ARoomActor*, int32> EnemyCountByRoom;
-	KrowdKontrolLevelTestUtils::CollectEnemyRoomAssignments(World, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
+	for (TActorIterator<AEnemyBase> It(World); It; ++It)
+	{
+		AEnemyBase* Enemy = *It;
+		ARoomActor* NearestRoom = KrowdKontrolLevelTestUtils::FindNearestRoom(Enemy, Rooms);
+		if (!NearestRoom)
+		{
+			continue;
+		}
+		EnemyCountByRoom.FindOrAdd(NearestRoom, 0)++;
+		if (TOptional<EEnemyType> EnemyType = KrowdKontrolLevelTestUtils::GetPlacedEnemyType(Enemy))
+		{
+			EnemyTypesByRoom.FindOrAdd(NearestRoom).Add(EnemyType.GetValue());
+		}
+	}
 
 	// Lightweight per-room density check (PRD 05's "static placeholder-density
 	// enemies") - only asserts every room has *some* enemy presence, not a specific
