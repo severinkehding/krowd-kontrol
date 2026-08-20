@@ -6,6 +6,7 @@
 #include "RoomActor.generated.h"
 
 class APlaceholderTargetZoneActor;
+class UStaticMeshComponent;
 
 // One tagged target-zone marker child of an ARoomActor: which EEnemyType it serves,
 // and the spawned marker actor itself (see APlaceholderTargetZoneActor - no real
@@ -43,6 +44,37 @@ public:
 	AActor* AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> MarkerClass = nullptr);
 
 	const TArray<FRoomTargetZone>& GetTargetZones() const { return TargetZones; }
+
+	// Half-extents (cm) of the room's greybox floor slab - full floor is 2x this.
+	// Rooms in both hand-authored levels are spaced 3000cm apart along the chain axis
+	// (docs/prd-level-playability-presentation.md:31-33), so the 1000cm default leaves
+	// room for a connector strip without overlapping the next room's floor.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room")
+	FVector2D RoomFloorExtent = FVector2D(1000.f, 1000.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room")
+	float RoomFloorThickness = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room")
+	float RoomWallHeight = 300.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room")
+	float RoomWallThickness = 20.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room")
+	TObjectPtr<UStaticMeshComponent> FloorMeshComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room")
+	TObjectPtr<UStaticMeshComponent> WallNorthMeshComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room")
+	TObjectPtr<UStaticMeshComponent> WallSouthMeshComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room")
+	TObjectPtr<UStaticMeshComponent> WallEastMeshComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room")
+	TObjectPtr<UStaticMeshComponent> WallWestMeshComponent;
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room", meta = (AllowPrivateAccess = "true"))

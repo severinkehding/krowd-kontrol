@@ -16,7 +16,10 @@
 #include "EnemyType.h"
 #include "PlaceholderCubeActor.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "Tests/LevelStructureTestUtils.h"
 #include "Engine/World.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -38,6 +41,34 @@ bool FKrowdKontrolRoomActorTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+
+	KrowdKontrolLevelTestUtils::CheckRoomsHaveFloorGeometry(*this, { Room });
+
+	TestNotNull(TEXT("Room should have a north wall mesh component"), Room->WallNorthMeshComponent.Get());
+	UStaticMesh* WallNorthStaticMesh = Room->WallNorthMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("North wall mesh component should have a static mesh set"), WallNorthStaticMesh);
+	TestNotNull(TEXT("Room should have a south wall mesh component"), Room->WallSouthMeshComponent.Get());
+	UStaticMesh* WallSouthStaticMesh = Room->WallSouthMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("South wall mesh component should have a static mesh set"), WallSouthStaticMesh);
+	TestNotNull(TEXT("Room should have an east wall mesh component"), Room->WallEastMeshComponent.Get());
+	UStaticMesh* WallEastStaticMesh = Room->WallEastMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("East wall mesh component should have a static mesh set"), WallEastStaticMesh);
+	TestNotNull(TEXT("Room should have a west wall mesh component"), Room->WallWestMeshComponent.Get());
+	UStaticMesh* WallWestStaticMesh = Room->WallWestMeshComponent->GetStaticMesh();
+	TestNotNull(TEXT("West wall mesh component should have a static mesh set"), WallWestStaticMesh);
+
+	const FVector ExpectedFloorScale(
+		Room->RoomFloorExtent.X * 2.f / 100.f, Room->RoomFloorExtent.Y * 2.f / 100.f, Room->RoomFloorThickness / 100.f);
+	TestTrue(TEXT("Floor mesh's relative scale should be driven by RoomFloorExtent/RoomFloorThickness"),
+		Room->FloorMeshComponent->GetRelativeScale3D().Equals(ExpectedFloorScale, 0.01f));
+
+	const FVector ExpectedNorthWallScale(
+		Room->RoomFloorExtent.X * 2.f / 100.f, Room->RoomWallThickness / 100.f, Room->RoomWallHeight / 100.f);
+	TestTrue(TEXT("North wall's relative scale should be driven by RoomFloorExtent/RoomWallThickness/RoomWallHeight"),
+		Room->WallNorthMeshComponent->GetRelativeScale3D().Equals(ExpectedNorthWallScale, 0.01f));
+	const FVector ExpectedNorthWallLocation(0.f, Room->RoomFloorExtent.Y, Room->RoomWallHeight * 0.5f);
+	TestTrue(TEXT("North wall's relative location should sit at +Y room extent, half wall height up"),
+		Room->WallNorthMeshComponent->GetRelativeLocation().Equals(ExpectedNorthWallLocation, 0.01f));
 
 	AActor* MarkerActor = Room->AddTargetZone(EEnemyType::RU_NNR);
 	if (!TestNotNull(TEXT("AddTargetZone should spawn and return a marker actor"), MarkerActor))
