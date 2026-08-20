@@ -18,7 +18,7 @@ APlaceholderTargetZoneActor::APlaceholderTargetZoneActor()
 	// parented directly to the disc would render squashed to ~5% of its intended
 	// height instead of poking above a room's walls. Keeping BeaconMeshComponent and
 	// BeaconColumnMeshComponent as siblings under a neutral root avoids that entirely.
-	USceneComponent* TargetZoneRootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("TargetZoneRootComponent"));
+	TargetZoneRootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("TargetZoneRootComponent"));
 	RootComponent = TargetZoneRootComponent;
 
 	BeaconMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BeaconMeshComponent"));
@@ -83,4 +83,50 @@ APlaceholderTargetZoneActor::APlaceholderTargetZoneActor()
 void APlaceholderTargetZoneActor::IntensifyBeacon()
 {
 	BeaconLightComponent->SetIntensity(BeaconIntensifiedIntensity);
+}
+
+void APlaceholderTargetZoneActor::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// PR #199 fix-pass 1 review: actors of this class already placed in L_Level01 before
+	// this PR (issue #190) keep the pre-existing serialized RootComponent/AttachParent
+	// from the *old* hierarchy (root = BeaconMeshComponent, the flattened disc; light
+	// parented directly to it) even after the constructor above starts building the new
+	// one - those are per-instance overrides baked into the saved map, and the
+	// constructor's CreateDefaultSubobject/SetupAttachment calls only establish this
+	// class's new defaults, they don't retroactively repoint an already-placed
+	// instance's explicitly-serialized pointers. Force the correct hierarchy here,
+	// unconditionally, so every instance - old or new - actually ends up with the light
+	// on top of the column instead of silently keeping the old, wall-occludable,
+	// disc-mounted position.
+	if (!TargetZoneRootComponent)
+	{
+		return;
+	}
+
+	if (RootComponent != TargetZoneRootComponent)
+	{
+		SetRootComponent(TargetZoneRootComponent);
+	}
+
+	if (BeaconMeshComponent && BeaconMeshComponent->GetAttachParent() != TargetZoneRootComponent)
+	{
+		BeaconMeshComponent->AttachToComponent(TargetZoneRootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+	}
+
+	if (BeaconColumnMeshComponent && BeaconColumnMeshComponent->GetAttachParent() != TargetZoneRootComponent)
+	{
+		BeaconColumnMeshComponent->AttachToComponent(TargetZoneRootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+	}
+
+	if (BeaconLightComponent && BeaconLightComponent->GetAttachParent() != BeaconColumnMeshComponent)
+	{
+		BeaconLightComponent->AttachToComponent(BeaconColumnMeshComponent, FAttachmentTransformRules::KeepRelativeTransform);
+		// Re-apply the constructor's canonical offset (column-top, in the mesh-local
+		// half-height convention explained above) rather than trusting whatever relative
+		// location survived from the stale attachment - it was relative to a different
+		// parent and has no reason to still be correct after re-parenting.
+		BeaconLightComponent->SetRelativeLocation(FVector(0.f, 0.f, 50.f));
+	}
 }
