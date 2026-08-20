@@ -61,6 +61,9 @@ it's raw input for it.
   rotation) a reasonable proxy for "camera feel" comparison against Paper2D's typically
   orthographic camera setup, or does the perspective-vs-orthographic difference make
   camera-feel comparison between the two prototypes not apples-to-apples?
+  *(Note, issue #188: pitch/arm-length are no longer hardcoded — see
+  `AFlatCamera3DPrototypePawn::CameraBoomPitch`/`CameraArmLength`, tunable defaults
+  `-60°`/450cm.)*
 - Once both prototypes exist side by side, what does "friction" mean quantitatively —
   build/iteration time, lines of pawn code, or something else? This doc's own
   iteration-speed section above didn't have a baseline to compare against; the Paper2D
