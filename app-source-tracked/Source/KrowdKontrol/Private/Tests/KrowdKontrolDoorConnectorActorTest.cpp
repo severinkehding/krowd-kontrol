@@ -80,6 +80,8 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		FMath::IsNaN(DegenerateScale.X) || FMath::IsNaN(DegenerateScale.Y) || FMath::IsNaN(DegenerateScale.Z));
 	TestFalse(TEXT("Door marker mesh should stay hidden when both rooms share a location"),
 		Door->DoorMarkerMeshComponent->IsVisible());
+	TestFalse(TEXT("Door marker light should stay hidden when both rooms share a location"),
+		Door->DoorMarkerLightComponent->IsVisible());
 
 	// Now give RoomTwo a distinct location so RecomputeConnectorGeometry() below has a
 	// genuine, non-degenerate span to compute.
@@ -98,6 +100,8 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("Door marker mesh should be visible once the door connects two valid rooms"),
 		Door->DoorMarkerMeshComponent->IsVisible());
+	TestEqual(TEXT("Door marker mesh should have no collision so it never blocks the connector path"),
+		Door->DoorMarkerMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 	const FVector ExpectedMarkerLocation =
 		(RoomOne->GetActorLocation() + RoomTwo->GetActorLocation()) * 0.5f + FVector(0.f, 0.f, Door->DoorMarkerHeight);
 	TestTrue(TEXT("Door marker mesh should sit above the connector midpoint by DoorMarkerHeight"),

@@ -35,7 +35,7 @@ ADoorConnectorActor::ADoorConnectorActor()
 	{
 		DoorMarkerMeshComponent->SetStaticMesh(MarkerMeshFinder.Object);
 	}
-	// Small placeholder "lantern" - engine sphere at 1/4 the room-cube's 100uu unit
+	// Small placeholder "lantern" - engine sphere at half the room-cube's 100uu unit
 	// size, deliberately not scaled to any real art proportions yet.
 	DoorMarkerMeshComponent->SetRelativeScale3D(FVector(0.5f, 0.5f, 0.5f));
 	// No collision - a visual-only wayfinding marker must never block the connector
@@ -61,6 +61,7 @@ ADoorConnectorActor::ADoorConnectorActor()
 	// 5 reserved colours (Purple/Teal/Orange/Blue/White) - see
 	// ReservedGameplayColours.h.
 	DoorMarkerLightComponent->SetLightColor(FLinearColor(0.75f, 0.65f, 0.5f));
+	// Placeholder tuning, not calibrated against any real level's ambient lighting yet.
 	DoorMarkerLightComponent->SetIntensity(2500.0f);
 	DoorMarkerLightComponent->SetAttenuationRadius(250.0f);
 }

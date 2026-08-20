@@ -10,6 +10,7 @@
 #include "BomberEnemy.h"
 #include "SniperEnemy.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
 
 // Shared helpers for the KrowdKontrolLevel0*Test.cpp structural regression tests
@@ -204,6 +205,10 @@ namespace KrowdKontrolLevelTestUtils
 			Door->RecomputeConnectorGeometry();
 			Test.TestTrue(TEXT("Door's marker mesh should be visible once it connects two valid rooms (issue #191)"),
 				Door->DoorMarkerMeshComponent->IsVisible());
+			Test.TestTrue(TEXT("Door's marker light should be visible once it connects two valid rooms (issue #191)"),
+				Door->DoorMarkerLightComponent->IsVisible());
+			Test.TestTrue(TEXT("Door's marker mesh should have no collision so it never blocks the connector path (issue #191)"),
+				Door->DoorMarkerMeshComponent->GetCollisionEnabled() == ECollisionEnabled::NoCollision);
 		}
 	}
 }
