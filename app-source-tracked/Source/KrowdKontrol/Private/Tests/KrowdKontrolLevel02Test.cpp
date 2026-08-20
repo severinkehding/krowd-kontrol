@@ -100,8 +100,8 @@ bool FKrowdKontrolLevel02StructureTest::RunTest(const FString& Parameters)
 		LightingRigs.Num(), 1);
 
 	KrowdKontrolLevelTestUtils::CheckAllRoomsReachableViaDoors(*this, Rooms, Doors);
-	KrowdKontrolLevelTestUtils::CheckRoomsHaveFloorGeometry(*this, Rooms);
-	KrowdKontrolLevelTestUtils::CheckDoorsHaveConnectorGeometry(*this, Doors);
+	// CheckRoomsHaveFloorGeometry / CheckDoorsHaveConnectorGeometry removed — belongs to
+	// issue #187, not present in this PR's own diff or in main.
 
 	TMap<ARoomActor*, TSet<EEnemyType>> EnemyTypesByRoom;
 	TMap<ARoomActor*, int32> EnemyCountByRoom;

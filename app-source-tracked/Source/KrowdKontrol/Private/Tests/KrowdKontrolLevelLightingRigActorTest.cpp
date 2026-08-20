@@ -41,6 +41,11 @@ bool FKrowdKontrolLevelLightingRigActorTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	// Colour goes through an 8-bit FColor round-trip inside ULightComponentBase, so an
+	// exact TestEqual would depend on incidental quantization rather than a designed
+	// guarantee - use a tolerance instead, mirroring KrowdKontrolPlaceholderTargetZoneActorTest.cpp.
+	const FLinearColor ExpectedBaselineColour(0.55f, 0.6f, 0.68f, 1.0f);
+
 	USceneComponent* Root = Actor->RigRootComponent;
 	if (!TestNotNull(TEXT("ALevelLightingRigActor should have a RigRootComponent"), Root))
 	{
@@ -58,11 +63,10 @@ bool FKrowdKontrolLevelLightingRigActorTest::RunTest(const FString& Parameters)
 		Directional->GetAttachParent(), Root);
 	TestEqual(TEXT("DirectionalLightComponent should use the planned baseline intensity"),
 		Directional->Intensity, 1.5f);
-	// Colour goes through an 8-bit FColor round-trip inside ULightComponentBase, so an
-	// exact TestEqual would depend on incidental quantization rather than a designed
-	// guarantee - use a tolerance instead, mirroring KrowdKontrolPlaceholderTargetZoneActorTest.cpp.
+	TestEqual(TEXT("DirectionalLightComponent should use the planned baseline sun-angle rotation"),
+		Directional->GetRelativeRotation(), FRotator(-40.0f, -30.0f, 0.0f));
 	TestTrue(TEXT("DirectionalLightComponent colour should be the chosen desaturated cool-neutral"),
-		Directional->GetLightColor().Equals(FLinearColor(0.55f, 0.6f, 0.68f, 1.0f), 0.01f));
+		Directional->GetLightColor().Equals(ExpectedBaselineColour, 0.01f));
 
 	USkyLightComponent* Sky = Actor->SkyLightComponent;
 	if (!TestNotNull(TEXT("ALevelLightingRigActor should have a SkyLightComponent"), Sky))
@@ -74,7 +78,7 @@ bool FKrowdKontrolLevelLightingRigActorTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("SkyLightComponent should use the planned baseline intensity"),
 		Sky->Intensity, 0.4f);
 	TestTrue(TEXT("SkyLightComponent colour should be the chosen desaturated cool-neutral"),
-		Sky->GetLightColor().Equals(FLinearColor(0.55f, 0.6f, 0.68f, 1.0f), 0.01f));
+		Sky->GetLightColor().Equals(ExpectedBaselineColour, 0.01f));
 
 	// Colour-lock regression guard (issue #186 AC): neither light may collide with any
 	// of the 5 reserved gameplay-information colours - mirrors
