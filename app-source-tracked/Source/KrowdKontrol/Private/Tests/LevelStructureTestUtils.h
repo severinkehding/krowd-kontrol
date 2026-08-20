@@ -141,10 +141,9 @@ namespace KrowdKontrolLevelTestUtils
 	}
 
 	// Asserts every room has a floor mesh with a valid UStaticMesh set (REQ-3 - no
-	// void anywhere along the playable path). Wall components aren't checked here
-	// since they're guaranteed present unconditionally by ARoomActor's constructor,
-	// same as the floor - the floor check alone is sufficient signal that the
-	// constructor ran and produced real geometry on the actual placed room instance.
+	// void anywhere along the playable path) and that collision is split correctly:
+	// the floor keeps blocking collision, but walls stay non-blocking so they don't
+	// seal off connector paths (ARoomActor has no per-door "which wall side" data).
 	inline void CheckRoomsHaveFloorGeometry(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
 	{
 		for (ARoomActor* Room : Rooms)
@@ -154,6 +153,17 @@ namespace KrowdKontrolLevelTestUtils
 			{
 				UStaticMesh* FloorStaticMesh = Room->FloorMeshComponent->GetStaticMesh();
 				Test.TestNotNull(TEXT("Room's floor mesh component should have a static mesh set (REQ-3)"), FloorStaticMesh);
+				Test.TestTrue(TEXT("Room's floor should keep blocking collision (REQ-3)"),
+					Room->FloorMeshComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision);
+			}
+			for (UStaticMeshComponent* Wall : { Room->WallNorthMeshComponent.Get(), Room->WallSouthMeshComponent.Get(),
+				Room->WallEastMeshComponent.Get(), Room->WallWestMeshComponent.Get() })
+			{
+				if (Wall)
+				{
+					Test.TestEqual(TEXT("Room walls must not block connector paths (REQ-3)"),
+						Wall->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+				}
 			}
 		}
 	}
@@ -174,6 +184,8 @@ namespace KrowdKontrolLevelTestUtils
 			Door->RecomputeConnectorGeometry();
 			Test.TestTrue(TEXT("Door's connector floor mesh should be visible once it connects two valid rooms (REQ-3)"),
 				Door->ConnectorFloorMeshComponent->IsVisible());
+			Test.TestTrue(TEXT("Door's connector floor mesh should keep blocking collision (REQ-3)"),
+				Door->ConnectorFloorMeshComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision);
 		}
 	}
 }

@@ -12,7 +12,7 @@ namespace
 	// /Engine/BasicShapes/Cube.Cube is a 100x100x100uu cube, so scale = desired
 	// size-in-cm / 100. Walls have collision disabled: ARoomActor has no per-door
 	// "which wall side" data, so a solid wall on all 4 sides would seal off the very
-	// connector paths this issue also requires to be walkable (see NOT_BUILDING).
+	// connector paths this issue also requires to be walkable.
 	void SetupWallMeshComponent(UStaticMeshComponent* WallMeshComponent, UStaticMesh* CubeMesh,
 		USceneComponent* RoomRoot, const FVector& Scale, const FVector& RelativeLocation)
 	{

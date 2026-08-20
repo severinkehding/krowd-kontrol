@@ -57,6 +57,30 @@ bool FKrowdKontrolRoomActorTest::RunTest(const FString& Parameters)
 	UStaticMesh* WallWestStaticMesh = Room->WallWestMeshComponent->GetStaticMesh();
 	TestNotNull(TEXT("West wall mesh component should have a static mesh set"), WallWestStaticMesh);
 
+	TestEqual(TEXT("North wall should have collision disabled"),
+		Room->WallNorthMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestEqual(TEXT("South wall should have collision disabled"),
+		Room->WallSouthMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestEqual(TEXT("East wall should have collision disabled"),
+		Room->WallEastMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestEqual(TEXT("West wall should have collision disabled"),
+		Room->WallWestMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestNotEqual(TEXT("Floor should keep default (blocking) collision, unlike the walls"),
+		Room->FloorMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+
+	const FVector ExpectedFloorScale(
+		Room->RoomFloorExtent.X * 2.f / 100.f, Room->RoomFloorExtent.Y * 2.f / 100.f, Room->RoomFloorThickness / 100.f);
+	TestTrue(TEXT("Floor mesh's relative scale should be driven by RoomFloorExtent/RoomFloorThickness"),
+		Room->FloorMeshComponent->GetRelativeScale3D().Equals(ExpectedFloorScale, 0.01f));
+
+	const FVector ExpectedNorthWallScale(
+		Room->RoomFloorExtent.X * 2.f / 100.f, Room->RoomWallThickness / 100.f, Room->RoomWallHeight / 100.f);
+	TestTrue(TEXT("North wall's relative scale should be driven by RoomFloorExtent/RoomWallThickness/RoomWallHeight"),
+		Room->WallNorthMeshComponent->GetRelativeScale3D().Equals(ExpectedNorthWallScale, 0.01f));
+	const FVector ExpectedNorthWallLocation(0.f, Room->RoomFloorExtent.Y, Room->RoomWallHeight * 0.5f);
+	TestTrue(TEXT("North wall's relative location should sit at +Y room extent, half wall height up"),
+		Room->WallNorthMeshComponent->GetRelativeLocation().Equals(ExpectedNorthWallLocation, 0.01f));
+
 	AActor* MarkerActor = Room->AddTargetZone(EEnemyType::RU_NNR);
 	if (!TestNotNull(TEXT("AddTargetZone should spawn and return a marker actor"), MarkerActor))
 	{

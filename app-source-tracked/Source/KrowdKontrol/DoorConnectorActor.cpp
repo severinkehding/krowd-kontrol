@@ -45,8 +45,8 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 		return;
 	}
 
-	// Top face at local Z=0, matching ARoomActor's own floor convention (Task 2), so
-	// room floors and the connector strip sit flush at the same height.
+	// Top face at local Z=0, matching ARoomActor's own floor convention, so room floors
+	// and the connector strip sit flush at the same height.
 	ConnectorFloorMeshComponent->SetWorldLocation(Midpoint - FVector(0.f, 0.f, ConnectorFloorThickness * 0.5f));
 	ConnectorFloorMeshComponent->SetWorldRotation(Delta.Rotation());
 	ConnectorFloorMeshComponent->SetWorldScale3D(FVector(Length / 100.f, ConnectorFloorWidth / 100.f, ConnectorFloorThickness / 100.f));
