@@ -96,22 +96,8 @@ bool FKrowdKontrolLevel02StructureTest::RunTest(const FString& Parameters)
 
 	TMap<ARoomActor*, TSet<EEnemyType>> EnemyTypesByRoom;
 	TMap<ARoomActor*, int32> EnemyCountByRoom;
-	int32 TotalLevel02EnemyCount = 0;
-	for (TActorIterator<AEnemyBase> It(World); It; ++It)
-	{
-		AEnemyBase* Enemy = *It;
-		++TotalLevel02EnemyCount;
-		ARoomActor* NearestRoom = KrowdKontrolLevelTestUtils::FindNearestRoom(Enemy, Rooms);
-		if (!NearestRoom)
-		{
-			continue;
-		}
-		EnemyCountByRoom.FindOrAdd(NearestRoom, 0)++;
-		if (TOptional<EEnemyType> EnemyType = KrowdKontrolLevelTestUtils::GetPlacedEnemyType(Enemy))
-		{
-			EnemyTypesByRoom.FindOrAdd(NearestRoom).Add(EnemyType.GetValue());
-		}
-	}
+	const int32 TotalLevel02EnemyCount = KrowdKontrolLevelTestUtils::CollectEnemyRoomAssignments(
+		World, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
 
 	// Lightweight per-room density check (PRD 05's "static placeholder-density
 	// enemies") - only asserts every room has *some* enemy presence, not a specific

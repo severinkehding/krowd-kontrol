@@ -11,6 +11,8 @@
 #include "SniperEnemy.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
 
 // Shared helpers for the KrowdKontrolLevel0*Test.cpp structural regression tests
 // (KrowdKontrolLevel01Test.cpp, KrowdKontrolLevel02Test.cpp, and future Level03-05
@@ -105,6 +107,38 @@ namespace KrowdKontrolLevelTestUtils
 		}
 		Test.TestEqual(TEXT("All rooms should be reachable via doors (no room isolated from the chain)"),
 			Visited.Num(), Rooms.Num());
+	}
+
+	// Iterates every AEnemyBase in World, bucketing each by nearest room (FindNearestRoom)
+	// into EnemyCountByRoom and, where its concrete class maps to a known EEnemyType
+	// (GetPlacedEnemyType), EnemyTypesByRoom. Returns the total number of AEnemyBase actors
+	// iterated (regardless of whether a nearest room was found), so callers needing a
+	// level-wide enemy count don't need a second pass over the same actors. Extracted after
+	// this loop turned up byte-identical (bar one running counter) in
+	// KrowdKontrolLevel01Test.cpp and KrowdKontrolLevel02Test.cpp.
+	inline int32 CollectEnemyRoomAssignments(
+		UWorld* World,
+		const TArray<ARoomActor*>& Rooms,
+		TMap<ARoomActor*, TSet<EEnemyType>>& EnemyTypesByRoom,
+		TMap<ARoomActor*, int32>& EnemyCountByRoom)
+	{
+		int32 TotalEnemyCount = 0;
+		for (TActorIterator<AEnemyBase> It(World); It; ++It)
+		{
+			AEnemyBase* Enemy = *It;
+			++TotalEnemyCount;
+			ARoomActor* NearestRoom = FindNearestRoom(Enemy, Rooms);
+			if (!NearestRoom)
+			{
+				continue;
+			}
+			EnemyCountByRoom.FindOrAdd(NearestRoom, 0)++;
+			if (TOptional<EEnemyType> EnemyType = GetPlacedEnemyType(Enemy))
+			{
+				EnemyTypesByRoom.FindOrAdd(NearestRoom).Add(EnemyType.GetValue());
+			}
+		}
+		return TotalEnemyCount;
 	}
 
 	// Asserts every room has >=1 target zone and >=1 enemy placeholder (REQ-2's
