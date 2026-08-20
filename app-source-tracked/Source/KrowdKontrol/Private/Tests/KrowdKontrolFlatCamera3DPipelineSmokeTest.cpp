@@ -31,6 +31,9 @@
 #include "AbilityCastVFXComponent.h"
 #include "AbilityData.h"
 #include "Components/PointLightComponent.h"
+#include "PunishmentManagerComponent.h"
+#include "PlayerEnergyComponent.h"
+#include "PunishmentTriggeredTestListener.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -89,6 +92,22 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("MovementComponent should drive the mesh root component"),
 		static_cast<USceneComponent*>(MovementComponent->UpdatedComponent),
 		static_cast<USceneComponent*>(MeshComponent));
+
+	// Proves this pawn's PunishmentManagerComponent (issue #177) is genuinely bound
+	// to this same pawn's own PlayerEnergyComponent via constructor-time AddDynamic,
+	// not a copy-paste slip binding to the other prototype pawn's instance - the
+	// KrowdKontrol.Unit.PunishmentManagerComponent test alone can't catch this since
+	// it wires the component by hand, never through a pawn constructor.
+	UPunishmentManagerComponent* PunishmentManagerComponent = Pawn->PunishmentManagerComponent;
+	if (TestNotNull(TEXT("Pawn should have a PunishmentManagerComponent"), PunishmentManagerComponent))
+	{
+		UPunishmentTriggeredTestListener* Listener = NewObject<UPunishmentTriggeredTestListener>();
+		PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(Listener, &UPunishmentTriggeredTestListener::HandlePunishmentTriggered);
+
+		Pawn->PlayerEnergyComponent->ApplyContactDamage(7.0f, nullptr);
+		TestEqual(TEXT("Pawn's own PlayerEnergyComponent damage should trigger this pawn's own PunishmentManagerComponent"),
+			Listener->CallCount, 1);
+	}
 
 	TestTrue(TEXT("CameraBoom pitch should be genuinely top-down (<= -45 degrees), not side-on"),
 		Pawn->CameraBoom->GetRelativeRotation().Pitch <= -45.0f);
