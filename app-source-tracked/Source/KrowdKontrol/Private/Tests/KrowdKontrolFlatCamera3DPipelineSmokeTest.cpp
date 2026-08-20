@@ -478,6 +478,35 @@ bool FKrowdKontrolFlatCamera3DCameraFramingTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("Changing CameraFieldOfView and re-applying should update TopDownCamera->FieldOfView"),
 		Pawn->TopDownCamera->FieldOfView, NewFOV);
 
+	// (c) PostEditChangeProperty itself (not just the shared ApplyCameraFraming()
+	// helper) must route each camera property to a live reapply - this is the actual
+	// mechanism a placed-instance Details-panel edit uses in the editor.
+	const float DetailsPanelArmLength = 500.0f;
+	Pawn->CameraArmLength = DetailsPanelArmLength;
+	FProperty* ArmLengthProperty = FindFProperty<FProperty>(
+		AFlatCamera3DPrototypePawn::StaticClass(),
+		GET_MEMBER_NAME_CHECKED(AFlatCamera3DPrototypePawn, CameraArmLength));
+	if (TestNotNull(TEXT("CameraArmLength should be a reflected FProperty"), ArmLengthProperty))
+	{
+		FPropertyChangedEvent ArmLengthChangedEvent(ArmLengthProperty);
+		Pawn->PostEditChangeProperty(ArmLengthChangedEvent);
+		TestEqual(TEXT("PostEditChangeProperty(CameraArmLength) should reapply onto CameraBoom->TargetArmLength"),
+			Pawn->CameraBoom->TargetArmLength, DetailsPanelArmLength);
+	}
+
+	// Negative case: an unrelated property change should not be silently swallowed by
+	// an over-broad filter that reapplies on every PostEditChangeProperty call.
+	Pawn->CameraFieldOfView = 88.0f; // mutated but not yet reapplied
+	FProperty* AutoPossessProperty = FindFProperty<FProperty>(
+		APawn::StaticClass(), GET_MEMBER_NAME_CHECKED(APawn, AutoPossessPlayer));
+	if (TestNotNull(TEXT("AutoPossessPlayer should be a reflected FProperty"), AutoPossessProperty))
+	{
+		FPropertyChangedEvent UnrelatedChangedEvent(AutoPossessProperty);
+		Pawn->PostEditChangeProperty(UnrelatedChangedEvent);
+		TestNotEqual(TEXT("PostEditChangeProperty for an unrelated property should not reapply CameraFieldOfView"),
+			Pawn->TopDownCamera->FieldOfView, 88.0f);
+	}
+
 	return true;
 }
 
