@@ -188,4 +188,22 @@ namespace KrowdKontrolLevelTestUtils
 				Door->ConnectorFloorMeshComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision);
 		}
 	}
+
+	// Asserts every door that connects two valid, distinct rooms has a visible
+	// marker mesh (issue #191) after RecomputeConnectorGeometry() is (re)called -
+	// same idempotency/BeginPlay-timing rationale as CheckDoorsHaveConnectorGeometry
+	// above (FAutomationEditorCommonUtils::LoadMap does not start play).
+	inline void CheckDoorsHaveVisibleMarker(FAutomationTestBase& Test, const TArray<ADoorConnectorActor*>& Doors)
+	{
+		for (ADoorConnectorActor* Door : Doors)
+		{
+			if (!Door->ConnectsValidRooms())
+			{
+				continue;
+			}
+			Door->RecomputeConnectorGeometry();
+			Test.TestTrue(TEXT("Door's marker mesh should be visible once it connects two valid rooms (issue #191)"),
+				Door->DoorMarkerMeshComponent->IsVisible());
+		}
+	}
 }

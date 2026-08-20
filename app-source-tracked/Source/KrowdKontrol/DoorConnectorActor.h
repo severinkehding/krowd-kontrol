@@ -6,13 +6,14 @@
 
 class ARoomActor;
 class UStaticMeshComponent;
+class UPointLightComponent;
 
 // Placeable, hand-authoring-era building block declaring that two rooms are connected
 // by a door (PRD 05 REQ-1/REQ-2, issue #39). "Exactly two rooms" is a structural
 // guarantee of the two named properties below, not a runtime-checked invariant on a
-// collection. Structural/topology only - no door visual/mesh is required by the
-// issue's acceptance criteria, so this gets a bare USceneComponent root and nothing
-// else.
+// collection. No longer topology-only: it also carries a floor strip spanning the
+// connector (issue #187) and a visible doorway marker - mesh + point light (issue
+// #191) - so a bare USceneComponent root is no longer the whole picture.
 UCLASS()
 class KROWDKONTROL_API ADoorConnectorActor : public AActor
 {
@@ -42,12 +43,22 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
 	TObjectPtr<UStaticMeshComponent> ConnectorFloorMeshComponent;
 
-	// Positions/rotates/scales ConnectorFloorMeshComponent to span the straight line
-	// between RoomA and RoomB's live GetActorLocation(), or hides it if the door
-	// doesn't yet connect two valid, distinct rooms. Called from both OnConstruction
-	// (editor placement/property-edit visibility) and BeginPlay (guarantees
-	// correctness at actual play time regardless of load-time construction-script
-	// timing) - also safe and idempotent to call directly from tests.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	float DoorMarkerHeight = 150.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<UStaticMeshComponent> DoorMarkerMeshComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<UPointLightComponent> DoorMarkerLightComponent;
+
+	// Positions/rotates/scales ConnectorFloorMeshComponent and DoorMarkerMeshComponent/
+	// DoorMarkerLightComponent to span/mark the straight line between RoomA and RoomB's
+	// live GetActorLocation(), or hides both if the door doesn't yet connect two valid,
+	// distinct rooms. Called from both OnConstruction (editor placement/property-edit
+	// visibility) and BeginPlay (guarantees correctness at actual play time regardless
+	// of load-time construction-script timing) - also safe and idempotent to call
+	// directly from tests.
 	UFUNCTION(BlueprintCallable, Category = "Door Connector")
 	void RecomputeConnectorGeometry();
 

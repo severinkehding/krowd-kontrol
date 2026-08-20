@@ -17,6 +17,8 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
+#include "ReservedGameplayColours.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -57,6 +59,10 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 
 	TestFalse(TEXT("A freshly-spawned door with no rooms assigned should not connect valid rooms"),
 		Door->ConnectsValidRooms());
+	TestFalse(TEXT("Door marker mesh should start hidden before any rooms are assigned"),
+		Door->DoorMarkerMeshComponent->IsVisible());
+	TestFalse(TEXT("Door marker light should start hidden before any rooms are assigned"),
+		Door->DoorMarkerLightComponent->IsVisible());
 
 	Door->RoomA = RoomOne;
 	TestFalse(TEXT("A door with only RoomA assigned should not connect valid rooms"),
@@ -72,6 +78,8 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 	const FVector DegenerateScale = Door->ConnectorFloorMeshComponent->GetComponentScale();
 	TestFalse(TEXT("Connector scale should not be NaN for a zero-length span"),
 		FMath::IsNaN(DegenerateScale.X) || FMath::IsNaN(DegenerateScale.Y) || FMath::IsNaN(DegenerateScale.Z));
+	TestFalse(TEXT("Door marker mesh should stay hidden when both rooms share a location"),
+		Door->DoorMarkerMeshComponent->IsVisible());
 
 	// Now give RoomTwo a distinct location so RecomputeConnectorGeometry() below has a
 	// genuine, non-degenerate span to compute.
@@ -88,6 +96,26 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Connector floor mesh's Z scale should be driven by ConnectorFloorThickness"),
 		FMath::IsNearlyEqual(Door->ConnectorFloorMeshComponent->GetComponentScale().Z, Door->ConnectorFloorThickness / 100.f, 0.01f));
 
+	TestTrue(TEXT("Door marker mesh should be visible once the door connects two valid rooms"),
+		Door->DoorMarkerMeshComponent->IsVisible());
+	const FVector ExpectedMarkerLocation =
+		(RoomOne->GetActorLocation() + RoomTwo->GetActorLocation()) * 0.5f + FVector(0.f, 0.f, Door->DoorMarkerHeight);
+	TestTrue(TEXT("Door marker mesh should sit above the connector midpoint by DoorMarkerHeight"),
+		Door->DoorMarkerMeshComponent->GetComponentLocation().Equals(ExpectedMarkerLocation, 0.1f));
+
+	UPointLightComponent* MarkerLight = Door->DoorMarkerLightComponent;
+	if (!TestNotNull(TEXT("ADoorConnectorActor should have a DoorMarkerLightComponent"), MarkerLight))
+	{
+		return false;
+	}
+	TestEqual(TEXT("DoorMarkerLightComponent should be attached to DoorMarkerMeshComponent"),
+		MarkerLight->GetAttachParent(), static_cast<USceneComponent*>(Door->DoorMarkerMeshComponent));
+	TestTrue(TEXT("DoorMarkerLightComponent should be visible once the door connects two valid rooms"),
+		MarkerLight->IsVisible());
+	TestFalse(TEXT("DoorMarkerLightComponent colour should not collide with a reserved gameplay-information colour"),
+		ReservedGameplayColours::GetAll().ContainsByPredicate(
+			[MarkerLight](const FLinearColor& Reserved) { return Reserved.Equals(MarkerLight->GetLightColor(), 0.01f); }));
+
 	Door->RoomB = RoomOne;
 	TestFalse(TEXT("A door with the same room assigned to both slots should not connect valid rooms"),
 		Door->ConnectsValidRooms());
@@ -95,6 +123,10 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 	Door->RecomputeConnectorGeometry();
 	TestFalse(TEXT("Connector floor mesh should be hidden again once the door no longer connects valid rooms"),
 		Door->ConnectorFloorMeshComponent->IsVisible());
+	TestFalse(TEXT("Door marker mesh should be hidden again once the door no longer connects valid rooms"),
+		Door->DoorMarkerMeshComponent->IsVisible());
+	TestFalse(TEXT("Door marker light should be hidden again once the door no longer connects valid rooms"),
+		Door->DoorMarkerLightComponent->IsVisible());
 
 	return true;
 }
