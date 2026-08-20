@@ -142,7 +142,24 @@ bool FKrowdKontrolLevelFailedTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	// SetAsLocalPlayerController() alone only flips bIsLocalPlayerController - it does
+	// NOT attach a UPlayer, which CreateHUDWidgets() (called from BeginPlay(), below) hard-requires,
+	// mirroring this file's own happy-path Controller setup above. Unrelated to the
+	// deliberate no-possession isolation noted above - this is only to satisfy
+	// CreateHUDWidgets()'s precondition, not to exercise possession machinery.
+	UnresolvedController->Player = NewObject<ULocalPlayer>(GEngine);
+	UnresolvedController->SetAsLocalPlayerController();
+
+	// BeginPlay() (issue #170) now also calls ResolveLevelClearTimeSubsystem() to wire
+	// SubscribeToLevelLifecycle() - with no CachedLevelClearTimeSubsystem injected and no
+	// GetGameInstance() in this CreateNewMap() World, BeginPlay() itself is what "claims"
+	// the warn-once flag now, before HandleLevelFailed() below ever gets a chance to. The
+	// single expected-error count of 1 below (unchanged) covers both calls together,
+	// proving the flag isn't silently double-consumed or re-logged from the second caller.
 	AddExpectedError(TEXT("no ULevelClearTimeSubsystem available"), EAutomationExpectedErrorFlags::Contains, 1);
+	UnresolvedController->DispatchBeginPlay();
+	TestTrue(TEXT("BeginPlay must not crash with no resolvable subsystem"), true);
+
 	UnresolvedController->HandleLevelFailed();
 	TestTrue(TEXT("HandleLevelFailed must not crash with no possessed pawn and no resolvable subsystem"), true);
 

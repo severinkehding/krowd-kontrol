@@ -23,11 +23,12 @@ class KROWDKONTROL_API AKrowdKontrolPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 
-	// Grants the Automation Framework test direct access to CachedLevelClearTimeSubsystem,
+	// Grants the Automation Framework tests direct access to CachedLevelClearTimeSubsystem,
 	// mirroring UGizmoFirstContactComponent's FKrowdKontrolGizmoFirstContactComponentTest
-	// precedent - GetGameInstance() is null in CreateNewMap() test Worlds, so the test
-	// injects a directly-constructed ULevelClearTimeSubsystem instead of resolving one.
+	// precedent - GetGameInstance() is null in CreateNewMap() test Worlds, so the tests
+	// inject a directly-constructed ULevelClearTimeSubsystem instead of resolving one.
 	friend class FKrowdKontrolLevelFailedTest;
+	friend class FKrowdKontrolLevelClearTimeWiringTest;
 
 public:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
@@ -100,15 +101,25 @@ private:
 	// Resolves (and caches) the current UGameInstance's ULevelClearTimeSubsystem,
 	// mirroring UGizmoFirstContactComponent::ResolveNarrativeSubsystem()'s exact
 	// pattern - GetGameInstance() is null in this project's CreateNewMap()-based
-	// Automation test worlds, so the Automation Framework test injects a
+	// Automation test worlds, so the Automation Framework tests inject a
 	// directly-constructed instance into CachedLevelClearTimeSubsystem via the
-	// friendship above instead of going through this resolver.
+	// friendship above instead of going through this resolver. Called from both
+	// BeginPlay() (issue #170, to wire SubscribeToLevelLifecycle()) and
+	// HandleLevelFailed() (issue #171, to discard an in-progress timer) - the two
+	// share bHasWarnedMissingLevelClearTimeSubsystem below, so whichever runs first
+	// claims the one-shot warning.
 	ULevelClearTimeSubsystem* ResolveLevelClearTimeSubsystem();
 
 	UPROPERTY()
 	TObjectPtr<ULevelClearTimeSubsystem> CachedLevelClearTimeSubsystem;
 
 	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
+
+	// Warn-once flag for BeginPlay()'s SubscribeToLevelLifecycle() wiring (issue #170)
+	// finding no ULevelLifecycleSubsystem on this world - separate from
+	// bHasWarnedMissingLevelClearTimeSubsystem above since it covers a different
+	// missing dependency (the world subsystem, not the game-instance subsystem).
+	bool bHasWarnedMissingLevelLifecycleSubsystem = false;
 
 	// The LevelFailComponent WireWidgetsToPawn last bound HandleLevelFailed to.
 	// WireWidgetsToPawn runs on both BeginPlay and OnPossess, so a repossession

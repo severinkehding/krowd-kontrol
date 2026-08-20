@@ -41,6 +41,9 @@ public:
 	// spawned later by UWaveSpawnerComponent) is Banked, given at least one ever
 	// existed, and no UWaveSpawnerComponent in the world has a pending wave
 	// (IsWaveTimerActive() == true). Never fires if zero enemies ever spawned.
+	// Guaranteed to never fire before OnLevelBegin has fired at least once for this
+	// world (RefreshLevelClearState() early-outs while !bHasFiredLevelBegin) -
+	// ULevelClearTimeSubsystem::HandleLevelClear() relies on this ordering.
 	UPROPERTY(BlueprintAssignable, Category = "Level Lifecycle")
 	FOnLevelClear OnLevelClear;
 

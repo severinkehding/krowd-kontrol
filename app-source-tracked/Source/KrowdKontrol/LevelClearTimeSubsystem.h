@@ -12,11 +12,10 @@ class ULevelLifecycleSubsystem;
 // value is a separate issue, see #3's Notes). Local save-slot persistence only, per
 // MISSION.md Hard Invariant 7 - no leaderboard, no networked storage.
 //
-// No real caller wiring exists yet - the level-progression system this is meant for
-// (PRD 05) doesn't expose a "level begins"/"level cleared" event today, matching
-// UGizmoNarrativeSubsystem's (issue #57) same "foundation, no live wiring yet"
-// precedent. A future level-progression issue calls StartLevelTimer/
-// StopLevelTimerAndRecordClear from real begin/clear events.
+// Wired to real begin/clear events via SubscribeToLevelLifecycle() (issue #170),
+// called from AKrowdKontrolPlayerController::BeginPlay() - see that method's own
+// caller-side comment and SubscribeToLevelLifecycle()'s doc comment below for the
+// wiring's shape.
 UCLASS()
 class KROWDKONTROL_API ULevelClearTimeSubsystem : public UGameInstanceSubsystem
 {

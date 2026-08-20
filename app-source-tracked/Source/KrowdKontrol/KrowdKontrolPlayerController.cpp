@@ -31,12 +31,17 @@ void AKrowdKontrolPlayerController::BeginPlay()
 
 	if (ULevelClearTimeSubsystem* Subsystem = ResolveLevelClearTimeSubsystem())
 	{
-		if (UWorld* World = GetWorld())
+		UWorld* World = GetWorld();
+		if (ULevelLifecycleSubsystem* LifecycleSubsystem = World ? World->GetSubsystem<ULevelLifecycleSubsystem>() : nullptr)
 		{
-			if (ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>())
-			{
-				Subsystem->SubscribeToLevelLifecycle(LifecycleSubsystem);
-			}
+			Subsystem->SubscribeToLevelLifecycle(LifecycleSubsystem);
+		}
+		else if (!bHasWarnedMissingLevelLifecycleSubsystem)
+		{
+			bHasWarnedMissingLevelLifecycleSubsystem = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("AKrowdKontrolPlayerController: no ULevelLifecycleSubsystem available - ")
+				TEXT("this level's clear time will not be tracked."));
 		}
 	}
 }
@@ -132,7 +137,8 @@ ULevelClearTimeSubsystem* AKrowdKontrolPlayerController::ResolveLevelClearTimeSu
 		bHasWarnedMissingLevelClearTimeSubsystem = true;
 		UE_LOG(LogTemp, Warning,
 			TEXT("AKrowdKontrolPlayerController: no ULevelClearTimeSubsystem available - ")
-			TEXT("a level-failed run's in-progress timer cannot be discarded."));
+			TEXT("clear-time tracking will not be wired for this level, and a level-failed ")
+			TEXT("run's in-progress timer cannot be discarded."));
 	}
 	return CachedLevelClearTimeSubsystem;
 }
