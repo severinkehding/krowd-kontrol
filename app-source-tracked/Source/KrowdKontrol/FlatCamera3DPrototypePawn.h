@@ -57,6 +57,21 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UCameraComponent> TopDownCamera;
 
+	// Camera framing (issue #188, PRD "Level Playability & Presentation" REQ-4) -
+	// EditAnywhere so designers can retune "feels far away / hard to read" without a
+	// C++ recompile. Ranges below are the newly documented defaults' valid bounds;
+	// KrowdKontrol.Unit.FlatCamera3DPipelineCameraFraming asserts both the bounds and
+	// that these properties genuinely drive CameraBoom/TopDownCamera via
+	// ApplyCameraFraming() below, not just at construction time.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "300.0", ClampMax = "600.0"))
+	float CameraArmLength = 450.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "-75.0", ClampMax = "-45.0"))
+	float CameraBoomPitch = -60.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "60.0", ClampMax = "90.0"))
+	float CameraFieldOfView = 75.0f;
+
 	// Makes the run's crowd-control unlock state (issue #69) reachable from the only
 	// pawn placed in the project's actual playable level - this pawn was previously
 	// the sole player pawn with no unlock tracking attached at all, so nothing could
@@ -141,6 +156,18 @@ public:
 	// AbilityCastComponent's OnAbilityCastApplied directly.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityMatchupNudgeComponent> AbilityMatchupNudgeComponent;
+
+	// Applies CameraArmLength/CameraBoomPitch/CameraFieldOfView onto
+	// CameraBoom/TopDownCamera. Called once from the constructor (CDO + freshly
+	// spawned instances) and again from PostEditChangeProperty below (placed-instance
+	// Details-panel edits) - the single source of truth for "property -> component",
+	// so KrowdKontrol.Unit.FlatCamera3DPipelineCameraFraming can call it directly to
+	// prove the wiring is real, not test-only.
+	void ApplyCameraFraming();
+
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
