@@ -15,4 +15,11 @@ class KROWDKONTROL_API ULevelClearTimeSaveGame : public USaveGame
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level Clear Time")
 	TMap<FName, float> BestClearTimesByLevel;
+
+	// Crowd Mastery best (issue #174, PRD 06 REQ-2): the largest number of
+	// simultaneously-Controlled AEnemyBase instances ever observed in a single level,
+	// keyed per level (FName) same as BestClearTimesByLevel above - persisted through
+	// the same save slot, not a separate save-game class.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd Mastery")
+	TMap<FName, int32> BestCrowdMasteryByLevel;
 };

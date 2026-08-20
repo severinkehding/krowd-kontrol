@@ -146,6 +146,47 @@ bool FKrowdKontrolLevelClearTimeSubsystemTest::RunTest(const FString& Parameters
 	TestFalse(TEXT("A discarded timer must never be recorded as a best"),
 		Subsystem->GetBestClearTimeSeconds(DiscardedLevelID, OutBest));
 
+	// Crowd Mastery persistence (issue #174): same subsystem, same save slot, extended
+	// ULevelClearTimeSaveGame - mirrors this file's own clear-time cases above with the
+	// comparison direction flipped (larger, not smaller, wins).
+	const FName CrowdMasteryLevelID = TEXT("KrowdKontrol.Unit.LevelClearTimeSubsystem.CrowdMasteryLevel");
+	int32 OutBestCount = 0;
+	TestFalse(TEXT("No Crowd Mastery best should exist before any count is recorded"),
+		Subsystem->GetBestCrowdMasteryCount(CrowdMasteryLevelID, OutBestCount));
+
+	TestTrue(TEXT("First recorded count with no prior record should become the best"),
+		Subsystem->RecordCrowdMasteryCount(CrowdMasteryLevelID, 5));
+	TestTrue(TEXT("A Crowd Mastery best should now exist"),
+		Subsystem->GetBestCrowdMasteryCount(CrowdMasteryLevelID, OutBestCount));
+	TestEqual(TEXT("Best count should equal the first recorded count"), OutBestCount, 5);
+
+	TestFalse(TEXT("An exact tie should not become the new best"),
+		Subsystem->RecordCrowdMasteryCount(CrowdMasteryLevelID, 5));
+
+	TestFalse(TEXT("A smaller count should not become the new best"),
+		Subsystem->RecordCrowdMasteryCount(CrowdMasteryLevelID, 3));
+	Subsystem->GetBestCrowdMasteryCount(CrowdMasteryLevelID, OutBestCount);
+	TestEqual(TEXT("Best count should remain the larger, first-recorded count"), OutBestCount, 5);
+
+	TestTrue(TEXT("A larger count should become the new best"),
+		Subsystem->RecordCrowdMasteryCount(CrowdMasteryLevelID, 8));
+	Subsystem->GetBestCrowdMasteryCount(CrowdMasteryLevelID, OutBestCount);
+	TestEqual(TEXT("Best count should now be the larger count"), OutBestCount, 8);
+
+	const FName CrowdMasteryClampID = TEXT("KrowdKontrol.Unit.LevelClearTimeSubsystem.CrowdMasteryClampLevel");
+	TestTrue(TEXT("A negative count should still be treated as a new best (clamped to 0)"),
+		Subsystem->RecordCrowdMasteryCount(CrowdMasteryClampID, -2));
+	int32 ClampedCrowdMasteryBest = -1;
+	Subsystem->GetBestCrowdMasteryCount(CrowdMasteryClampID, ClampedCrowdMasteryBest);
+	TestEqual(TEXT("A negative count should be clamped to 0, not stored as-is"), ClampedCrowdMasteryBest, 0);
+
+	UGameInstance* SecondCrowdMasteryGameInstanceOuter = NewObject<UGameInstance>();
+	ULevelClearTimeSubsystem* SecondCrowdMasterySubsystem = NewObject<ULevelClearTimeSubsystem>(SecondCrowdMasteryGameInstanceOuter);
+	int32 SecondSessionBestCount = 0;
+	TestTrue(TEXT("A fresh subsystem instance should read back the persisted Crowd Mastery best"),
+		SecondCrowdMasterySubsystem->GetBestCrowdMasteryCount(CrowdMasteryLevelID, SecondSessionBestCount));
+	TestEqual(TEXT("Persisted Crowd Mastery best should match what the first session saved"), SecondSessionBestCount, 8);
+
 	// Clean up all real on-disk state this test created, so a repeat run starts from
 	// the same clean slate this run began with.
 	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);

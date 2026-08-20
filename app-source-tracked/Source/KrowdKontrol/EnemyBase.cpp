@@ -90,6 +90,7 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 		// Controlled indefinitely and never treated as a kill (MISSION.md Hard
 		// Invariant 2). Banking within the window remains the only path to Banked.
 		CurrentState = EEnemyState::Alert;
+		OnEnemyControlledExpired.Broadcast();
 	}
 }
 
