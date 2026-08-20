@@ -3,11 +3,29 @@
 #include "AbilityCooldownComponent.h"
 #include "AbilityLockoutComponent.h"
 #include "EnemyBase.h"
+#include "CrowdMasterySubsystem.h"
 #include "EngineUtils.h"
+#include "Engine/World.h"
 
 UAbilityCastComponent::UAbilityCastComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+}
+
+void UAbilityCastComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Issue #174 AC1: routes every real successful cast into the Crowd Mastery
+	// running-max sample, the same production wiring UCrowdMasterySubsystem.h's
+	// class comment already flagged as the missing piece.
+	if (UWorld* World = GetWorld())
+	{
+		if (UCrowdMasterySubsystem* CrowdMasterySubsystem = World->GetSubsystem<UCrowdMasterySubsystem>())
+		{
+			OnAbilityCastApplied.AddDynamic(CrowdMasterySubsystem, &UCrowdMasterySubsystem::HandleAbilityCastApplied);
+		}
+	}
 }
 
 bool UAbilityCastComponent::TryCastAbility(EAbilitySlot Ability)

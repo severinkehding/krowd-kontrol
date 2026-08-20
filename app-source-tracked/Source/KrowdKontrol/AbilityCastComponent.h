@@ -63,6 +63,14 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Ability Cast")
 	FOnAbilityCastApplied OnAbilityCastApplied;
 
+protected:
+	// Binds OnAbilityCastApplied to UCrowdMasterySubsystem::HandleAbilityCastApplied
+	// (issue #174 AC1) here, not the constructor - GetWorld() has no valid subsystem
+	// collection to resolve against until the owning actor has begun play, same
+	// "bound in BeginPlay, not the constructor" precedent ADualZoneBoss::BeginPlay
+	// establishes for a delegate binding that depends on world state.
+	virtual void BeginPlay() override;
+
 private:
 	// Nearest AEnemyBase within CastRangeUnits of GetOwner() whose GetEnemyState() is
 	// Alert or Attack (Idle/Controlled/Banked are never valid targets) - mirrors

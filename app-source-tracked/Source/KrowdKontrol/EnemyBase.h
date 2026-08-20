@@ -159,6 +159,14 @@ public:
 protected:
 	virtual void Tick(float DeltaTime) override;
 
+	// Binds OnEnemyControlledExpired to
+	// UCrowdMasterySubsystem::HandleEnemyControlledExpired (issue #174 AC1) here, not
+	// the constructor - GetWorld() has no valid subsystem collection to resolve
+	// against until this actor has begun play, same "bound in BeginPlay, not the
+	// constructor" precedent ADualZoneBoss::BeginPlay establishes for a delegate
+	// binding that depends on world state.
+	virtual void BeginPlay() override;
+
 	// Per-type attack range, in units. Base default is 0.0f (never reaches Attack on
 	// its own); a concrete subclass overrides this per issue #12's AC.
 	virtual float GetAttackRangeUnits() const { return 0.0f; }
