@@ -7,10 +7,13 @@
 //
 // The actual UGameplayStatics::OpenLevel() map reload is NOT asserted here -
 // RequestLevelRestart() only issues it when World->IsGameWorld() is true, and this
-// test's CreateNewMap() World deliberately is not one (confirmed via research: a real
-// map load hangs an in-process Automation run - see web-research.md). That guard, and
-// the resulting "full energy / enemy reset" behavior a fresh OpenLevel produces, is
-// verified manually in PIE and documented in this issue's PR body instead.
+// test's CreateNewMap() World deliberately is not one (a real map load hangs an
+// in-process Automation run - Epic Developer Community forums report this hang for
+// in-process map loads inside Automation tests). That guard, and the resulting
+// "full energy / enemy reset" behavior a fresh OpenLevel produces, is verified
+// manually in PIE and documented in this issue's PR body instead. What IS asserted
+// in-process is ComputeRestartLevelName() - the reload target computation, which is
+// safe to check without ever calling OpenLevel.
 //
 // GetGameInstance() is null in this project's CreateNewMap()-based Automation test
 // worlds, so a directly-constructed ULevelClearTimeSubsystem is injected into the
@@ -93,6 +96,13 @@ bool FKrowdKontrolLevelRestartTest::RunTest(const FString& Parameters)
 
 	TestFalse(TEXT("bRestartRequested should start false"), Controller->WasRestartRequested());
 
+	// A non-fatal hit must not reach RequestLevelRestart() - confirms
+	// bRestartRequested only flips via the real zero-energy OnLevelFailed path, not
+	// on some other HandleLevelFailed-adjacent trigger.
+	Energy->ApplyContactDamage(3.0f, nullptr);
+	TestFalse(TEXT("bRestartRequested should stay false after a non-fatal energy hit"),
+		Controller->WasRestartRequested());
+
 	// Deterministic single-call floor to exactly 0, mirroring
 	// KrowdKontrolLevelFailedTest.cpp's own case - fires OnLevelFailed ->
 	// HandleLevelFailed -> RequestLevelRestart.
@@ -101,6 +111,12 @@ bool FKrowdKontrolLevelRestartTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("bRestartRequested should flip true after a real OnLevelFailed fire"),
 		Controller->WasRestartRequested());
+
+	// ComputeRestartLevelName() is the one piece of the reload call that's safe to
+	// check without ever invoking the real, Automation-World-hanging OpenLevel() -
+	// confirms the restart targets the current map by name.
+	TestEqual(TEXT("Restart should target the current map by name"),
+		Controller->ComputeRestartLevelName(), FName(*World->GetMapName()));
 
 	return true;
 }

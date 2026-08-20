@@ -23,10 +23,13 @@ class KROWDKONTROL_API AKrowdKontrolPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 
-	// Grants the Automation Framework test direct access to CachedLevelClearTimeSubsystem,
+	// Grants the Automation Framework tests direct access to CachedLevelClearTimeSubsystem,
 	// mirroring UGizmoFirstContactComponent's FKrowdKontrolGizmoFirstContactComponentTest
-	// precedent - GetGameInstance() is null in CreateNewMap() test Worlds, so the test
+	// precedent - GetGameInstance() is null in CreateNewMap() test Worlds, so each test
 	// injects a directly-constructed ULevelClearTimeSubsystem instead of resolving one.
+	// Used by this controller's own level-failed test (issue #171) and, since issue #172,
+	// by the level-restart test that drives the same HandleLevelFailed() path onward into
+	// RequestLevelRestart().
 	friend class FKrowdKontrolLevelFailedTest;
 	friend class FKrowdKontrolLevelRestartTest;
 
@@ -82,7 +85,7 @@ public:
 	// World - see RequestLevelRestart()'s comment). This is what the Automation
 	// Framework test asserts, since the real reload itself can't be observed from
 	// inside a single in-process test World.
-	UFUNCTION(BlueprintCallable, Category = "Level Restart")
+	UFUNCTION(BlueprintPure, Category = "Level Restart")
 	bool WasRestartRequested() const { return bRestartRequested; }
 
 protected:
@@ -128,9 +131,21 @@ private:
 	UPROPERTY()
 	TWeakObjectPtr<ULevelFailComponent> WiredLevelFailComponent;
 
-	// Bound to HandleLevelFailed() (issue #172, PRD REQ-4). Sets bRestartRequested and,
-	// only in a real game world, reloads the current map via UGameplayStatics::OpenLevel.
+	// Called at the end of HandleLevelFailed() (issue #172, PRD REQ-4). Sets
+	// bRestartRequested and, only in a real game world, reloads the current map via
+	// UGameplayStatics::OpenLevel.
 	void RequestLevelRestart();
 
+	// Extracted from RequestLevelRestart() so the level-restart Automation test can
+	// assert the reload target is computed correctly without ever calling the real,
+	// Automation-World-hanging UGameplayStatics::OpenLevel() (issue #172 test-coverage
+	// follow-up). Mirrors EnemyBase.h's TickCheckDetection/TickChaseMovement pattern of
+	// extracting an otherwise-untestable private behavior into a friend-testable seam.
+	FName ComputeRestartLevelName() const;
+
+	// Never reset back to false once set - moot in the real game-world path, since a
+	// successful OpenLevel() destroys this controller along with the rest of the old
+	// World. Left true for the (Automation-World-only) lifetime of a controller that
+	// never actually reloads.
 	bool bRestartRequested = false;
 };

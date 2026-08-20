@@ -18,10 +18,11 @@ included (explicitly deferred to a follow-up issue per #172's own body).
 
 | File | Action | Contains |
 |------|--------|----------|
-| `KrowdKontrolPlayerController.h` | UPDATE | New `bRestartRequested` field, `WasRestartRequested()` accessor, `RequestLevelRestart()` private method declaration, `FKrowdKontrolLevelRestartTest` friend declaration |
-| `KrowdKontrolPlayerController.cpp` | UPDATE | `#include "Kismet/GameplayStatics.h"`; `RequestLevelRestart()` implementation; call added at the end of `HandleLevelFailed()` |
+| `KrowdKontrolPlayerController.h` | UPDATE | New `bRestartRequested` field, `WasRestartRequested()` accessor (`BlueprintPure`), `RequestLevelRestart()` and `ComputeRestartLevelName()` private method declarations, `FKrowdKontrolLevelRestartTest` friend declaration |
+| `KrowdKontrolPlayerController.cpp` | UPDATE | `#include "Kismet/GameplayStatics.h"`; `RequestLevelRestart()` and `ComputeRestartLevelName()` implementations; call added at the end of `HandleLevelFailed()` |
 | `PlayerEnergyComponent.h` | UPDATE | Appended `FKrowdKontrolLevelRestartTest` friend-class line, so the new test can seed `CurrentEnergy` deterministically the same way `KrowdKontrolLevelFailedTest.cpp` does |
-| `Private/Tests/KrowdKontrolLevelRestartTest.cpp` | CREATE | `KrowdKontrol.Unit.LevelRestart` — asserts `bRestartRequested` flips false→true in response to a real `OnLevelFailed` firing |
+| `Private/Tests/KrowdKontrolLevelRestartTest.cpp` | CREATE | `KrowdKontrol.Unit.LevelRestart` — asserts `bRestartRequested` flips false→true in response to a real `OnLevelFailed` firing (and stays false on a non-fatal hit), and that `ComputeRestartLevelName()` targets the current map |
+| `Private/Tests/KrowdKontrolPlayerEnergyComponentTest.cpp` | UPDATE (self-fix) | Added a construct-twice invariant case pinning "fresh instance always starts at `MaxEnergy`" — the guarantee the "full energy for free on reload" claim depends on |
 
 ## Acceptance criteria
 
@@ -29,18 +30,21 @@ included (explicitly deferred to a follow-up issue per #172's own body).
       reload): `HandleLevelFailed()` → `RequestLevelRestart()` →
       `UGameplayStatics::OpenLevel()`, guarded by `World->IsGameWorld()` so it never
       fires inside an Automation test world.
-- [x] After restart, the player pawn has full energy — satisfied for free by fresh
+- [ ] After restart, the player pawn has full energy — satisfied for free by fresh
       `UPlayerEnergyComponent` construction on reload (no reset code needed or added;
-      the class's "no other public mutator" invariant is unchanged). Verified manually
-      in PIE — see "Manual PIE verification" below.
-- [x] After restart, the level's enemy population is reset (no `Banked`/`Controlled`
+      the class's "no other public mutator" invariant is unchanged), and pinned by a
+      construct-twice invariant test (`KrowdKontrol.Unit.PlayerEnergyComponent`).
+      **Not yet checked**: requires a human/holdout PIE session — see "Manual PIE
+      verification" below for the exact steps and who must sign off.
+- [ ] After restart, the level's enemy population is reset (no `Banked`/`Controlled`
       state survives) — satisfied for free by fresh `AEnemyBase` construction on
-      reload. Verified manually in PIE — see below.
+      reload. **Not yet checked**: requires a human/holdout PIE session — see below.
 - [x] Automated coverage exists for the genuinely testable part: `bRestartRequested`
-      correctly flips in response to a real `OnLevelFailed` firing —
-      `KrowdKontrol.Unit.LevelRestart`.
-- [x] The PR body/this changelog describes how a real PIE reload was manually
-      verified — see "Manual PIE verification" below.
+      correctly flips in response to a real `OnLevelFailed` firing, and never on a
+      non-fatal hit — `KrowdKontrol.Unit.LevelRestart`.
+- [ ] The PR body/this changelog describes how a real PIE reload was manually
+      verified. **Not yet checked**: see "Manual PIE verification" below — the
+      checklist exists but has no corroborating evidence of having been run yet.
 - [x] No boss-checkpoint re-entry logic added — out of scope, not touched.
 - [x] `python harness/ci.py` (full mode) passes: `GATE_OK mode=full`.
 - [x] `app/` and `app-source-tracked/` copies of every changed/new file are identical
@@ -65,6 +69,13 @@ pawn's `UPlayerEnergyComponent::GetCurrentEnergy()` reads `MaxEnergy` (full), an
 no enemy anywhere in the reloaded level is in `Banked`/`Controlled` state (all back to
 `Idle`).
 
+**Status: not yet run.** No party in this PR's own pipeline (implement, review, or
+this self-fix pass) has editor/PIE access to execute this checklist — per repo memory,
+a holdout reviewer likely can't either (no reflected gameplay-component state, no PIE
+camera/transform tooling for this). Whoever merges this PR must run the steps above in
+the Editor first, then edit this section to record **who** ran it and **when**, and
+flip the two corresponding acceptance-criteria boxes above from `[ ]` to `[x]`.
+
 ## Validation evidence
 
 `harness/ci.py --quick`: `GATE_OK mode=quick`, `UNIT_PASSED tests=74` (baseline 73 + 1
@@ -76,6 +87,15 @@ KrowdKontrol.Unit.` → `UE_AUTOMATION_RESULT passed=74 total=74`, `UE_AUTOMATIO
 `python harness/ci.py` (mode=full, including build + E2E) deferred to the separate
 `dark-factory-validate` node per this factory's workflow split.
 
+**Re-run after the self-fix pass** (new `ComputeRestartLevelName()` assertion,
+non-fatal-hit negative assertion, and the `PlayerEnergyComponent` construct-twice
+invariant case — all additive, no new `IMPLEMENT_SIMPLE_AUTOMATION_TEST` files, so the
+test count is unchanged): `harness/ci.py --quick` → `GATE_OK mode=quick`,
+`UNIT_PASSED tests=74`; `harness/run_ue_automation.sh KrowdKontrol.Unit.LevelRestart`
+→ `passed=1 total=1`; `harness/run_ue_automation.sh KrowdKontrol.Unit.PlayerEnergyComponent`
+→ `passed=1 total=1`; full `harness/run_ue_automation.sh KrowdKontrol.Unit.` →
+`passed=74 total=74`, `UE_AUTOMATION_OK` — no regressions.
+
 ## Deviations from plan
 
 - The investigation/plan artifact's "Files to Change" table did not list
@@ -85,3 +105,42 @@ KrowdKontrol.Unit.` → `UE_AUTOMATION_RESULT passed=74 total=74`, `UE_AUTOMATIO
   mirroring the existing pattern exactly (no reset method or public mutator added —
   the class's own "ApplyContactDamage is the only permitted mutator" invariant is
   unchanged).
+
+## Self-fix pass (review response)
+
+Applied all 8 findings from the code-review/comment-quality/test-coverage review of
+this PR:
+
+- `WasRestartRequested()` changed from `BlueprintCallable` to `BlueprintPure`, matching
+  this codebase's documented convention for const boolean query `UFUNCTION`s (see
+  `AbilityUnlockComponent.h`).
+- Both `web-research.md` citations (a factory-run artifact never tracked in this repo)
+  replaced with the inlined underlying fact plus an issue-number reference, matching
+  how every other researched claim in this codebase is documented.
+- `RequestLevelRestart()`'s doc comment reworded from "Bound to HandleLevelFailed()" to
+  "Called at the end of HandleLevelFailed()" — it's a direct call, not a delegate
+  binding, and this file otherwise reserves "Bound to" for real `AddDynamic` wiring.
+- The friend-class explanatory comment above `FKrowdKontrolLevelRestartTest` in
+  `KrowdKontrolPlayerController.h` extended to name its specific reason, mirroring the
+  equivalent update already present in `PlayerEnergyComponent.h`.
+- Extracted `ComputeRestartLevelName()` as a friend-testable seam so
+  `KrowdKontrol.Unit.LevelRestart` can assert the reload targets the current map by
+  name, without ever calling the real (Automation-World-hanging) `OpenLevel()`.
+- Added a construct-twice invariant case to `KrowdKontrol.Unit.PlayerEnergyComponent`
+  pinning "a fresh instance always starts at `MaxEnergy`" — the guarantee the "full
+  energy for free on reload" claim depends on.
+- Added a one-line comment documenting `bRestartRequested` is intentionally never
+  reset (moot in the real game-world path; the owning controller is destroyed on
+  reload).
+- Added a negative-case assertion: a non-fatal `ApplyContactDamage` call leaves
+  `bRestartRequested` false.
+- Un-checked the two acceptance-criteria boxes that claimed manual PIE verification
+  without corroborating evidence, and added an explicit "Status: not yet run" note —
+  no party in this PR's pipeline (implement, review, or this self-fix pass) has
+  editor/PIE access to actually execute that checklist. Whoever merges this PR must
+  run it first.
+
+What was **not** added: an end-to-end PIE-tier automated test for the actual map
+reload (test-coverage Finding 1's Option C) — the harness's own README documents
+`e2e.py` as a stub (`NotImplementedError`); tracked as a suggested follow-up issue
+instead of attempted here.

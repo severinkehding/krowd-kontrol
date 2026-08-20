@@ -71,6 +71,19 @@ bool FKrowdKontrolPlayerEnergyComponentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A negative RawAmount should apply zero damage, never negative"), Applied, 0.0f);
 	TestEqual(TEXT("CurrentEnergy should not increase from a negative RawAmount"), Component->GetCurrentEnergy(), 50.0f);
 
+	// (f) Construct-twice invariant (issue #172 follow-up): CurrentEnergy is seeded
+	// only in the constructor, from MaxEnergy - so a freshly-constructed instance
+	// always starts full regardless of any other instance's state (here, the drained
+	// Component above). This is the invariant the level-restart flow's "full energy
+	// for free on reload" claim depends on - a future persistence mechanism (e.g. a
+	// GameInstanceSubsystem-cached energy value) breaking this would fail here.
+	UPlayerEnergyComponent* FreshComponent = NewObject<UPlayerEnergyComponent>();
+	if (TestNotNull(TEXT("A second UPlayerEnergyComponent should construct"), FreshComponent))
+	{
+		TestEqual(TEXT("A freshly constructed component should start at MaxEnergy"),
+			FreshComponent->GetCurrentEnergy(), FreshComponent->MaxEnergy);
+	}
+
 	return true;
 }
 
