@@ -27,6 +27,11 @@ float ULevelClearTimeSubsystem::StopLevelTimerAndRecordClear(FName LevelID)
 	return ElapsedSeconds;
 }
 
+void ULevelClearTimeSubsystem::DiscardLevelTimer(FName LevelID)
+{
+	ActiveLevelStartTimes.Remove(LevelID);
+}
+
 bool ULevelClearTimeSubsystem::RecordClearTime(FName LevelID, float ClearTimeSeconds)
 {
 	const float ClampedSeconds = FMath::Max(0.0f, ClearTimeSeconds);

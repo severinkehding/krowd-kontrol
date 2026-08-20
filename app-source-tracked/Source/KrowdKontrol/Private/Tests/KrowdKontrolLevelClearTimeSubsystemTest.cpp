@@ -125,6 +125,27 @@ bool FKrowdKontrolLevelClearTimeSubsystemTest::RunTest(const FString& Parameters
 		Subsystem->GetBestClearTimeSeconds(TimedLevelID, TimedBest));
 	TestEqual(TEXT("The recorded best should equal the measured elapsed time"), TimedBest, ElapsedForTimed);
 
+	// DiscardLevelTimer on a LevelID with no active timer must silently no-op - no
+	// warning, no crash - unlike StopLevelTimerAndRecordClear's "no active timer" case
+	// above, which does warn. This is DiscardLevelTimer's own documented, deliberate
+	// difference from its sibling (issue #171).
+	const FName NeverStartedDiscardLevelID = TEXT("KrowdKontrol.Unit.LevelClearTimeSubsystem.NeverStartedDiscard");
+	Subsystem->DiscardLevelTimer(NeverStartedDiscardLevelID);
+	TestFalse(TEXT("Discarding a never-started timer must not create a record"),
+		Subsystem->GetBestClearTimeSeconds(NeverStartedDiscardLevelID, OutBest));
+
+	// Discarding an active timer removes it entirely - a subsequent stop-and-record
+	// behaves as if it had never been started (warns, returns 0), proving the discard
+	// actually cleared the underlying state rather than just leaving it inert.
+	const FName DiscardedLevelID = TEXT("KrowdKontrol.Unit.LevelClearTimeSubsystem.Discarded");
+	Subsystem->StartLevelTimer(DiscardedLevelID);
+	Subsystem->DiscardLevelTimer(DiscardedLevelID);
+	AddExpectedError(TEXT("no active timer"), EAutomationExpectedErrorFlags::Contains, 1);
+	const float ElapsedAfterDiscard = Subsystem->StopLevelTimerAndRecordClear(DiscardedLevelID);
+	TestEqual(TEXT("Stopping a discarded timer should behave as never-started (0 elapsed)"), ElapsedAfterDiscard, 0.0f);
+	TestFalse(TEXT("A discarded timer must never be recorded as a best"),
+		Subsystem->GetBestClearTimeSeconds(DiscardedLevelID, OutBest));
+
 	// Clean up all real on-disk state this test created, so a repeat run starts from
 	// the same clean slate this run began with.
 	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);

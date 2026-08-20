@@ -42,6 +42,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Level Clear Time")
 	float StopLevelTimerAndRecordClear(FName LevelID);
 
+	// Discards LevelID's in-progress timer without recording a clear time - used when a
+	// run ends in failure (issue #171, PRD "Run Lifecycle & Progression Signals" REQ-3)
+	// rather than a clear, so a failed attempt's elapsed time is never considered for the
+	// best-time record. Deliberately a sibling of StopLevelTimerAndRecordClear, not a
+	// repurposing of it - see that method's own doc comment for why conflating "stop" with
+	// "stop and record" would be the wrong shape. Silently no-ops if LevelID has no active
+	// timer (unlike StopLevelTimerAndRecordClear, which warns): discarding a timer that
+	// was never started isn't a misuse the way stopping one and expecting a real elapsed
+	// time back would be.
+	UFUNCTION(BlueprintCallable, Category = "Level Clear Time")
+	void DiscardLevelTimer(FName LevelID);
+
 	// The deterministic, directly-testable core: compares ClearTimeSeconds against
 	// LevelID's currently stored best (if any) and, if it's faster (or no best exists
 	// yet), persists it as the new best. Returns true if this call became the new

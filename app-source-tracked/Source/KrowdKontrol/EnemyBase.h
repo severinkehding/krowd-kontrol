@@ -72,6 +72,7 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolRootSurgeBossTest;
 	friend class FKrowdKontrolFirstStunBeaconComponentTest;
 	friend class FKrowdKontrolAbilityMatchupSignalComponentTest;
+	friend class FKrowdKontrolLevelLifecycleSubsystemTest;
 
 public:
 	AEnemyBase();

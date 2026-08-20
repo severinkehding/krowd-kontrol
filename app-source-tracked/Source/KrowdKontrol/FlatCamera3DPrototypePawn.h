@@ -21,6 +21,7 @@ class UFirstStunBeaconComponent;
 class UAbilityMatchupSignalComponent;
 class UAbilityMatchupNudgeComponent;
 class UPunishmentManagerComponent;
+class ULevelFailComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -75,6 +76,13 @@ public:
 	// issues bind their own listeners to this component's delegate.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UPunishmentManagerComponent> PunishmentManagerComponent;
+
+	// Level-fail signal plumbing (issue #171, PRD "Run Lifecycle & Progression Signals"
+	// REQ-3) - fires OnLevelFailed exactly once when PlayerEnergyComponent's energy
+	// reaches 0. AKrowdKontrolPlayerController::WireWidgetsToPawn is the consumer; see
+	// that class for what happens on fire (input disabled, level timer discarded).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<ULevelFailComponent> LevelFailComponent;
 
 	// Backs the 5 ability-cast input bindings below (issue #138) - the only public
 	// gate a real cast can be blocked by short of an unlocked ability with no eligible
