@@ -152,6 +152,36 @@ bool FKrowdKontrolAbilityLockoutComponentTest::RunTest(const FString& Parameters
 		TestFalse(TEXT("Stun should no longer be locked after the large advance"), Component->IsAbilityLocked(EAbilitySlot::Stun));
 	}
 
+	// (g) Two different slots can be locked concurrently by two separate trigger events,
+	// and each expires independently of the other - the reason this component uses a
+	// TArray<float> per slot rather than a single scalar (see this component's own
+	// class-comment rationale).
+	{
+		UAbilityLockoutComponent* Component = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), Component))
+		{
+			return false;
+		}
+
+		Component->HandleAbilityCastApplied(EAbilitySlot::Root, nullptr);
+		Component->HandlePunishmentTriggered();
+		Component->AdvanceLockouts(3.0f);
+
+		Component->HandleAbilityCastApplied(EAbilitySlot::Sleep, nullptr);
+		Component->HandlePunishmentTriggered();
+
+		TestTrue(TEXT("Root should still be locked while Sleep starts its own lockout"), Component->IsAbilityLocked(EAbilitySlot::Root));
+		TestTrue(TEXT("Sleep should be locked"), Component->IsAbilityLocked(EAbilitySlot::Sleep));
+		TestEqual(TEXT("Root remaining should reflect only its own elapsed time"),
+			Component->GetRemainingLockoutSeconds(EAbilitySlot::Root), UAbilityLockoutComponent::DefaultLockoutDurationSeconds - 3.0f);
+		TestEqual(TEXT("Sleep remaining should be a fresh full duration"),
+			Component->GetRemainingLockoutSeconds(EAbilitySlot::Sleep), UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
+
+		Component->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds - 3.0f);
+		TestFalse(TEXT("Root should expire on its own original schedule"), Component->IsAbilityLocked(EAbilitySlot::Root));
+		TestTrue(TEXT("Sleep should still be locked - it started later"), Component->IsAbilityLocked(EAbilitySlot::Sleep));
+	}
+
 	return true;
 }
 

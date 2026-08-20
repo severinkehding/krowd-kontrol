@@ -360,6 +360,39 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 	}
 
+	// (j) A different, unlocked ability must still be castable while another slot is
+	// locked - proves the gate is keyed to the requested Ability, not a global block.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root - only Stun is unlocked by default
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityLockoutComponent* LockoutComponent = NewObject<UAbilityLockoutComponent>(Owner);
+		LockoutComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		LockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Stun, nullptr);
+		LockoutComponent->HandlePunishmentTriggered(); // locks Stun only
+
+		const bool bCastResult = CastComponent->TryCastAbility(EAbilitySlot::Root);
+		TestTrue(TEXT("Casting an unlocked ability should succeed while a different ability is locked"), bCastResult);
+	}
+
 	return true;
 }
 

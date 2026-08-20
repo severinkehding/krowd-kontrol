@@ -365,6 +365,17 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		TestFalse(TEXT("Sleep should read unlocked on the tray again after the lockout expires"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
 	}
 
+	// (l) Null-guard branches on BindAbilityLockoutComponent/BindAbilityUnlockComponent
+	// must degrade safely (log-and-return) rather than crash, and must leave the tray's
+	// current locked states untouched.
+	{
+		TestFalse(TEXT("Sleep should still read unlocked before the null-guard calls"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+		Widget->BindAbilityLockoutComponent(nullptr);
+		Widget->BindAbilityUnlockComponent(nullptr);
+		TestTrue(TEXT("BindAbilityLockoutComponent(nullptr)/BindAbilityUnlockComponent(nullptr) should not crash"), true);
+		TestFalse(TEXT("Sleep should still read unlocked after the null-guard calls"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+	}
+
 	return true;
 }
 

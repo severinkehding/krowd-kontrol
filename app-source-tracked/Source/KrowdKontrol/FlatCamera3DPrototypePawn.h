@@ -22,7 +22,6 @@ class UFirstStunBeaconComponent;
 class UAbilityMatchupSignalComponent;
 class UAbilityMatchupNudgeComponent;
 class UPunishmentManagerComponent;
-class USpeedReductionPunishmentComponent;
 class ULevelFailComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
@@ -78,14 +77,6 @@ public:
 	// issues bind their own listeners to this component's delegate.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UPunishmentManagerComponent> PunishmentManagerComponent;
-
-	// Punishment 2 (issue #179, PRD "Punishment System" REQ-3) - reduces this
-	// pawn's MovementComponent->MaxSpeed for a fixed duration whenever
-	// PunishmentManagerComponent reports a trigger, then restores it. Wired to
-	// this pawn's own MovementComponent and PunishmentManagerComponent in the
-	// constructor below.
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
-	TObjectPtr<USpeedReductionPunishmentComponent> SpeedReductionPunishmentComponent;
 
 	// Level-fail signal plumbing (issue #171, PRD "Run Lifecycle & Progression Signals"
 	// REQ-3) - fires OnLevelFailed exactly once when PlayerEnergyComponent's energy
