@@ -76,14 +76,20 @@ bool FKrowdKontrolLevelFailedTest::RunTest(const FString& Parameters)
 	Controller->Possess(Pawn);
 	Controller->Player = NewObject<ULocalPlayer>(GEngine);
 	Controller->SetAsLocalPlayerController();
-	Controller->DispatchBeginPlay();
 
 	// GetGameInstance() is null in this CreateNewMap() World - inject a
 	// directly-constructed subsystem via friendship, mirroring
-	// FKrowdKontrolGizmoFirstContactComponentTest's identical precedent.
+	// FKrowdKontrolGizmoFirstContactComponentTest's identical precedent. Injected
+	// before DispatchBeginPlay() (issue #170) so BeginPlay()'s own
+	// ResolveLevelClearTimeSubsystem()/SubscribeToLevelLifecycle() call finds it
+	// already cached instead of hitting the no-subsystem warning path - a real
+	// GameInstance-resolved subsystem would likewise already exist before BeginPlay
+	// runs.
 	UGameInstance* GameInstanceOuter = NewObject<UGameInstance>();
 	ULevelClearTimeSubsystem* Subsystem = NewObject<ULevelClearTimeSubsystem>(GameInstanceOuter);
 	Controller->CachedLevelClearTimeSubsystem = Subsystem;
+
+	Controller->DispatchBeginPlay();
 
 	const FName LevelID = FName(*World->GetMapName());
 	Subsystem->StartLevelTimer(LevelID);
@@ -200,14 +206,17 @@ bool FKrowdKontrolLevelFailedTest::RunTest(const FString& Parameters)
 	CheatController->Possess(CheatPawn);
 	CheatController->Player = NewObject<ULocalPlayer>(GEngine);
 	CheatController->SetAsLocalPlayerController();
-	CheatController->DispatchBeginPlay();
 
 	// Same injection as the happy-path Controller above (GetGameInstance() is null in
-	// this CreateNewMap() World) - otherwise HandleLevelFailed's no-subsystem warning
-	// would fire again here and break the UnresolvedController warn-once count check
-	// earlier in this test.
+	// this CreateNewMap() World), and same reason it's injected before
+	// DispatchBeginPlay() (issue #170) - otherwise HandleLevelFailed's no-subsystem
+	// warning would fire again here (now also reachable from BeginPlay() itself, not
+	// just a direct HandleLevelFailed() call) and break the UnresolvedController
+	// warn-once count check earlier in this test.
 	UGameInstance* CheatGameInstanceOuter = NewObject<UGameInstance>();
 	CheatController->CachedLevelClearTimeSubsystem = NewObject<ULevelClearTimeSubsystem>(CheatGameInstanceOuter);
+
+	CheatController->DispatchBeginPlay();
 
 	UPlayerEnergyComponent* CheatEnergy = CheatPawn->FindComponentByClass<UPlayerEnergyComponent>();
 	if (!TestNotNull(TEXT("Cheat-command pawn should have a PlayerEnergyComponent"), CheatEnergy))

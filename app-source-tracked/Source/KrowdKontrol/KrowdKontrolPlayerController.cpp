@@ -12,6 +12,7 @@
 #include "EngineUtils.h"
 #include "LevelFailComponent.h"
 #include "LevelClearTimeSubsystem.h"
+#include "LevelLifecycleSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 
@@ -26,6 +27,17 @@ void AKrowdKontrolPlayerController::BeginPlay()
 	if (APawn* CurrentPawn = GetPawn())
 	{
 		WireWidgetsToPawn(CurrentPawn);
+	}
+
+	if (ULevelClearTimeSubsystem* Subsystem = ResolveLevelClearTimeSubsystem())
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>())
+			{
+				Subsystem->SubscribeToLevelLifecycle(LifecycleSubsystem);
+			}
+		}
 	}
 }
 
