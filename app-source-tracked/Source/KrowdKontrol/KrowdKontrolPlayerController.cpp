@@ -5,6 +5,7 @@
 #include "EnergyMeterWidget.h"
 #include "OnScreenPromptWidget.h"
 #include "AbilityUnlockComponent.h"
+#include "AbilityLockoutComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "PlaceholderTargetZoneActor.h"
@@ -71,6 +72,7 @@ void AKrowdKontrolPlayerController::WireWidgetsToPawn(APawn* InPawn)
 	if (AbilityTrayWidget)
 	{
 		AbilityTrayWidget->BindAbilityUnlockComponent(InPawn->FindComponentByClass<UAbilityUnlockComponent>());
+		AbilityTrayWidget->BindAbilityLockoutComponent(InPawn->FindComponentByClass<UAbilityLockoutComponent>());
 	}
 	if (EnergyMeterWidgetInstance)
 	{

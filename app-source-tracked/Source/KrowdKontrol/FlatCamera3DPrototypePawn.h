@@ -15,6 +15,7 @@ class UAbilityUnlockComponent;
 class UPlayerEnergyComponent;
 class UAbilityCooldownComponent;
 class UAbilityCastComponent;
+class UAbilityLockoutComponent;
 class UAbilityCastVFXComponent;
 class UGizmoFirstContactComponent;
 class UFirstStunBeaconComponent;
@@ -96,6 +97,15 @@ public:
 	// AbilityCastComponent.h.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityCastComponent> AbilityCastComponent;
+
+	// Punishment 1 (issue #178, PRD "Punishment System" REQ-2) - locks the most
+	// recently cast ability (Stun fallback if none yet) for a fixed duration whenever
+	// PunishmentManagerComponent reports a trigger. Bound to
+	// AbilityCastComponent->OnAbilityCastApplied and
+	// PunishmentManagerComponent->OnPunishmentTriggered in the constructor below; the
+	// gate itself is consulted by AbilityCastComponent::TryCastAbility.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityLockoutComponent> AbilityLockoutComponent;
 
 	// Ability-side colour telegraph (issue #67) - flashes AbilityData::Get(Ability)
 	// .Colour at the cast target's location whenever AbilityCastComponent's

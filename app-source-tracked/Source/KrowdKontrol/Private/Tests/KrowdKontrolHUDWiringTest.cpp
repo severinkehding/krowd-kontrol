@@ -14,8 +14,11 @@
 #include "FlatCamera3DPrototypePawn.h"
 #include "Paper2DPrototypePawn.h"
 #include "AbilityUnlockComponent.h"
+#include "AbilityCastComponent.h"
+#include "PunishmentManagerComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "AbilitySlot.h"
+#include "EnemyBaseTestActor.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/Engine.h"
 
@@ -98,6 +101,34 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 		// just that the widget was constructed.
 		TestEqual(TEXT("Energy meter fraction should move off the 0.72 placeholder once bound"),
 			Controller->EnergyMeterWidgetInstance->GetDisplayedFraction(), 1.0f);
+	}
+
+	// Production wiring for issue #178's Punishment 1 (real ability lockout on contact
+	// damage): a real successful cast through the real pawn, followed by a real
+	// punishment trigger, should actually lock the tray via the production wiring
+	// (pawn constructor -> controller WireWidgetsToPawn -> widget), not just the
+	// isolated BindAbilityLockoutComponent() method tested in isolation elsewhere.
+	if (UAbilityCastComponent* CastComponent = Pawn->FindComponentByClass<UAbilityCastComponent>())
+	{
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn for the lockout wiring case"), Enemy))
+		{
+			Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert, within CastRangeUnits of the pawn at the origin
+
+			const bool bCastResult = CastComponent->TryCastAbility(EAbilitySlot::Stun);
+			TestTrue(TEXT("Real cast through the production pawn should succeed"), bCastResult);
+
+			if (UPunishmentManagerComponent* PunishmentManager = Pawn->FindComponentByClass<UPunishmentManagerComponent>())
+			{
+				PunishmentManager->OnPunishmentTriggered.Broadcast();
+
+				if (TestNotNull(TEXT("Ability tray should be bound"), ToRawPtr(Controller->AbilityTrayWidget)))
+				{
+					TestTrue(TEXT("A real punishment trigger after a real cast should lock the tray's Stun slot via production wiring"),
+						Controller->AbilityTrayWidget->IsSlotLocked(EAbilitySlot::Stun));
+				}
+			}
+		}
 	}
 
 	// Second controller/pawn pair, opposite ordering from the one above: widgets are

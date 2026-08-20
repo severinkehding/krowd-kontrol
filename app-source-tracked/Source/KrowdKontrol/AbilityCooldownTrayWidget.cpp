@@ -1,5 +1,6 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "AbilityUnlockComponent.h"
+#include "AbilityLockoutComponent.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -198,6 +199,17 @@ void UAbilityCooldownTrayWidget::BindAbilityUnlockComponent(UAbilityUnlockCompon
 void UAbilityCooldownTrayWidget::HandleAbilityUnlocked(EAbilitySlot Ability)
 {
 	SetSlotLocked(Ability, false);
+}
+
+void UAbilityCooldownTrayWidget::BindAbilityLockoutComponent(UAbilityLockoutComponent* LockoutComponent)
+{
+	if (!LockoutComponent)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("AbilityCooldownTrayWidget::BindAbilityLockoutComponent called with null component - tray keeps its current locked states"));
+		return;
+	}
+	LockoutComponent->OnAbilityLockoutChanged.AddUniqueDynamic(this, &UAbilityCooldownTrayWidget::SetSlotLocked);
 }
 
 void UAbilityCooldownTrayWidget::AdvanceCooldowns(float DeltaSeconds)

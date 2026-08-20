@@ -7,6 +7,7 @@
 
 class UBorder;
 class UAbilityUnlockComponent;
+class UAbilityLockoutComponent;
 class UTextBlock;
 class UCanvasPanel;
 
@@ -45,9 +46,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
 	void AdvanceCooldowns(float DeltaSeconds);
 
-	// The wiring point a future Punishment 1 lockout system (PRD 08, not yet built)
-	// calls to (un)lock a slot. No real lockout gameplay logic exists yet - this is a
-	// placeholder driver only, mirroring StartCooldown()'s own precedent above.
+	// The wiring point Punishment 1's real ability-lockout system (PRD 08, issue #178)
+	// calls to (un)lock a slot, via BindAbilityLockoutComponent() below binding
+	// directly to UAbilityLockoutComponent::OnAbilityLockoutChanged.
 	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
 	void SetSlotLocked(EAbilitySlot AbilitySlot, bool bLocked);
 
@@ -68,6 +69,15 @@ public:
 	// component; until that lands the Automation test drives it directly.
 	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
 	void BindAbilityUnlockComponent(UAbilityUnlockComponent* UnlockComponent);
+
+	// Production wiring for issue #178's Punishment 1 (real ability lockout on contact
+	// damage): binds SetSlotLocked directly to the component's OnAbilityLockoutChanged
+	// delegate (FOnAbilityLockoutChanged's (EAbilitySlot, bool) signature matches
+	// SetSlotLocked's exactly, so no adapter method is needed). Unlike
+	// BindAbilityUnlockComponent above, no per-slot seeding loop is needed - a freshly
+	// bound pawn's UAbilityLockoutComponent never has an active lockout yet.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
+	void BindAbilityLockoutComponent(UAbilityLockoutComponent* LockoutComponent);
 
 	// Read-only accessor for what's currently displayed - used by the Automation
 	// Framework test, also generally useful to anything that wants to confirm the

@@ -48,11 +48,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast", meta = (ClampMin = "0.0"))
 	float CastRangeUnits = 1500.0f;
 
-	// Gate order: IsAbilityUnlocked -> IsOnCooldown (read-only) -> nearest-hot-enemy-
-	// in-range search -> TryStartCooldown -> ReceiveControl -> broadcast. A whiff (no
-	// valid target in range) does NOT consume the cooldown - TryStartCooldown is only
-	// called once a target is already confirmed. Returns false and changes nothing if
-	// any gate fails or no target is found.
+	// Gate order: IsAbilityUnlocked -> IsOnCooldown (read-only) -> IsAbilityLocked
+	// (read-only, optional - see AbilityLockoutComponent.h; absence of the component is
+	// NOT a gate failure, unlike Unlock/Cooldown) -> nearest-hot-enemy-in-range search
+	// -> TryStartCooldown -> ReceiveControl -> broadcast. A whiff (no valid target in
+	// range) does NOT consume the cooldown - TryStartCooldown is only called once a
+	// target is already confirmed. Returns false and changes nothing if any gate fails
+	// or no target is found.
 	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
 	bool TryCastAbility(EAbilitySlot Ability);
 

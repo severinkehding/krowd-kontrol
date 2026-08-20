@@ -12,6 +12,7 @@
 #include "PlayerEnergyComponent.h"
 #include "AbilityCooldownComponent.h"
 #include "AbilityCastComponent.h"
+#include "AbilityLockoutComponent.h"
 #include "AbilityCastVFXComponent.h"
 #include "GizmoFirstContactComponent.h"
 #include "FirstStunBeaconComponent.h"
@@ -76,6 +77,10 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	AbilityMatchupNudgeComponent = CreateDefaultSubobject<UAbilityMatchupNudgeComponent>(TEXT("AbilityMatchupNudgeComponent"));
 	AbilityMatchupSignalComponent->OnAbilityMatchupSignal.AddDynamic(AbilityMatchupNudgeComponent, &UAbilityMatchupNudgeComponent::HandleAbilityMatchupSignal);
+
+	AbilityLockoutComponent = CreateDefaultSubobject<UAbilityLockoutComponent>(TEXT("AbilityLockoutComponent"));
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityLockoutComponent, &UAbilityLockoutComponent::HandleAbilityCastApplied);
+	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(AbilityLockoutComponent, &UAbilityLockoutComponent::HandlePunishmentTriggered);
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
