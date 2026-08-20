@@ -14,6 +14,7 @@
 #include "LevelClearTimeSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 
 void AKrowdKontrolPlayerController::BeginPlay()
 {
@@ -102,6 +103,26 @@ void AKrowdKontrolPlayerController::HandleLevelFailed()
 		{
 			Subsystem->DiscardLevelTimer(FName(*World->GetMapName()));
 		}
+	}
+
+	RequestLevelRestart();
+}
+
+void AKrowdKontrolPlayerController::RequestLevelRestart()
+{
+	bRestartRequested = true;
+
+	UWorld* World = GetWorld();
+	// Real map travel only makes sense in an actual game world (PIE or packaged) -
+	// never in the Editor-type Worlds FAutomationEditorCommonUtils::CreateNewMap()
+	// returns for KrowdKontrol.Unit.* tests, where OpenLevel would try to travel a
+	// World that was never loaded from a real map package, hanging the Automation
+	// run (confirmed via Epic forums - see web-research.md). bRestartRequested
+	// above is what the Automation Framework test asserts instead; the real reload
+	// is verified manually in PIE (see this issue's PR body).
+	if (World && World->IsGameWorld())
+	{
+		UGameplayStatics::OpenLevel(this, FName(*World->GetMapName()), false);
 	}
 }
 

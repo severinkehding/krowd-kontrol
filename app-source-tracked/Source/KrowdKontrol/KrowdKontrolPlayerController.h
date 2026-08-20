@@ -28,6 +28,7 @@ class KROWDKONTROL_API AKrowdKontrolPlayerController : public APlayerController
 	// precedent - GetGameInstance() is null in CreateNewMap() test Worlds, so the test
 	// injects a directly-constructed ULevelClearTimeSubsystem instead of resolving one.
 	friend class FKrowdKontrolLevelFailedTest;
+	friend class FKrowdKontrolLevelRestartTest;
 
 public:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
@@ -75,6 +76,15 @@ public:
 	UFUNCTION(Exec)
 	void Cheat_ZeroPlayerEnergy();
 
+	// Set true the moment HandleLevelFailed() requests a level restart (issue #172,
+	// PRD "Run Lifecycle & Progression Signals" REQ-4) - before the real map reload
+	// (which only happens in an actual game world, never inside an Automation test
+	// World - see RequestLevelRestart()'s comment). This is what the Automation
+	// Framework test asserts, since the real reload itself can't be observed from
+	// inside a single in-process test World.
+	UFUNCTION(BlueprintCallable, Category = "Level Restart")
+	bool WasRestartRequested() const { return bRestartRequested; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
@@ -117,4 +127,10 @@ private:
 	// whatever pawn GetPawn() currently returns instead of the one that actually failed.
 	UPROPERTY()
 	TWeakObjectPtr<ULevelFailComponent> WiredLevelFailComponent;
+
+	// Bound to HandleLevelFailed() (issue #172, PRD REQ-4). Sets bRestartRequested and,
+	// only in a real game world, reloads the current map via UGameplayStatics::OpenLevel.
+	void RequestLevelRestart();
+
+	bool bRestartRequested = false;
 };
