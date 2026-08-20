@@ -230,6 +230,130 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 			Listener->LevelClearCallCount, 1);
 	}
 
+	// --- (f): OnRunComplete fires exactly once when OnLevelClear fires for a world
+	// whose map name matches the configured FinalMapName (issue #176, PRD REQ-7).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		Subsystem->FinalMapName = FName(*World->GetMapName());
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+		Subsystem->OnRunComplete.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleRunComplete);
+
+		Subsystem->OnWorldBeginPlay(*World);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
+		Enemy->TransitionToBanked();                      // -> Banked
+
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("OnLevelClear should still fire once the map matches FinalMapName"),
+			Listener->LevelClearCallCount, 1);
+		TestEqual(TEXT("OnRunComplete should fire exactly once when the cleared map matches FinalMapName"),
+			Listener->RunCompleteCallCount, 1);
+
+		// A second RefreshLevelClearState() call must not re-fire OnRunComplete, mirroring
+		// OnLevelClear's own re-entrancy guarantee it rides on.
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("A second RefreshLevelClearState() call must not re-fire OnRunComplete"),
+			Listener->RunCompleteCallCount, 1);
+	}
+
+	// --- (g): OnRunComplete must NOT fire on level-clear for a non-final map (issue
+	// #176 acceptance criteria's second required case).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		Subsystem->FinalMapName = FName(TEXT("SomeOtherMap_NotThisTestWorld"));
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+		Subsystem->OnRunComplete.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleRunComplete);
+
+		Subsystem->OnWorldBeginPlay(*World);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
+		Enemy->TransitionToBanked();                      // -> Banked
+
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("OnLevelClear should still fire for a non-final map"),
+			Listener->LevelClearCallCount, 1);
+		TestEqual(TEXT("OnRunComplete must not fire on level-clear for a non-final map"),
+			Listener->RunCompleteCallCount, 0);
+	}
+
+	// --- (h): default FinalMapName (NAME_None) must never fire OnRunComplete, even
+	// though it trivially can't equal any real map's FName either - this locks in the
+	// "unconfigured means off" default explicitly rather than leaving it implicit.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		TestEqual(TEXT("FinalMapName should default to NAME_None"), Subsystem->FinalMapName, FName(NAME_None));
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnRunComplete.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleRunComplete);
+
+		Subsystem->OnWorldBeginPlay(*World);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
+		Enemy->TransitionToBanked();                      // -> Banked
+
+		Subsystem->RefreshLevelClearState();
+		TestEqual(TEXT("OnRunComplete must not fire with the default (NAME_None) FinalMapName"),
+			Listener->RunCompleteCallCount, 0);
+	}
+
 	return true;
 }
 

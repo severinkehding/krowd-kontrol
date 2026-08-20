@@ -81,4 +81,9 @@ void ULevelLifecycleSubsystem::RefreshLevelClearState()
 
 	bHasFiredLevelClear = true;
 	OnLevelClear.Broadcast();
+
+	if (FinalMapName != NAME_None && FName(*World->GetMapName()) == FinalMapName)
+	{
+		OnRunComplete.Broadcast();
+	}
 }

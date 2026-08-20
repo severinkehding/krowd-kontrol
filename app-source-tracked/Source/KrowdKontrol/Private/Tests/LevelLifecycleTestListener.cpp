@@ -10,3 +10,8 @@ void ULevelLifecycleTestListener::HandleLevelClear()
 {
 	++LevelClearCallCount;
 }
+
+void ULevelLifecycleTestListener::HandleRunComplete()
+{
+	++RunCompleteCallCount;
+}
