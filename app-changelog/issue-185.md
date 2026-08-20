@@ -75,6 +75,29 @@ roster, 4-enemy-type roster, engine/dimensionality lock, and no-networking are a
 class); Invariant #8 (`app/` not git-tracked) is respected — the map edits live
 entirely under `app/`, mirrored here only via the `app-source-tracked/` copy path.
 
+### Independently-checkable evidence for the .umap edits
+
+The `PlayerStart`/pawn placement itself is a binary `.umap` change and, per D-009,
+will never appear in this repo's tracked diff — no text diff can confirm it. What
+*is* independently checkable, by anyone re-running the command below (not just
+reading this prose), is the automation test's pass/fail state, which only flips to
+pass once the maps actually contain the spawn:
+
+```
+$ bash harness/run_ue_automation.sh "KrowdKontrol.Unit.GameplayLevelsHavePlayableSpawn"
+UE_BUILD_START KrowdKontrolEditor Win64 Development
+UE_BUILD_OK
+UE_AUTOMATION_RESULT passed=1 total=1
+UE_AUTOMATION_OK
+```
+
+Before this fix (`main`, pre-#185), the same command against the unfixed maps
+reports the test's failure explicitly by name:
+`UE_AUTOMATION_FAILED KrowdKontrol.Unit.GameplayLevelsHavePlayableSpawn: state=Fail`.
+That before/after flip — not the PR description — is the falsifiable claim: it
+fails on the un-fixed maps and passes on these ones, and any reviewer with access
+to the Editor can reproduce both states themselves.
+
 ---
 
 Source lives under `app/` (gitignored, D-003) — this file is the tracked-repo record
