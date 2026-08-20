@@ -19,6 +19,7 @@
 #include "AbilityCastAppliedTestListener.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityCooldownComponent.h"
+#include "AbilityLockoutComponent.h"
 #include "EnemyBaseTestActor.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
@@ -288,6 +289,75 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 			static_cast<uint8>(ControlledEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 		TestEqual(TEXT("The Banked enemy must remain untouched"),
 			static_cast<uint8>(BankedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+	}
+
+	// (h) locked ability (issue #178 Punishment 1): a UAbilityLockoutComponent present
+	// and reporting Stun locked must block TryCastAbility exactly like an on-cooldown
+	// attempt, even with an eligible target present, and change nothing.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityLockoutComponent* LockoutComponent = NewObject<UAbilityLockoutComponent>(Owner);
+		LockoutComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		// Locks Stun directly - this tests TryCastAbility's gate, not the lockout
+		// component's own trigger logic (already covered by
+		// KrowdKontrolAbilityLockoutComponentTest.cpp).
+		LockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Stun, nullptr);
+		LockoutComponent->HandlePunishmentTriggered();
+
+		const bool bCastResult = CastComponent->TryCastAbility(EAbilitySlot::Stun);
+		TestFalse(TEXT("TryCastAbility for a locked-out ability should fail"), bCastResult);
+		TestEqual(TEXT("A locked-out cast attempt should not change the enemy's state"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (i) missing UAbilityLockoutComponent: TryCastAbility must succeed normally - the
+	// lockout gate is optional, unlike Unlock/Cooldown. Proves the gate's
+	// optionality doesn't regress the existing cases above, none of which construct a
+	// UAbilityLockoutComponent at all.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		const bool bCastResult = CastComponent->TryCastAbility(EAbilitySlot::Stun);
+		TestTrue(TEXT("TryCastAbility should succeed with no UAbilityLockoutComponent present"), bCastResult);
+		TestEqual(TEXT("The target should be Controlled after a successful cast"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 	}
 
 	return true;

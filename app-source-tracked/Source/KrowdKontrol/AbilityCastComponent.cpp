@@ -1,6 +1,7 @@
 #include "AbilityCastComponent.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityCooldownComponent.h"
+#include "AbilityLockoutComponent.h"
 #include "EnemyBase.h"
 #include "EngineUtils.h"
 
@@ -35,6 +36,18 @@ bool UAbilityCastComponent::TryCastAbility(EAbilitySlot Ability)
 	if (!CooldownComponent || CooldownComponent->IsOnCooldown(Ability))
 	{
 		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s on cooldown"),
+			*UEnum::GetValueAsString(Ability));
+		return false;
+	}
+
+	// Unlike Unlock/Cooldown above, a missing UAbilityLockoutComponent is NOT a gate
+	// failure - it's optional (many existing tests construct a bare
+	// UAbilityCastComponent with no lockout component attached at all). Presence-and-
+	// locked blocks; absence does not.
+	UAbilityLockoutComponent* LockoutComponent = Owner->FindComponentByClass<UAbilityLockoutComponent>();
+	if (LockoutComponent && LockoutComponent->IsAbilityLocked(Ability))
+	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s locked out (punishment)"),
 			*UEnum::GetValueAsString(Ability));
 		return false;
 	}

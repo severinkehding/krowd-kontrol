@@ -12,12 +12,14 @@
 #include "PlayerEnergyComponent.h"
 #include "AbilityCooldownComponent.h"
 #include "AbilityCastComponent.h"
+#include "AbilityLockoutComponent.h"
 #include "AbilityCastVFXComponent.h"
 #include "GizmoFirstContactComponent.h"
 #include "FirstStunBeaconComponent.h"
 #include "AbilityMatchupSignalComponent.h"
 #include "AbilityMatchupNudgeComponent.h"
 #include "PunishmentManagerComponent.h"
+#include "SpeedReductionPunishmentComponent.h"
 #include "LevelFailComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
@@ -55,6 +57,9 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
 	PunishmentManagerComponent = CreateDefaultSubobject<UPunishmentManagerComponent>(TEXT("PunishmentManagerComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(PunishmentManagerComponent, &UPunishmentManagerComponent::HandleEnergyChanged);
+	SpeedReductionPunishmentComponent = CreateDefaultSubobject<USpeedReductionPunishmentComponent>(TEXT("SpeedReductionPunishmentComponent"));
+	SpeedReductionPunishmentComponent->MovementComponent = MovementComponent;
+	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(SpeedReductionPunishmentComponent, &USpeedReductionPunishmentComponent::HandlePunishmentTriggered);
 	LevelFailComponent = CreateDefaultSubobject<ULevelFailComponent>(TEXT("LevelFailComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(LevelFailComponent, &ULevelFailComponent::HandleEnergyChanged);
 	AbilityCooldownComponent = CreateDefaultSubobject<UAbilityCooldownComponent>(TEXT("AbilityCooldownComponent"));
@@ -76,6 +81,10 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	AbilityMatchupNudgeComponent = CreateDefaultSubobject<UAbilityMatchupNudgeComponent>(TEXT("AbilityMatchupNudgeComponent"));
 	AbilityMatchupSignalComponent->OnAbilityMatchupSignal.AddDynamic(AbilityMatchupNudgeComponent, &UAbilityMatchupNudgeComponent::HandleAbilityMatchupSignal);
+
+	AbilityLockoutComponent = CreateDefaultSubobject<UAbilityLockoutComponent>(TEXT("AbilityLockoutComponent"));
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityLockoutComponent, &UAbilityLockoutComponent::HandleAbilityCastApplied);
+	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(AbilityLockoutComponent, &UAbilityLockoutComponent::HandlePunishmentTriggered);
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }

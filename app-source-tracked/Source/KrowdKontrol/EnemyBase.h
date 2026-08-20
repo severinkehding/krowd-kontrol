@@ -80,6 +80,12 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolOvercrowdVisualEffectSubsystemTest;
 	friend class FKrowdKontrolOvercrowdAudioVisualSyncTest;
 
+	// Same grant, for the issue #178 production-wiring case added to
+	// KrowdKontrolHUDWiringTest.cpp, which drives a plain AEnemyBaseTestActor through
+	// the same Idle->Alert transition to prove a real cast + real punishment trigger
+	// locks the tray through the real pawn/controller/widget wiring.
+	friend class FKrowdKontrolHUDWiringTest;
+
 public:
 	AEnemyBase();
 

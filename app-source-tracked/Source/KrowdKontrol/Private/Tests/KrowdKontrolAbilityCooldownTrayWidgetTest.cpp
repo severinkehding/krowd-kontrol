@@ -25,6 +25,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "AbilityCooldownTrayWidget.h"
+#include "AbilityLockoutComponent.h"
 #include "AbilityData.h"
 #include "ReservedGameplayColours.h"
 #include "HUDChromeColours.h"
@@ -342,6 +343,27 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	Widget->NativeTick(FGeometry(), 1.0f);
 	TestEqual(TEXT("NativeTick should advance cooldowns via AdvanceCooldowns()"),
 		Widget->GetSlotRemainingSeconds(EAbilitySlot::Stun), 2.0f);
+
+	// (k) BindAbilityLockoutComponent (issue #178, Punishment 1) drives the tray
+	// through real activation and expiry - acceptance criterion (c). AdvanceLockouts
+	// is friend-accessible per this test class's grant on UAbilityLockoutComponent.
+	{
+		UAbilityLockoutComponent* LockoutComponent = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), LockoutComponent))
+		{
+			return false;
+		}
+		Widget->BindAbilityLockoutComponent(LockoutComponent);
+
+		TestFalse(TEXT("Sleep should read unlocked before any punishment trigger"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+
+		LockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Sleep, nullptr);
+		LockoutComponent->HandlePunishmentTriggered();
+		TestTrue(TEXT("Sleep should read locked on the tray after a real punishment trigger"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+
+		LockoutComponent->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
+		TestFalse(TEXT("Sleep should read unlocked on the tray again after the lockout expires"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+	}
 
 	return true;
 }
