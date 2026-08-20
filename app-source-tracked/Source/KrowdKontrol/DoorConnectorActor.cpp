@@ -66,13 +66,18 @@ ADoorConnectorActor::ADoorConnectorActor()
 	DoorMarkerLightComponent->SetAttenuationRadius(250.0f);
 }
 
+void ADoorConnectorActor::HideConnectorVisuals()
+{
+	ConnectorFloorMeshComponent->SetVisibility(false);
+	DoorMarkerMeshComponent->SetVisibility(false);
+	DoorMarkerLightComponent->SetVisibility(false);
+}
+
 void ADoorConnectorActor::RecomputeConnectorGeometry()
 {
 	if (!ConnectsValidRooms())
 	{
-		ConnectorFloorMeshComponent->SetVisibility(false);
-		DoorMarkerMeshComponent->SetVisibility(false);
-		DoorMarkerLightComponent->SetVisibility(false);
+		HideConnectorVisuals();
 		return;
 	}
 
@@ -83,9 +88,7 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	const float Length = Delta.Size();
 	if (Length <= KINDA_SMALL_NUMBER)
 	{
-		ConnectorFloorMeshComponent->SetVisibility(false);
-		DoorMarkerMeshComponent->SetVisibility(false);
-		DoorMarkerLightComponent->SetVisibility(false);
+		HideConnectorVisuals();
 		return;
 	}
 

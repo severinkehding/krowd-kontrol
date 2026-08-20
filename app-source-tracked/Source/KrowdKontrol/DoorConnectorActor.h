@@ -65,4 +65,10 @@ public:
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
+
+private:
+	// Shared by RecomputeConnectorGeometry()'s two early-out cases (no valid rooms,
+	// zero-length span) so the floor/marker mesh/marker light stay in lockstep without
+	// repeating the same three SetVisibility(false) calls at each call site.
+	void HideConnectorVisuals();
 };
