@@ -90,6 +90,17 @@ class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 	// NotifyLevelReached - non-transitive, same rationale as the two grants above.
 	friend class FKrowdKontrolOvercrowdLevelThresholdTest;
 
+	// Same grant, for UOvercrowdVisualEffectSubsystem's own test (issue #20), which also
+	// drives this component to Active via AdvancePanicOverloadState rather than a real
+	// tick loop. Non-transitive - see MusicSubsystem.h's friend-class comment for why each
+	// test class needs its own explicit grant.
+	friend class FKrowdKontrolOvercrowdVisualEffectSubsystemTest;
+
+	// Same grant, for the audio/visual sync test (issue #20), which drives this component
+	// to Active once and asserts both UOvercrowdAudioSubsystem and
+	// UOvercrowdVisualEffectSubsystem flip in step off the same broadcast.
+	friend class FKrowdKontrolOvercrowdAudioVisualSyncTest;
+
 public:
 	UOvercrowdDetectionComponent();
 
