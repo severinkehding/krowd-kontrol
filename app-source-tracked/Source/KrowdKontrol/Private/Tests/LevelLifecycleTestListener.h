@@ -18,6 +18,10 @@ public:
 	int32 LevelClearCallCount = 0;
 	int32 RunCompleteCallCount = 0;
 
+	// Records each fired delegate's name in call order - lets tests assert relative
+	// ordering (e.g. OnRunComplete firing after OnLevelClear), not just final counts.
+	TArray<FString> CallOrder;
+
 	UFUNCTION()
 	void HandleLevelBegin(FName MapName);
 

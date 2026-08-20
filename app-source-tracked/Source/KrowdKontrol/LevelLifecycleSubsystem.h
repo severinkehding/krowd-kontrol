@@ -11,8 +11,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRunComplete);
 // PRD "Run Lifecycle & Progression Signals" REQ-1, issue #169. World-scoped source of
 // truth for "the level began"/"the level was cleared" - every downstream lifecycle
 // system (clear-time tracking, restart flow, Crowd Mastery, post-run summary)
-// subscribes to these two signals instead of re-deriving enemy/spawner state itself;
-// `OnRunComplete` below is this same class's own derived signal, not a separate
+// subscribes to OnLevelBegin/OnLevelClear instead of re-deriving enemy/spawner state
+// itself; `OnRunComplete` below is this same class's own derived signal, not a separate
 // subscriber; see this file's REQ-2..7 siblings in docs/prd-run-lifecycle.md. Ticks
 // every frame to poll AEnemyBase/UWaveSpawnerComponent state via TActorIterator,
 // mirroring UMusicSubsystem's identical "no existing cross-actor event bus" rationale

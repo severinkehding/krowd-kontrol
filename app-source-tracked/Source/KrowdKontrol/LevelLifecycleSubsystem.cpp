@@ -82,6 +82,11 @@ void ULevelLifecycleSubsystem::RefreshLevelClearState()
 	bHasFiredLevelClear = true;
 	OnLevelClear.Broadcast();
 
+	// Note: FName(*World->GetMapName()) reflects PIE-session name-mangling (e.g.
+	// "UEDPIE_0_Level5") if this ever runs in PIE, matching OnWorldBeginPlay()'s
+	// identical conversion above - packaged builds and Automation Framework tests
+	// (CreateNewMap()) are unaffected. A designer-set FinalMapName using the bare map
+	// name would silently never match in PIE.
 	if (FinalMapName != NAME_None && FName(*World->GetMapName()) == FinalMapName)
 	{
 		OnRunComplete.Broadcast();

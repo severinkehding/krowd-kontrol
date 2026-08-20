@@ -165,8 +165,15 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 			return false;
 		}
 
+		// FinalMapName set to this test world's own map, so OnRunComplete's suppression
+		// while a wave is pending isn't just implied by OnLevelClear's own gating (which
+		// (d) already proves above) - it's independently observed here too, per this
+		// class's early-return chain being the only thing standing between them.
+		Subsystem->FinalMapName = FName(*World->GetMapName());
+
 		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
 		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+		Subsystem->OnRunComplete.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleRunComplete);
 
 		Subsystem->OnWorldBeginPlay(*World);
 
@@ -204,11 +211,15 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 		Subsystem->RefreshLevelClearState();
 		TestEqual(TEXT("OnLevelClear must not fire while a spawner's IsWaveTimerActive() is true"),
 			Listener->LevelClearCallCount, 0);
+		TestEqual(TEXT("OnRunComplete must not fire while a spawner's IsWaveTimerActive() is true, even with FinalMapName matching"),
+			Listener->RunCompleteCallCount, 0);
 
 		Spawner->TriggerNextWave(); // spawns the wave's enemy immediately, clears the pending timer
 		Subsystem->RefreshLevelClearState();
 		TestEqual(TEXT("OnLevelClear must not fire while the newly wave-spawned enemy is not yet Banked"),
 			Listener->LevelClearCallCount, 0);
+		TestEqual(TEXT("OnRunComplete must not fire while the newly wave-spawned enemy is not yet Banked"),
+			Listener->RunCompleteCallCount, 0);
 
 		if (!TestEqual(TEXT("The wave should have spawned exactly one enemy"),
 			Spawner->GetSpawnedActors().Num(), 1))
@@ -228,6 +239,8 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 		Subsystem->RefreshLevelClearState();
 		TestEqual(TEXT("OnLevelClear should fire once every spawned enemy (including the wave-spawned one) is Banked and no spawner has a pending wave"),
 			Listener->LevelClearCallCount, 1);
+		TestEqual(TEXT("OnRunComplete should fire once OnLevelClear fires and FinalMapName matches, even though a wave was pending earlier in this same case"),
+			Listener->RunCompleteCallCount, 1);
 	}
 
 	// --- (f): OnRunComplete fires exactly once when OnLevelClear fires for a world
@@ -268,6 +281,13 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 			Listener->LevelClearCallCount, 1);
 		TestEqual(TEXT("OnRunComplete should fire exactly once when the cleared map matches FinalMapName"),
 			Listener->RunCompleteCallCount, 1);
+
+		// OnRunComplete's doc comment promises "immediately after OnLevelClear" - assert
+		// the actual call order, not just that both counts landed on 1, so a future
+		// refactor that reorders/splits the two Broadcast() calls fails this test.
+		const TArray<FString> ExpectedOrder = { TEXT("LevelClear"), TEXT("RunComplete") };
+		TestEqual(TEXT("OnRunComplete must fire immediately after OnLevelClear, not before or interleaved"),
+			Listener->CallOrder, ExpectedOrder);
 
 		// A second RefreshLevelClearState() call must not re-fire OnRunComplete, mirroring
 		// OnLevelClear's own re-entrancy guarantee it rides on.
