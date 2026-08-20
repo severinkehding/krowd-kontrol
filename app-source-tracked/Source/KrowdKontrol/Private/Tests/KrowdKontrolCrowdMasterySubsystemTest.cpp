@@ -230,8 +230,7 @@ bool FKrowdKontrolCrowdMasterySubsystemTest::RunTest(const FString& Parameters)
 		UEnemyControlledExpiredTestListener* Listener = NewObject<UEnemyControlledExpiredTestListener>();
 		Enemy->OnEnemyControlledExpired.AddDynamic(Listener, &UEnemyControlledExpiredTestListener::HandleEnemyControlledExpired);
 
-		const FVector LocalZeroDistanceLocation(0.0f, 0.0f, 0.0f);
-		Enemy->TickCheckDetection(LocalZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
 		Enemy->ReceiveControl(EAbilitySlot::Stun);              // Alert -> Controlled
 		const float StunDurationSeconds = AbilityData::Get(EAbilitySlot::Stun).BaseDurationSeconds;
 		Enemy->TickControlledDuration(StunDurationSeconds - 1.0f);
