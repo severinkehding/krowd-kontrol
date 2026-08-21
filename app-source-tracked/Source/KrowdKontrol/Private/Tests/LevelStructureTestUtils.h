@@ -211,4 +211,61 @@ namespace KrowdKontrolLevelTestUtils
 				Door->DoorMarkerMeshComponent->GetCollisionEnabled() == ECollisionEnabled::NoCollision);
 		}
 	}
+
+	// Shared by CheckAdjacentRoomSpacingCompressed and CheckEnemyDensityRamp below -
+	// both need rooms in chain order (by X) to compare adjacent/entrance rooms.
+	inline TArray<ARoomActor*> SortRoomsByX(const TArray<ARoomActor*>& Rooms)
+	{
+		TArray<ARoomActor*> SortedRooms = Rooms;
+		SortedRooms.Sort([](const ARoomActor& A, const ARoomActor& B) { return A.GetActorLocation().X < B.GetActorLocation().X; });
+		return SortedRooms;
+	}
+
+	// Asserts adjacent rooms (sorted by X) sit closer together than the pre-#189
+	// 3000cm baseline, without hardcoding the exact new spacing value - catches a
+	// regression back to the original spacing while still tolerating a future minor
+	// retune (issue #189).
+	inline void CheckAdjacentRoomSpacingCompressed(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
+	{
+		TArray<ARoomActor*> SortedRooms = SortRoomsByX(Rooms);
+
+		for (int32 Index = 1; Index < SortedRooms.Num(); ++Index)
+		{
+			const float Distance = SortedRooms[Index]->GetActorLocation().X - SortedRooms[Index - 1]->GetActorLocation().X;
+			Test.TestTrue(TEXT("Adjacent room spacing should be compressed below the pre-#189 3000cm baseline"),
+				Distance < 3000.f);
+		}
+	}
+
+	// Asserts the entrance room (lowest X) has 1-2 enemies and that per-room enemy
+	// counts (sorted by room X) strictly increase at every step - proves an actual
+	// density ramp, not a flat line (issue #189). A single-room level has no adjacent
+	// pair to ramp across, so it's vacuously fine - similar in spirit to
+	// CheckAllRoomsReachableViaDoors's zero-room guard above, though this guard also
+	// skips the single-room case (Num() <= 1, not just Num() == 0).
+	inline void CheckEnemyDensityRamp(
+		FAutomationTestBase& Test,
+		const TArray<ARoomActor*>& Rooms,
+		const TMap<ARoomActor*, int32>& EnemyCountByRoom)
+	{
+		TArray<ARoomActor*> SortedRooms = SortRoomsByX(Rooms);
+
+		if (SortedRooms.Num() <= 1)
+		{
+			return;
+		}
+
+		const int32 FirstCount = EnemyCountByRoom.FindRef(SortedRooms[0]);
+		Test.TestTrue(TEXT("Entrance room's enemy count should be 1-2 (issue #189)"),
+			FirstCount >= 1 && FirstCount <= 2);
+
+		int32 PreviousCount = FirstCount;
+		for (int32 Index = 1; Index < SortedRooms.Num(); ++Index)
+		{
+			const int32 CurrentCount = EnemyCountByRoom.FindRef(SortedRooms[Index]);
+			Test.TestTrue(TEXT("Enemy density should strictly increase room-to-room, proving a real ramp (issue #189)"),
+				CurrentCount > PreviousCount);
+			PreviousCount = CurrentCount;
+		}
+	}
 }
