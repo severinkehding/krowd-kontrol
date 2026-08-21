@@ -77,9 +77,11 @@ bool FKrowdKontrolLevelClearTimeWiringTest::RunTest(const FString& Parameters)
 	// AddDynamic/AddUniqueDynamic typo ever double-bound these, the second
 	// HandleLevelClear() invocation within RefreshLevelClearState()'s single Broadcast()
 	// call below would hit StopLevelTimerAndRecordClear's "no active timer" no-op
-	// warning (the first invocation already removed the timer entry) - deliberately NOT
-	// pre-registered via AddExpectedError, so that regression fails this test with an
-	// unexpected log entry instead of silently passing.
+	// warning (the first invocation already removed the timer entry). This project's
+	// harness counts a test that merely logs an unexpected warning as a pass
+	// (harness/run_ue_automation.sh's succeededWithWarnings bucket), so an unregistered
+	// log alone would NOT fail this test - the warning-count snapshot around
+	// RefreshLevelClearState() below is what actually enforces this regression check.
 	ClearTimeSubsystem->SubscribeToLevelLifecycle(LifecycleSubsystem);
 
 	const FName MapName = FName(*World->GetMapName());
@@ -103,17 +105,31 @@ bool FKrowdKontrolLevelClearTimeWiringTest::RunTest(const FString& Parameters)
 	Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
 	Enemy->TransitionToBanked();                      // -> Banked
 
+	// Snapshot the warning count immediately around RefreshLevelClearState(): a
+	// double-bind (the AddUniqueDynamic regression this test guards against) would
+	// make the single Broadcast() below invoke HandleLevelClear() twice on the same
+	// subscriber, and the second invocation's StopLevelTimerAndRecordClear call would
+	// hit the "no active timer" no-op warning. Comparing GetWarningTotal() before/after
+	// is what actually fails this test on that regression - relying on the warning
+	// being merely "unexpected" does not, since this harness treats a test that only
+	// logs a warning as a pass (see comment at the double-subscribe call above).
+	FAutomationTestExecutionInfo PreClearExecutionInfo;
+	GetExecutionInfo(PreClearExecutionInfo);
+	const int32 WarningTotalBeforeClear = PreClearExecutionInfo.GetWarningTotal();
+
 	// Fire OnLevelClear - mirrors KrowdKontrolLevelLifecycleSubsystemTest.cpp's use of
 	// RefreshLevelClearState() to drive it deterministically.
 	LifecycleSubsystem->RefreshLevelClearState();
 
-	// This single assertion pair can only be true if HandleLevelBegin actually called
+	FAutomationTestExecutionInfo PostClearExecutionInfo;
+	GetExecutionInfo(PostClearExecutionInfo);
+	TestEqual(TEXT("RefreshLevelClearState() should not log any warnings - a double-bind would trigger StopLevelTimerAndRecordClear's 'no active timer' warning on the second HandleLevelClear invocation"),
+		PostClearExecutionInfo.GetWarningTotal(), WarningTotalBeforeClear);
+
+	// This assertion pair can only be true if HandleLevelBegin actually called
 	// StartLevelTimer - otherwise StopLevelTimerAndRecordClear inside HandleLevelClear
 	// would hit the "no active timer" no-op path and never record anything - proving
-	// both halves of the OnLevelBegin/OnLevelClear wiring at once. It also implicitly
-	// proves the double-subscribe above didn't double-bind: a double-bind would have
-	// hit the "no active timer" warning on the second HandleLevelClear() invocation
-	// instead of reaching this successful record.
+	// both halves of the OnLevelBegin/OnLevelClear wiring at once.
 	TestTrue(TEXT("OnLevelClear should have recorded a best time for this map via the OnLevelBegin/OnLevelClear wiring"),
 		ClearTimeSubsystem->GetBestClearTimeSeconds(MapName, OutBest));
 	TestTrue(TEXT("The recorded best time should be non-negative"), OutBest >= 0.0f);
