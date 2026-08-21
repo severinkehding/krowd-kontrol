@@ -22,6 +22,7 @@
 #include "SpeedReductionPunishmentComponent.h"
 #include "PunishmentArbitrationComponent.h"
 #include "LevelFailComponent.h"
+#include "OvercrowdDetectionComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
@@ -84,6 +85,8 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	AbilityLockoutComponent = CreateDefaultSubobject<UAbilityLockoutComponent>(TEXT("AbilityLockoutComponent"));
 	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityLockoutComponent, &UAbilityLockoutComponent::HandleAbilityCastApplied);
+
+	OvercrowdDetectionComponent = CreateDefaultSubobject<UOvercrowdDetectionComponent>(TEXT("OvercrowdDetectionComponent"));
 
 	PunishmentArbitrationComponent = CreateDefaultSubobject<UPunishmentArbitrationComponent>(TEXT("PunishmentArbitrationComponent"));
 	PunishmentArbitrationComponent->AbilityLockoutComponent = AbilityLockoutComponent;

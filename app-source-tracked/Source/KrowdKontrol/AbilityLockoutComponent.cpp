@@ -54,6 +54,7 @@ void UAbilityLockoutComponent::StartLockout(EAbilitySlot Ability)
 	{
 		OnAbilityLockoutChanged.Broadcast(Ability, true);
 	}
+	RefreshIsLockoutActive();
 }
 
 void UAbilityLockoutComponent::EndAllLockouts()
@@ -66,6 +67,7 @@ void UAbilityLockoutComponent::EndAllLockouts()
 			OnAbilityLockoutChanged.Broadcast(static_cast<EAbilitySlot>(Index), false);
 		}
 	}
+	RefreshIsLockoutActive();
 }
 
 void UAbilityLockoutComponent::AdvanceLockouts(float DeltaSeconds)
@@ -79,6 +81,20 @@ void UAbilityLockoutComponent::AdvanceLockouts(float DeltaSeconds)
 			{
 				OnAbilityLockoutChanged.Broadcast(static_cast<EAbilitySlot>(Index), false);
 			}
+		}
+	}
+	RefreshIsLockoutActive();
+}
+
+void UAbilityLockoutComponent::RefreshIsLockoutActive()
+{
+	bIsLockoutActive = false;
+	for (float Remaining : RemainingLockoutSeconds)
+	{
+		if (Remaining > 0.0f)
+		{
+			bIsLockoutActive = true;
+			break;
 		}
 	}
 }

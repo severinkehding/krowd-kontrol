@@ -31,6 +31,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Speed Reduction", meta = (ClampMin = "0.0"))
 	float SpeedReductionDurationSeconds = 3.0f;
 
+	// Reflected runtime state (pass-1 E2E fix, issue #180) - true while a speed
+	// reduction is currently applied, kept in sync from HandlePunishmentTriggered/
+	// RestoreOriginalSpeed below, mirroring UAbilityLockoutComponent::
+	// bIsLockoutActive's rationale: tools that can only read UPROPERTY state (not
+	// invoke a function, e.g. an E2E behavioral holdout) need a direct way to
+	// observe this punishment's activity.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Speed Reduction")
+	bool bIsSpeedReductionActive = false;
+
 	// Wired explicitly by the owning pawn's constructor (same idiom
 	// MovementComponent->SetUpdatedComponent() and PunishmentManagerComponent's
 	// AddDynamic wiring already use) - the concrete UFloatingPawnMovement whose
