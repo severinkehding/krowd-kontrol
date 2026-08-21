@@ -39,6 +39,18 @@ static ATargetZone* FindAttachedZone(AActor* Marker)
 	return nullptr;
 }
 
+static int32 CountAttachedZones(AActor* Marker)
+{
+	TArray<AActor*> Attached;
+	Marker->GetAttachedActors(Attached);
+	int32 Count = 0;
+	for (AActor* A : Attached)
+	{
+		if (A && A->IsA<ATargetZone>()) { ++Count; }
+	}
+	return Count;
+}
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -108,23 +120,10 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	// Calling EnsureBankingZonesWired() a second time must not double-spawn, for
 	// either marker.
 	Room->EnsureBankingZonesWired();
-	TArray<AActor*> AttachedAfterSecondCall;
-	Marker->GetAttachedActors(AttachedAfterSecondCall);
-	int32 ZoneCount = 0;
-	for (AActor* A : AttachedAfterSecondCall)
-	{
-		if (A && A->IsA<ATargetZone>()) { ++ZoneCount; }
-	}
-	TestEqual(TEXT("EnsureBankingZonesWired should be idempotent - no duplicate zone"), ZoneCount, 1);
-
-	TArray<AActor*> SecondAttachedAfterSecondCall;
-	SecondMarker->GetAttachedActors(SecondAttachedAfterSecondCall);
-	int32 SecondZoneCount = 0;
-	for (AActor* A : SecondAttachedAfterSecondCall)
-	{
-		if (A && A->IsA<ATargetZone>()) { ++SecondZoneCount; }
-	}
-	TestEqual(TEXT("EnsureBankingZonesWired should be idempotent for the second marker too"), SecondZoneCount, 1);
+	TestEqual(TEXT("EnsureBankingZonesWired should be idempotent - no duplicate zone"),
+		CountAttachedZones(Marker), 1);
+	TestEqual(TEXT("EnsureBankingZonesWired should be idempotent for the second marker too"),
+		CountAttachedZones(SecondMarker), 1);
 
 	// Any concrete AEnemyBase subclass works here - ATrooperEnemy (TR-UPR) is used
 	// purely as a spawnable non-abstract instance. Its native EnemyType is irrelevant:
