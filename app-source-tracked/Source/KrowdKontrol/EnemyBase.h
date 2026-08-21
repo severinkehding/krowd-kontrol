@@ -31,6 +31,7 @@ enum class EEnemyState : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyBanked);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyControlledExpired);
 
 // Shared, structurally-safe foundation for every core enemy type (SN-1PR, RU-NNR,
 // TR-UPR, B0-0MR - PRD 03): a linear Idle->Alert->Attack->Controlled->Banked state
@@ -73,6 +74,12 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolFirstStunBeaconComponentTest;
 	friend class FKrowdKontrolAbilityMatchupSignalComponentTest;
 	friend class FKrowdKontrolLevelLifecycleSubsystemTest;
+	friend class FKrowdKontrolCrowdMasterySubsystemTest;
+	// Same grant, for the BeginPlay-wiring coverage test (issue #174 pass-2 code-review
+	// finding), which drives one enemy to Controlled to prove the wired delegate
+	// transmits. Non-transitive - see MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolCrowdMasteryBeginPlayWiringTest;
+	friend class FKrowdKontrolLevelClearTimeWiringTest;
 
 	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
 	// sync test (issue #20), which drive a plain AEnemyBaseTestActor through the same
@@ -97,6 +104,13 @@ public:
 	// Fires exactly once, on the transition into Banked.
 	UPROPERTY(BlueprintAssignable, Category = "Enemy")
 	FOnEnemyBanked OnEnemyBanked;
+
+	// Fires exactly once, when the Controlled-state duration elapses and
+	// CurrentState reverts to Alert (see TickControlledDuration) - the Controlled ->
+	// Alert edge in the transition table above. Never fires on the Controlled ->
+	// Banked edge (that's OnEnemyBanked's edge instead).
+	UPROPERTY(BlueprintAssignable, Category = "Enemy")
+	FOnEnemyControlledExpired OnEnemyControlledExpired;
 
 	EEnemyState GetEnemyState() const { return CurrentState; }
 
@@ -149,6 +163,14 @@ public:
 
 protected:
 	virtual void Tick(float DeltaTime) override;
+
+	// Binds OnEnemyControlledExpired to
+	// UCrowdMasterySubsystem::HandleEnemyControlledExpired (issue #174 AC1) here, not
+	// the constructor - GetWorld() has no valid subsystem collection to resolve
+	// against until this actor has begun play, same "bound in BeginPlay, not the
+	// constructor" precedent ADualZoneBoss::BeginPlay establishes for a delegate
+	// binding that depends on world state.
+	virtual void BeginPlay() override;
 
 	// Per-type attack range, in units. Base default is 0.0f (never reaches Attack on
 	// its own); a concrete subclass overrides this per issue #12's AC.

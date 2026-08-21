@@ -19,6 +19,7 @@
 #include "AbilityMatchupSignalComponent.h"
 #include "AbilityMatchupNudgeComponent.h"
 #include "PunishmentManagerComponent.h"
+#include "SpeedReductionPunishmentComponent.h"
 #include "LevelFailComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
@@ -43,8 +44,6 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->SetRelativeRotation(FRotator(-80.0f, 0.0f, 0.0f));
-	CameraBoom->TargetArmLength = 800.0f;
 	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->bUsePawnControlRotation = false;
 
@@ -52,10 +51,15 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	TopDownCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	TopDownCamera->bUsePawnControlRotation = false;
 
+	ApplyCameraFraming();
+
 	AbilityUnlockComponent = CreateDefaultSubobject<UAbilityUnlockComponent>(TEXT("AbilityUnlockComponent"));
 	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
 	PunishmentManagerComponent = CreateDefaultSubobject<UPunishmentManagerComponent>(TEXT("PunishmentManagerComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(PunishmentManagerComponent, &UPunishmentManagerComponent::HandleEnergyChanged);
+	SpeedReductionPunishmentComponent = CreateDefaultSubobject<USpeedReductionPunishmentComponent>(TEXT("SpeedReductionPunishmentComponent"));
+	SpeedReductionPunishmentComponent->MovementComponent = MovementComponent;
+	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(SpeedReductionPunishmentComponent, &USpeedReductionPunishmentComponent::HandlePunishmentTriggered);
 	LevelFailComponent = CreateDefaultSubobject<ULevelFailComponent>(TEXT("LevelFailComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(LevelFailComponent, &ULevelFailComponent::HandleEnergyChanged);
 	AbilityCooldownComponent = CreateDefaultSubobject<UAbilityCooldownComponent>(TEXT("AbilityCooldownComponent"));
@@ -84,6 +88,34 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
+
+void AFlatCamera3DPrototypePawn::ApplyCameraFraming()
+{
+	if (CameraBoom)
+	{
+		CameraBoom->TargetArmLength = CameraArmLength;
+		CameraBoom->SetRelativeRotation(FRotator(CameraBoomPitch, 0.0f, 0.0f));
+	}
+	if (TopDownCamera)
+	{
+		TopDownCamera->SetFieldOfView(CameraFieldOfView);
+	}
+}
+
+#if WITH_EDITOR
+void AFlatCamera3DPrototypePawn::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	const FName ChangedPropertyName = PropertyChangedEvent.GetPropertyName();
+	if (ChangedPropertyName == GET_MEMBER_NAME_CHECKED(AFlatCamera3DPrototypePawn, CameraArmLength) ||
+		ChangedPropertyName == GET_MEMBER_NAME_CHECKED(AFlatCamera3DPrototypePawn, CameraBoomPitch) ||
+		ChangedPropertyName == GET_MEMBER_NAME_CHECKED(AFlatCamera3DPrototypePawn, CameraFieldOfView))
+	{
+		ApplyCameraFraming();
+	}
+}
+#endif
 
 void AFlatCamera3DPrototypePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {

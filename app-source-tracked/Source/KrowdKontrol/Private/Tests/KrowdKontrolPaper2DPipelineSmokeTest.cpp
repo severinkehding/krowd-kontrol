@@ -36,6 +36,7 @@
 #include "Editor.h"
 #include "GameFramework/PlayerController.h"
 #include "PunishmentManagerComponent.h"
+#include "SpeedReductionPunishmentComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "PunishmentTriggeredTestListener.h"
 
@@ -99,6 +100,14 @@ bool FKrowdKontrolPaper2DPipelineSmokeTest::RunTest(const FString& Parameters)
 		static_cast<USceneComponent*>(MovementComponent->UpdatedComponent),
 		static_cast<USceneComponent*>(PawnRootComponent));
 
+	// Captured before any ApplyContactDamage call below - this pawn's real
+	// SpeedReductionPunishmentComponent (issue #179) is wired to the same
+	// PunishmentManagerComponent trigger the very next block exercises, so by
+	// the time that block's ApplyContactDamage call returns, MaxSpeed has
+	// already been reduced by production wiring, not just by this section's
+	// own dedicated block below.
+	const float OriginalMovementSpeed = MovementComponent->MaxSpeed;
+
 	// Proves this pawn's PunishmentManagerComponent (issue #177) is genuinely bound
 	// to this same pawn's own PlayerEnergyComponent via constructor-time AddDynamic,
 	// not a copy-paste slip binding to the other prototype pawn's instance - the
@@ -113,6 +122,24 @@ bool FKrowdKontrolPaper2DPipelineSmokeTest::RunTest(const FString& Parameters)
 		Pawn->PlayerEnergyComponent->ApplyContactDamage(7.0f, nullptr);
 		TestEqual(TEXT("Pawn's own PlayerEnergyComponent damage should trigger this pawn's own PunishmentManagerComponent"),
 			Listener->CallCount, 1);
+	}
+
+	// Proves this pawn's SpeedReductionPunishmentComponent (issue #179) is
+	// genuinely bound to this same pawn's own PunishmentManagerComponent and
+	// reduces this same pawn's own MovementComponent - the
+	// KrowdKontrol.Unit.SpeedReductionPunishmentComponent test alone can't catch
+	// a copy-paste slip wiring one pawn's component to the other's, since it
+	// wires everything by hand. Mirrors the pawn-level wiring gap PR #182's
+	// own review flagged for PunishmentManagerComponent itself. Doesn't trigger
+	// a second ApplyContactDamage call - the PunishmentManagerComponent block
+	// above already did, and this pawn's SpeedReductionPunishmentComponent is
+	// bound to that same OnPunishmentTriggered signal, so MaxSpeed here should
+	// already reflect the reduction from that one real contact-damage event.
+	USpeedReductionPunishmentComponent* SpeedReductionComponent = Pawn->SpeedReductionPunishmentComponent;
+	if (TestNotNull(TEXT("Pawn should have a SpeedReductionPunishmentComponent"), SpeedReductionComponent))
+	{
+		TestEqual(TEXT("Pawn's own contact damage above should have reduced this same pawn's own MovementComponent MaxSpeed"),
+			MovementComponent->MaxSpeed, OriginalMovementSpeed * SpeedReductionComponent->SpeedMultiplierWhileActive);
 	}
 
 	TestTrue(TEXT("SpriteComponent should be rotated into the ground plane (<= -45 degrees pitch), not edge-on"),

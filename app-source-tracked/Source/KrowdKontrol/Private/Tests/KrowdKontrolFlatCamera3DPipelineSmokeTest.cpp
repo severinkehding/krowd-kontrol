@@ -32,6 +32,7 @@
 #include "AbilityData.h"
 #include "Components/PointLightComponent.h"
 #include "PunishmentManagerComponent.h"
+#include "SpeedReductionPunishmentComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "PunishmentTriggeredTestListener.h"
 
@@ -93,6 +94,14 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 		static_cast<USceneComponent*>(MovementComponent->UpdatedComponent),
 		static_cast<USceneComponent*>(MeshComponent));
 
+	// Captured before any ApplyContactDamage call below - this pawn's real
+	// SpeedReductionPunishmentComponent (issue #179) is wired to the same
+	// PunishmentManagerComponent trigger the very next block exercises, so by
+	// the time that block's ApplyContactDamage call returns, MaxSpeed has
+	// already been reduced by production wiring, not just by this section's
+	// own dedicated block below.
+	const float OriginalMovementSpeed = MovementComponent->MaxSpeed;
+
 	// Proves this pawn's PunishmentManagerComponent (issue #177) is genuinely bound
 	// to this same pawn's own PlayerEnergyComponent via constructor-time AddDynamic,
 	// not a copy-paste slip binding to the other prototype pawn's instance - the
@@ -107,6 +116,24 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 		Pawn->PlayerEnergyComponent->ApplyContactDamage(7.0f, nullptr);
 		TestEqual(TEXT("Pawn's own PlayerEnergyComponent damage should trigger this pawn's own PunishmentManagerComponent"),
 			Listener->CallCount, 1);
+	}
+
+	// Proves this pawn's SpeedReductionPunishmentComponent (issue #179) is
+	// genuinely bound to this same pawn's own PunishmentManagerComponent and
+	// reduces this same pawn's own MovementComponent - the
+	// KrowdKontrol.Unit.SpeedReductionPunishmentComponent test alone can't catch
+	// a copy-paste slip wiring one pawn's component to the other's, since it
+	// wires everything by hand. Mirrors the pawn-level wiring gap PR #182's
+	// own review flagged for PunishmentManagerComponent itself. Doesn't trigger
+	// a second ApplyContactDamage call - the PunishmentManagerComponent block
+	// above already did, and this pawn's SpeedReductionPunishmentComponent is
+	// bound to that same OnPunishmentTriggered signal, so MaxSpeed here should
+	// already reflect the reduction from that one real contact-damage event.
+	USpeedReductionPunishmentComponent* SpeedReductionComponent = Pawn->SpeedReductionPunishmentComponent;
+	if (TestNotNull(TEXT("Pawn should have a SpeedReductionPunishmentComponent"), SpeedReductionComponent))
+	{
+		TestEqual(TEXT("Pawn's own contact damage above should have reduced this same pawn's own MovementComponent MaxSpeed"),
+			MovementComponent->MaxSpeed, OriginalMovementSpeed * SpeedReductionComponent->SpeedMultiplierWhileActive);
 	}
 
 	TestTrue(TEXT("CameraBoom pitch should be genuinely top-down (<= -45 degrees), not side-on"),
@@ -403,6 +430,108 @@ bool FKrowdKontrolFlatCamera3DAbilityCastWiringTest::RunTest(const FString& Para
 				Pawn->AbilityCastVFXComponent->CastFlashLightComponent->GetLightColor().Equals(
 					AbilityData::Get(Case.ExpectedAbility).Colour, 0.01f));
 		}
+	}
+
+	return true;
+}
+
+// Regression coverage for issue #188 (PRD "Level Playability & Presentation"
+// REQ-4): the camera-framing properties (CameraArmLength/CameraBoomPitch/
+// CameraFieldOfView) must (a) default within their documented ClampMin/ClampMax
+// ranges, and (b) genuinely drive CameraBoom/TopDownCamera when changed - not sit
+// decorative while the constructor's original hardcoded values silently persist
+// on the components. Calls ApplyCameraFraming() directly rather than simulating a
+// full Details-panel PostEditChangeProperty event: that function is the same one
+// both the constructor and PostEditChangeProperty call, so this exercises real
+// production wiring without needing to hand-construct an FPropertyChangedEvent.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolFlatCamera3DCameraFramingTest,
+	"KrowdKontrol.Unit.FlatCamera3DPipelineCameraFraming",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolFlatCamera3DCameraFramingTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+
+	AFlatCamera3DPrototypePawn* Pawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+	if (!TestNotNull(TEXT("AFlatCamera3DPrototypePawn should spawn into the test World"), Pawn))
+	{
+		return false;
+	}
+
+	// (a) Defaults land within the documented ranges (mirrors each property's own
+	// ClampMin/ClampMax meta in FlatCamera3DPrototypePawn.h).
+	TestTrue(TEXT("CameraArmLength default should be within the documented [300, 600] range"),
+		Pawn->CameraArmLength >= 300.0f && Pawn->CameraArmLength <= 600.0f);
+	TestTrue(TEXT("CameraBoomPitch default should be within the documented [-75, -45] range"),
+		Pawn->CameraBoomPitch >= -75.0f && Pawn->CameraBoomPitch <= -45.0f);
+	TestTrue(TEXT("CameraFieldOfView default should be within the documented [60, 90] range"),
+		Pawn->CameraFieldOfView >= 60.0f && Pawn->CameraFieldOfView <= 90.0f);
+
+	// Defaults should also already be closer/less extreme than the pre-#188 hardcoded
+	// values (800cm / -80 degrees), per REQ-4's "closer than today's 800cm/-80" ask.
+	TestTrue(TEXT("CameraArmLength default should be closer than the old 800cm hardcoded value"),
+		Pawn->CameraArmLength < 800.0f);
+	TestTrue(TEXT("CameraBoomPitch default should be less extreme than the old -80 degree hardcoded value"),
+		Pawn->CameraBoomPitch > -80.0f);
+
+	// (a continued) Defaults are also already correctly applied onto the live
+	// components at spawn time, via the constructor's ApplyCameraFraming() call.
+	TestEqual(TEXT("CameraBoom->TargetArmLength should equal CameraArmLength at spawn"),
+		Pawn->CameraBoom->TargetArmLength, Pawn->CameraArmLength);
+	TestEqual(TEXT("CameraBoom pitch should equal CameraBoomPitch at spawn"),
+		static_cast<float>(Pawn->CameraBoom->GetRelativeRotation().Pitch), Pawn->CameraBoomPitch);
+	TestEqual(TEXT("TopDownCamera FieldOfView should equal CameraFieldOfView at spawn"),
+		Pawn->TopDownCamera->FieldOfView, Pawn->CameraFieldOfView);
+
+	// (b) Changing a property and re-applying genuinely drives CameraBoom/
+	// TopDownCamera - proves these are live wiring, not decorative UPROPERTYs.
+	const float NewArmLength = 320.0f;
+	const float NewPitch = -72.0f;
+	const float NewFOV = 65.0f;
+	Pawn->CameraArmLength = NewArmLength;
+	Pawn->CameraBoomPitch = NewPitch;
+	Pawn->CameraFieldOfView = NewFOV;
+	Pawn->ApplyCameraFraming();
+
+	TestEqual(TEXT("Changing CameraArmLength and re-applying should update CameraBoom->TargetArmLength"),
+		Pawn->CameraBoom->TargetArmLength, NewArmLength);
+	TestEqual(TEXT("Changing CameraBoomPitch and re-applying should update CameraBoom's relative pitch"),
+		static_cast<float>(Pawn->CameraBoom->GetRelativeRotation().Pitch), NewPitch);
+	TestEqual(TEXT("Changing CameraFieldOfView and re-applying should update TopDownCamera->FieldOfView"),
+		Pawn->TopDownCamera->FieldOfView, NewFOV);
+
+	// (c) PostEditChangeProperty itself (not just the shared ApplyCameraFraming()
+	// helper) must route each camera property to a live reapply - this is the actual
+	// mechanism a placed-instance Details-panel edit uses in the editor.
+	const float DetailsPanelArmLength = 500.0f;
+	Pawn->CameraArmLength = DetailsPanelArmLength;
+	FProperty* ArmLengthProperty = FindFProperty<FProperty>(
+		AFlatCamera3DPrototypePawn::StaticClass(),
+		GET_MEMBER_NAME_CHECKED(AFlatCamera3DPrototypePawn, CameraArmLength));
+	if (TestNotNull(TEXT("CameraArmLength should be a reflected FProperty"), ArmLengthProperty))
+	{
+		FPropertyChangedEvent ArmLengthChangedEvent(ArmLengthProperty);
+		Pawn->PostEditChangeProperty(ArmLengthChangedEvent);
+		TestEqual(TEXT("PostEditChangeProperty(CameraArmLength) should reapply onto CameraBoom->TargetArmLength"),
+			Pawn->CameraBoom->TargetArmLength, DetailsPanelArmLength);
+	}
+
+	// Negative case: an unrelated property change should not be silently swallowed by
+	// an over-broad filter that reapplies on every PostEditChangeProperty call.
+	Pawn->CameraFieldOfView = 88.0f; // mutated but not yet reapplied
+	FProperty* AutoPossessProperty = FindFProperty<FProperty>(
+		APawn::StaticClass(), GET_MEMBER_NAME_CHECKED(APawn, AutoPossessPlayer));
+	if (TestNotNull(TEXT("AutoPossessPlayer should be a reflected FProperty"), AutoPossessProperty))
+	{
+		FPropertyChangedEvent UnrelatedChangedEvent(AutoPossessProperty);
+		Pawn->PostEditChangeProperty(UnrelatedChangedEvent);
+		TestNotEqual(TEXT("PostEditChangeProperty for an unrelated property should not reapply CameraFieldOfView"),
+			Pawn->TopDownCamera->FieldOfView, 88.0f);
 	}
 
 	return true;

@@ -22,6 +22,7 @@ class UFirstStunBeaconComponent;
 class UAbilityMatchupSignalComponent;
 class UAbilityMatchupNudgeComponent;
 class UPunishmentManagerComponent;
+class USpeedReductionPunishmentComponent;
 class ULevelFailComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
@@ -57,6 +58,21 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UCameraComponent> TopDownCamera;
 
+	// Camera framing (issue #188, PRD "Level Playability & Presentation" REQ-4) -
+	// EditAnywhere so designers can retune "feels far away / hard to read" without a
+	// C++ recompile. Ranges below are the newly documented defaults' valid bounds;
+	// KrowdKontrol.Unit.FlatCamera3DPipelineCameraFraming asserts both the bounds and
+	// that these properties genuinely drive CameraBoom/TopDownCamera via
+	// ApplyCameraFraming() below, not just at construction time.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "300.0", ClampMax = "600.0"))
+	float CameraArmLength = 450.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "-75.0", ClampMax = "-45.0"))
+	float CameraBoomPitch = -60.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "60.0", ClampMax = "90.0"))
+	float CameraFieldOfView = 75.0f;
+
 	// Makes the run's crowd-control unlock state (issue #69) reachable from the only
 	// pawn placed in the project's actual playable level - this pawn was previously
 	// the sole player pawn with no unlock tracking attached at all, so nothing could
@@ -77,6 +93,14 @@ public:
 	// issues bind their own listeners to this component's delegate.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UPunishmentManagerComponent> PunishmentManagerComponent;
+
+	// Punishment 2 (issue #179, PRD "Punishment System" REQ-3) - reduces this
+	// pawn's MovementComponent->MaxSpeed for a fixed duration whenever
+	// PunishmentManagerComponent reports a trigger, then restores it. Wired to
+	// this pawn's own MovementComponent and PunishmentManagerComponent in the
+	// constructor below.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<USpeedReductionPunishmentComponent> SpeedReductionPunishmentComponent;
 
 	// Level-fail signal plumbing (issue #171, PRD "Run Lifecycle & Progression Signals"
 	// REQ-3) - fires OnLevelFailed exactly once when PlayerEnergyComponent's energy
@@ -141,6 +165,18 @@ public:
 	// AbilityCastComponent's OnAbilityCastApplied directly.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityMatchupNudgeComponent> AbilityMatchupNudgeComponent;
+
+	// Applies CameraArmLength/CameraBoomPitch/CameraFieldOfView onto
+	// CameraBoom/TopDownCamera. Called once from the constructor (CDO + freshly
+	// spawned instances) and again from PostEditChangeProperty below (placed-instance
+	// Details-panel edits) - the single source of truth for "property -> component",
+	// so KrowdKontrol.Unit.FlatCamera3DPipelineCameraFraming can call it directly to
+	// prove the wiring is real, not test-only.
+	void ApplyCameraFraming();
+
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
