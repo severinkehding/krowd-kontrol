@@ -32,13 +32,16 @@ class KROWDKONTROL_API UPlayerEnergyComponent : public UActorComponent
 	// ULevelFailComponent's (issue #171, seeding CurrentEnergy for a deterministic
 	// single-call floor-to-0 to test the "OnLevelFailed fires exactly once" case), and
 	// the level-restart flow's (issue #172, same deterministic floor-to-0 seed to
-	// trigger OnLevelFailed -> HandleLevelFailed -> RequestLevelRestart).
+	// trigger OnLevelFailed -> HandleLevelFailed -> RequestLevelRestart), and the
+	// boss-checkpoint restart flow's (issue #173, same seed, reused to drive the fail
+	// path in both its no-checkpoint and checkpoint-reached cases).
 	friend class FKrowdKontrolPlayerEnergyComponentTest;
 	friend class FKrowdKontrolEnergyMeterWidgetTest;
 	friend class FKrowdKontrolBomberEnemyTest;
 	friend class FKrowdKontrolPunishmentManagerComponentTest;
 	friend class FKrowdKontrolLevelFailedTest;
 	friend class FKrowdKontrolLevelRestartTest;
+	friend class FKrowdKontrolBossCheckpointRestartTest;
 
 public:
 	UPlayerEnergyComponent();

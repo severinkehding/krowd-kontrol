@@ -1,12 +1,16 @@
 #include "LevelLifecycleSubsystem.h"
+#include "LevelClearTimeSubsystem.h"
 #include "EnemyBase.h"
+#include "BossBase.h"
 #include "WaveSpawnerComponent.h"
 #include "EngineUtils.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 
 void ULevelLifecycleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	EnsureLevelClearTimeSubscription();
 }
 
 void ULevelLifecycleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -20,13 +24,35 @@ void ULevelLifecycleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		return;
 	}
 	bHasFiredLevelBegin = true;
+	EnsureLevelClearTimeSubscription();
 	OnLevelBegin.Broadcast(FName(*InWorld.GetMapName()));
+}
+
+void ULevelLifecycleSubsystem::EnsureLevelClearTimeSubscription()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (!GameInstance)
+	{
+		return;
+	}
+	if (ULevelClearTimeSubsystem* ClearTimeSubsystem = GameInstance->GetSubsystem<ULevelClearTimeSubsystem>())
+	{
+		ClearTimeSubsystem->SubscribeToLevelLifecycle(this);
+	}
+	else if (!bHasWarnedMissingLevelClearTimeSubsystem)
+	{
+		bHasWarnedMissingLevelClearTimeSubsystem = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ULevelLifecycleSubsystem: no ULevelClearTimeSubsystem available on this GameInstance - clear-time tracking will not be wired for this level."));
+	}
 }
 
 void ULevelLifecycleSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	RefreshLevelClearState();
+	RefreshBossCheckpointState();
 }
 
 TStatId ULevelLifecycleSubsystem::GetStatId() const
@@ -90,5 +116,28 @@ void ULevelLifecycleSubsystem::RefreshLevelClearState()
 	if (FinalMapName != NAME_None && FName(*World->GetMapName()) == FinalMapName)
 	{
 		OnRunComplete.Broadcast();
+	}
+}
+
+void ULevelLifecycleSubsystem::RefreshBossCheckpointState()
+{
+	if (bHasReachedBossCheckpoint)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<ABossBase> It(World); It; ++It)
+	{
+		if (It->GetBossState() != EBossState::Idle)
+		{
+			bHasReachedBossCheckpoint = true;
+			return;
+		}
 	}
 }
