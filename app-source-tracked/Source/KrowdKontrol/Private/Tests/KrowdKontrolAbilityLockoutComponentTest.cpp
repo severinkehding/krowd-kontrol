@@ -17,6 +17,7 @@
 #include "Misc/AutomationTest.h"
 #include "AbilityLockoutComponent.h"
 #include "AbilityLockoutChangedTestListener.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -209,6 +210,36 @@ bool FKrowdKontrolAbilityLockoutComponentTest::RunTest(const FString& Parameters
 
 		Component->EndAllLockouts();
 		TestEqual(TEXT("EndAllLockouts on an already-clear component should not broadcast"), Listener->CallCount, 2);
+	}
+
+	// (i) kk.Punishment.LockoutEnabled=0 prevents HandlePunishmentTriggered from
+	// locking anything; restoring the CVar to 1 (its default) immediately allows
+	// normal activation again. The CVar is process-wide state shared by every
+	// KrowdKontrol.Unit.* test running in the same Automation Framework pass, so
+	// this always ends by leaving it at 1, regardless of which assertion above
+	// fails first.
+	{
+		IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.LockoutEnabled"));
+		if (!TestNotNull(TEXT("kk.Punishment.LockoutEnabled CVar should be registered"), CVar))
+		{
+			return false;
+		}
+
+		UAbilityLockoutComponent* Component = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), Component))
+		{
+			return false;
+		}
+
+		CVar->Set(0);
+		Component->HandlePunishmentTriggered();
+		TestFalse(TEXT("Stun should not be locked while kk.Punishment.LockoutEnabled is 0"),
+			Component->IsAbilityLocked(EAbilitySlot::Stun));
+
+		CVar->Set(1);
+		Component->HandlePunishmentTriggered();
+		TestTrue(TEXT("Stun should lock normally once kk.Punishment.LockoutEnabled is restored to 1"),
+			Component->IsAbilityLocked(EAbilitySlot::Stun));
 	}
 
 	return true;

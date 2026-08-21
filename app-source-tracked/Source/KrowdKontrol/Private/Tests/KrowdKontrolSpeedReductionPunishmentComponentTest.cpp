@@ -4,6 +4,7 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -111,6 +112,42 @@ bool FKrowdKontrolSpeedReductionPunishmentComponentTest::RunTest(const FString& 
 		USpeedReductionPunishmentComponent* Unwired = NewObject<USpeedReductionPunishmentComponent>(UnwiredOwner);
 		Unwired->RegisterComponent();
 		Unwired->HandlePunishmentTriggered(); // should no-op, not crash
+	}
+
+	// (f) kk.Punishment.SpeedReductionEnabled=0 prevents HandlePunishmentTriggered
+	// from reducing MaxSpeed; restoring the CVar to 1 (its default) immediately
+	// allows normal activation again. Same process-wide-CVar restore rationale as
+	// KrowdKontrolAbilityLockoutComponentTest.cpp's equivalent case.
+	{
+		IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.SpeedReductionEnabled"));
+		if (!TestNotNull(TEXT("kk.Punishment.SpeedReductionEnabled CVar should be registered"), CVar))
+		{
+			return false;
+		}
+
+		UWorld* CVarWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		AActor* CVarOwner = CVarWorld->SpawnActor<AActor>();
+
+		UFloatingPawnMovement* CVarMovement = NewObject<UFloatingPawnMovement>(CVarOwner);
+		CVarMovement->RegisterComponent();
+		CVarMovement->MaxSpeed = 1200.0f;
+
+		USpeedReductionPunishmentComponent* CVarSpeedReduction = NewObject<USpeedReductionPunishmentComponent>(CVarOwner);
+		CVarSpeedReduction->RegisterComponent();
+		CVarSpeedReduction->MovementComponent = CVarMovement;
+		CVarSpeedReduction->SpeedMultiplierWhileActive = 0.5f;
+
+		CVar->Set(0);
+		CVarSpeedReduction->HandlePunishmentTriggered();
+		TestEqual(TEXT("MaxSpeed should stay unchanged while kk.Punishment.SpeedReductionEnabled is 0"),
+			CVarMovement->MaxSpeed, 1200.0f);
+		TestFalse(TEXT("bIsSpeedReductionActive should stay false while the CVar is 0"),
+			CVarSpeedReduction->bIsSpeedReductionActive);
+
+		CVar->Set(1);
+		CVarSpeedReduction->HandlePunishmentTriggered();
+		TestEqual(TEXT("MaxSpeed should reduce normally once kk.Punishment.SpeedReductionEnabled is restored to 1"),
+			CVarMovement->MaxSpeed, 600.0f);
 	}
 
 	return true;

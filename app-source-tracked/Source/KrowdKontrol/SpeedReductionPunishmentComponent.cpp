@@ -2,6 +2,13 @@
 #include "GameFramework/FloatingPawnMovement.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "HAL/IConsoleManager.h"
+
+static TAutoConsoleVariable<int32> CVarPunishmentSpeedReductionEnabled(
+	TEXT("kk.Punishment.SpeedReductionEnabled"),
+	1,
+	TEXT("If 0, prevents the speed-reduction punishment (USpeedReductionPunishmentComponent) from activating on trigger, regardless of arbitration outcome. Defaults to 1 (enabled)."),
+	ECVF_Default);
 
 USpeedReductionPunishmentComponent::USpeedReductionPunishmentComponent()
 {
@@ -10,6 +17,11 @@ USpeedReductionPunishmentComponent::USpeedReductionPunishmentComponent()
 
 void USpeedReductionPunishmentComponent::HandlePunishmentTriggered()
 {
+	if (CVarPunishmentSpeedReductionEnabled.GetValueOnGameThread() == 0)
+	{
+		return;
+	}
+
 	if (!MovementComponent)
 	{
 		UE_LOG(LogTemp, Warning,
