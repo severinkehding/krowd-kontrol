@@ -88,7 +88,22 @@ void APlaceholderTargetZoneActor::IntensifyBeacon()
 void APlaceholderTargetZoneActor::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
+	EnsureBeaconHierarchy();
+}
 
+void APlaceholderTargetZoneActor::PostLoad()
+{
+	Super::PostLoad();
+	// PostInitializeComponents never runs for actors deserialized into an editor
+	// world, which is where the stale hierarchy is both observed (E2E holdout MCP
+	// inspection) and persisted (map Save). Healing on PostLoad too means simply
+	// opening and re-saving an affected map bakes the corrected hierarchy into the
+	// .umap for good.
+	EnsureBeaconHierarchy();
+}
+
+void APlaceholderTargetZoneActor::EnsureBeaconHierarchy()
+{
 	// PR #199 fix-pass 1 review: actors of this class already placed in L_Level01 before
 	// this PR (issue #190) keep the pre-existing serialized RootComponent/AttachParent
 	// from the *old* hierarchy (root = BeaconMeshComponent, the flattened disc; light
@@ -100,10 +115,26 @@ void APlaceholderTargetZoneActor::PostInitializeComponents()
 	// unconditionally, so every instance - old or new - actually ends up with the light
 	// on top of the column instead of silently keeping the old, wall-occludable,
 	// disc-mounted position.
+	//
+	// Attachment must respect registration state: on the PostLoad path components are
+	// not yet registered (SetupAttachment is the legal call there), on the
+	// PostInitializeComponents path they are (AttachToComponent territory).
 	if (!TargetZoneRootComponent)
 	{
 		return;
 	}
+
+	auto AttachTo = [](USceneComponent* Child, USceneComponent* Parent)
+	{
+		if (Child->IsRegistered())
+		{
+			Child->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+		}
+		else
+		{
+			Child->SetupAttachment(Parent);
+		}
+	};
 
 	if (RootComponent != TargetZoneRootComponent)
 	{
@@ -112,17 +143,17 @@ void APlaceholderTargetZoneActor::PostInitializeComponents()
 
 	if (BeaconMeshComponent && BeaconMeshComponent->GetAttachParent() != TargetZoneRootComponent)
 	{
-		BeaconMeshComponent->AttachToComponent(TargetZoneRootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+		AttachTo(BeaconMeshComponent, TargetZoneRootComponent);
 	}
 
 	if (BeaconColumnMeshComponent && BeaconColumnMeshComponent->GetAttachParent() != TargetZoneRootComponent)
 	{
-		BeaconColumnMeshComponent->AttachToComponent(TargetZoneRootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+		AttachTo(BeaconColumnMeshComponent, TargetZoneRootComponent);
 	}
 
 	if (BeaconLightComponent && BeaconLightComponent->GetAttachParent() != BeaconColumnMeshComponent)
 	{
-		BeaconLightComponent->AttachToComponent(BeaconColumnMeshComponent, FAttachmentTransformRules::KeepRelativeTransform);
+		AttachTo(BeaconLightComponent, BeaconColumnMeshComponent);
 		// Re-apply the constructor's canonical offset (column-top, in the mesh-local
 		// half-height convention explained above) rather than trusting whatever relative
 		// location survived from the stale attachment - it was relative to a different

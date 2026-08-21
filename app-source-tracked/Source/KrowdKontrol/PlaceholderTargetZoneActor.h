@@ -63,6 +63,18 @@ protected:
 	// Self-heals actors placed in a level before this PR's component-hierarchy change
 	// (root swapped from BeaconMeshComponent to TargetZoneRootComponent; light moved
 	// from BeaconMeshComponent to BeaconColumnMeshComponent). See .cpp for why the
-	// constructor alone doesn't fix already-placed instances.
+	// constructor alone doesn't fix already-placed instances. Two entry points on
+	// purpose: PostInitializeComponents covers game-time init (PIE/packaged), but it
+	// never runs for actors sitting in an editor world - which is exactly where the
+	// pass-2 E2E holdout inspected them and where a Save writes serialized state - so
+	// PostLoad applies the same heal on deserialization everywhere, letting an editor
+	// re-save persist the corrected hierarchy permanently.
 	virtual void PostInitializeComponents() override;
+	virtual void PostLoad() override;
+
+private:
+	// Shared heal body for the two hooks above. Registration-aware: PostLoad runs
+	// before components register (SetupAttachment territory), PostInitializeComponents
+	// after (AttachToComponent territory).
+	void EnsureBeaconHierarchy();
 };
