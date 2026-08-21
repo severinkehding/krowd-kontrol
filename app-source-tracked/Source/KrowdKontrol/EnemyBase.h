@@ -75,6 +75,11 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	friend class FKrowdKontrolAbilityMatchupSignalComponentTest;
 	friend class FKrowdKontrolLevelLifecycleSubsystemTest;
 	friend class FKrowdKontrolCrowdMasterySubsystemTest;
+	// Same grant, for the BeginPlay-wiring coverage test (issue #174 pass-2 code-review
+	// finding), which drives one enemy to Controlled to prove the wired delegate
+	// transmits. Non-transitive - see MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolCrowdMasteryBeginPlayWiringTest;
+	friend class FKrowdKontrolLevelClearTimeWiringTest;
 
 	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
 	// sync test (issue #20), which drive a plain AEnemyBaseTestActor through the same
