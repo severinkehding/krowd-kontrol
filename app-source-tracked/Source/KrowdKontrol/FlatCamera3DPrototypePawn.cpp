@@ -20,6 +20,7 @@
 #include "AbilityMatchupNudgeComponent.h"
 #include "PunishmentManagerComponent.h"
 #include "SpeedReductionPunishmentComponent.h"
+#include "PunishmentArbitrationComponent.h"
 #include "LevelFailComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
@@ -59,7 +60,6 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(PunishmentManagerComponent, &UPunishmentManagerComponent::HandleEnergyChanged);
 	SpeedReductionPunishmentComponent = CreateDefaultSubobject<USpeedReductionPunishmentComponent>(TEXT("SpeedReductionPunishmentComponent"));
 	SpeedReductionPunishmentComponent->MovementComponent = MovementComponent;
-	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(SpeedReductionPunishmentComponent, &USpeedReductionPunishmentComponent::HandlePunishmentTriggered);
 	LevelFailComponent = CreateDefaultSubobject<ULevelFailComponent>(TEXT("LevelFailComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(LevelFailComponent, &ULevelFailComponent::HandleEnergyChanged);
 	AbilityCooldownComponent = CreateDefaultSubobject<UAbilityCooldownComponent>(TEXT("AbilityCooldownComponent"));
@@ -84,7 +84,11 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	AbilityLockoutComponent = CreateDefaultSubobject<UAbilityLockoutComponent>(TEXT("AbilityLockoutComponent"));
 	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityLockoutComponent, &UAbilityLockoutComponent::HandleAbilityCastApplied);
-	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(AbilityLockoutComponent, &UAbilityLockoutComponent::HandlePunishmentTriggered);
+
+	PunishmentArbitrationComponent = CreateDefaultSubobject<UPunishmentArbitrationComponent>(TEXT("PunishmentArbitrationComponent"));
+	PunishmentArbitrationComponent->AbilityLockoutComponent = AbilityLockoutComponent;
+	PunishmentArbitrationComponent->SpeedReductionComponent = SpeedReductionPunishmentComponent;
+	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(PunishmentArbitrationComponent, &UPunishmentArbitrationComponent::HandlePunishmentTriggered);
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }

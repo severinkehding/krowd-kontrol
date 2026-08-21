@@ -54,6 +54,14 @@ public:
 	// EndPlay() directly to verify its timer cleanup and needs a way to observe the result.
 	bool IsSpeedReductionTimerActive() const;
 
+	// Immediately ends an active speed reduction - clears the pending restore timer and
+	// restores the real pre-punishment MaxSpeed right now, rather than waiting for
+	// SpeedReductionDurationSeconds to elapse. Safe no-op if no reduction is currently
+	// active. Used by UPunishmentArbitrationComponent (issue #180) both when a
+	// higher-priority ability-lock trigger preempts this punishment, and when Overcrowd
+	// preempts it outright.
+	void EndSpeedReduction();
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 

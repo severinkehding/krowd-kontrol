@@ -57,6 +57,17 @@ void USpeedReductionPunishmentComponent::RestoreOriginalSpeed()
 	}
 }
 
+void USpeedReductionPunishmentComponent::EndSpeedReduction()
+{
+	UWorld* World = GetWorld();
+	if (!World || !World->GetTimerManager().IsTimerActive(SpeedReductionTimerHandle))
+	{
+		return;
+	}
+	World->GetTimerManager().ClearTimer(SpeedReductionTimerHandle);
+	RestoreOriginalSpeed();
+}
+
 void USpeedReductionPunishmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UWorld* World = GetWorld())

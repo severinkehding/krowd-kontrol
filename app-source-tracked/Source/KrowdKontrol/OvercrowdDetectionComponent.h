@@ -101,6 +101,11 @@ class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 	// UOvercrowdVisualEffectSubsystem flip in step off the same broadcast.
 	friend class FKrowdKontrolOvercrowdAudioVisualSyncTest;
 
+	// Same grant, for the punishment-arbitration test (issue #180), which drives this
+	// component to Active via AdvancePanicOverloadState to prove Overcrowd preempts
+	// ability-lock/speed-reduction - non-transitive, same rationale as the grants above.
+	friend class FKrowdKontrolPunishmentArbitrationComponentTest;
+
 public:
 	UOvercrowdDetectionComponent();
 

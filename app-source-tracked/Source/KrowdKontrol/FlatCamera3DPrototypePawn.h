@@ -23,6 +23,7 @@ class UAbilityMatchupSignalComponent;
 class UAbilityMatchupNudgeComponent;
 class UPunishmentManagerComponent;
 class USpeedReductionPunishmentComponent;
+class UPunishmentArbitrationComponent;
 class ULevelFailComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
@@ -130,6 +131,16 @@ public:
 	// gate itself is consulted by AbilityCastComponent::TryCastAbility.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityLockoutComponent> AbilityLockoutComponent;
+
+	// Single-active-punishment arbitration (issue #180, PRD "Punishment System
+	// (Punishments 1 & 2 + arbitration)" REQ-4) - the sole listener bound to
+	// PunishmentManagerComponent->OnPunishmentTriggered; decides which of
+	// AbilityLockoutComponent/SpeedReductionPunishmentComponent (if either) actually
+	// activates, and force-ends both the instant Overcrowd (resolved lazily in its own
+	// BeginPlay()) goes Active. Wired in the constructor below, after both
+	// AbilityLockoutComponent and SpeedReductionPunishmentComponent already exist.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UPunishmentArbitrationComponent> PunishmentArbitrationComponent;
 
 	// Ability-side colour telegraph (issue #67) - flashes AbilityData::Get(Ability)
 	// .Colour at the cast target's location whenever AbilityCastComponent's

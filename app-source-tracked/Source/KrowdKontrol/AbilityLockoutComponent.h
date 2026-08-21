@@ -59,6 +59,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability Lockout")
 	float GetRemainingLockoutSeconds(EAbilitySlot Ability) const;
 
+	// Immediately clears every currently-locked slot, broadcasting
+	// OnAbilityLockoutChanged(Slot, false) for each one that actually transitions -
+	// used by UPunishmentArbitrationComponent (issue #180) to revert this punishment's
+	// effects in full the instant a higher-priority one (Overcrowd) preempts it. Unlike
+	// AdvanceLockouts(), this is instant and unconditional, not timer-driven.
+	void EndAllLockouts();
+
 	// Bound to UAbilityCastComponent::OnAbilityCastApplied - records the most recently
 	// successfully cast ability so a subsequent punishment trigger knows what to lock.
 	// TargetEnemy is unused, matches the delegate's signature only.

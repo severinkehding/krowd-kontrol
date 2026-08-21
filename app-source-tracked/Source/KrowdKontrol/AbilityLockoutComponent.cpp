@@ -56,6 +56,18 @@ void UAbilityLockoutComponent::StartLockout(EAbilitySlot Ability)
 	}
 }
 
+void UAbilityLockoutComponent::EndAllLockouts()
+{
+	for (int32 Index = 0; Index < RemainingLockoutSeconds.Num(); ++Index)
+	{
+		if (RemainingLockoutSeconds[Index] > 0.0f)
+		{
+			RemainingLockoutSeconds[Index] = 0.0f;
+			OnAbilityLockoutChanged.Broadcast(static_cast<EAbilitySlot>(Index), false);
+		}
+	}
+}
+
 void UAbilityLockoutComponent::AdvanceLockouts(float DeltaSeconds)
 {
 	for (int32 Index = 0; Index < RemainingLockoutSeconds.Num(); ++Index)

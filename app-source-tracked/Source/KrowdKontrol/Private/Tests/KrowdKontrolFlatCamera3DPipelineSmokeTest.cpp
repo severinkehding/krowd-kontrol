@@ -33,6 +33,8 @@
 #include "Components/PointLightComponent.h"
 #include "PunishmentManagerComponent.h"
 #include "SpeedReductionPunishmentComponent.h"
+#include "AbilityLockoutComponent.h"
+#include "AbilitySlot.h"
 #include "PlayerEnergyComponent.h"
 #include "PunishmentTriggeredTestListener.h"
 
@@ -95,11 +97,10 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 		static_cast<USceneComponent*>(MeshComponent));
 
 	// Captured before any ApplyContactDamage call below - this pawn's real
-	// SpeedReductionPunishmentComponent (issue #179) is wired to the same
-	// PunishmentManagerComponent trigger the very next block exercises, so by
-	// the time that block's ApplyContactDamage call returns, MaxSpeed has
-	// already been reduced by production wiring, not just by this section's
-	// own dedicated block below.
+	// AbilityLockoutComponent (issue #178) wins arbitration (issue #180) over
+	// SpeedReductionPunishmentComponent (issue #179) on the shared
+	// PunishmentManagerComponent trigger the very next block exercises, so MaxSpeed
+	// should remain untouched by that block's ApplyContactDamage call.
 	const float OriginalMovementSpeed = MovementComponent->MaxSpeed;
 
 	// Proves this pawn's PunishmentManagerComponent (issue #177) is genuinely bound
@@ -118,22 +119,25 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 			Listener->CallCount, 1);
 	}
 
-	// Proves this pawn's SpeedReductionPunishmentComponent (issue #179) is
-	// genuinely bound to this same pawn's own PunishmentManagerComponent and
-	// reduces this same pawn's own MovementComponent - the
-	// KrowdKontrol.Unit.SpeedReductionPunishmentComponent test alone can't catch
-	// a copy-paste slip wiring one pawn's component to the other's, since it
-	// wires everything by hand. Mirrors the pawn-level wiring gap PR #182's
-	// own review flagged for PunishmentManagerComponent itself. Doesn't trigger
-	// a second ApplyContactDamage call - the PunishmentManagerComponent block
-	// above already did, and this pawn's SpeedReductionPunishmentComponent is
-	// bound to that same OnPunishmentTriggered signal, so MaxSpeed here should
-	// already reflect the reduction from that one real contact-damage event.
+	// Proves this pawn's AbilityLockoutComponent (issue #178) — not
+	// SpeedReductionPunishmentComponent (issue #179) — is the one that actually activates
+	// on this pawn's real contact-damage trigger, now that UPunishmentArbitrationComponent
+	// (issue #180) arbitrates between them: ability-lock (priority 2) always wins the
+	// shared OnPunishmentTriggered signal over speed-reduction (priority 3) whenever both
+	// exist on the same pawn, per issue #180's own priority order. MaxSpeed must stay
+	// untouched; Stun (the no-cast-yet fallback) must be locked instead.
 	USpeedReductionPunishmentComponent* SpeedReductionComponent = Pawn->SpeedReductionPunishmentComponent;
 	if (TestNotNull(TEXT("Pawn should have a SpeedReductionPunishmentComponent"), SpeedReductionComponent))
 	{
-		TestEqual(TEXT("Pawn's own contact damage above should have reduced this same pawn's own MovementComponent MaxSpeed"),
-			MovementComponent->MaxSpeed, OriginalMovementSpeed * SpeedReductionComponent->SpeedMultiplierWhileActive);
+		TestEqual(TEXT("Ability-lock should have won arbitration, so MaxSpeed should be untouched by this pawn's own contact damage above"),
+			MovementComponent->MaxSpeed, OriginalMovementSpeed);
+	}
+
+	UAbilityLockoutComponent* LockoutComponent = Pawn->AbilityLockoutComponent;
+	if (TestNotNull(TEXT("Pawn should have an AbilityLockoutComponent"), LockoutComponent))
+	{
+		TestTrue(TEXT("Ability-lock should have activated (Stun fallback) via arbitration from this pawn's own contact damage above"),
+			LockoutComponent->IsAbilityLocked(EAbilitySlot::Stun));
 	}
 
 	TestTrue(TEXT("CameraBoom pitch should be genuinely top-down (<= -45 degrees), not side-on"),
