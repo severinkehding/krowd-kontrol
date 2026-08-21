@@ -131,17 +131,30 @@ void ARoomActor::EnsureBankingZonesWired()
 			continue;
 		}
 
-		// Idempotency check: skip a marker that already has an attached ATargetZone,
-		// so repeated calls (e.g. from a test that also drives BeginPlay) never
-		// double-spawn - same "safe to call more than once" contract
+		// Idempotency check: skip *spawning* a marker that already has an attached
+		// ATargetZone, so repeated calls (e.g. from a test that also drives BeginPlay)
+		// never double-spawn - same "safe to call more than once" contract
 		// EnsureBeaconHierarchy() establishes for the sibling self-heal pattern this
-		// mirrors.
+		// mirrors. This must not also skip *binding*: a zone can be attached to a
+		// marker through a path other than this function (e.g. hand-placed by a level
+		// designer), in which case its OnActorBanked delegate was never bound - so any
+		// already-attached zone still gets AddUniqueDynamic'd below before the loop
+		// moves on, using the same idempotent-bind idiom TargetZone.cpp:25 already
+		// establishes for this codebase.
 		TArray<AActor*> AttachedActors;
 		Zone.MarkerActor->GetAttachedActors(AttachedActors);
-		const bool bAlreadyWired = AttachedActors.ContainsByPredicate(
-			[](const AActor* Attached) { return Attached && Attached->IsA<ATargetZone>(); });
-		if (bAlreadyWired)
+		ATargetZone* ExistingZone = nullptr;
+		for (AActor* Attached : AttachedActors)
 		{
+			if (ATargetZone* AttachedZone = Cast<ATargetZone>(Attached))
+			{
+				ExistingZone = AttachedZone;
+				break;
+			}
+		}
+		if (ExistingZone)
+		{
+			ExistingZone->OnActorBanked.AddUniqueDynamic(this, &ARoomActor::HandleZoneActorBanked);
 			continue;
 		}
 
@@ -173,7 +186,7 @@ void ARoomActor::EnsureBankingZonesWired()
 		// at the marker's world location/rotation.
 		BankingZone->AttachToActor(Zone.MarkerActor, FAttachmentTransformRules::KeepWorldTransform);
 		BankingZone->ZoneColourTag = ResolvedColourTag;
-		BankingZone->OnActorBanked.AddDynamic(this, &ARoomActor::HandleZoneActorBanked);
+		BankingZone->OnActorBanked.AddUniqueDynamic(this, &ARoomActor::HandleZoneActorBanked);
 	}
 }
 

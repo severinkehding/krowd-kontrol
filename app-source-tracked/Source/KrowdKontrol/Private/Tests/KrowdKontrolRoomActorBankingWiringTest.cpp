@@ -25,6 +25,20 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 
+static ATargetZone* FindAttachedZone(AActor* Marker)
+{
+	TArray<AActor*> Attached;
+	Marker->GetAttachedActors(Attached);
+	for (AActor* A : Attached)
+	{
+		if (ATargetZone* Zone = Cast<ATargetZone>(A))
+		{
+			return Zone;
+		}
+	}
+	return nullptr;
+}
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -44,7 +58,14 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	World->InitializeActorsForPlay(FURL());
 	World->SetBegunPlay(true);
 
-	ARoomActor* Room = World->SpawnActor<ARoomActor>();
+	// Spawned deferred so both markers can be added to TargetZones *before*
+	// FinishSpawning() below fires BeginPlay() - this exercises the actual production
+	// entry point (BeginPlay() -> EnsureBankingZonesWired()) against markers that
+	// already exist at BeginPlay time, matching the "rooms placed/serialized before
+	// this class carried banking behaviour" scenario the method's own doc comment
+	// describes, rather than only ever calling EnsureBankingZonesWired() explicitly
+	// against an empty-then-populated room.
+	ARoomActor* Room = World->SpawnActorDeferred<ARoomActor>(ARoomActor::StaticClass(), FTransform::Identity);
 	if (!TestNotNull(TEXT("Room should spawn"), Room))
 	{
 		return false;
@@ -57,29 +78,35 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// EnsureBankingZonesWired() is public+idempotent specifically so a test can call
-	// it directly without needing to drive the full BeginPlay lifecycle.
-	Room->EnsureBankingZonesWired();
-
-	TArray<AActor*> Attached;
-	Marker->GetAttachedActors(Attached);
-	ATargetZone* BankingZone = nullptr;
-	for (AActor* A : Attached)
+	// Second marker (SN-1PR, countered by Sleep/Blue) so the per-marker loop in
+	// EnsureBankingZonesWired() is exercised across more than one entry - a room with
+	// a single target zone is the degenerate case, not the realistic one.
+	AActor* SecondMarker = Room->AddTargetZone(EEnemyType::SN_1PR);
+	if (!TestNotNull(TEXT("Second marker should spawn"), SecondMarker))
 	{
-		if (ATargetZone* Zone = Cast<ATargetZone>(A))
-		{
-			BankingZone = Zone;
-			break;
-		}
+		return false;
 	}
-	if (!TestNotNull(TEXT("Marker should have a self-healed ATargetZone attached"), BankingZone))
+
+	Room->FinishSpawning(FTransform::Identity);
+
+	ATargetZone* BankingZone = FindAttachedZone(Marker);
+	if (!TestNotNull(TEXT("Marker should have a self-healed ATargetZone attached via BeginPlay()"), BankingZone))
 	{
 		return false;
 	}
 	TestEqual(TEXT("Banking zone should be colour-tagged Purple for a RU-NNR marker"),
 		BankingZone->ZoneColourTag, ReservedGameplayColours::GetPurpleTag());
 
-	// Calling EnsureBankingZonesWired() a second time must not double-spawn.
+	ATargetZone* SecondBankingZone = FindAttachedZone(SecondMarker);
+	if (!TestNotNull(TEXT("Second marker should have a self-healed ATargetZone attached via BeginPlay()"), SecondBankingZone))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Second banking zone should be colour-tagged Blue for an SN-1PR marker"),
+		SecondBankingZone->ZoneColourTag, ReservedGameplayColours::GetBlueTag());
+
+	// Calling EnsureBankingZonesWired() a second time must not double-spawn, for
+	// either marker.
 	Room->EnsureBankingZonesWired();
 	TArray<AActor*> AttachedAfterSecondCall;
 	Marker->GetAttachedActors(AttachedAfterSecondCall);
@@ -89,6 +116,15 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 		if (A && A->IsA<ATargetZone>()) { ++ZoneCount; }
 	}
 	TestEqual(TEXT("EnsureBankingZonesWired should be idempotent - no duplicate zone"), ZoneCount, 1);
+
+	TArray<AActor*> SecondAttachedAfterSecondCall;
+	SecondMarker->GetAttachedActors(SecondAttachedAfterSecondCall);
+	int32 SecondZoneCount = 0;
+	for (AActor* A : SecondAttachedAfterSecondCall)
+	{
+		if (A && A->IsA<ATargetZone>()) { ++SecondZoneCount; }
+	}
+	TestEqual(TEXT("EnsureBankingZonesWired should be idempotent for the second marker too"), SecondZoneCount, 1);
 
 	// Any concrete AEnemyBase subclass works here - ATrooperEnemy (TR-UPR) is used
 	// purely as a spawnable non-abstract instance. Its native EnemyType is irrelevant:
@@ -113,6 +149,35 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("A controlled, correctly-CC'd enemy overlapping its room's banking zone should reach Banked"),
 		static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+
+	// Reject paths, driven against a real production enemy under the same physical
+	// collision-response fix that makes the happy path above possible - neither of
+	// these was previously exercised against anything other than the synthetic
+	// ATargetZoneTestActor fixture in KrowdKontrolTargetZoneTest.cpp, which never had
+	// the Block-vs-Overlap problem this PR's EnemyBase::BeginPlay() fix resolves.
+
+	// A controlled enemy with the *wrong* colour physically overlapping the zone
+	// should not bank.
+	ATrooperEnemy* MismatchedEnemy = World->SpawnActor<ATrooperEnemy>(
+		BankingZone->GetActorLocation() + FVector(1000.f, 500.f, 0.f), FRotator::ZeroRotator);
+	if (TestNotNull(TEXT("Mismatched enemy should spawn"), MismatchedEnemy))
+	{
+		MismatchedEnemy->TickCheckDetection(MismatchedEnemy->GetActorLocation());
+		MismatchedEnemy->ReceiveControl(EAbilitySlot::Root); // Teal - zone is Purple.
+		MismatchedEnemy->SetActorLocation(BankingZone->GetActorLocation(), /*bSweep=*/true);
+		TestEqual(TEXT("A colour-mismatched controlled enemy overlapping the zone should not bank"),
+			static_cast<uint8>(MismatchedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
+	// An uncontrolled enemy physically overlapping the zone should not bank.
+	ATrooperEnemy* UncontrolledEnemy = World->SpawnActor<ATrooperEnemy>(
+		BankingZone->GetActorLocation() + FVector(1000.f, -500.f, 0.f), FRotator::ZeroRotator);
+	if (TestNotNull(TEXT("Uncontrolled enemy should spawn"), UncontrolledEnemy))
+	{
+		UncontrolledEnemy->SetActorLocation(BankingZone->GetActorLocation(), /*bSweep=*/true);
+		TestNotEqual(TEXT("An uncontrolled enemy overlapping the zone should not bank"),
+			static_cast<uint8>(UncontrolledEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+	}
 
 	return true;
 }

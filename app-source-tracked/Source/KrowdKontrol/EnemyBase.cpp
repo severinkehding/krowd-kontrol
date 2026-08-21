@@ -33,6 +33,12 @@ void AEnemyBase::BeginPlay()
 	// concrete subclass's own constructor: this module has zero
 	// OnComponentHit/NotifyHit consumers, so no other system depends on an enemy's
 	// root actually blocking (vs overlapping) a WorldDynamic object.
+	// NOTE: this is channel-wide (ECC_WorldDynamic) and actor-wide (every AEnemyBase),
+	// not scoped to ATargetZone specifically - safe today only because no other system
+	// sweeps an enemy against another WorldDynamic actor (TickChaseMovement's
+	// SetActorLocation is unswept, and the OnComponentHit/NotifyHit/OnActorHit grep
+	// above is empty). Re-check this line before adding enemy-vs-enemy physics,
+	// SimulatePhysics on an enemy, or any new WorldDynamic-channel blocking actor.
 	if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
 	{
 		RootPrimitive->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
