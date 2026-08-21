@@ -21,6 +21,7 @@
 #include "EnemyBaseTestActor.h"
 #include "EnemyBaseNoTrimLightTestActor.h"
 #include "EnemyBankedTestListener.h"
+#include "EnemyControlledExpiredTestListener.h"
 #include "PlayerEnergyComponent.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
@@ -204,28 +205,40 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 
 	// (i2) duration-expiry reversion (issue #138): a Controlled enemy whose duration
 	// elapses before TransitionToBanked() is called reverts to Alert, not stuck, not
-	// Banked.
+	// Banked. Also fires OnEnemyControlledExpired exactly once (issue #174).
 	AEnemyBaseTestActor* ExpiryEnemy = NewObject<AEnemyBaseTestActor>();
+	UEnemyControlledExpiredTestListener* ExpiryListener = NewObject<UEnemyControlledExpiredTestListener>();
+	ExpiryEnemy->OnEnemyControlledExpired.AddDynamic(ExpiryListener, &UEnemyControlledExpiredTestListener::HandleEnemyControlledExpired);
 	ExpiryEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
 	ExpiryEnemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled, duration = AbilityData::Get(Stun).BaseDurationSeconds
 	const float StunDurationSeconds = AbilityData::Get(EAbilitySlot::Stun).BaseDurationSeconds;
 	ExpiryEnemy->TickControlledDuration(StunDurationSeconds - 1.0f);
 	TestEqual(TEXT("Controlled state should persist before the duration elapses"),
 		static_cast<uint8>(ExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestEqual(TEXT("OnEnemyControlledExpired must not fire before the duration elapses"),
+		ExpiryListener->CallCount, 0);
 	ExpiryEnemy->TickControlledDuration(1.5f); // total elapsed now exceeds StunDurationSeconds
 	TestEqual(TEXT("Controlled duration elapsing before banking should revert to Alert"),
 		static_cast<uint8>(ExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("OnEnemyControlledExpired should fire exactly once when the duration elapses"),
+		ExpiryListener->CallCount, 1);
 
 	// (i3) banking before expiry prevents the reversion - TickControlledDuration is
 	// already guarded by CurrentState != Controlled, this proves it explicitly for the
-	// new method.
+	// new method. Also proves OnEnemyControlledExpired never fires on the
+	// TransitionToBanked exit path (issue #174) - the two delegates are mutually
+	// exclusive per state-exit.
 	AEnemyBaseTestActor* BankedBeforeExpiryEnemy = NewObject<AEnemyBaseTestActor>();
+	UEnemyControlledExpiredTestListener* BankedBeforeExpiryListener = NewObject<UEnemyControlledExpiredTestListener>();
+	BankedBeforeExpiryEnemy->OnEnemyControlledExpired.AddDynamic(BankedBeforeExpiryListener, &UEnemyControlledExpiredTestListener::HandleEnemyControlledExpired);
 	BankedBeforeExpiryEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
 	BankedBeforeExpiryEnemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
 	BankedBeforeExpiryEnemy->TransitionToBanked(); // Controlled -> Banked
 	BankedBeforeExpiryEnemy->TickControlledDuration(10000.0f);
 	TestEqual(TEXT("TickControlledDuration after banking should not move the actor off Banked"),
 		static_cast<uint8>(BankedBeforeExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+	TestEqual(TEXT("OnEnemyControlledExpired must never fire on the TransitionToBanked exit path"),
+		BankedBeforeExpiryListener->CallCount, 0);
 
 	// (i4) duration-expiry reversion driven through the real Tick() override, not just
 	// the friend-called TickControlledDuration helper directly (as (i2)/(i3) above do) -

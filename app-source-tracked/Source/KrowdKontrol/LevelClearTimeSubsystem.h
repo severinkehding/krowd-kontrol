@@ -74,6 +74,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Level Clear Time")
 	bool GetBestClearTimeSeconds(FName LevelID, float& OutBestSeconds) const;
 
+	// Compares SimultaneousControlledCount against LevelID's currently stored Crowd
+	// Mastery best (if any) and, if it's larger (or no best exists yet), persists it as
+	// the new best. Returns true if this call became the new best. Same shape as
+	// RecordClearTime above, mirrored for a maximized (not minimized) stat: '>' not '<',
+	// negative input clamped to 0 via FMath::Max. See RecordClearTime's own doc comment
+	// for the shared LoadOrCreateSaveGame/SaveGameToSlot/warn-and-continue behaviour this
+	// reuses unchanged.
+	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
+	bool RecordCrowdMasteryCount(FName LevelID, int32 SimultaneousControlledCount);
+
+	// Reads LevelID's currently stored Crowd Mastery best into OutBestCount. Returns
+	// false (OutBestCount set to 0) if no record exists for LevelID yet. Same
+	// read-from-disk-every-call shape as GetBestClearTimeSeconds above - see that
+	// method's doc comment for why (simplicity over caching).
+	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
+	bool GetBestCrowdMasteryCount(FName LevelID, int32& OutBestCount) const;
+
 private:
 	ULevelClearTimeSaveGame* LoadOrCreateSaveGame() const;
 

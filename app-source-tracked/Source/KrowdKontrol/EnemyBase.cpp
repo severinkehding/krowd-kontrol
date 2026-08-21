@@ -5,6 +5,8 @@
 #include "EngineUtils.h"
 #include "Components/PointLightComponent.h"
 #include "AbilityData.h"
+#include "CrowdMasterySubsystem.h"
+#include "Engine/World.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -13,6 +15,22 @@ AEnemyBase::AEnemyBase()
 	// ticking is required here. This divergence from the mirrored BossBase pattern is
 	// deliberate, not an oversight - see issue #12.
 	PrimaryActorTick.bCanEverTick = true;
+}
+
+void AEnemyBase::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Issue #174 AC1: routes every real Controlled-state expiry into the Crowd
+	// Mastery running-max sample, the same production wiring
+	// UCrowdMasterySubsystem.h's class comment already flagged as the missing piece.
+	if (UWorld* World = GetWorld())
+	{
+		if (UCrowdMasterySubsystem* CrowdMasterySubsystem = World->GetSubsystem<UCrowdMasterySubsystem>())
+		{
+			OnEnemyControlledExpired.AddDynamic(CrowdMasterySubsystem, &UCrowdMasterySubsystem::HandleEnemyControlledExpired);
+		}
+	}
 }
 
 void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
@@ -90,6 +108,7 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 		// Controlled indefinitely and never treated as a kill (MISSION.md Hard
 		// Invariant 2). Banking within the window remains the only path to Banked.
 		CurrentState = EEnemyState::Alert;
+		OnEnemyControlledExpired.Broadcast();
 	}
 }
 

@@ -66,6 +66,40 @@ bool ULevelClearTimeSubsystem::GetBestClearTimeSeconds(FName LevelID, float& Out
 	return false;
 }
 
+bool ULevelClearTimeSubsystem::RecordCrowdMasteryCount(FName LevelID, int32 SimultaneousControlledCount)
+{
+	const int32 ClampedCount = FMath::Max(0, SimultaneousControlledCount);
+
+	ULevelClearTimeSaveGame* SaveGameObject = LoadOrCreateSaveGame();
+	const int32* ExistingBest = SaveGameObject->BestCrowdMasteryByLevel.Find(LevelID);
+	const bool bIsNewBest = !ExistingBest || ClampedCount > *ExistingBest;
+
+	if (bIsNewBest)
+	{
+		SaveGameObject->BestCrowdMasteryByLevel.Add(LevelID, ClampedCount);
+		if (!UGameplayStatics::SaveGameToSlot(SaveGameObject, SaveSlotName, 0))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ULevelClearTimeSubsystem::RecordCrowdMasteryCount: SaveGameToSlot failed for level '%s' - new Crowd Mastery best was not persisted and will be lost."),
+				*LevelID.ToString());
+		}
+	}
+
+	return bIsNewBest;
+}
+
+bool ULevelClearTimeSubsystem::GetBestCrowdMasteryCount(FName LevelID, int32& OutBestCount) const
+{
+	ULevelClearTimeSaveGame* SaveGameObject = LoadOrCreateSaveGame();
+	if (const int32* Best = SaveGameObject->BestCrowdMasteryByLevel.Find(LevelID))
+	{
+		OutBestCount = *Best;
+		return true;
+	}
+	OutBestCount = 0;
+	return false;
+}
+
 ULevelClearTimeSaveGame* ULevelClearTimeSubsystem::LoadOrCreateSaveGame() const
 {
 	if (UGameplayStatics::DoesSaveGameExist(SaveSlotName, 0))
