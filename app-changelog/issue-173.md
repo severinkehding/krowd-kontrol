@@ -126,3 +126,37 @@ already reviewed and approved on its merits). This PR's own work was verifying t
 implementation against the plan line-by-line, confirming it builds and all targeted
 tests pass, and constructing the `app-source-tracked/` mirror and this changelog with
 the PR #205 taint explicitly excluded (see "Concurrent-task leakage check" above).
+
+## Self-fix pass (review findings)
+
+Applied after the consolidated review (code-review, error-handling, test-coverage
+agents):
+
+- **HIGH (test-coverage)**: `ApplyBossCheckpointIfRequested()` was only ever exercised
+  via a direct call (Case C), never through its real `BeginPlay()`/`OnPossess()`
+  production call sites. Added Cases D and E to
+  `KrowdKontrolBossCheckpointRestartTest.cpp`, mirroring
+  `KrowdKontrolHUDWiringTest.cpp`'s opposite-ordering two-case pattern — Case D drives
+  the already-possessed `BeginPlay()` branch, Case E drives the `OnPossess()` branch —
+  each asserting the pawn actually lands at the boss location through the production
+  wiring, not a direct method call.
+- **MEDIUM (error-handling)**: `ApplyBossCheckpointIfRequested()` silently no-op'd if
+  the `BossCheckpoint` URL option was set but no `ABossBase` existed in the reloaded
+  world. Added a `UE_LOG(LogTemp, Warning, ...)` in that fall-through, matching this
+  same file's `ResolveLevelClearTimeSubsystem()` "unexpected missing dependency"
+  convention.
+- **LOW (code-review)**: documented, via a header-comment addition on
+  `ApplyBossCheckpointIfRequested()`, the latent single-boss-per-level assumption
+  between the latch's "any non-Idle boss" condition and the teleport's "first boss"
+  selection (comment-only, non-blocking, per the reviewer's own recommendation — no
+  logic change to already-approved #208 behavior).
+- **LOW (test-coverage, skipped)**: multi-boss teleport-target selection stays
+  untested — the source agent's own recommendation was to skip, since no multi-boss
+  level is currently designed (`MISSION.md` lists one boss per encounter) and the
+  added test surface isn't worth it for an unreached case today.
+
+Re-validated after the fixes: `python harness/ci.py` (mode=full) →
+`UNIT_PASSED tests=78`, `UE_BUILD_OK`, `UE_AUTOMATION_OK`, `E2E_PASSED steps=1`,
+`GATE_OK mode=full`. Targeted `harness/run_ue_automation.sh
+KrowdKontrol.Unit.BossCheckpointRestart` → `UE_AUTOMATION_RESULT passed=1 total=1`
+(now covering Cases A–E).

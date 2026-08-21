@@ -223,6 +223,96 @@ bool FKrowdKontrolBossCheckpointRestartTest::RunTest(const FString& Parameters)
 			Pawn->GetActorLocation(), BossLocation);
 	}
 
+	// --- Case D: BeginPlay()'s already-possessed branch actually applies the teleport
+	// through the real production call site (not a direct call, unlike Case C) -
+	// mirrors KrowdKontrolCrowdMasteryBeginPlayWiringTest.cpp's precedent for exactly
+	// this "handler tested directly but never through its real wiring" gap shape.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		World->InitializeActorsForPlay(FURL());
+
+		const FVector BossLocation(500.0f, 250.0f, 0.0f);
+		ABossBaseTestActor* Boss = World->SpawnActor<ABossBaseTestActor>();
+		if (!TestNotNull(TEXT("ABossBaseTestActor should spawn"), Boss))
+		{
+			return false;
+		}
+		Boss->SetActorLocation(BossLocation);
+
+		AFlatCamera3DPrototypePawn* Pawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+		if (!TestNotNull(TEXT("Pawn should spawn"), Pawn))
+		{
+			return false;
+		}
+		Pawn->SetActorLocation(FVector(100.0f, 0.0f, 0.0f));
+
+		// Simulate a post-restart world: the option is already on the URL before the
+		// controller ever runs BeginPlay, same as a real OpenLevel() reload would set it.
+		World->URL.Op.Add(TEXT("BossCheckpoint"));
+
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller))
+		{
+			return false;
+		}
+
+		// Possess BEFORE DispatchBeginPlay so GetPawn() is non-null inside BeginPlay,
+		// exercising its already-possessed branch - the real production ordering when
+		// AutoPossessPlayer runs ahead of BeginPlay.
+		Controller->Possess(Pawn);
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		Controller->DispatchBeginPlay();
+
+		TestEqual(TEXT("BeginPlay's production wiring should teleport the pawn to the boss location"),
+			Pawn->GetActorLocation(), BossLocation);
+	}
+
+	// --- Case E: OnPossess()'s call site applies the teleport when possession happens
+	// after BeginPlay() has already run - the opposite ordering from Case D.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		World->InitializeActorsForPlay(FURL());
+		World->URL.Op.Add(TEXT("BossCheckpoint"));
+
+		const FVector BossLocation(500.0f, 250.0f, 0.0f);
+		ABossBaseTestActor* Boss = World->SpawnActor<ABossBaseTestActor>();
+		if (!TestNotNull(TEXT("ABossBaseTestActor should spawn"), Boss))
+		{
+			return false;
+		}
+		Boss->SetActorLocation(BossLocation);
+
+		AFlatCamera3DPrototypePawn* Pawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+		if (!TestNotNull(TEXT("Pawn should spawn"), Pawn))
+		{
+			return false;
+		}
+		Pawn->SetActorLocation(FVector(100.0f, 0.0f, 0.0f));
+
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller))
+		{
+			return false;
+		}
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		Controller->DispatchBeginPlay(); // Unpossessed - BeginPlay's already-possessed branch no-ops.
+
+		Controller->Possess(Pawn); // OnPossess()'s own call site must apply it.
+
+		TestEqual(TEXT("OnPossess's production wiring should teleport the pawn to the boss location"),
+			Pawn->GetActorLocation(), BossLocation);
+	}
+
 	return true;
 }
 

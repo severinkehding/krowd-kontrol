@@ -164,6 +164,10 @@ void AKrowdKontrolPlayerController::ApplyBossCheckpointIfRequested(APawn* InPawn
 		InPawn->SetActorLocation(It->GetActorLocation());
 		return;
 	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("AKrowdKontrolPlayerController: reload requested a BossCheckpoint teleport ")
+		TEXT("but no ABossBase actor exists in the reloaded world '%s' - pawn left at default spawn."),
+		*World->GetMapName());
 }
 
 ULevelClearTimeSubsystem* AKrowdKontrolPlayerController::ResolveLevelClearTimeSubsystem()

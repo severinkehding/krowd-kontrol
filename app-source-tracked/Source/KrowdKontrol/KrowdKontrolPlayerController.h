@@ -160,7 +160,11 @@ private:
 	// sets it) or if the world has no ABossBase actor. Called from both BeginPlay()'s
 	// already-possessed branch and OnPossess(), mirroring WireWidgetsToPawn()'s own
 	// dual-call-site shape, since AutoPossessPlayer's timing relative to BeginPlay isn't
-	// guaranteed (see BeginPlay()'s own comment).
+	// guaranteed (see BeginPlay()'s own comment). Assumes one ABossBase per level (true
+	// of every level today, MISSION.md's "4 total boss encounters") - does not
+	// cross-check the chosen actor's state against the one that latched the checkpoint
+	// in RefreshBossCheckpointState(). Revisit if a level ever places more than one
+	// ABossBase actor.
 	void ApplyBossCheckpointIfRequested(APawn* InPawn);
 
 	// Never reset back to false once set - moot in the real game-world path, since a
