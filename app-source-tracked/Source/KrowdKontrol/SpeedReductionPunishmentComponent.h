@@ -31,6 +31,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Speed Reduction", meta = (ClampMin = "0.0"))
 	float SpeedReductionDurationSeconds = 3.0f;
 
+	// Reflected runtime state (pass-1 E2E fix, issue #180) - true while a speed
+	// reduction is currently applied, kept in sync from HandlePunishmentTriggered/
+	// RestoreOriginalSpeed below, mirroring UAbilityLockoutComponent::
+	// bIsLockoutActive's rationale: tools that can only read UPROPERTY state (not
+	// invoke a function, e.g. an E2E behavioral holdout) need a direct way to
+	// observe this punishment's activity.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Speed Reduction")
+	bool bIsSpeedReductionActive = false;
+
 	// Wired explicitly by the owning pawn's constructor (same idiom
 	// MovementComponent->SetUpdatedComponent() and PunishmentManagerComponent's
 	// AddDynamic wiring already use) - the concrete UFloatingPawnMovement whose
@@ -53,6 +62,14 @@ public:
 	// this harness never drives a real BeginPlay lifecycle, so the Automation test calls
 	// EndPlay() directly to verify its timer cleanup and needs a way to observe the result.
 	bool IsSpeedReductionTimerActive() const;
+
+	// Immediately ends an active speed reduction - clears the pending restore timer and
+	// restores the real pre-punishment MaxSpeed right now, rather than waiting for
+	// SpeedReductionDurationSeconds to elapse. Safe no-op if no reduction is currently
+	// active. Used by UPunishmentArbitrationComponent (issue #180) both when a
+	// higher-priority ability-lock trigger preempts this punishment, and when Overcrowd
+	// preempts it outright.
+	void EndSpeedReduction();
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

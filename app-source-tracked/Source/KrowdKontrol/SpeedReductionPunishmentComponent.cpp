@@ -34,6 +34,7 @@ void USpeedReductionPunishmentComponent::HandlePunishmentTriggered()
 		OriginalMaxSpeed = MovementComponent->MaxSpeed;
 		MovementComponent->MaxSpeed = OriginalMaxSpeed * SpeedMultiplierWhileActive;
 	}
+	bIsSpeedReductionActive = true;
 
 	// SetTimer on an already-active handle replaces it rather than stacking a
 	// second one - this alone gives re-triggering its "refresh duration, don't
@@ -55,6 +56,18 @@ void USpeedReductionPunishmentComponent::RestoreOriginalSpeed()
 			TEXT("USpeedReductionPunishmentComponent: MovementComponent is unset on '%s' - speed restore skipped."),
 			*GetNameSafe(GetOwner()));
 	}
+	bIsSpeedReductionActive = false;
+}
+
+void USpeedReductionPunishmentComponent::EndSpeedReduction()
+{
+	UWorld* World = GetWorld();
+	if (!World || !World->GetTimerManager().IsTimerActive(SpeedReductionTimerHandle))
+	{
+		return;
+	}
+	World->GetTimerManager().ClearTimer(SpeedReductionTimerHandle);
+	RestoreOriginalSpeed();
 }
 
 void USpeedReductionPunishmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

@@ -93,6 +93,11 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	// locks the tray through the real pawn/controller/widget wiring.
 	friend class FKrowdKontrolHUDWiringTest;
 
+	// Same grant, for the punishment-arbitration test (issue #180), which drives a plain
+	// AEnemyBaseTestActor through the same Idle->Alert transition to arm real Overcrowd
+	// detection. Non-transitive - see MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolPunishmentArbitrationComponentTest;
+
 public:
 	AEnemyBase();
 

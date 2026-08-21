@@ -53,11 +53,26 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Ability Lockout")
 	FOnAbilityLockoutChanged OnAbilityLockoutChanged;
 
+	// Reflected runtime state (pass-1 E2E fix, issue #180) - mirrors "is any ability
+	// slot currently locked". Kept in sync from StartLockout/AdvanceLockouts/
+	// EndAllLockouts rather than recomputed on demand, so tools that can only read
+	// UPROPERTY state directly (not invoke a BlueprintPure function that takes a
+	// parameter, e.g. an E2E behavioral holdout) can still observe lockout activity.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability Lockout")
+	bool bIsLockoutActive = false;
+
 	UFUNCTION(BlueprintPure, Category = "Ability Lockout")
 	bool IsAbilityLocked(EAbilitySlot Ability) const;
 
 	UFUNCTION(BlueprintPure, Category = "Ability Lockout")
 	float GetRemainingLockoutSeconds(EAbilitySlot Ability) const;
+
+	// Immediately clears every currently-locked slot, broadcasting
+	// OnAbilityLockoutChanged(Slot, false) for each one that actually transitions -
+	// used by UPunishmentArbitrationComponent (issue #180) to revert this punishment's
+	// effects in full the instant a higher-priority one (Overcrowd) preempts it. Unlike
+	// AdvanceLockouts(), this is instant and unconditional, not timer-driven.
+	void EndAllLockouts();
 
 	// Bound to UAbilityCastComponent::OnAbilityCastApplied - records the most recently
 	// successfully cast ability so a subsequent punishment trigger knows what to lock.
@@ -87,6 +102,11 @@ private:
 	// re-trigger while already locked refreshes the timer without a redundant
 	// broadcast.
 	void StartLockout(EAbilitySlot Ability);
+
+	// Recomputes bIsLockoutActive from RemainingLockoutSeconds - called after every
+	// state-changing operation (StartLockout/AdvanceLockouts/EndAllLockouts) so the
+	// reflected property never drifts from the real per-slot state it mirrors.
+	void RefreshIsLockoutActive();
 
 	// Runtime state, not designer config - hence no EditDefaultsOnly/EditAnywhere,
 	// private so no code path - Blueprint or C++ - can mutate it except through

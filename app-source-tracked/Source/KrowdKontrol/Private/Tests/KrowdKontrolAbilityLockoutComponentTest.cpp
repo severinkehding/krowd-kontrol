@@ -182,6 +182,35 @@ bool FKrowdKontrolAbilityLockoutComponentTest::RunTest(const FString& Parameters
 		TestTrue(TEXT("Sleep should still be locked - it started later"), Component->IsAbilityLocked(EAbilitySlot::Sleep));
 	}
 
+	// (h) EndAllLockouts() clears every currently-locked slot immediately, broadcasting
+	// OnAbilityLockoutChanged(Slot, false) exactly once per slot that actually transitions
+	// - not for slots that were never locked, and not just the first slot found. A second
+	// call on an already-clear component must not re-broadcast.
+	{
+		UAbilityLockoutComponent* Component = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), Component))
+		{
+			return false;
+		}
+
+		UAbilityLockoutChangedTestListener* Listener = NewObject<UAbilityLockoutChangedTestListener>();
+		Component->OnAbilityLockoutChanged.AddDynamic(Listener, &UAbilityLockoutChangedTestListener::HandleAbilityLockoutChanged);
+
+		Component->HandleAbilityCastApplied(EAbilitySlot::Root, nullptr);
+		Component->HandlePunishmentTriggered();
+		Component->HandleAbilityCastApplied(EAbilitySlot::Sleep, nullptr);
+		Component->HandlePunishmentTriggered();
+		Listener->CallCount = 0; // reset after setup broadcasts
+
+		Component->EndAllLockouts();
+		TestFalse(TEXT("Root should be unlocked after EndAllLockouts"), Component->IsAbilityLocked(EAbilitySlot::Root));
+		TestFalse(TEXT("Sleep should be unlocked after EndAllLockouts"), Component->IsAbilityLocked(EAbilitySlot::Sleep));
+		TestEqual(TEXT("EndAllLockouts should broadcast exactly once per slot that actually transitioned"), Listener->CallCount, 2);
+
+		Component->EndAllLockouts();
+		TestEqual(TEXT("EndAllLockouts on an already-clear component should not broadcast"), Listener->CallCount, 2);
+	}
+
 	return true;
 }
 
