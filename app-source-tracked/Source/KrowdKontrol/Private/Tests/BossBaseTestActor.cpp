@@ -1,4 +1,11 @@
 #include "BossBaseTestActor.h"
+#include "Components/SceneComponent.h"
+
+ABossBaseTestActor::ABossBaseTestActor()
+{
+	TestRootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("TestRootComponent"));
+	SetRootComponent(TestRootComponent);
+}
 
 void ABossBaseTestActor::OnShieldChanged(bool bNewHasShield)
 {
