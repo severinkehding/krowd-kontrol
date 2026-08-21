@@ -1,14 +1,18 @@
 // Confirms the boss-checkpoint acceptance criteria of issue #173 (PRD "Run Lifecycle
 // & Progression Signals" REQ-4 boss-checkpoint sub-requirement) that is genuinely
-// testable in-process: AKrowdKontrolPlayerController::ComputeRestartOptions() returns
-// an empty string when this world's ULevelLifecycleSubsystem has not latched
-// HasReachedBossCheckpoint(), and "BossCheckpoint" once it has - while confirming the
-// already-tested issue #172 restart-triggering behavior (bRestartRequested flipping
-// true via a real OnLevelFailed fire) is unaffected either way.
+// testable in-process: ULevelLifecycleSubsystem::RefreshBossCheckpointState() actually
+// latches HasReachedBossCheckpoint() from a real ABossBase state transition (not
+// simulated via friend access), AKrowdKontrolPlayerController::ComputeRestartOptions()
+// returns an empty string until that latch fires and "BossCheckpoint" once it has (with
+// the returned string proven to round-trip through FURL::HasOption() the same way the
+// reader checks it), and ApplyBossCheckpointIfRequested() teleports the pawn to the
+// boss's location only when that option is present on the world's URL - while
+// confirming the already-tested issue #172 restart-triggering behavior
+// (bRestartRequested flipping true via a real OnLevelFailed fire) is unaffected either
+// way.
 //
-// The actual UGameplayStatics::OpenLevel() reload and the reloaded world's
-// ApplyBossCheckpointIfRequested() teleport are NOT asserted here - same
-// CreateNewMap()-World-is-not-a-game-world limitation KrowdKontrolLevelRestartTest.cpp
+// Only the actual UGameplayStatics::OpenLevel() reload itself is NOT asserted here -
+// same CreateNewMap()-World-is-not-a-game-world limitation KrowdKontrolLevelRestartTest.cpp
 // documents for issue #172's own reload. Verified manually in PIE instead (see this
 // issue's PR body).
 //
@@ -23,6 +27,7 @@
 #include "LevelFailComponent.h"
 #include "FlatCamera3DPrototypePawn.h"
 #include "PlayerEnergyComponent.h"
+#include "BossBaseTestActor.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -122,7 +127,21 @@ bool FKrowdKontrolBossCheckpointRestartTest::RunTest(const FString& Parameters)
 		{
 			return false;
 		}
-		LifecycleSubsystem->bHasReachedBossCheckpoint = true; // friend access - simulate "boss reached"
+
+		ABossBaseTestActor* Boss = World->SpawnActor<ABossBaseTestActor>();
+		if (!TestNotNull(TEXT("ABossBaseTestActor should spawn into the test World"), Boss))
+		{
+			return false;
+		}
+
+		LifecycleSubsystem->RefreshBossCheckpointState();
+		TestFalse(TEXT("HasReachedBossCheckpoint should stay false while the boss is still Idle"),
+			LifecycleSubsystem->HasReachedBossCheckpoint());
+
+		Boss->AdvanceToArmed(); // Idle -> Armed
+		LifecycleSubsystem->RefreshBossCheckpointState();
+		TestTrue(TEXT("HasReachedBossCheckpoint should latch once a real boss leaves Idle"),
+			LifecycleSubsystem->HasReachedBossCheckpoint());
 
 		UPlayerEnergyComponent* Energy = Pawn->FindComponentByClass<UPlayerEnergyComponent>();
 		if (!TestNotNull(TEXT("Pawn should have a PlayerEnergyComponent"), Energy))
@@ -133,6 +152,20 @@ bool FKrowdKontrolBossCheckpointRestartTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("ComputeRestartOptions should report BossCheckpoint once the checkpoint is latched"),
 			Controller->ComputeRestartOptions(), FString(TEXT("BossCheckpoint")));
 
+		// Writer/reader round-trip: prove ComputeRestartOptions()'s output is actually
+		// read back the same way ApplyBossCheckpointIfRequested() reads it via
+		// FURL::HasOption(), not just that both sides independently match a hardcoded
+		// literal. Built via the default constructor + AddOption() (the same primitive
+		// FURL's own text parser calls per "?option" token) rather than parsing a full
+		// "Map?Options" string - a text-parsing FURL constructor resolves the map
+		// segment against the asset registry and resets the whole URL (wiping Op) if
+		// that name isn't a real package, which a placeholder map name here isn't.
+		const FString OptionsString = Controller->ComputeRestartOptions();
+		FURL SimulatedReloadURL;
+		SimulatedReloadURL.AddOption(*OptionsString);
+		TestTrue(TEXT("ComputeRestartOptions()'s output should round-trip through FURL::HasOption the same way ApplyBossCheckpointIfRequested reads it"),
+			SimulatedReloadURL.HasOption(TEXT("BossCheckpoint")));
+
 		Energy->CurrentEnergy = 5.0f;
 		Energy->ApplyContactDamage(10.0f, nullptr);
 
@@ -140,6 +173,54 @@ bool FKrowdKontrolBossCheckpointRestartTest::RunTest(const FString& Parameters)
 			Controller->WasRestartRequested());
 		TestEqual(TEXT("ComputeRestartOptions should still report BossCheckpoint after the fail"),
 			Controller->ComputeRestartOptions(), FString(TEXT("BossCheckpoint")));
+	}
+
+	// --- Case C: ApplyBossCheckpointIfRequested() actually teleports the pawn to the
+	// boss's location when the URL option is present, and is a no-op when it isn't -
+	// exercised directly against the function, no real OpenLevel() involved.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		World->InitializeActorsForPlay(FURL());
+
+		AFlatCamera3DPrototypePawn* Pawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+		if (!TestNotNull(TEXT("Pawn should spawn"), Pawn))
+		{
+			return false;
+		}
+
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller))
+		{
+			return false;
+		}
+
+		Controller->Possess(Pawn);
+
+		const FVector StartLocation(100.0f, 0.0f, 0.0f);
+		Pawn->SetActorLocation(StartLocation);
+
+		const FVector BossLocation(500.0f, 250.0f, 0.0f);
+		ABossBaseTestActor* Boss = World->SpawnActor<ABossBaseTestActor>();
+		if (!TestNotNull(TEXT("ABossBaseTestActor should spawn"), Boss))
+		{
+			return false;
+		}
+		Boss->SetActorLocation(BossLocation);
+
+		// Option absent - must be a no-op.
+		Controller->ApplyBossCheckpointIfRequested(Pawn);
+		TestEqual(TEXT("Pawn should not move when the BossCheckpoint option is absent"),
+			Pawn->GetActorLocation(), StartLocation);
+
+		// Option present - pawn should teleport to the boss's location.
+		World->URL.Op.Add(TEXT("BossCheckpoint"));
+		Controller->ApplyBossCheckpointIfRequested(Pawn);
+		TestEqual(TEXT("Pawn should teleport to the boss's location when BossCheckpoint is set"),
+			Pawn->GetActorLocation(), BossLocation);
 	}
 
 	return true;

@@ -26,12 +26,13 @@ already-possessed branch and `OnPossess()`, checks
 
 | File | Action | Contains |
 |------|--------|----------|
-| `LevelLifecycleSubsystem.h` | UPDATE | New `bHasReachedBossCheckpoint` field, `HasReachedBossCheckpoint()` accessor (`BlueprintPure`), `RefreshBossCheckpointState()` declaration, `FKrowdKontrolBossCheckpointRestartTest` friend declaration |
+| `LevelLifecycleSubsystem.h` | UPDATE | New `bHasReachedBossCheckpoint` field, `HasReachedBossCheckpoint()` accessor (`BlueprintPure`), `RefreshBossCheckpointState()` declaration |
 | `LevelLifecycleSubsystem.cpp` | UPDATE | `#include "BossBase.h"`; `RefreshBossCheckpointState()` implementation; call added to `Tick()` |
 | `KrowdKontrolPlayerController.h` | UPDATE | New `ComputeRestartOptions()` and `ApplyBossCheckpointIfRequested()` private method declarations, `FKrowdKontrolBossCheckpointRestartTest` friend declaration |
 | `KrowdKontrolPlayerController.cpp` | UPDATE | `#include "LevelLifecycleSubsystem.h"`, `#include "BossBase.h"`; `ComputeRestartOptions()` and `ApplyBossCheckpointIfRequested()` implementations; `RequestLevelRestart()`'s `OpenLevel` call now passes `ComputeRestartOptions()`; both calls wired into `BeginPlay()`/`OnPossess()` |
 | `PlayerEnergyComponent.h` | UPDATE (plan gap) | Appended `FKrowdKontrolBossCheckpointRestartTest` friend-class line, so the new test can seed `CurrentEnergy` deterministically the same way `KrowdKontrolLevelRestartTest.cpp` does |
-| `Private/Tests/KrowdKontrolBossCheckpointRestartTest.cpp` | CREATE | `KrowdKontrol.Unit.BossCheckpointRestart` - asserts `ComputeRestartOptions()` is empty with no boss checkpoint latched, and `"BossCheckpoint"` once it is, in both cases confirming `bRestartRequested` still flips true via a real `OnLevelFailed` fire |
+| `Private/Tests/BossBaseTestActor.h` / `.cpp` | UPDATE (review follow-up) | Added an `ABossBaseTestActor()` constructor that creates and sets a `USceneComponent` as `RootComponent` - `ABossBase` itself has none (real placed bosses are Blueprint subclasses whose mesh supplies one), so a bare `SpawnActor<ABossBaseTestActor>()` previously always reported `GetActorLocation()`/`SetActorLocation()` as a no-op at the origin. Needed so `KrowdKontrolBossCheckpointRestartTest.cpp` can give a spawned boss a real, distinct test location to teleport to |
+| `Private/Tests/KrowdKontrolBossCheckpointRestartTest.cpp` | CREATE, then UPDATE (review follow-up) | `KrowdKontrol.Unit.BossCheckpointRestart` - Case A/B assert `ComputeRestartOptions()` is empty with no boss checkpoint latched, and `"BossCheckpoint"` once `RefreshBossCheckpointState()` has actually latched it from a real `ABossBaseTestActor` state transition (`AdvanceToArmed()`, not friend-forced), in both cases confirming `bRestartRequested` still flips true via a real `OnLevelFailed` fire; Case B also proves the returned options string round-trips through `FURL::HasOption()` the same way the reader checks it; new Case C spawns a boss and a pawn, and asserts `ApplyBossCheckpointIfRequested()` is a no-op with the `BossCheckpoint` URL option absent and teleports the pawn to the boss's location when it's present |
 
 **Note on the `LevelLifecycleSubsystem.{h,cpp}` diff size**: the plan's own Mandatory
 Reading section flagged that `app-source-tracked/`'s copies of these two files were
@@ -50,12 +51,15 @@ lines are **not** new work from this PR, just a stale mirror catching up.
 - [x] On restart, if the flag was set for the current level, the player is placed back
       at the boss encounter's start rather than the level's beginning -
       `ComputeRestartOptions()` + `OpenLevel` `Options` + `ApplyBossCheckpointIfRequested()`.
-      The branching logic (`ComputeRestartOptions()`) is automated-test-covered; the
-      actual reload + teleport requires a real `OpenLevel()` map travel, which an
-      in-process Automation World cannot execute (see "Manual PIE verification" below).
-- [x] An automation test (`KrowdKontrol.Unit.BossCheckpointRestart`) sets the checkpoint
-      flag directly, triggers a restart, and asserts the restart logic branches to boss
-      re-entry rather than level-start
+      The branching logic (`ComputeRestartOptions()`), the detection logic
+      (`RefreshBossCheckpointState()`), the options-string round-trip, and the teleport
+      itself (`ApplyBossCheckpointIfRequested()`) are all automated-test-covered; only the
+      actual `OpenLevel()` map travel requires a real reload, which an in-process
+      Automation World cannot execute (see "Manual PIE verification" below).
+- [x] An automation test (`KrowdKontrol.Unit.BossCheckpointRestart`) latches the
+      checkpoint from a real boss state transition, triggers a restart, asserts the
+      restart logic branches to boss re-entry rather than level-start, and asserts the
+      resulting teleport lands the pawn on the boss's location
 - [x] `python harness/ci.py --quick` passes: `GATE_OK mode=quick`
 - [x] No regressions in existing tests (`KrowdKontrol.Unit.LevelLifecycleSubsystem`,
       `KrowdKontrol.Unit.LevelRestart`, `KrowdKontrol.Unit.BossBase` all still pass)
@@ -64,12 +68,14 @@ lines are **not** new work from this PR, just a stale mirror catching up.
 
 ## Manual PIE verification
 
-Not automatable in-process, same limitation `KrowdKontrolLevelRestartTest.cpp` already
-documents for issue #172's own reload: a `CreateNewMap()` Automation World hangs on a
-real `UGameplayStatics::OpenLevel()` call, so the actual map reload and pawn teleport to
-the boss's location must be checked live in PIE rather than by an Automation test.
-`KrowdKontrol.Unit.BossCheckpointRestart` instead asserts the testable branching seam
-(`ComputeRestartOptions()` returning `"BossCheckpoint"` once the flag is latched).
+Only the actual `UGameplayStatics::OpenLevel()` map reload itself is not automatable
+in-process, same limitation `KrowdKontrolLevelRestartTest.cpp` already documents for
+issue #172's own reload: a `CreateNewMap()` Automation World hangs on a real `OpenLevel()`
+call. Everything downstream of that reload - `ApplyBossCheckpointIfRequested()`'s teleport
+to the boss's location, and its no-op when the `BossCheckpoint` option is absent - is now
+exercised directly by `KrowdKontrol.Unit.BossCheckpointRestart`'s Case C, since that
+function only needs an already-loaded `UWorld*` and an already-possessed `APawn*`, neither
+of which requires a real reload to construct.
 
 Verification steps for a live PIE session (to be run by whoever validates this PR in the
 Editor): enter a level containing a boss actor, let the boss's `BeginPlay()` run (arming
@@ -98,8 +104,11 @@ KrowdKontrol.Unit.LevelLifecycleSubsystem` → `passed=1 total=1`;
 `harness/run_ue_automation.sh KrowdKontrol.Unit.BossBase` → `passed=1 total=1`. All
 `UE_AUTOMATION_OK`, no regressions.
 
-`python harness/ci.py --quick` → `STATIC_SKIPPED` (no static command configured),
-`UNIT_PASSED tests=78`, `GATE_OK mode=quick`.
+`python harness/ci.py --mode full` (post review self-fix pass) →
+`UNIT_PASSED tests=78`, `UE_BUILD_OK`, `UE_AUTOMATION_RESULT passed=1 total=1`,
+`E2E_PASSED steps=1`, `GATE_OK mode=full`. All 78 unit tests pass with the expanded
+`KrowdKontrol.Unit.BossCheckpointRestart` (test count unchanged - the new coverage was
+added as additional cases within the existing test, not new test entries).
 
 ## Deviations from plan
 
@@ -117,3 +126,30 @@ KrowdKontrol.Unit.LevelLifecycleSubsystem` → `passed=1 total=1`;
   `RefreshBossCheckpointState()` sample) passes the pointer directly. Implemented as
   `TActorIterator<ABossBase> It(World)` instead; confirmed via a full Editor rebuild
   that this compiles clean.
+
+### Review self-fix pass (2026-08-21)
+
+Both review passes (code-review, test-coverage) independently flagged the same core gap:
+Case B originally set `bHasReachedBossCheckpoint` via friend access instead of driving
+`RefreshBossCheckpointState()`'s real `TActorIterator`/`GetBossState()` detection logic,
+and `ApplyBossCheckpointIfRequested()`'s teleport had no coverage at all. Addressed by:
+
+- Rewriting Case B to spawn a real `ABossBaseTestActor`, assert the latch stays false
+  while it's still `Idle`, call `AdvanceToArmed()`, and assert `RefreshBossCheckpointState()`
+  then latches it - no more friend-field shortcut, no more unused
+  `friend class FKrowdKontrolBossCheckpointRestartTest;` in `LevelLifecycleSubsystem.h`
+  (removed, since nothing in the test needs private access to that class anymore).
+- Adding a writer/reader round-trip assertion in Case B, built via `FURL`'s default
+  constructor + `AddOption()` rather than parsing a full `"Map?Options"` string - the
+  text-parsing `FURL` constructor resolves the map segment against the asset registry and
+  silently resets the whole URL (wiping `Op`) if that name isn't a real package, which a
+  placeholder name here isn't; discovered by hitting exactly that reset while writing this
+  fix.
+- Adding Case C, which spawns a boss and a pawn and asserts `ApplyBossCheckpointIfRequested()`
+  is a no-op with the option absent and teleports the pawn to the boss's location with it
+  present. This surfaced that `ABossBase` (and therefore a bare `SpawnActor<ABossBaseTestActor>()`)
+  has no `RootComponent`, so `GetActorLocation()`/`SetActorLocation()` were always
+  no-ops at the origin for the test double - real placed bosses are Blueprint subclasses
+  whose mesh supplies a root. Fixed by giving `ABossBaseTestActor` its own constructor
+  that creates and sets a plain `USceneComponent` as `RootComponent` (test-only file,
+  `ABossBase` itself is untouched).

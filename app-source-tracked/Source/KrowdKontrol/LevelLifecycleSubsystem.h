@@ -24,7 +24,6 @@ class KROWDKONTROL_API ULevelLifecycleSubsystem : public UTickableWorldSubsystem
 	GENERATED_BODY()
 
 	friend class FKrowdKontrolLevelLifecycleSubsystemTest;
-	friend class FKrowdKontrolBossCheckpointRestartTest;
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
