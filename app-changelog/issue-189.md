@@ -85,7 +85,7 @@ No other `.h`/`.cpp` production logic changed — `RecomputeConnectorGeometry()`
       the pre-#189 map state and pass against the new one** — the pre-change map
       state (captured live before any edit: spacing exactly 3000cm everywhere, counts
       1/2/2) fails `CheckAdjacentRoomSpacingCompressed`'s strict `< 3000` check and
-      `CheckEnemyDensityRamp`'s strictly-greater-than-first check; the new state
+      `CheckEnemyDensityRamp`'s strict-increase-at-every-step check; the new state
       (2400cm spacing, 1/2/3 counts) passes both.
 - [x] **`KrowdKontrol.Unit.Level02Structure` still passes** — L1's new total of 6
       stays under L2's hardcoded `== 8` assertion.
@@ -162,10 +162,19 @@ Before this fix, the live pre-#189 map state (captured directly via the same hea
 Python session before any edit was applied) was: 3 rooms at X=0/3000/6000 (spacing
 exactly 3000cm at both hops) and enemy counts 1/2/2 by room. Against
 `CheckAdjacentRoomSpacingCompressed`'s strict `< 3000` check, a 3000cm gap fails
-(3000 is not `< 3000`). Against `CheckEnemyDensityRamp`'s strictly-greater-than-first
-check, a 1/2/2 split fails (last room's count 2 is not `> ` the first room's count 1).
-Both assertions only pass against the new state (2400cm spacing, 1/2/3 counts) — that
-before/after flip, not the PR description, is the falsifiable claim.
+(3000 is not `< 3000`). Against `CheckEnemyDensityRamp`'s strict-increase-at-every-step
+check, a 1/2/2 split fails at the second hop (room 3's count 2 is not `>` room 2's
+count 2). Both assertions only pass against the new state (2400cm spacing, 1/2/3
+counts) — that before/after flip, not the PR description, is the falsifiable claim.
+
+**Post-review correction (code review of this PR, 2026-08-21):** `CheckEnemyDensityRamp`
+originally only checked non-decreasing counts step-to-step plus a first-vs-last
+strict-greater-than, which does *not* actually catch a flat-plateau regression like
+1/2/2 (2 > 1 holds, so it would have silently passed) — the claim above that "1/2/2
+split fails" was true only after the review fix (every adjacent step must now be
+strictly greater, matching `CheckAdjacentRoomSpacingCompressed`'s pattern), not as
+originally written. See `LevelStructureTestUtils.h`'s `CheckEnemyDensityRamp` for the
+corrected implementation.
 
 ## Notes
 
