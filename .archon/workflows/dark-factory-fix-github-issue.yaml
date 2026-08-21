@@ -322,3 +322,20 @@ nodes:
     depends_on: [report]
     trigger_rule: all_done
     timeout: 15000
+
+  # Close any Unreal Editor this run's implement/E2E phases launched and left
+  # behind (operator patch, 2026-08-21). Fix runs launching an Editor for live
+  # verification and exiting without closing it manufactured a whole class of
+  # bogus "validator infrastructure failed" escalations: the leftover Editor
+  # holds the Live Coding mutex, so the NEXT validate-pr run's UBT build (and
+  # any manual harness run) dies instantly with "Unable to build while Live
+  # Coding is active" — PRs #182, #193, #203 all escalated this way with their
+  # code never actually judged. validate-pr defends its own runs with
+  # ensure-editor-closed-p1/p2; this is the matching exit-side guarantee.
+  # trigger_rule all_done + || true: best-effort on every outcome, never fails
+  # the run. Same D-013/D-014 script the rest of the factory uses.
+  - id: close-editor-on-exit
+    bash: bash scripts/ue_editor_close.sh || true
+    depends_on: [cleanup-issue-label]
+    trigger_rule: all_done
+    timeout: 30000

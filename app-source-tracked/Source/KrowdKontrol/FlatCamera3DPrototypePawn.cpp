@@ -19,6 +19,7 @@
 #include "AbilityMatchupSignalComponent.h"
 #include "AbilityMatchupNudgeComponent.h"
 #include "PunishmentManagerComponent.h"
+#include "SpeedReductionPunishmentComponent.h"
 #include "LevelFailComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
@@ -56,6 +57,9 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
 	PunishmentManagerComponent = CreateDefaultSubobject<UPunishmentManagerComponent>(TEXT("PunishmentManagerComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(PunishmentManagerComponent, &UPunishmentManagerComponent::HandleEnergyChanged);
+	SpeedReductionPunishmentComponent = CreateDefaultSubobject<USpeedReductionPunishmentComponent>(TEXT("SpeedReductionPunishmentComponent"));
+	SpeedReductionPunishmentComponent->MovementComponent = MovementComponent;
+	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(SpeedReductionPunishmentComponent, &USpeedReductionPunishmentComponent::HandlePunishmentTriggered);
 	LevelFailComponent = CreateDefaultSubobject<ULevelFailComponent>(TEXT("LevelFailComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(LevelFailComponent, &ULevelFailComponent::HandleEnergyChanged);
 	AbilityCooldownComponent = CreateDefaultSubobject<UAbilityCooldownComponent>(TEXT("AbilityCooldownComponent"));
