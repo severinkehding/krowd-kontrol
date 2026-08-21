@@ -150,7 +150,7 @@ FString AKrowdKontrolPlayerController::ComputeRestartOptions() const
 
 void AKrowdKontrolPlayerController::ApplyBossCheckpointIfRequested(APawn* InPawn)
 {
-	if (!InPawn)
+	if (!InPawn || bBossCheckpointApplied)
 	{
 		return;
 	}
@@ -159,6 +159,7 @@ void AKrowdKontrolPlayerController::ApplyBossCheckpointIfRequested(APawn* InPawn
 	{
 		return;
 	}
+	bBossCheckpointApplied = true;
 	for (TActorIterator<ABossBase> It(World); It; ++It)
 	{
 		InPawn->SetActorLocation(It->GetActorLocation());

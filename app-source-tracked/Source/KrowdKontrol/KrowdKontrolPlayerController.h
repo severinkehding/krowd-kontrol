@@ -163,8 +163,9 @@ private:
 	// guaranteed (see BeginPlay()'s own comment). Assumes one ABossBase per level (true
 	// of every level today, MISSION.md's "4 total boss encounters") - does not
 	// cross-check the chosen actor's state against the one that latched the checkpoint
-	// in RefreshBossCheckpointState(). Revisit if a level ever places more than one
-	// ABossBase actor.
+	// in RefreshBossCheckpointState(). Guarded by bBossCheckpointApplied below so a
+	// later re-possession in the same reloaded world can't re-teleport. Revisit if a
+	// level ever places more than one ABossBase actor.
 	void ApplyBossCheckpointIfRequested(APawn* InPawn);
 
 	// Never reset back to false once set - moot in the real game-world path, since a
@@ -172,4 +173,12 @@ private:
 	// World. Left true for the (Automation-World-only) lifetime of a controller that
 	// never actually reloads.
 	bool bRestartRequested = false;
+
+	// One-shot guard for ApplyBossCheckpointIfRequested(), same never-reset-once-set
+	// idiom as bRestartRequested above. The "BossCheckpoint" FURL option it reads
+	// persists for the World's whole lifetime (unlike this flag), so without this a
+	// later re-possession of the same controller in the same reloaded world (no call
+	// site does this today) would re-teleport the pawn and could double-log the
+	// missing-boss warning.
+	bool bBossCheckpointApplied = false;
 };

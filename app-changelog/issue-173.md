@@ -160,3 +160,35 @@ Re-validated after the fixes: `python harness/ci.py` (mode=full) →
 `GATE_OK mode=full`. Targeted `harness/run_ue_automation.sh
 KrowdKontrol.Unit.BossCheckpointRestart` → `UE_AUTOMATION_RESULT passed=1 total=1`
 (now covering Cases A–E).
+
+## Fix pass 2 (pass-1 validation feedback)
+
+Addressed:
+
+- **LOW (code_quality)**: `ApplyBossCheckpointIfRequested()` was gated only on the
+  persistent `BossCheckpoint` `FURL` option, so a future re-possession of the same
+  controller within the same reloaded world (no call site does this today) would
+  re-teleport the pawn. Added `bBossCheckpointApplied`, a one-shot guard mirroring
+  this file's existing `bRestartRequested` never-reset-once-set idiom, checked first
+  in `ApplyBossCheckpointIfRequested()` and set right after the URL-option check
+  succeeds - covers both the teleport and the missing-boss-warning paths with one
+  flag.
+- **LOW (code_quality)**: the missing-boss warning log's double-fire risk on the same
+  re-possession edge case is resolved by the same guard - it can now only run once
+  per controller.
+
+Not addressed - escalated, not fixable inside this issue's C++ diff:
+
+- **MEDIUM (e2e)**: the E2E holdout could not independently observe the actual
+  restart-teleport (only the arming precondition), because (1) no shipped level
+  places a boss encounter today, and (2) no MCP exec/console tool or settable
+  property exists to force the zero-energy fail condition in a live PIE session.
+  Both gaps are outside this issue's scope - (1) is level-design/content-population
+  work, (2) is harness/MCP tooling work - and mirror an already-accepted limitation
+  from the dependency issue #172 (`CreateNewMap()` Automation Worlds can't exercise
+  the real `UGameplayStatics::OpenLevel()` reload in-process either). Per pass-1's
+  own `should_escalate: true`, left for human judgment rather than looped fix
+  attempts against a gap this diff cannot close.
+
+Re-validated: `python harness/ci.py --quick` → `UNIT_PASSED tests=78`, `GATE_OK
+mode=quick`.
