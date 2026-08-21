@@ -6,6 +6,7 @@
 #include "RoomActor.generated.h"
 
 class APlaceholderTargetZoneActor;
+class ATargetZone;
 class UStaticMeshComponent;
 
 // One tagged target-zone marker child of an ARoomActor: which EEnemyType it serves,
@@ -45,6 +46,19 @@ public:
 
 	const TArray<FRoomTargetZone>& GetTargetZones() const { return TargetZones; }
 
+	// Self-heals a colour-tagged ATargetZone attached to each already-placed marker
+	// in TargetZones that doesn't have one yet (issue #211) - the code-only path for
+	// rooms placed/serialized before this class carried banking behaviour, mirroring
+	// APlaceholderTargetZoneActor::EnsureBeaconHierarchy()'s "unconditionally re-check
+	// and fix, safe to call more than once" shape. Called automatically from
+	// BeginPlay(); exposed publicly (and made idempotent) so callers - including the
+	// Automation Framework test - can trigger it deterministically without needing to
+	// drive the engine's full actor BeginPlay lifecycle, same rationale
+	// URoomEnemyBudgetController::InitializeRoom() documents for its own public
+	// idempotent entry point.
+	UFUNCTION(BlueprintCallable, Category = "Room")
+	void EnsureBankingZonesWired();
+
 	// Half-extents (cm) of the room's greybox floor slab - full floor is 2x this.
 	// Rooms in both hand-authored levels are spaced 3000cm apart along the chain axis
 	// (docs/prd-level-playability-presentation.md:31-33), so the 1000cm default leaves
@@ -76,7 +90,18 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room")
 	TObjectPtr<UStaticMeshComponent> WallWestMeshComponent;
 
+protected:
+	virtual void BeginPlay() override;
+
 private:
+	// Routes a banked regular enemy into its own TransitionToBanked() - the "room-
+	// scope owner" subscriber the issue's Ask #3 calls out as an acceptable
+	// alternative to the zone subscribing to itself. Deliberately does NOT call
+	// URoomEnemyBudgetController::NotifyEnemyBanked() - that integration is separate,
+	// out-of-scope future work per RoomEnemyBudgetController.h's own comment.
+	UFUNCTION()
+	void HandleZoneActorBanked(AActor* BankedActor);
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room", meta = (AllowPrivateAccess = "true"))
 	TArray<FRoomTargetZone> TargetZones;
 };

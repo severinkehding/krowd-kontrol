@@ -7,6 +7,7 @@
 #include "AbilityData.h"
 #include "CrowdMasterySubsystem.h"
 #include "Engine/World.h"
+#include "Components/PrimitiveComponent.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -20,6 +21,22 @@ AEnemyBase::AEnemyBase()
 void AEnemyBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Issue #211: every concrete subclass's own mesh root defaults to the engine's
+	// BlockAllDynamic profile (Block response to the WorldDynamic channel). An
+	// ATargetZone is also WorldDynamic ("OverlapAllDynamic" profile), and Unreal
+	// always resolves a Block-vs-Overlap pair as a blocking collision - never an
+	// overlap event - regardless of which side blocks, so no regular enemy could
+	// ever physically trigger a zone's OnActorBanked without this. Narrowed to just
+	// the WorldDynamic channel (leaves the root's Block response to WorldStatic - the
+	// room floor - untouched) and safe to set generically here rather than in every
+	// concrete subclass's own constructor: this module has zero
+	// OnComponentHit/NotifyHit consumers, so no other system depends on an enemy's
+	// root actually blocking (vs overlapping) a WorldDynamic object.
+	if (UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetRootComponent()))
+	{
+		RootPrimitive->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+	}
 
 	// Issue #174 AC1: routes every real Controlled-state expiry into the Crowd
 	// Mastery running-max sample, the same production wiring
@@ -173,6 +190,16 @@ EThreatState AEnemyBase::GetThreatState() const
 		|| CurrentState == EEnemyState::Attack
 		|| CurrentState == EEnemyState::Controlled;
 	return bIsEngaged ? EThreatState::Hot : EThreatState::Idle;
+}
+
+bool AEnemyBase::IsControlled() const
+{
+	return CurrentState == EEnemyState::Controlled;
+}
+
+FName AEnemyBase::GetHerdColourTag() const
+{
+	return AbilityData::Get(ControllingAbility).ColourTag;
 }
 
 void AEnemyBase::SetIsElite(bool bNewIsElite)
