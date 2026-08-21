@@ -1,5 +1,6 @@
 #include "LevelClearTimeSubsystem.h"
 #include "LevelClearTimeSaveGame.h"
+#include "LevelLifecycleSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/PlatformTime.h"
 
@@ -64,6 +65,29 @@ bool ULevelClearTimeSubsystem::GetBestClearTimeSeconds(FName LevelID, float& Out
 	}
 	OutBestSeconds = 0.0f;
 	return false;
+}
+
+void ULevelClearTimeSubsystem::SubscribeToLevelLifecycle(ULevelLifecycleSubsystem* LifecycleSubsystem)
+{
+	if (!LifecycleSubsystem)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ULevelClearTimeSubsystem::SubscribeToLevelLifecycle: LifecycleSubsystem is null - clear-time tracking will not be wired for this level."));
+		return;
+	}
+	LifecycleSubsystem->OnLevelBegin.AddUniqueDynamic(this, &ULevelClearTimeSubsystem::HandleLevelBegin);
+	LifecycleSubsystem->OnLevelClear.AddUniqueDynamic(this, &ULevelClearTimeSubsystem::HandleLevelClear);
+}
+
+void ULevelClearTimeSubsystem::HandleLevelBegin(FName MapName)
+{
+	CurrentLevelID = MapName;
+	StartLevelTimer(MapName);
+}
+
+void ULevelClearTimeSubsystem::HandleLevelClear()
+{
+	StopLevelTimerAndRecordClear(CurrentLevelID);
 }
 
 bool ULevelClearTimeSubsystem::RecordCrowdMasteryCount(FName LevelID, int32 SimultaneousControlledCount)
