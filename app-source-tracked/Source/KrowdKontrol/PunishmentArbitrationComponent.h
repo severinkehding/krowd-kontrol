@@ -48,13 +48,16 @@ public:
 
 	// Bound to UPunishmentManagerComponent::OnPunishmentTriggered. Drops the trigger
 	// entirely if Overcrowd is currently Active (priority 1, issue #180 AC: not queued).
-	// Otherwise, if AbilityLockoutComponent exists on this pawn, ends any active
-	// SpeedReductionComponent immediately (priority 2 preempts priority 3 on this shared
-	// trigger - there is no separate signal to tell "this trigger is for ability-lock" vs
-	// "this trigger is for speed-reduction" apart, so ability-lock, being higher priority,
-	// always wins whenever both exist) and activates ability-lock. If no
-	// AbilityLockoutComponent exists on this pawn (Paper2DPrototypePawn), falls through to
-	// activating SpeedReductionComponent normally - unchanged behavior for that pawn.
+	// Otherwise, if AbilityLockoutComponent exists on this pawn AND
+	// UAbilityLockoutComponent::IsLockoutEnabledByCVar() (kk.Punishment.LockoutEnabled,
+	// issue #181) is true, ends any active SpeedReductionComponent immediately (priority 2
+	// preempts priority 3 on this shared trigger - there is no separate signal to tell
+	// "this trigger is for ability-lock" vs "this trigger is for speed-reduction" apart, so
+	// ability-lock, being higher priority, always wins whenever both exist) and activates
+	// ability-lock. If no AbilityLockoutComponent exists on this pawn (Paper2DPrototypePawn),
+	// or lockout is CVar-disabled, falls through to activating SpeedReductionComponent
+	// normally instead - without this CVar check, disabling lockout for playtesting would
+	// still preempt-and-cancel an active speed-reduction rather than let it run.
 	UFUNCTION()
 	void HandlePunishmentTriggered();
 

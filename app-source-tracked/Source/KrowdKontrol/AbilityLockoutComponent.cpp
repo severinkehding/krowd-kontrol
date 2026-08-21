@@ -41,11 +41,16 @@ void UAbilityLockoutComponent::HandleAbilityCastApplied(EAbilitySlot Ability, AE
 
 void UAbilityLockoutComponent::HandlePunishmentTriggered()
 {
-	if (CVarPunishmentLockoutEnabled.GetValueOnGameThread() == 0)
+	if (!IsLockoutEnabledByCVar())
 	{
 		return;
 	}
 	StartLockout(LastCastAbility);
+}
+
+bool UAbilityLockoutComponent::IsLockoutEnabledByCVar()
+{
+	return CVarPunishmentLockoutEnabled.GetValueOnGameThread() != 0;
 }
 
 void UAbilityLockoutComponent::StartLockout(EAbilitySlot Ability)

@@ -150,6 +150,44 @@ bool FKrowdKontrolSpeedReductionPunishmentComponentTest::RunTest(const FString& 
 			CVarMovement->MaxSpeed, 600.0f);
 	}
 
+	// (g) Disabling the CVar mid-punishment does not cancel an already-active reduction; it
+	// only blocks new triggers. The active timer still restores speed on its own schedule.
+	{
+		IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.SpeedReductionEnabled"));
+		if (!TestNotNull(TEXT("kk.Punishment.SpeedReductionEnabled CVar should be registered"), CVar))
+		{
+			return false;
+		}
+
+		UWorld* MidFlightWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		AActor* MidFlightOwner = MidFlightWorld->SpawnActor<AActor>();
+
+		UFloatingPawnMovement* MidFlightMovement = NewObject<UFloatingPawnMovement>(MidFlightOwner);
+		MidFlightMovement->RegisterComponent();
+		MidFlightMovement->MaxSpeed = 1200.0f;
+
+		USpeedReductionPunishmentComponent* MidFlight = NewObject<USpeedReductionPunishmentComponent>(MidFlightOwner);
+		MidFlight->RegisterComponent();
+		MidFlight->MovementComponent = MidFlightMovement;
+		MidFlight->SpeedMultiplierWhileActive = 0.5f;
+
+		MidFlight->HandlePunishmentTriggered(); // CVar still 1 here
+		TestEqual(TEXT("MaxSpeed should be reduced before the CVar is disabled"),
+			MidFlightMovement->MaxSpeed, 600.0f);
+
+		CVar->Set(0);
+		TestTrue(TEXT("An already-active reduction should stay active after the CVar is disabled mid-flight"),
+			MidFlight->bIsSpeedReductionActive);
+		TestEqual(TEXT("MaxSpeed should remain reduced - disabling the CVar does not clear active state"),
+			MidFlightMovement->MaxSpeed, 600.0f);
+
+		MidFlight->RestoreOriginalSpeed(); // simulates the pending timer firing
+		TestEqual(TEXT("The already-pending restore should still complete normally while the CVar is 0"),
+			MidFlightMovement->MaxSpeed, 1200.0f);
+
+		CVar->Set(1); // restore for the next KrowdKontrol.Unit.* test in this pass
+	}
+
 	return true;
 }
 

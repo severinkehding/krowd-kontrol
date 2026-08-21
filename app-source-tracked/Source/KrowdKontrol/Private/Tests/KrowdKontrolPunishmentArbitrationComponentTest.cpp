@@ -26,6 +26,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Actor.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -244,6 +245,59 @@ bool FKrowdKontrolPunishmentArbitrationComponentTest::RunTest(const FString& Par
 
 		RecoveryArbitration->HandlePunishmentTriggered();
 		TestTrue(TEXT("A fresh trigger after recovery should resume normal arbitration (ability-lock)"), RecoveryLockout->IsAbilityLocked(EAbilitySlot::Stun));
+	}
+
+	// (k) kk.Punishment.LockoutEnabled=0 (issue #181) lets speed-reduction activate instead
+	// of being preempted-into-nothing on a pawn with both components wired: arbitration must
+	// treat a CVar-disabled AbilityLockoutComponent the same as an unwired one and fall
+	// through to SpeedReductionComponent, not still call EndSpeedReduction() followed by a
+	// now-gated no-op. This is the arbitration-level regression the component-level CVar
+	// tests in KrowdKontrolAbilityLockoutComponentTest.cpp/
+	// KrowdKontrolSpeedReductionPunishmentComponentTest.cpp can't catch, since those call
+	// HandlePunishmentTriggered() directly on a bare component, bypassing arbitration.
+	{
+		IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.LockoutEnabled"));
+		if (!TestNotNull(TEXT("kk.Punishment.LockoutEnabled CVar should be registered"), CVar))
+		{
+			return false;
+		}
+
+		AActor* CVarSpeedOwner = World->SpawnActor<AActor>();
+		UFloatingPawnMovement* CVarMovement = NewObject<UFloatingPawnMovement>(CVarSpeedOwner);
+		CVarMovement->RegisterComponent();
+		CVarMovement->MaxSpeed = 1200.0f;
+		USpeedReductionPunishmentComponent* CVarSpeedReduction = NewObject<USpeedReductionPunishmentComponent>(CVarSpeedOwner);
+		CVarSpeedReduction->RegisterComponent();
+		CVarSpeedReduction->MovementComponent = CVarMovement;
+
+		UAbilityLockoutComponent* CVarLockout = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), CVarLockout))
+		{
+			return false;
+		}
+
+		UPunishmentArbitrationComponent* CVarArbitration = NewObject<UPunishmentArbitrationComponent>();
+		if (!TestNotNull(TEXT("UPunishmentArbitrationComponent should construct"), CVarArbitration))
+		{
+			return false;
+		}
+		CVarArbitration->AbilityLockoutComponent = CVarLockout;
+		CVarArbitration->SpeedReductionComponent = CVarSpeedReduction;
+
+		CVar->Set(0);
+		CVarArbitration->HandlePunishmentTriggered();
+		TestFalse(TEXT("Ability-lock should not activate while kk.Punishment.LockoutEnabled is 0"),
+			CVarLockout->IsAbilityLocked(EAbilitySlot::Stun));
+		TestTrue(TEXT("Speed-reduction should activate instead of being cancelled-into-nothing while LockoutEnabled is 0"),
+			CVarSpeedReduction->IsSpeedReductionTimerActive());
+		TestEqual(TEXT("MaxSpeed should be reduced by the fallback speed-reduction"), CVarMovement->MaxSpeed, 600.0f);
+
+		CVar->Set(1);
+		CVarArbitration->HandlePunishmentTriggered();
+		TestTrue(TEXT("Restoring the CVar to 1 should let ability-lock preempt speed-reduction normally again"),
+			CVarLockout->IsAbilityLocked(EAbilitySlot::Stun));
+		TestFalse(TEXT("Ability-lock preempting should end the active speed-reduction immediately, same as case (c)"),
+			CVarSpeedReduction->IsSpeedReductionTimerActive());
 	}
 
 	return true;
