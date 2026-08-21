@@ -30,12 +30,15 @@ class KROWDKONTROL_API UPlayerEnergyComponent : public UActorComponent
 	// UPunishmentManagerComponent's (issue #177, driving CurrentEnergy to 0 to test
 	// the "no energy change means no punishment trigger" edge case), and
 	// ULevelFailComponent's (issue #171, seeding CurrentEnergy for a deterministic
-	// single-call floor-to-0 to test the "OnLevelFailed fires exactly once" case).
+	// single-call floor-to-0 to test the "OnLevelFailed fires exactly once" case), and
+	// the level-restart flow's (issue #172, same deterministic floor-to-0 seed to
+	// trigger OnLevelFailed -> HandleLevelFailed -> RequestLevelRestart).
 	friend class FKrowdKontrolPlayerEnergyComponentTest;
 	friend class FKrowdKontrolEnergyMeterWidgetTest;
 	friend class FKrowdKontrolBomberEnemyTest;
 	friend class FKrowdKontrolPunishmentManagerComponentTest;
 	friend class FKrowdKontrolLevelFailedTest;
+	friend class FKrowdKontrolLevelRestartTest;
 
 public:
 	UPlayerEnergyComponent();
