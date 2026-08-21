@@ -1,6 +1,7 @@
 #include "LevelLifecycleSubsystem.h"
 #include "LevelClearTimeSubsystem.h"
 #include "EnemyBase.h"
+#include "BossBase.h"
 #include "WaveSpawnerComponent.h"
 #include "EngineUtils.h"
 #include "Engine/GameInstance.h"
@@ -51,6 +52,7 @@ void ULevelLifecycleSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	RefreshLevelClearState();
+	RefreshBossCheckpointState();
 }
 
 TStatId ULevelLifecycleSubsystem::GetStatId() const
@@ -114,5 +116,28 @@ void ULevelLifecycleSubsystem::RefreshLevelClearState()
 	if (FinalMapName != NAME_None && FName(*World->GetMapName()) == FinalMapName)
 	{
 		OnRunComplete.Broadcast();
+	}
+}
+
+void ULevelLifecycleSubsystem::RefreshBossCheckpointState()
+{
+	if (bHasReachedBossCheckpoint)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<ABossBase> It(World); It; ++It)
+	{
+		if (It->GetBossState() != EBossState::Idle)
+		{
+			bHasReachedBossCheckpoint = true;
+			return;
+		}
 	}
 }

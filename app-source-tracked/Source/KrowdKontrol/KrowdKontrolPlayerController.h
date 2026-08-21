@@ -32,6 +32,7 @@ class KROWDKONTROL_API AKrowdKontrolPlayerController : public APlayerController
 	// RequestLevelRestart().
 	friend class FKrowdKontrolLevelFailedTest;
 	friend class FKrowdKontrolLevelRestartTest;
+	friend class FKrowdKontrolBossCheckpointRestartTest;
 
 public:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
@@ -143,9 +144,41 @@ private:
 	// extracting an otherwise-untestable private behavior into a friend-testable seam.
 	FName ComputeRestartLevelName() const;
 
+	// Computes the OpenLevel Options string for the pending restart (issue #173, PRD
+	// "Run Lifecycle & Progression Signals" REQ-4 boss-checkpoint sub-requirement).
+	// Returns "BossCheckpoint" if this world's ULevelLifecycleSubsystem has latched
+	// HasReachedBossCheckpoint(), else an empty string - the only cross-OpenLevel-reload
+	// signal available, since UTickableWorldSubsystem state (including the checkpoint
+	// flag itself) does not survive a real map reload. Extracted the same way
+	// ComputeRestartLevelName() was, so the Automation test can assert the computed
+	// value without invoking the real, Automation-World-hanging OpenLevel().
+	FString ComputeRestartOptions() const;
+
+	// Teleports InPawn to the first ABossBase actor's placed location if this world was
+	// reloaded with the "BossCheckpoint" OpenLevel option set (issue #173). No-ops if
+	// the option is absent (the normal case - only ComputeRestartOptions() above ever
+	// sets it) or if the world has no ABossBase actor. Called from both BeginPlay()'s
+	// already-possessed branch and OnPossess(), mirroring WireWidgetsToPawn()'s own
+	// dual-call-site shape, since AutoPossessPlayer's timing relative to BeginPlay isn't
+	// guaranteed (see BeginPlay()'s own comment). Assumes one ABossBase per level (true
+	// of every level today, MISSION.md's "4 total boss encounters") - does not
+	// cross-check the chosen actor's state against the one that latched the checkpoint
+	// in RefreshBossCheckpointState(). Guarded by bBossCheckpointApplied below so a
+	// later re-possession in the same reloaded world can't re-teleport. Revisit if a
+	// level ever places more than one ABossBase actor.
+	void ApplyBossCheckpointIfRequested(APawn* InPawn);
+
 	// Never reset back to false once set - moot in the real game-world path, since a
 	// successful OpenLevel() destroys this controller along with the rest of the old
 	// World. Left true for the (Automation-World-only) lifetime of a controller that
 	// never actually reloads.
 	bool bRestartRequested = false;
+
+	// One-shot guard for ApplyBossCheckpointIfRequested(), same never-reset-once-set
+	// idiom as bRestartRequested above. The "BossCheckpoint" FURL option it reads
+	// persists for the World's whole lifetime (unlike this flag), so without this a
+	// later re-possession of the same controller in the same reloaded world (no call
+	// site does this today) would re-teleport the pawn and could double-log the
+	// missing-boss warning.
+	bool bBossCheckpointApplied = false;
 };

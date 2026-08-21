@@ -2,6 +2,13 @@
 #include "GameFramework/FloatingPawnMovement.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "HAL/IConsoleManager.h"
+
+static TAutoConsoleVariable<int32> CVarPunishmentSpeedReductionEnabled(
+	TEXT("kk.Punishment.SpeedReductionEnabled"),
+	1,
+	TEXT("If 0, prevents the speed-reduction punishment (USpeedReductionPunishmentComponent) from activating on trigger, regardless of arbitration outcome. Defaults to 1 (enabled)."),
+	ECVF_Default);
 
 USpeedReductionPunishmentComponent::USpeedReductionPunishmentComponent()
 {
@@ -10,6 +17,11 @@ USpeedReductionPunishmentComponent::USpeedReductionPunishmentComponent()
 
 void USpeedReductionPunishmentComponent::HandlePunishmentTriggered()
 {
+	if (CVarPunishmentSpeedReductionEnabled.GetValueOnGameThread() == 0)
+	{
+		return;
+	}
+
 	if (!MovementComponent)
 	{
 		UE_LOG(LogTemp, Warning,
@@ -34,6 +46,7 @@ void USpeedReductionPunishmentComponent::HandlePunishmentTriggered()
 		OriginalMaxSpeed = MovementComponent->MaxSpeed;
 		MovementComponent->MaxSpeed = OriginalMaxSpeed * SpeedMultiplierWhileActive;
 	}
+	bIsSpeedReductionActive = true;
 
 	// SetTimer on an already-active handle replaces it rather than stacking a
 	// second one - this alone gives re-triggering its "refresh duration, don't
@@ -55,6 +68,18 @@ void USpeedReductionPunishmentComponent::RestoreOriginalSpeed()
 			TEXT("USpeedReductionPunishmentComponent: MovementComponent is unset on '%s' - speed restore skipped."),
 			*GetNameSafe(GetOwner()));
 	}
+	bIsSpeedReductionActive = false;
+}
+
+void USpeedReductionPunishmentComponent::EndSpeedReduction()
+{
+	UWorld* World = GetWorld();
+	if (!World || !World->GetTimerManager().IsTimerActive(SpeedReductionTimerHandle))
+	{
+		return;
+	}
+	World->GetTimerManager().ClearTimer(SpeedReductionTimerHandle);
+	RestoreOriginalSpeed();
 }
 
 void USpeedReductionPunishmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

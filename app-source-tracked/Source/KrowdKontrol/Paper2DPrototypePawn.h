@@ -15,6 +15,7 @@ class UInputComponent;
 class UPlayerEnergyComponent;
 class UPunishmentManagerComponent;
 class USpeedReductionPunishmentComponent;
+class UPunishmentArbitrationComponent;
 class ULevelFailComponent;
 
 // Minimal Paper2D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D pipeline
@@ -67,6 +68,16 @@ public:
 	// constructor below.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Paper2DPrototype")
 	TObjectPtr<USpeedReductionPunishmentComponent> SpeedReductionPunishmentComponent;
+
+	// Single-active-punishment arbitration (issue #180, PRD "Punishment System
+	// (Punishments 1 & 2 + arbitration)" REQ-4) - the sole listener bound to
+	// PunishmentManagerComponent->OnPunishmentTriggered. This pawn has no
+	// AbilityLockoutComponent, so arbitration always falls through to
+	// SpeedReductionPunishmentComponent unless Overcrowd (resolved lazily in its own
+	// BeginPlay()) is Active, in which case the trigger is dropped entirely. Wired in the
+	// constructor below, after SpeedReductionPunishmentComponent already exists.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Paper2DPrototype")
+	TObjectPtr<UPunishmentArbitrationComponent> PunishmentArbitrationComponent;
 
 	// Level-fail signal plumbing (issue #171, PRD "Run Lifecycle & Progression Signals"
 	// REQ-3) - fires OnLevelFailed exactly once when PlayerEnergyComponent's energy

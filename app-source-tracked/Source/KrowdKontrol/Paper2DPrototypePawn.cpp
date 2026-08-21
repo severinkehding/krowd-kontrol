@@ -12,6 +12,7 @@
 #include "PlayerEnergyComponent.h"
 #include "PunishmentManagerComponent.h"
 #include "SpeedReductionPunishmentComponent.h"
+#include "PunishmentArbitrationComponent.h"
 #include "LevelFailComponent.h"
 
 APaper2DPrototypePawn::APaper2DPrototypePawn()
@@ -77,9 +78,12 @@ APaper2DPrototypePawn::APaper2DPrototypePawn()
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(PunishmentManagerComponent, &UPunishmentManagerComponent::HandleEnergyChanged);
 	SpeedReductionPunishmentComponent = CreateDefaultSubobject<USpeedReductionPunishmentComponent>(TEXT("SpeedReductionPunishmentComponent"));
 	SpeedReductionPunishmentComponent->MovementComponent = MovementComponent;
-	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(SpeedReductionPunishmentComponent, &USpeedReductionPunishmentComponent::HandlePunishmentTriggered);
 	LevelFailComponent = CreateDefaultSubobject<ULevelFailComponent>(TEXT("LevelFailComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(LevelFailComponent, &ULevelFailComponent::HandleEnergyChanged);
+
+	PunishmentArbitrationComponent = CreateDefaultSubobject<UPunishmentArbitrationComponent>(TEXT("PunishmentArbitrationComponent"));
+	PunishmentArbitrationComponent->SpeedReductionComponent = SpeedReductionPunishmentComponent;
+	PunishmentManagerComponent->OnPunishmentTriggered.AddDynamic(PunishmentArbitrationComponent, &UPunishmentArbitrationComponent::HandlePunishmentTriggered);
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }

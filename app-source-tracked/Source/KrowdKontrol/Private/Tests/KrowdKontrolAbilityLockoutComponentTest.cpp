@@ -5,7 +5,10 @@
 // ability slot's lockout tracks independently, that OnAbilityLockoutChanged fires
 // exactly once per true state transition (not on every intermediate AdvanceLockouts()
 // call, and not a second time if HandlePunishmentTriggered() re-triggers a slot
-// already locked), and that a large AdvanceLockouts() delta clamps remaining time to 0.
+// already locked), that a large AdvanceLockouts() delta clamps remaining time to 0,
+// that kk.Punishment.LockoutEnabled=0 (issue #181) suppresses activation entirely, and
+// that disabling the CVar mid-flight does not clear an already-active lockout - only
+// new triggers are gated.
 //
 // Uses a bare NewObject(), no UWorld needed: HandleAbilityCastApplied,
 // HandlePunishmentTriggered, and AdvanceLockouts call neither GetWorld() nor
@@ -17,6 +20,7 @@
 #include "Misc/AutomationTest.h"
 #include "AbilityLockoutComponent.h"
 #include "AbilityLockoutChangedTestListener.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -180,6 +184,96 @@ bool FKrowdKontrolAbilityLockoutComponentTest::RunTest(const FString& Parameters
 		Component->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds - 3.0f);
 		TestFalse(TEXT("Root should expire on its own original schedule"), Component->IsAbilityLocked(EAbilitySlot::Root));
 		TestTrue(TEXT("Sleep should still be locked - it started later"), Component->IsAbilityLocked(EAbilitySlot::Sleep));
+	}
+
+	// (h) EndAllLockouts() clears every currently-locked slot immediately, broadcasting
+	// OnAbilityLockoutChanged(Slot, false) exactly once per slot that actually transitions
+	// - not for slots that were never locked, and not just the first slot found. A second
+	// call on an already-clear component must not re-broadcast.
+	{
+		UAbilityLockoutComponent* Component = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), Component))
+		{
+			return false;
+		}
+
+		UAbilityLockoutChangedTestListener* Listener = NewObject<UAbilityLockoutChangedTestListener>();
+		Component->OnAbilityLockoutChanged.AddDynamic(Listener, &UAbilityLockoutChangedTestListener::HandleAbilityLockoutChanged);
+
+		Component->HandleAbilityCastApplied(EAbilitySlot::Root, nullptr);
+		Component->HandlePunishmentTriggered();
+		Component->HandleAbilityCastApplied(EAbilitySlot::Sleep, nullptr);
+		Component->HandlePunishmentTriggered();
+		Listener->CallCount = 0; // reset after setup broadcasts
+
+		Component->EndAllLockouts();
+		TestFalse(TEXT("Root should be unlocked after EndAllLockouts"), Component->IsAbilityLocked(EAbilitySlot::Root));
+		TestFalse(TEXT("Sleep should be unlocked after EndAllLockouts"), Component->IsAbilityLocked(EAbilitySlot::Sleep));
+		TestEqual(TEXT("EndAllLockouts should broadcast exactly once per slot that actually transitioned"), Listener->CallCount, 2);
+
+		Component->EndAllLockouts();
+		TestEqual(TEXT("EndAllLockouts on an already-clear component should not broadcast"), Listener->CallCount, 2);
+	}
+
+	// (i) kk.Punishment.LockoutEnabled=0 prevents HandlePunishmentTriggered from
+	// locking anything; restoring the CVar to 1 (its default) immediately allows
+	// normal activation again. The CVar is process-wide state shared by every
+	// KrowdKontrol.Unit.* test running in the same Automation Framework pass, so
+	// this always ends by leaving it at 1, regardless of which assertion above
+	// fails first.
+	{
+		IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.LockoutEnabled"));
+		if (!TestNotNull(TEXT("kk.Punishment.LockoutEnabled CVar should be registered"), CVar))
+		{
+			return false;
+		}
+
+		UAbilityLockoutComponent* Component = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), Component))
+		{
+			return false;
+		}
+
+		CVar->Set(0);
+		Component->HandlePunishmentTriggered();
+		TestFalse(TEXT("Stun should not be locked while kk.Punishment.LockoutEnabled is 0"),
+			Component->IsAbilityLocked(EAbilitySlot::Stun));
+
+		CVar->Set(1);
+		Component->HandlePunishmentTriggered();
+		TestTrue(TEXT("Stun should lock normally once kk.Punishment.LockoutEnabled is restored to 1"),
+			Component->IsAbilityLocked(EAbilitySlot::Stun));
+	}
+
+	// (j) Disabling kk.Punishment.LockoutEnabled while a lockout is already active does not
+	// clear it - the gate is the first statement of HandlePunishmentTriggered(), so it only
+	// ever affects calls it actually intercepts. The already-locked slot still expires on
+	// its own normal AdvanceLockouts() schedule while the CVar is 0.
+	{
+		IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.LockoutEnabled"));
+		if (!TestNotNull(TEXT("kk.Punishment.LockoutEnabled CVar should be registered"), CVar))
+		{
+			return false;
+		}
+
+		UAbilityLockoutComponent* Component = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), Component))
+		{
+			return false;
+		}
+
+		Component->HandlePunishmentTriggered(); // CVar still 1 here
+		TestTrue(TEXT("Stun should be locked before the CVar is disabled"), Component->IsAbilityLocked(EAbilitySlot::Stun));
+
+		CVar->Set(0);
+		TestTrue(TEXT("An already-locked slot should stay locked after the CVar is disabled mid-flight"),
+			Component->IsAbilityLocked(EAbilitySlot::Stun));
+
+		Component->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
+		TestFalse(TEXT("The already-active lockout should still expire normally on its own schedule while the CVar is 0"),
+			Component->IsAbilityLocked(EAbilitySlot::Stun));
+
+		CVar->Set(1); // restore for the next KrowdKontrol.Unit.* test in this pass
 	}
 
 	return true;
