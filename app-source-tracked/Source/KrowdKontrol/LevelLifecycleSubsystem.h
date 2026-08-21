@@ -41,6 +41,9 @@ public:
 	// spawned later by UWaveSpawnerComponent) is Banked, given at least one ever
 	// existed, and no UWaveSpawnerComponent in the world has a pending wave
 	// (IsWaveTimerActive() == true). Never fires if zero enemies ever spawned.
+	// Guaranteed to never fire before OnLevelBegin has fired at least once for this
+	// world (RefreshLevelClearState() early-outs while !bHasFiredLevelBegin) -
+	// ULevelClearTimeSubsystem::HandleLevelClear() relies on this ordering.
 	UPROPERTY(BlueprintAssignable, Category = "Level Lifecycle")
 	FOnLevelClear OnLevelClear;
 
@@ -88,7 +91,22 @@ public:
 	void RefreshBossCheckpointState();
 
 private:
+	// Resolves this world's GameInstance's ULevelClearTimeSubsystem and subscribes it
+	// to this instance's OnLevelBegin/OnLevelClear (issue #170). Called from both
+	// Initialize() (mirrors UCrowdMasterySubsystem::Initialize()'s own sibling-subscribe
+	// precedent, and the engine guarantees Initialize() precedes this instance's own
+	// OnWorldBeginPlay()) and OnWorldBeginPlay() itself, immediately before it broadcasts
+	// OnLevelBegin (a same-function ordering guarantee that doesn't rely on exactly when
+	// GetGameInstance() first becomes valid). Both calls are safe: AddUniqueDynamic never
+	// double-binds. No-ops silently (no warning) if GetGameInstance() is null - the normal
+	// case for this project's CreateNewMap()-based Automation test worlds.
+	void EnsureLevelClearTimeSubscription();
+
 	bool bHasFiredLevelBegin = false;
 	bool bHasFiredLevelClear = false;
 	bool bHasReachedBossCheckpoint = false;
+
+	// One-shot guard so a still-missing ULevelClearTimeSubsystem only logs once per
+	// instance, not once per Initialize()/OnWorldBeginPlay() call.
+	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
 };

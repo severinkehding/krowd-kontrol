@@ -5,17 +5,18 @@
 #include "LevelClearTimeSubsystem.generated.h"
 
 class ULevelClearTimeSaveGame;
+class ULevelLifecycleSubsystem;
 
 // Tracks per-level clear time and persists a personal best across play sessions
 // (issue #3, PRD 06 REQ-2 - the tracking/persistence layer only; displaying the
 // value is a separate issue, see #3's Notes). Local save-slot persistence only, per
 // MISSION.md Hard Invariant 7 - no leaderboard, no networked storage.
 //
-// No real caller wiring exists yet - the level-progression system this is meant for
-// (PRD 05) doesn't expose a "level begins"/"level cleared" event today, matching
-// UGizmoNarrativeSubsystem's (issue #57) same "foundation, no live wiring yet"
-// precedent. A future level-progression issue calls StartLevelTimer/
-// StopLevelTimerAndRecordClear from real begin/clear events.
+// Wired to real begin/clear events via SubscribeToLevelLifecycle() (issue #170),
+// called from ULevelLifecycleSubsystem itself (its Initialize()/OnWorldBeginPlay(),
+// not any AActor::BeginPlay()) - see EnsureLevelClearTimeSubscription() on that class
+// and SubscribeToLevelLifecycle()'s doc comment below for the wiring's shape and why
+// the producer, not a controller, triggers the subscription.
 UCLASS()
 class KROWDKONTROL_API ULevelClearTimeSubsystem : public UGameInstanceSubsystem
 {
@@ -74,6 +75,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Level Clear Time")
 	bool GetBestClearTimeSeconds(FName LevelID, float& OutBestSeconds) const;
 
+	// Subscribes this subsystem to LifecycleSubsystem's OnLevelBegin/OnLevelClear
+	// delegates (issue #170, PRD "Run Lifecycle & Progression Signals" REQ-2) so a
+	// level's clear-time timer starts and stops automatically. Takes the lifecycle
+	// subsystem as a direct parameter rather than resolving World/GameInstance
+	// internally - this subsystem's public API never calls GetWorld() or
+	// GetGameInstance() (see this class's own top comment and
+	// KrowdKontrolLevelClearTimeSubsystemTest.cpp's rationale: GetGameInstance() is
+	// null in this project's CreateNewMap()-based Automation test worlds), so the
+	// Automation Framework test can drive this directly against a bare
+	// NewObject<>()-constructed instance. The real caller is
+	// ULevelLifecycleSubsystem::EnsureLevelClearTimeSubscription(), invoked from that
+	// class's own Initialize()/OnWorldBeginPlay() - NOT from any AActor::BeginPlay()
+	// (a prior approach subscribing from AKrowdKontrolPlayerController::BeginPlay()
+	// was rejected: UE 5.8 dispatches world-subsystem OnWorldBeginPlay() before
+	// GameMode->StartPlay()/controller BeginPlay(), so that approach always missed
+	// the level's first OnLevelBegin broadcast). Safe to call repeatedly -
+	// AddUniqueDynamic no-ops on a repeat bind to the same handler. Warns and no-ops
+	// if LifecycleSubsystem is null.
+	UFUNCTION(BlueprintCallable, Category = "Level Clear Time")
+	void SubscribeToLevelLifecycle(ULevelLifecycleSubsystem* LifecycleSubsystem);
+
 	// Compares SimultaneousControlledCount against LevelID's currently stored Crowd
 	// Mastery best (if any) and, if it's larger (or no best exists yet), persists it as
 	// the new best. Returns true if this call became the new best. Same shape as
@@ -94,8 +116,25 @@ public:
 private:
 	ULevelClearTimeSaveGame* LoadOrCreateSaveGame() const;
 
+	// Bound to OnLevelBegin via SubscribeToLevelLifecycle(). Starts this map's timer
+	// and remembers MapName so the paired HandleLevelClear() (OnLevelClear carries no
+	// parameters of its own) knows which level to stop timing.
+	UFUNCTION()
+	void HandleLevelBegin(FName MapName);
+
+	// Bound to OnLevelClear via SubscribeToLevelLifecycle(). Stops and records the
+	// clear time for CurrentLevelID, the map name HandleLevelBegin last received -
+	// relies on ULevelLifecycleSubsystem's own documented guarantee that OnLevelClear
+	// never fires before OnLevelBegin has fired at least once for the same world.
+	UFUNCTION()
+	void HandleLevelClear();
+
 	// Wall-clock start time (FPlatformTime::Seconds()) per level with a currently
 	// running timer. Not persisted - an in-progress run's elapsed time only exists for
 	// the duration of the current play session, unlike the best-time record itself.
 	TMap<FName, double> ActiveLevelStartTimes;
+
+	// The map name from the most recent HandleLevelBegin() call - HandleLevelClear()
+	// uses this since OnLevelClear's own signature carries no MapName.
+	FName CurrentLevelID;
 };
