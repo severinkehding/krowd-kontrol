@@ -240,8 +240,9 @@ namespace KrowdKontrolLevelTestUtils
 	// Asserts the entrance room (lowest X) has 1-2 enemies and that per-room enemy
 	// counts (sorted by room X) strictly increase at every step - proves an actual
 	// density ramp, not a flat line (issue #189). A single-room level has no adjacent
-	// pair to ramp across, so it's vacuously fine (mirrors CheckAllRoomsReachableViaDoors's
-	// zero-room guard above).
+	// pair to ramp across, so it's vacuously fine - similar in spirit to
+	// CheckAllRoomsReachableViaDoors's zero-room guard above, though this guard also
+	// skips the single-room case (Num() <= 1, not just Num() == 0).
 	inline void CheckEnemyDensityRamp(
 		FAutomationTestBase& Test,
 		const TArray<ARoomActor*>& Rooms,

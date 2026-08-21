@@ -176,6 +176,17 @@ strictly greater, matching `CheckAdjacentRoomSpacingCompressed`'s pattern), not 
 originally written. See `LevelStructureTestUtils.h`'s `CheckEnemyDensityRamp` for the
 corrected implementation.
 
+**Pass-1 validation follow-up (2026-08-21):** the diff-only behavioral validator
+correctly noted that `CheckAdjacentRoomSpacingCompressed`/`CheckEnemyDensityRamp` only
+prove "compressed below 3000cm" and "strictly increasing" — not this PR's actual
+claimed values (2400cm hops, 1/2/3 split) — leaving those specific numbers resting on
+this changelog's prose alone. `KrowdKontrolLevel01Test.cpp` now also asserts the
+literal expected values directly (Room 1/2/3 at X=0/2400/4800, enemy counts 1/2/3),
+right after the two relative checks. This makes the tracked test file itself a
+stronger, independently-checkable proxy for the claimed `.umap` state: anyone
+re-running `KrowdKontrol.Unit.Level01Structure` now gets a pass/fail that's tied to
+these exact numbers, not just the general shape of the change.
+
 ## Notes
 
 - The exact new spacing value (2400cm) and enemy split (1/2/3) are this issue's

@@ -100,6 +100,23 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 	KrowdKontrolLevelTestUtils::CheckAdjacentRoomSpacingCompressed(*this, Rooms);
 	KrowdKontrolLevelTestUtils::CheckEnemyDensityRamp(*this, Rooms, EnemyCountByRoom);
 
+	// Issue #189, pass-1 review follow-up: the two relative checks above only prove
+	// "compressed" and "increasing", not this PR's actual claimed values (2400cm hops,
+	// 1/2/3 split) - asserting the literal numbers here makes this tracked test file
+	// itself a stronger, independently-checkable proxy for the claimed .umap state,
+	// since the underlying binary edit is invisible to the diff (D-009).
+	TArray<ARoomActor*> SortedRooms = KrowdKontrolLevelTestUtils::SortRoomsByX(Rooms);
+	if (TestEqual(TEXT("L_Level01 should have exactly 3 rooms for the exact-position/count check below"), SortedRooms.Num(), 3))
+	{
+		TestEqual(TEXT("Room 1 (entrance) should stay fixed at X=0 (issue #189)"), SortedRooms[0]->GetActorLocation().X, 0.0);
+		TestEqual(TEXT("Room 2 should sit at X=2400 (issue #189)"), SortedRooms[1]->GetActorLocation().X, 2400.0);
+		TestEqual(TEXT("Room 3 should sit at X=4800 (issue #189)"), SortedRooms[2]->GetActorLocation().X, 4800.0);
+
+		TestEqual(TEXT("Room 1 should have exactly 1 enemy (issue #189)"), EnemyCountByRoom.FindRef(SortedRooms[0]), 1);
+		TestEqual(TEXT("Room 2 should have exactly 2 enemies (issue #189)"), EnemyCountByRoom.FindRef(SortedRooms[1]), 2);
+		TestEqual(TEXT("Room 3 should have exactly 3 enemies (issue #189)"), EnemyCountByRoom.FindRef(SortedRooms[2]), 3);
+	}
+
 	return true;
 }
 
