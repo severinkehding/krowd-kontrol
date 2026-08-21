@@ -85,6 +85,13 @@ public:
 	UFUNCTION()
 	void HandlePunishmentTriggered();
 
+	// Whether kk.Punishment.LockoutEnabled currently allows this punishment to activate -
+	// consulted by UPunishmentArbitrationComponent (issue #181) so it can fall through to
+	// speed-reduction instead of preempting it in favor of a lockout trigger that would
+	// immediately no-op. The CVar itself is a file-scope static in this component's own
+	// .cpp, so this accessor is the only way another translation unit can read it.
+	static bool IsLockoutEnabledByCVar();
+
 protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 

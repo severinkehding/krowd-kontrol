@@ -31,12 +31,15 @@ void UPunishmentArbitrationComponent::HandlePunishmentTriggered()
 		return;
 	}
 
-	if (AbilityLockoutComponent)
+	if (AbilityLockoutComponent && UAbilityLockoutComponent::IsLockoutEnabledByCVar())
 	{
 		// Ability-lock (priority 2) always wins this shared trigger over speed-reduction
 		// (priority 3) whenever both exist on this pawn - end any active speed-reduction
 		// immediately rather than let it keep running alongside the ability-lock about to
-		// start.
+		// start. Skipped (falls through to speed-reduction below) when
+		// kk.Punishment.LockoutEnabled is 0 (issue #181) - otherwise this CVar would end an
+		// active speed-reduction and then call a now-gated no-op, isolating nothing instead
+		// of letting a developer isolate speed-reduction for playtesting as intended.
 		if (SpeedReductionComponent)
 		{
 			SpeedReductionComponent->EndSpeedReduction();
@@ -45,8 +48,9 @@ void UPunishmentArbitrationComponent::HandlePunishmentTriggered()
 		return;
 	}
 
-	// No ability-lock component on this pawn (e.g. Paper2DPrototypePawn) - speed-reduction
-	// is the next candidate and activates normally.
+	// No ability-lock component on this pawn (e.g. Paper2DPrototypePawn), or lockout is
+	// CVar-disabled for isolated playtesting (issue #181) - speed-reduction is the next
+	// candidate and activates normally.
 	if (SpeedReductionComponent)
 	{
 		SpeedReductionComponent->HandlePunishmentTriggered();

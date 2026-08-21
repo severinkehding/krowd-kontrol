@@ -1,4 +1,11 @@
 #include "AbilityLockoutComponent.h"
+#include "HAL/IConsoleManager.h"
+
+static TAutoConsoleVariable<int32> CVarPunishmentLockoutEnabled(
+	TEXT("kk.Punishment.LockoutEnabled"),
+	1,
+	TEXT("If 0, prevents the ability-lockout punishment (UAbilityLockoutComponent) from activating on trigger, regardless of arbitration outcome. Defaults to 1 (enabled)."),
+	ECVF_Default);
 
 UAbilityLockoutComponent::UAbilityLockoutComponent()
 {
@@ -34,7 +41,16 @@ void UAbilityLockoutComponent::HandleAbilityCastApplied(EAbilitySlot Ability, AE
 
 void UAbilityLockoutComponent::HandlePunishmentTriggered()
 {
+	if (!IsLockoutEnabledByCVar())
+	{
+		return;
+	}
 	StartLockout(LastCastAbility);
+}
+
+bool UAbilityLockoutComponent::IsLockoutEnabledByCVar()
+{
+	return CVarPunishmentLockoutEnabled.GetValueOnGameThread() != 0;
 }
 
 void UAbilityLockoutComponent::StartLockout(EAbilitySlot Ability)
