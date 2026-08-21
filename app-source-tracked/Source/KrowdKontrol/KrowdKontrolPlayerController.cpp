@@ -140,14 +140,12 @@ FName AKrowdKontrolPlayerController::ComputeRestartLevelName() const
 FString AKrowdKontrolPlayerController::ComputeRestartOptions() const
 {
 	const UWorld* World = GetWorld();
-	if (const ULevelLifecycleSubsystem* LifecycleSubsystem = World ? World->GetSubsystem<ULevelLifecycleSubsystem>() : nullptr)
+	const ULevelLifecycleSubsystem* LifecycleSubsystem = World ? World->GetSubsystem<ULevelLifecycleSubsystem>() : nullptr;
+	if (!LifecycleSubsystem || !LifecycleSubsystem->HasReachedBossCheckpoint())
 	{
-		if (LifecycleSubsystem->HasReachedBossCheckpoint())
-		{
-			return TEXT("BossCheckpoint");
-		}
+		return FString();
 	}
-	return FString();
+	return TEXT("BossCheckpoint");
 }
 
 void AKrowdKontrolPlayerController::ApplyBossCheckpointIfRequested(APawn* InPawn)
