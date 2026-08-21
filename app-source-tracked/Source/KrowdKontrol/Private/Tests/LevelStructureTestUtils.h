@@ -212,14 +212,22 @@ namespace KrowdKontrolLevelTestUtils
 		}
 	}
 
+	// Shared by CheckAdjacentRoomSpacingCompressed and CheckEnemyDensityRamp below -
+	// both need rooms in chain order (by X) to compare adjacent/entrance rooms.
+	inline TArray<ARoomActor*> SortRoomsByX(const TArray<ARoomActor*>& Rooms)
+	{
+		TArray<ARoomActor*> SortedRooms = Rooms;
+		SortedRooms.Sort([](const ARoomActor& A, const ARoomActor& B) { return A.GetActorLocation().X < B.GetActorLocation().X; });
+		return SortedRooms;
+	}
+
 	// Asserts adjacent rooms (sorted by X) sit closer together than the pre-#189
 	// 3000cm baseline, without hardcoding the exact new spacing value - catches a
 	// regression back to the original spacing while still tolerating a future minor
 	// retune (issue #189).
 	inline void CheckAdjacentRoomSpacingCompressed(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
 	{
-		TArray<ARoomActor*> SortedRooms = Rooms;
-		SortedRooms.Sort([](const ARoomActor& A, const ARoomActor& B) { return A.GetActorLocation().X < B.GetActorLocation().X; });
+		TArray<ARoomActor*> SortedRooms = SortRoomsByX(Rooms);
 
 		for (int32 Index = 1; Index < SortedRooms.Num(); ++Index)
 		{
@@ -239,8 +247,7 @@ namespace KrowdKontrolLevelTestUtils
 		const TArray<ARoomActor*>& Rooms,
 		const TMap<ARoomActor*, int32>& EnemyCountByRoom)
 	{
-		TArray<ARoomActor*> SortedRooms = Rooms;
-		SortedRooms.Sort([](const ARoomActor& A, const ARoomActor& B) { return A.GetActorLocation().X < B.GetActorLocation().X; });
+		TArray<ARoomActor*> SortedRooms = SortRoomsByX(Rooms);
 
 		if (SortedRooms.Num() <= 1)
 		{
