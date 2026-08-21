@@ -157,6 +157,95 @@ bool FKrowdKontrolPunishmentArbitrationComponentTest::RunTest(const FString& Par
 		TestEqual(TEXT("MaxSpeed should be reduced"), FallbackMovement->MaxSpeed, 500.0f);
 	}
 
+	// (i) BeginPlay()'s own FindComponentByClass+AddDynamic wiring - not the test's
+	// manual AddDynamic used for every prior case above - is what actually connects a
+	// real in-game pawn's arbitration to Overcrowd. Proves that path specifically.
+	{
+		APawn* WiredPawn = World->SpawnActor<APawn>();
+		UOvercrowdDetectionComponent* WiredOvercrowd = NewObject<UOvercrowdDetectionComponent>(WiredPawn);
+		WiredOvercrowd->RegisterComponent();
+
+		UAbilityLockoutComponent* WiredLockout = NewObject<UAbilityLockoutComponent>(WiredPawn);
+		WiredLockout->RegisterComponent();
+
+		UPunishmentArbitrationComponent* WiredArbitration = NewObject<UPunishmentArbitrationComponent>(WiredPawn);
+		WiredArbitration->AbilityLockoutComponent = WiredLockout;
+		WiredArbitration->RegisterComponent();
+
+		WiredPawn->DispatchBeginPlay(); // exercises the real BeginPlay() lookup+bind
+
+		WiredArbitration->HandlePunishmentTriggered();
+		TestTrue(TEXT("Ability-lock should activate via the pawn's real trigger path"), WiredLockout->IsAbilityLocked(EAbilitySlot::Stun));
+
+		for (int32 Index = 0; Index < WiredOvercrowd->OvercrowdCrowdThreshold; ++Index)
+		{
+			AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+			if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn"), Enemy))
+			{
+				return false;
+			}
+			Enemy->TickCheckDetection(FVector::ZeroVector);
+		}
+		WiredOvercrowd->AdvancePanicOverloadState(WiredOvercrowd->OvercrowdUncontrolledDurationSeconds + 10.0f);
+
+		TestFalse(TEXT("BeginPlay()'s own FindComponentByClass+AddDynamic binding should have force-ended ability-lock when Overcrowd went Active"),
+			WiredLockout->IsAbilityLocked(EAbilitySlot::Stun));
+	}
+
+	// (j) Overcrowd recovering to Inactive via the real recovery path (landing control on
+	// a converged enemy, PRD 08 REQ-2) does not resurrect a punishment that was preempted
+	// while Active, and a fresh trigger afterward resumes normal (non-Overcrowd)
+	// arbitration - issue #180 AC: a dropped/ended lower-priority activation is never
+	// queued, recovery alone must never bring it back.
+	{
+		APawn* RecoveryPawn = World->SpawnActor<APawn>();
+		UOvercrowdDetectionComponent* RecoveryOvercrowd = NewObject<UOvercrowdDetectionComponent>(RecoveryPawn);
+		RecoveryOvercrowd->RegisterComponent();
+
+		UAbilityLockoutComponent* RecoveryLockout = NewObject<UAbilityLockoutComponent>();
+		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), RecoveryLockout))
+		{
+			return false;
+		}
+
+		UPunishmentArbitrationComponent* RecoveryArbitration = NewObject<UPunishmentArbitrationComponent>();
+		if (!TestNotNull(TEXT("UPunishmentArbitrationComponent should construct"), RecoveryArbitration))
+		{
+			return false;
+		}
+		RecoveryArbitration->OvercrowdComponent = RecoveryOvercrowd;
+		RecoveryArbitration->AbilityLockoutComponent = RecoveryLockout;
+		RecoveryOvercrowd->OnPanicOverloadStateChanged.AddDynamic(RecoveryArbitration, &UPunishmentArbitrationComponent::HandlePanicOverloadStateChanged);
+
+		RecoveryArbitration->HandlePunishmentTriggered();
+		TestTrue(TEXT("Ability-lock should activate before Overcrowd goes Active"), RecoveryLockout->IsAbilityLocked(EAbilitySlot::Stun));
+
+		TArray<AEnemyBaseTestActor*> RecoveryEnemies;
+		for (int32 Index = 0; Index < RecoveryOvercrowd->OvercrowdCrowdThreshold; ++Index)
+		{
+			AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+			if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn"), Enemy))
+			{
+				return false;
+			}
+			Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+			RecoveryEnemies.Add(Enemy);
+		}
+		RecoveryOvercrowd->AdvancePanicOverloadState(RecoveryOvercrowd->OvercrowdUncontrolledDurationSeconds + 10.0f);
+		TestFalse(TEXT("Overcrowd activating should end the active ability-lock"), RecoveryLockout->IsAbilityLocked(EAbilitySlot::Stun));
+
+		// Land control on one converged enemy - the real, only recovery path - then drive
+		// AdvancePanicOverloadState again so CurrentState actually flips back to Inactive.
+		RecoveryEnemies[0]->ReceiveControl(EAbilitySlot::Stun);
+		RecoveryOvercrowd->AdvancePanicOverloadState(1.0f);
+		TestEqual(TEXT("Overcrowd should be back to Inactive after landing control on a converged enemy"),
+			static_cast<uint8>(RecoveryOvercrowd->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
+		TestFalse(TEXT("Recovery to Inactive alone must not reactivate ability-lock"), RecoveryLockout->IsAbilityLocked(EAbilitySlot::Stun));
+
+		RecoveryArbitration->HandlePunishmentTriggered();
+		TestTrue(TEXT("A fresh trigger after recovery should resume normal arbitration (ability-lock)"), RecoveryLockout->IsAbilityLocked(EAbilitySlot::Stun));
+	}
+
 	return true;
 }
 

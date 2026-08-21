@@ -50,7 +50,12 @@ void UPunishmentArbitrationComponent::HandlePunishmentTriggered()
 	if (SpeedReductionComponent)
 	{
 		SpeedReductionComponent->HandlePunishmentTriggered();
+		return;
 	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("UPunishmentArbitrationComponent: neither AbilityLockoutComponent nor SpeedReductionComponent is set on '%s' - punishment trigger ignored."),
+		*GetNameSafe(GetOwner()));
 }
 
 void UPunishmentArbitrationComponent::HandlePanicOverloadStateChanged(EPanicOverloadState NewState)
