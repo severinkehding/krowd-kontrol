@@ -211,4 +211,55 @@ namespace KrowdKontrolLevelTestUtils
 				Door->DoorMarkerMeshComponent->GetCollisionEnabled() == ECollisionEnabled::NoCollision);
 		}
 	}
+
+	// Asserts adjacent rooms (sorted by X) sit closer together than the pre-#189
+	// 3000cm baseline, without hardcoding the exact new spacing value - catches a
+	// regression back to the original spacing while still tolerating a future minor
+	// retune (issue #189).
+	inline void CheckAdjacentRoomSpacingCompressed(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
+	{
+		TArray<ARoomActor*> SortedRooms = Rooms;
+		SortedRooms.Sort([](const ARoomActor& A, const ARoomActor& B) { return A.GetActorLocation().X < B.GetActorLocation().X; });
+
+		for (int32 Index = 1; Index < SortedRooms.Num(); ++Index)
+		{
+			const float Distance = SortedRooms[Index]->GetActorLocation().X - SortedRooms[Index - 1]->GetActorLocation().X;
+			Test.TestTrue(TEXT("Adjacent room spacing should be compressed below the pre-#189 3000cm baseline"),
+				Distance < 3000.f);
+		}
+	}
+
+	// Asserts the entrance room (lowest X) has 1-2 enemies and that per-room enemy
+	// counts (sorted by room X) are non-decreasing with the last room strictly
+	// greater than the first - proves an actual density ramp, not a flat line
+	// (issue #189).
+	inline void CheckEnemyDensityRamp(
+		FAutomationTestBase& Test,
+		const TArray<ARoomActor*>& Rooms,
+		const TMap<ARoomActor*, int32>& EnemyCountByRoom)
+	{
+		TArray<ARoomActor*> SortedRooms = Rooms;
+		SortedRooms.Sort([](const ARoomActor& A, const ARoomActor& B) { return A.GetActorLocation().X < B.GetActorLocation().X; });
+
+		if (SortedRooms.Num() == 0)
+		{
+			return;
+		}
+
+		const int32 FirstCount = EnemyCountByRoom.FindRef(SortedRooms[0]);
+		Test.TestTrue(TEXT("Entrance room's enemy count should be 1-2 (issue #189)"),
+			FirstCount >= 1 && FirstCount <= 2);
+
+		int32 PreviousCount = FirstCount;
+		for (int32 Index = 1; Index < SortedRooms.Num(); ++Index)
+		{
+			const int32 CurrentCount = EnemyCountByRoom.FindRef(SortedRooms[Index]);
+			Test.TestTrue(TEXT("Enemy density should be non-decreasing room-to-room (issue #189)"),
+				CurrentCount >= PreviousCount);
+			PreviousCount = CurrentCount;
+		}
+
+		Test.TestTrue(TEXT("Enemy density should strictly increase from the first to the last room, proving a real ramp (issue #189)"),
+			PreviousCount > FirstCount);
+	}
 }

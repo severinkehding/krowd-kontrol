@@ -95,6 +95,11 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 	// comparison and is out of this test's reach.
 	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
 
+	// Issue #189: room spacing compression and enemy density ramp, both independently
+	// falsifiable rather than resting on changelog prose (D-009).
+	KrowdKontrolLevelTestUtils::CheckAdjacentRoomSpacingCompressed(*this, Rooms);
+	KrowdKontrolLevelTestUtils::CheckEnemyDensityRamp(*this, Rooms, EnemyCountByRoom);
+
 	return true;
 }
 
