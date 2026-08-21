@@ -71,7 +71,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Level Lifecycle")
 	void RefreshLevelClearState();
 
+	// Latches true the first time any ABossBase in this world leaves EBossState::Idle
+	// (issue #173, PRD "Run Lifecycle & Progression Signals" REQ-4 boss-checkpoint
+	// sub-requirement) - i.e. the encounter has begun, since every current boss
+	// subclass calls AdvanceToArmed() unconditionally from its own BeginPlay(). Never
+	// resets once true, matching bHasFiredLevelBegin/bHasFiredLevelClear's own
+	// one-shot-per-world-instance shape.
+	UFUNCTION(BlueprintPure, Category = "Level Lifecycle")
+	bool HasReachedBossCheckpoint() const { return bHasReachedBossCheckpoint; }
+
+	// Re-evaluates the boss-checkpoint condition and latches bHasReachedBossCheckpoint
+	// if newly met. Called automatically from Tick(); public so the Automation
+	// Framework test can drive it deterministically without a real per-frame tick loop -
+	// same rationale RefreshLevelClearState() documents.
+	UFUNCTION(BlueprintCallable, Category = "Level Lifecycle")
+	void RefreshBossCheckpointState();
+
 private:
 	bool bHasFiredLevelBegin = false;
 	bool bHasFiredLevelClear = false;
+	bool bHasReachedBossCheckpoint = false;
 };

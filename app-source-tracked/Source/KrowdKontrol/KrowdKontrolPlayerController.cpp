@@ -12,6 +12,8 @@
 #include "EngineUtils.h"
 #include "LevelFailComponent.h"
 #include "LevelClearTimeSubsystem.h"
+#include "LevelLifecycleSubsystem.h"
+#include "BossBase.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -27,6 +29,7 @@ void AKrowdKontrolPlayerController::BeginPlay()
 	if (APawn* CurrentPawn = GetPawn())
 	{
 		WireWidgetsToPawn(CurrentPawn);
+		ApplyBossCheckpointIfRequested(CurrentPawn);
 	}
 }
 
@@ -34,6 +37,7 @@ void AKrowdKontrolPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	WireWidgetsToPawn(InPawn);
+	ApplyBossCheckpointIfRequested(InPawn);
 }
 
 void AKrowdKontrolPlayerController::CreateHUDWidgets()
@@ -123,7 +127,7 @@ void AKrowdKontrolPlayerController::RequestLevelRestart()
 	// verified manually in PIE (see this issue's PR body).
 	if (World && World->IsGameWorld())
 	{
-		UGameplayStatics::OpenLevel(this, ComputeRestartLevelName(), false);
+		UGameplayStatics::OpenLevel(this, ComputeRestartLevelName(), false, ComputeRestartOptions());
 	}
 }
 
@@ -131,6 +135,40 @@ FName AKrowdKontrolPlayerController::ComputeRestartLevelName() const
 {
 	const UWorld* World = GetWorld();
 	return World ? FName(*World->GetMapName()) : NAME_None;
+}
+
+FString AKrowdKontrolPlayerController::ComputeRestartOptions() const
+{
+	const UWorld* World = GetWorld();
+	const ULevelLifecycleSubsystem* LifecycleSubsystem = World ? World->GetSubsystem<ULevelLifecycleSubsystem>() : nullptr;
+	if (!LifecycleSubsystem || !LifecycleSubsystem->HasReachedBossCheckpoint())
+	{
+		return FString();
+	}
+	return TEXT("BossCheckpoint");
+}
+
+void AKrowdKontrolPlayerController::ApplyBossCheckpointIfRequested(APawn* InPawn)
+{
+	if (!InPawn || bBossCheckpointApplied)
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World || !World->URL.HasOption(TEXT("BossCheckpoint")))
+	{
+		return;
+	}
+	bBossCheckpointApplied = true;
+	for (TActorIterator<ABossBase> It(World); It; ++It)
+	{
+		InPawn->SetActorLocation(It->GetActorLocation());
+		return;
+	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("AKrowdKontrolPlayerController: reload requested a BossCheckpoint teleport ")
+		TEXT("but no ABossBase actor exists in the reloaded world '%s' - pawn left at default spawn."),
+		*World->GetMapName());
 }
 
 ULevelClearTimeSubsystem* AKrowdKontrolPlayerController::ResolveLevelClearTimeSubsystem()
