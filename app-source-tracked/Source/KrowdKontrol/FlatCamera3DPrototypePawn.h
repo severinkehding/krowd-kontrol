@@ -27,7 +27,6 @@ class USpeedReductionPunishmentComponent;
 class UPunishmentArbitrationComponent;
 class ULevelFailComponent;
 class UOvercrowdDetectionComponent;
-struct FMinimalViewInfo;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -209,35 +208,35 @@ public:
 	// REQ-1) - the single "where on the gameplay floor is the mouse pointing"
 	// entry point every other aiming system in this PRD (robot-facing REQ-2,
 	// shared targeting-indicator REQ-3) must call instead of re-deriving
-	// deprojection math. Resolves this pawn's possessing PlayerController's live
-	// mouse position and TopDownCamera's live view, then defers to
-	// DeprojectScreenPositionToGroundPlane() below for the actual math. Returns
-	// false (OutWorldPosition left unchanged) if there's no possessing
-	// PlayerController, no live viewport this frame (GetMousePosition() fails),
-	// or the deprojected ray can't reach the floor plane.
+	// deprojection math. Delegates the camera-to-ray step to
+	// APlayerController::DeprojectMousePositionToWorld() - the engine's own
+	// already-correct, already-tested path (it walks
+	// ULocalPlayer::GetProjectionData(), so it honours the project's real
+	// AspectRatioAxisConstraint instead of a hand-rolled approximation of it) -
+	// then defers to IntersectRayWithGroundPlane() below for the ray/floor math.
+	// Returns false (OutWorldPosition left unchanged) if there's no possessing
+	// PlayerController, no live viewport this frame
+	// (DeprojectMousePositionToWorld() fails), or the ray can't reach the floor
+	// plane.
 	bool GetCursorWorldPosition(FVector& OutWorldPosition) const;
 
-	// Pure deprojection + floor-plane math (issue #262) - GetCursorWorldPosition()
-	// above is a thin wrapper feeding this pawn's own live camera/controller
-	// state into this function; this is the only deprojection math in the
-	// project (no per-ability re-derivation). Takes a camera view as plain data
-	// (Location/Rotation/FOV/AspectRatio - exactly what
-	// UCameraComponent::GetCameraView() produces) and a screen-space position
-	// within ViewportSize, and returns where that screen ray crosses
-	// GroundPlaneZ. Deliberately takes no UWorld/viewport/PlayerController so
-	// KrowdKontrol.Unit.CursorGroundPlaneDeprojectionMath can assert exact
-	// results for a given camera transform and screen-space input without a
-	// live viewport - this project's headless CreateNewMap() automation Worlds
-	// have no real ULocalPlayer/ViewportClient, so
+	// Pure ray/floor-plane intersection math (issue #262) - GetCursorWorldPosition()
+	// above is a thin wrapper feeding this pawn's own live controller-derived ray
+	// into this function; this is the only deprojection-adjacent math the project
+	// hand-rolls (the camera->ray step itself is left entirely to the engine, see
+	// GetCursorWorldPosition() above). Deliberately takes no UWorld/viewport/
+	// PlayerController/camera-view data so KrowdKontrol.Unit.
+	// CursorGroundPlaneDeprojectionMath can assert exact results for a given ray
+	// without a live viewport - this project's headless CreateNewMap() automation
+	// Worlds have no real ULocalPlayer/ViewportClient, so
 	// APlayerController::DeprojectMousePositionToWorld() itself can't be
 	// exercised there (see KrowdKontrolOvercrowdAudioVisualSyncTest.cpp's
 	// PlayerCameraManager bootstrap comment for the same class of limitation).
-	// Returns false if the screen ray is (near-)parallel to the floor plane, or
+	// Returns false if RayDirection is (near-)parallel to the floor plane, or
 	// the floor lies behind the ray's origin.
-	static bool DeprojectScreenPositionToGroundPlane(
-		const FMinimalViewInfo& CameraView,
-		const FIntPoint& ViewportSize,
-		const FVector2D& ScreenPosition,
+	static bool IntersectRayWithGroundPlane(
+		const FVector& RayOrigin,
+		const FVector& RayDirection,
 		float GroundPlaneZ,
 		FVector& OutWorldPosition);
 

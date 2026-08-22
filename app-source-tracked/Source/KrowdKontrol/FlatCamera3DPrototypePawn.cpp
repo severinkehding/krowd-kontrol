@@ -7,9 +7,6 @@
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
-#include "Camera/CameraTypes.h"
-#include "SceneView.h"
-#include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/InputComponent.h"
 #include "AbilityUnlockComponent.h"
@@ -119,59 +116,26 @@ void AFlatCamera3DPrototypePawn::ApplyCameraFraming()
 bool AFlatCamera3DPrototypePawn::GetCursorWorldPosition(FVector& OutWorldPosition) const
 {
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC || !TopDownCamera)
+	if (!PC)
 	{
 		return false;
 	}
 
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-	if (!PC->GetMousePosition(MouseX, MouseY))
+	FVector RayOrigin, RayDirection;
+	if (!PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection))
 	{
 		return false;
 	}
 
-	int32 ViewportSizeX = 0;
-	int32 ViewportSizeY = 0;
-	PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
-	if (ViewportSizeX <= 0 || ViewportSizeY <= 0)
-	{
-		return false;
-	}
-
-	FMinimalViewInfo CameraView;
-	TopDownCamera->GetCameraView(0.0f, CameraView);
-	// Match the live window shape - TopDownCamera's own stored AspectRatio
-	// default would silently diverge from the player's actual window,
-	// making the deprojected cursor position not match where the rendered
-	// crosshair/cursor visually sits.
-	CameraView.AspectRatio = static_cast<float>(ViewportSizeX) / static_cast<float>(ViewportSizeY);
-
-	return DeprojectScreenPositionToGroundPlane(
-		CameraView,
-		FIntPoint(ViewportSizeX, ViewportSizeY),
-		FVector2D(MouseX, MouseY),
-		GetActorLocation().Z,
-		OutWorldPosition);
+	return IntersectRayWithGroundPlane(RayOrigin, RayDirection, GetActorLocation().Z, OutWorldPosition);
 }
 
-bool AFlatCamera3DPrototypePawn::DeprojectScreenPositionToGroundPlane(
-	const FMinimalViewInfo& CameraView,
-	const FIntPoint& ViewportSize,
-	const FVector2D& ScreenPosition,
+bool AFlatCamera3DPrototypePawn::IntersectRayWithGroundPlane(
+	const FVector& RayOrigin,
+	const FVector& RayDirection,
 	float GroundPlaneZ,
 	FVector& OutWorldPosition)
 {
-	FMatrix ViewMatrix, ProjectionMatrix, ViewProjectionMatrix;
-	UGameplayStatics::GetViewProjectionMatrix(CameraView, ViewMatrix, ProjectionMatrix, ViewProjectionMatrix);
-
-	FVector RayOrigin, RayDirection;
-	FSceneView::DeprojectScreenToWorld(
-		ScreenPosition,
-		FIntRect(FIntPoint::ZeroValue, ViewportSize),
-		ViewProjectionMatrix.Inverse(),
-		RayOrigin, RayDirection);
-
 	if (FMath::IsNearlyZero(RayDirection.Z))
 	{
 		return false;
