@@ -30,6 +30,9 @@ a human reading the logs.
   ability name, current key binding(s), one-line effect description, duration,
   range/shape, and its colour-matched enemy type with the reserved-colour
   swatch — all sourced from `AbilityData`, no hardcoded strings per tile.
+  - **Open question**: issue #258 recommends the OG-GDD bindings (LMB/RMB/Q/E/MMB)
+    as canonical for this label, keeping 1-5 as a legacy alternate — proposal only,
+    not yet ratified by the operator (see `app-changelog/issue-258.md`).
 - Depends on the Cursor & Aiming Foundation PRD's cursor issue (a tooltip
   needs a pointer); decompose with that as a named prerequisite.
 - Tooltip chrome obeys `HUDChromeColours` (Hard Invariant 3 — the swatch is
