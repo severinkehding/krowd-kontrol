@@ -25,6 +25,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/Material.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -35,6 +36,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString& Parameters)
 {
+	// InitializeIndicatorVisual() now logs a warning (see error-handling fix) whenever
+	// the placeholder M_AbilityIndicator material fails to load - and per this issue's
+	// own Known Gaps, that asset was never authored in this environment, so every
+	// component instance below that reaches this code path will log it once. Not this
+	// test's concern (it's exercised independently of whether the content asset
+	// exists - see the forced-MID injection below), so expect any number of
+	// occurrences. Occurrences=0 means "any count"; IsRegex=false per the D-012
+	// AddExpectedError convention.
+	AddExpectedError(TEXT("failed to load placeholder material"), EAutomationExpectedErrorFlags::Contains, 0, false);
+
 	// (a) Construction: spawn an AActor + manual USceneComponent root in a
 	// CreateNewMap() World, NewObject + RegisterComponent, then drive
 	// InitializeIndicatorVisual() directly rather than relying on BeginPlay timing.
@@ -61,6 +72,13 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 	{
 		return false;
 	}
+	// ConstructorHelpers::FObjectFinder-style asset lookups silently no-op on failure
+	// (no assert, no log) - without this check, a future asset path change would leave
+	// the indicator invisible in-game while every other assertion in this file still
+	// passed. Mirrors KrowdKontrolPaper2DPipelineSmokeTest.cpp:147-150's precedent for
+	// exactly this asset-load-silently-no-ops class of gap.
+	TestNotNull(TEXT("IndicatorMeshComponent should have a static mesh assigned after InitializeIndicatorVisual"),
+		ToRawPtr(Indicator->IndicatorMeshComponent->GetStaticMesh()));
 
 	// Idempotency regression: a second InitializeIndicatorVisual() call must not
 	// create a duplicate IndicatorMeshComponent. Mirrors
@@ -69,6 +87,39 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 	Indicator->InitializeIndicatorVisual();
 	TestTrue(TEXT("A second InitializeIndicatorVisual() call should not create a duplicate IndicatorMeshComponent"),
 		Indicator->IndicatorMeshComponent == FirstMeshComponent);
+
+	// Force material-parameter coverage independent of whether the placeholder
+	// M_AbilityIndicator content asset exists in this environment (it may not - see
+	// this issue's Known Gaps). Uses the engine's always-available default material as
+	// the base so ApplyMaterialParameters() is exercised unconditionally by (b)/(c)
+	// below, rather than silently skipping their material-param assertions.
+	Indicator->IndicatorMaterialInstance = UMaterialInstanceDynamic::Create(
+		UMaterial::GetDefaultMaterial(MD_Surface), Indicator);
+	if (!TestNotNull(TEXT("Forced IndicatorMaterialInstance for material-param coverage should be non-null"),
+		ToRawPtr(Indicator->IndicatorMaterialInstance)))
+	{
+		return false;
+	}
+
+	// (a2) Lazy auto-init: Show() must self-initialize on a component that never had
+	// InitializeIndicatorVisual() called on it directly - this is Show()'s documented
+	// entry point for real callers (BeginPlay only calls InitializeIndicatorVisual()
+	// automatically; ability-cast code is expected to just call Show()). Uses its own
+	// Owner actor, not the (a) Indicator's, since InitializeIndicatorVisual() creates
+	// its IndicatorMeshComponent under Owner with a fixed name - a second component on
+	// the same Owner would collide with the (a) Indicator's mesh component name.
+	AActor* LazyOwner = World->SpawnActor<AActor>();
+	USceneComponent* LazyRoot = NewObject<USceneComponent>(LazyOwner);
+	LazyRoot->RegisterComponent();
+	LazyOwner->SetRootComponent(LazyRoot);
+	UAbilityTargetingIndicatorComponent* LazyIndicator = NewObject<UAbilityTargetingIndicatorComponent>(LazyOwner);
+	LazyIndicator->RegisterComponent();
+	FAbilityIndicatorShapeSpec LazyInitTestSpec;
+	LazyInitTestSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
+	LazyInitTestSpec.RangeUnits = 100.0f;
+	LazyIndicator->Show(LazyInitTestSpec, FLinearColor::White);
+	TestNotNull(TEXT("Show() with no prior InitializeIndicatorVisual() call should still self-initialize IndicatorMeshComponent"),
+		ToRawPtr(LazyIndicator->IndicatorMeshComponent));
 
 	// (b) Colour-match AC: for each of the 5 EAbilitySlot values, Show() with
 	// AbilityData::Get(Slot).Colour must land exactly in CurrentColour (and, if the
@@ -205,6 +256,23 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 	TestFalse(TEXT("IndicatorMeshComponent should not be visible after the flash timer's ClearFlash() fires"),
 		Indicator->IndicatorMeshComponent->IsVisible());
 
+	// (e2) EndPlay must clear a pending flash timer, not leave it dangling against a
+	// component that may be about to be garbage-collected. UActorComponent::EndPlay()
+	// asserts bHasBegunPlay - this test drives InitializeIndicatorVisual() directly
+	// rather than through the actor lifecycle, so BeginPlay() must be called first to
+	// satisfy that invariant (confirmed via a live Editor run: skipping this step
+	// crashes the Editor with "Assertion failed: bHasBegunPlay"). BeginPlay() calling
+	// InitializeIndicatorVisual() again is a harmless no-op, per its own idempotency
+	// guard already proven above.
+	Indicator->BeginPlay();
+	Indicator->Flash(FlashSpec, FLinearColor::White, 0.15f);
+	Indicator->EndPlay(EEndPlayReason::Destroyed);
+	if (UWorld* TestWorld = Indicator->GetWorld())
+	{
+		TestFalse(TEXT("FlashTimerHandle should no longer be active after EndPlay"),
+			TestWorld->GetTimerManager().IsTimerActive(Indicator->FlashTimerHandle));
+	}
+
 	// (f) Regression: an owner with no RootComponent must warn, not crash, and must
 	// never create IndicatorMeshComponent. Mirrors
 	// KrowdKontrolEnemyTypeIndicatorComponentTest.cpp case (g).
@@ -218,7 +286,12 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 	UAbilityTargetingIndicatorComponent* RootlessIndicator = NewObject<UAbilityTargetingIndicatorComponent>(RootlessOwner);
 	RootlessIndicator->RegisterComponent();
 
-	AddExpectedError(TEXT("found no Owner root component"), EAutomationExpectedErrorFlags::Contains, 2, false);
+	// Count of 4 covers the two direct InitializeIndicatorVisual() calls below plus the
+	// two more triggered indirectly by Show()/Flash() further down (Flash() calls
+	// Show(), and Show() self-initializes) - every one of them re-hits the same
+	// retryable, never-latched warning since bHasInitializedIndicatorVisual is
+	// deliberately never set on this failure path.
+	AddExpectedError(TEXT("found no Owner root component"), EAutomationExpectedErrorFlags::Contains, 4, false);
 	RootlessIndicator->InitializeIndicatorVisual();
 	TestNull(TEXT("IndicatorMeshComponent should stay null when the owner has no RootComponent"),
 		ToRawPtr(RootlessIndicator->IndicatorMeshComponent));
@@ -226,6 +299,26 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 	RootlessIndicator->InitializeIndicatorVisual();
 	TestNull(TEXT("A second InitializeIndicatorVisual() call on a rootless owner should still leave IndicatorMeshComponent null"),
 		ToRawPtr(RootlessIndicator->IndicatorMeshComponent));
+
+	// Show()/Hide()/Flash() must stay crash-safe when IndicatorMeshComponent is (and
+	// will always remain) null for this rootless owner. They only null-check
+	// IndicatorMeshComponent before touching it, not before updating their own
+	// reflected state, so bIsVisible still reports "visible" with nothing to render -
+	// documenting that current behavior explicitly rather than leaving it unexercised.
+	FAbilityIndicatorShapeSpec RootlessTestSpec;
+	RootlessTestSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
+	RootlessTestSpec.RangeUnits = 50.0f;
+	RootlessIndicator->Show(RootlessTestSpec, FLinearColor::White);
+	TestTrue(TEXT("Show() on a null-mesh rootless indicator should not crash and should still report bIsVisible true"),
+		RootlessIndicator->bIsVisible);
+
+	RootlessIndicator->Hide();
+	TestFalse(TEXT("Hide() on a null-mesh rootless indicator should not crash and should clear bIsVisible"),
+		RootlessIndicator->bIsVisible);
+
+	RootlessIndicator->Flash(RootlessTestSpec, FLinearColor::White, 0.15f);
+	TestTrue(TEXT("Flash() on a null-mesh rootless indicator should not crash and should still report bIsVisible true"),
+		RootlessIndicator->bIsVisible);
 
 	return true;
 }

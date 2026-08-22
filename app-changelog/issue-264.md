@@ -53,11 +53,16 @@ client's own session was never established/retried) but the practical outcome is
 same.
 
 Per this issue's own plan (Task 1's GOTCHA), the component code guards against exactly
-this: `AbilityTargetingIndicatorComponent.cpp`'s `InitializeIndicatorVisual()` uses
-`ConstructorHelpers::FObjectFinder::Succeeded()` checks for both the plane mesh and the
-material, so a missing material degrades to "no material set on
+this: `AbilityTargetingIndicatorComponent.cpp`'s `InitializeIndicatorVisual()` loads both
+the plane mesh and the material via `TSoftObjectPtr::LoadSynchronous()` with a
+null-pointer check on each result (not `ConstructorHelpers::FObjectFinder` — that was
+tried first and crashed the Editor outright, since it's constructor-only and this call
+site is deliberately deferred out of the constructor until an Owner with a root component
+exists), so a missing material degrades to "no material set on
 `IndicatorMeshComponent`, component state still fully correct and testable" rather than
-a compile or runtime failure. All acceptance criteria that don't depend on the actual
+a compile or runtime failure. Each failed load also now emits a `UE_LOG(LogTemp, Warning, ...)`
+line naming the missing asset and its consequence, so the degraded state is loud, not
+silent, in the Output Log. All acceptance criteria that don't depend on the actual
 rendered visual are met and automation-tested; a human (or a future pass with a working
 MCP session) still needs to author the `M_AbilityIndicator` material asset per Task 1's
 spec (Surface/Unlit/Translucent, `Colour`/`Opacity`/`ConeHalfAngleDegrees` params) for

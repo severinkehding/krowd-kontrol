@@ -11,8 +11,9 @@ class UMaterialInterface;
 // The four shape kinds REQ-3 (docs/prd-cursor-aiming.md) names. CircleAtActor and
 // CircleAtCursor render identically (both produce a full-circle mask at Origin) -
 // the distinction is purely which world point the *caller* feeds as Origin (the
-// owning actor's location vs. AFlatCamera3DPrototypePawn::GetCursorWorldPosition()),
-// not a rendering difference; kept as two named values so callers stay
+// owning actor's location vs. a future cursor-to-world-space projection on
+// AFlatCamera3DPrototypePawn, not yet implemented - see the input-wiring follow-on
+// issue), not a rendering difference; kept as two named values so callers stay
 // self-documenting rather than passing a bare "Circle" and a comment.
 UENUM(BlueprintType)
 enum class EAbilityIndicatorShapeKind : uint8
@@ -24,9 +25,9 @@ enum class EAbilityIndicatorShapeKind : uint8
 };
 
 // Parameterizes one shape instance. Origin/FacingRotation are always plain
-// caller-supplied world-space values (issue #264 does not derive them) - see
-// AFlatCamera3DPrototypePawn::GetCursorWorldPosition() (FlatCamera3DPrototypePawn.h)
-// for the "cursor world position" half a future caller will use.
+// caller-supplied world-space values (issue #264 does not derive them) - a future
+// cursor-to-world-space projection on AFlatCamera3DPrototypePawn, not yet
+// implemented, will supply the "cursor world position" half for a future caller.
 USTRUCT(BlueprintType)
 struct FAbilityIndicatorShapeSpec
 {

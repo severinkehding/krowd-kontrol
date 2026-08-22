@@ -77,6 +77,12 @@ void UAbilityTargetingIndicatorComponent::InitializeIndicatorVisual()
 	{
 		IndicatorMeshComponent->SetStaticMesh(PlaneMesh);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityTargetingIndicatorComponent: failed to load plane mesh '%s' on '%s' - indicator will have no visible mesh."),
+			*PlaneMeshSoftPtr.ToString(), *GetNameSafe(Owner));
+	}
 
 	static const TSoftObjectPtr<UMaterialInterface> BaseMaterialSoftPtr(
 		FSoftObjectPath(TEXT("/Game/_Placeholder/Abilities/M_AbilityIndicator.M_AbilityIndicator")));
@@ -87,6 +93,18 @@ void UAbilityTargetingIndicatorComponent::InitializeIndicatorVisual()
 		{
 			IndicatorMeshComponent->SetMaterial(0, IndicatorMaterialInstance);
 		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UAbilityTargetingIndicatorComponent: UMaterialInstanceDynamic::Create() returned null for '%s' on '%s' - indicator will have no material."),
+				*BaseMaterialSoftPtr.ToString(), *GetNameSafe(Owner));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityTargetingIndicatorComponent: failed to load placeholder material '%s' on '%s' - indicator will have no visible colour/shape mask."),
+			*BaseMaterialSoftPtr.ToString(), *GetNameSafe(Owner));
 	}
 	// If either soft load fails (Task 1's material wasn't created in this environment -
 	// see that task's GOTCHA), IndicatorMeshComponent/IndicatorMaterialInstance stay
