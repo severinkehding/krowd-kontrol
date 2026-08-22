@@ -32,6 +32,11 @@ last value, never a crash or a reset-to-zero.
 - [x] Reading either accessor after `OnEnemyControlledExpired` or after
       `OnEnemyBanked` does not crash and returns a stable last-known value — tests
       (i1b) and (i2b) in `KrowdKontrolEnemyBaseTest.cpp`, both exit edges.
+- [x] `TotalControlledSeconds` recomputes (not "sticks" to the first window) on a
+      second `ReceiveControl()` call after an Alert→Controlled→Alert cycle — test
+      (i2c), added post-review, reusing `ExpiryEnemy` from (i2)/(i2b).
+- [x] Both accessors default to `0.0f` on a freshly-constructed, never-Controlled
+      actor — pinned down as part of case (a), added post-review.
 - [x] `python3 harness/ci.py` (full mode) passes, no regressions.
 
 ## Validation evidence
@@ -58,6 +63,16 @@ Passed on the first run — no fixes required. `unit` (`KrowdKontrol.Unit.*`,
 test cases: (g2) fraction=1.0-at-entry + monotonic decrease, (i1b) stale read after
 banking, (i2b) stale read after expiry (all in `KrowdKontrolEnemyBaseTest.cpp`), and
 the extended case (s) override assertion in `KrowdKontrolSniperEnemyTest.cpp`.
+
+**Post-review additions** (addressing review findings on this PR): case (i2c) proves
+`TotalControlledSeconds` recomputes to a new ability's duration on a second
+`ReceiveControl()` call rather than sticking to the first Controlled window's value —
+the realistic repeat-crowd-control scenario that had zero coverage before. Case (a)
+now also pins the pre-first-entry `0.0f`/`0.0f` default on a freshly-constructed
+actor. `GetTotalControlledSeconds()`'s doc comment gained a line noting the `0.0f`
+default and the `0.0f/0.0f` (NaN) division risk it creates for a `Remaining/Total`
+caller that reads before any Controlled entry. Full gate re-run after these additions:
+`UNIT_PASSED tests=82`, `GATE_OK mode=full` — no regressions.
 
 MISSION.md Hard Invariants reviewed against this diff: no kill-rule, colour-lock,
 ability-roster, enemy-roster, engine/dimensionality, networking, or `app`-tracking

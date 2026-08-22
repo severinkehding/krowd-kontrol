@@ -47,6 +47,10 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Default enemy state should be Idle"),
 		static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Idle));
+	TestEqual(TEXT("Default RemainingControlledSeconds should be 0.0 before any Controlled entry"),
+		Enemy->GetRemainingControlledSeconds(), 0.0f);
+	TestEqual(TEXT("Default TotalControlledSeconds should be 0.0 before any Controlled entry"),
+		Enemy->GetTotalControlledSeconds(), 0.0f);
 
 	// (v)-(y) Elite state (issue #19). Checked here (early, on freshly-constructed
 	// actors) rather than at the end of this test after dozens more NewObject<>()
@@ -274,6 +278,16 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		ExpiryEnemy->GetRemainingControlledSeconds(), 0.0f);
 	TestEqual(TEXT("GetTotalControlledSeconds should remain stable on repeated reads after expiry"),
 		ExpiryEnemy->GetTotalControlledSeconds(), StunDurationSeconds);
+
+	// (i2c) issue #224: TotalControlledSeconds must recompute on a second
+	// ReceiveControl() call, not remain stuck on the first Controlled window's value -
+	// the actual repeat-CC gameplay scenario (stunned, breaks free, rooted again).
+	ExpiryEnemy->ReceiveControl(EAbilitySlot::Root); // Alert -> Controlled again, different ability
+	const float RootDurationSeconds = AbilityData::Get(EAbilitySlot::Root).BaseDurationSeconds;
+	TestEqual(TEXT("GetTotalControlledSeconds should recompute to the new ability's duration on re-entry"),
+		ExpiryEnemy->GetTotalControlledSeconds(), RootDurationSeconds);
+	TestEqual(TEXT("GetRemainingControlledSeconds should reset to the new total on re-entry"),
+		ExpiryEnemy->GetRemainingControlledSeconds(), ExpiryEnemy->GetTotalControlledSeconds());
 
 	// (i3) banking before expiry prevents the reversion - TickControlledDuration is
 	// already guarded by CurrentState != Controlled, this proves it explicitly for the

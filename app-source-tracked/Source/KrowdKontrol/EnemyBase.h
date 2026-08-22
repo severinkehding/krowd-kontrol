@@ -133,7 +133,9 @@ public:
 	// GetControlledDurationOverrideSeconds() override (e.g. Sniper's 7s Sleep lock),
 	// never the ability's unmodified AbilityData::BaseDurationSeconds when an
 	// override applies. Same "stale read, guarded by state" contract as
-	// GetRemainingControlledSeconds() above.
+	// GetRemainingControlledSeconds() above. Defaults to 0.0f before the first
+	// ReceiveControl() call - callers computing Remaining/Total must first confirm
+	// GetEnemyState() == Controlled (or has been) to avoid a 0.0f/0.0f division.
 	float GetTotalControlledSeconds() const { return TotalControlledSeconds; }
 
 	// Idle->Alert proximity radius. Base-defined, not overridden per concrete type -
