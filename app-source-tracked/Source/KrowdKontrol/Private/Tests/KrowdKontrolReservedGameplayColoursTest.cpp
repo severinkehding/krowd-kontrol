@@ -8,10 +8,10 @@
 // claims text colour is reserved-colour-safe chrome too.
 //
 // Widgets currently audited here: UAbilityCooldownTrayWidget, UPostRunSummaryWidget
-// (issue #74), and UOnScreenPromptWidget (issue #34). UEnergyMeterWidget is issue
-// #64/PR #92's deliverable and still isn't audited here - a pre-existing gap, not
-// introduced by issue #74, tracked as a separate follow-up. Add any future HUD
-// widget's chrome to this list.
+// (issue #74), UOnScreenPromptWidget (issue #34), and UBriefingCardWidget (issue
+// #246). UEnergyMeterWidget is issue #64/PR #92's deliverable and still isn't
+// audited here - a pre-existing gap, not introduced by issue #74, tracked as a
+// separate follow-up. Add any future HUD widget's chrome to this list.
 //
 // Needs friend-class access to each widget's private chrome members (e.g.
 // SlotIconBorders/SlotCooldownTexts, RootBorder) - see each widget's own
@@ -26,6 +26,7 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "PostRunSummaryWidget.h"
 #include "OnScreenPromptWidget.h"
+#include "BriefingCardWidget.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Components/Border.h"
@@ -154,7 +155,23 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			AllReserved.Contains(PromptWidget->PromptText->GetColorAndOpacity().GetSpecifiedColor()));
 	}
 
-	// (5) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
+	// (5) Briefing card widget audit (issue #246) - background border and all three
+	// text fields, mirroring the other widgets' audits above.
+	UBriefingCardWidget* BriefingWidget =
+		CreateWidget<UBriefingCardWidget>(World, UBriefingCardWidget::StaticClass());
+	if (TestNotNull(TEXT("UBriefingCardWidget should construct"), BriefingWidget))
+	{
+		TestFalse(TEXT("Briefing root border colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(BriefingWidget->RootBorder->GetBrushColor()));
+		TestFalse(TEXT("Level name text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(BriefingWidget->LevelNameText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Objective text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(BriefingWidget->ObjectiveText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("New-ability text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(BriefingWidget->NewAbilityText->GetColorAndOpacity().GetSpecifiedColor()));
+	}
+
+	// (6) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
 	// genuine collision, not just on the (never-colliding) real widget colours above -
 	// guards against an inverted/typo'd assertion silently passing forever.
 	UBorder* CollidingBorder = NewObject<UBorder>(GetTransientPackage());
