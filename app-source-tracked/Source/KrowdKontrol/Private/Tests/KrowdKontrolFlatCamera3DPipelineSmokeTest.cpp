@@ -515,17 +515,20 @@ bool FKrowdKontrolFlatCamera3DCameraFramingTest::RunTest(const FString& Paramete
 
 	// (a) Defaults land within the documented ranges (mirrors each property's own
 	// ClampMin/ClampMax meta in FlatCamera3DPrototypePawn.h).
-	TestTrue(TEXT("CameraArmLength default should be within the documented [300, 600] range"),
-		Pawn->CameraArmLength >= 300.0f && Pawn->CameraArmLength <= 600.0f);
+	TestTrue(TEXT("CameraArmLength default should be within the documented [600, 2000] range"),
+		Pawn->CameraArmLength >= 600.0f && Pawn->CameraArmLength <= 2000.0f);
 	TestTrue(TEXT("CameraBoomPitch default should be within the documented [-75, -45] range"),
 		Pawn->CameraBoomPitch >= -75.0f && Pawn->CameraBoomPitch <= -45.0f);
 	TestTrue(TEXT("CameraFieldOfView default should be within the documented [60, 90] range"),
 		Pawn->CameraFieldOfView >= 60.0f && Pawn->CameraFieldOfView <= 90.0f);
 
-	// Defaults should also already be closer/less extreme than the pre-#188 hardcoded
-	// values (800cm / -80 degrees), per REQ-4's "closer than today's 800cm/-80" ask.
-	TestTrue(TEXT("CameraArmLength default should be closer than the old 800cm hardcoded value"),
-		Pawn->CameraArmLength < 800.0f);
+	// CameraArmLength is now asserted to be FARTHER than the pre-#188 800cm hardcoded
+	// value (the opposite direction from #188's original "closer than 800cm" ask),
+	// mirroring #251's actual intent rather than dropping regression coverage entirely.
+	// CameraBoomPitch is untouched by issue #251 and keeps its original less-extreme-
+	// than-the-pre-#188-hardcoded-value assertion below.
+	TestTrue(TEXT("CameraArmLength default should be farther than the old 800cm hardcoded value"),
+		Pawn->CameraArmLength > 800.0f);
 	TestTrue(TEXT("CameraBoomPitch default should be less extreme than the old -80 degree hardcoded value"),
 		Pawn->CameraBoomPitch > -80.0f);
 
@@ -540,7 +543,9 @@ bool FKrowdKontrolFlatCamera3DCameraFramingTest::RunTest(const FString& Paramete
 
 	// (b) Changing a property and re-applying genuinely drives CameraBoom/
 	// TopDownCamera - proves these are live wiring, not decorative UPROPERTYs.
-	const float NewArmLength = 320.0f;
+	// NewArmLength kept inside the issue #251 [600, 2000] range so this still
+	// exercises a realistic in-range edit rather than an arbitrary float.
+	const float NewArmLength = 1100.0f;
 	const float NewPitch = -72.0f;
 	const float NewFOV = 65.0f;
 	Pawn->CameraArmLength = NewArmLength;
@@ -558,7 +563,8 @@ bool FKrowdKontrolFlatCamera3DCameraFramingTest::RunTest(const FString& Paramete
 	// (c) PostEditChangeProperty itself (not just the shared ApplyCameraFraming()
 	// helper) must route each camera property to a live reapply - this is the actual
 	// mechanism a placed-instance Details-panel edit uses in the editor.
-	const float DetailsPanelArmLength = 500.0f;
+	// Kept inside the issue #251 [600, 2000] range, same rationale as NewArmLength above.
+	const float DetailsPanelArmLength = 1800.0f;
 	Pawn->CameraArmLength = DetailsPanelArmLength;
 	FProperty* ArmLengthProperty = FindFProperty<FProperty>(
 		AFlatCamera3DPrototypePawn::StaticClass(),

@@ -62,8 +62,9 @@ it's raw input for it.
   orthographic camera setup, or does the perspective-vs-orthographic difference make
   camera-feel comparison between the two prototypes not apples-to-apples?
   *(Note, issue #188: pitch/arm-length are no longer hardcoded — see
-  `AFlatCamera3DPrototypePawn::CameraBoomPitch`/`CameraArmLength`, tunable defaults
-  `-60°`/450cm.)*
+  `AFlatCamera3DPrototypePawn::CameraBoomPitch`/`CameraArmLength`. Retuned by issue #251
+  after 2026-08-22 playtests found the #188 defaults too close for crowd management;
+  current tunable defaults `-60°`/1500cm, arm-length clamp widened to `[600, 2000]`.)*
 - Once both prototypes exist side by side, what does "friction" mean quantitatively —
   build/iteration time, lines of pawn code, or something else? This doc's own
   iteration-speed section above didn't have a baseline to compare against; the Paper2D
