@@ -7,6 +7,7 @@
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "Components/InputComponent.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityUnlockPromptComponent.h"
@@ -110,6 +111,44 @@ void AFlatCamera3DPrototypePawn::ApplyCameraFraming()
 	{
 		TopDownCamera->SetFieldOfView(CameraFieldOfView);
 	}
+}
+
+bool AFlatCamera3DPrototypePawn::GetCursorWorldPosition(FVector& OutWorldPosition) const
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC)
+	{
+		return false;
+	}
+
+	FVector RayOrigin, RayDirection;
+	if (!PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+	{
+		return false;
+	}
+
+	return IntersectRayWithGroundPlane(RayOrigin, RayDirection, GetActorLocation().Z, OutWorldPosition);
+}
+
+bool AFlatCamera3DPrototypePawn::IntersectRayWithGroundPlane(
+	const FVector& RayOrigin,
+	const FVector& RayDirection,
+	float GroundPlaneZ,
+	FVector& OutWorldPosition)
+{
+	if (FMath::IsNearlyZero(RayDirection.Z))
+	{
+		return false;
+	}
+
+	const float T = (GroundPlaneZ - RayOrigin.Z) / RayDirection.Z;
+	if (T < 0.0f)
+	{
+		return false;
+	}
+
+	OutWorldPosition = RayOrigin + RayDirection * T;
+	return true;
 }
 
 #if WITH_EDITOR

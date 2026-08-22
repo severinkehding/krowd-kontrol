@@ -23,6 +23,14 @@
 void AKrowdKontrolPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	// In-game cursor (issue #262, PRD "Cursor & Aiming Foundation" REQ-1) - every
+	// ability in this PRD is aimed at the mouse cursor, so it must be visible
+	// during real gameplay. Independent of DefaultInput.ini's
+	// DefaultViewportMouseCaptureMode=CapturePermanently_IncludingInitialMouseDown /
+	// DefaultViewportMouseLockMode=LockOnCapture settings - those govern whether
+	// the OS cursor is confined/locked to the viewport, not whether a cursor is
+	// rendered at all.
+	bShowMouseCursor = true;
 	CreateHUDWidgets();
 	RefreshTargetZoneBeacons();
 	// If the pawn was already possessed before BeginPlay ran (order isn't guaranteed
