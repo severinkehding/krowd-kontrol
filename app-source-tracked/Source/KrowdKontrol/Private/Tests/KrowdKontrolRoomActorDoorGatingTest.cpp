@@ -1,10 +1,12 @@
 // Confirms ARoomActor/ADoorConnectorActor's door-gating mechanism (issue #218,
-// attempt 2): a door bound to a GatingRoom stays blocked while any of that room's
-// OwnedEnemies is un-Banked, opens once the last one banks, and re-gates when a
-// wave-spawned addition arrives - and, per the CRITICAL finding that rejected attempt
-// 1 (PR #228), the blocking collision must actually stop the real player pawn, which
-// presents as ECC_WorldStatic (its MeshComponent never sets an explicit collision
-// profile/object type - see FlatCamera3DPrototypePawn.cpp), not ECC_Pawn.
+// attempt 3): a door bound to a GatingRoom stays blocked while any of that room's
+// OwnedEnemies is un-Banked, opens once the last one banks, and - once opened - never
+// re-gates again even when a wave-spawned addition arrives (AC3) - and, per the
+// CRITICAL finding that rejected attempt 2 (PR #229), the blocking collision must
+// actually stop the real player pawn, which presents as ECC_WorldDynamic (its
+// MeshComponent never sets an explicit collision profile/object type, but live PIE
+// inspection shows it resolves to BlockAllDynamic/WorldDynamic, not WorldStatic - see
+// FlatCamera3DPrototypePawn.cpp), not ECC_Pawn.
 //
 // Requires World->InitializeActorsForPlay()/World->SetBegunPlay(true) - same rationale
 // KrowdKontrolRoomActorBankingWiringTest.cpp's file comment documents: a bare
@@ -51,7 +53,7 @@ bool FKrowdKontrolRoomActorDoorGatingTest::RunTest(const FString& Parameters)
 
 	// (1)/(2)/(6): door stays blocked while any owned enemy is un-Banked, opens once
 	// the last one banks, and while closed blocks the real player's channel
-	// (ECC_WorldStatic - the CRITICAL regression from attempt 1).
+	// (ECC_WorldDynamic - the CRITICAL regression from attempts 1/2).
 	ARoomActor* Room = World->SpawnActor<ARoomActor>();
 	if (!TestNotNull(TEXT("ARoomActor should spawn into the test World"), Room))
 	{
@@ -81,8 +83,8 @@ bool FKrowdKontrolRoomActorDoorGatingTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("Door should be blocked (QueryOnly) while any owned enemy is un-Banked"),
 		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
-	TestEqual(TEXT("While closed, the gate should Block ECC_WorldStatic - the channel the real player pawn actually presents (issue #218 regression)"),
-		Door->GateBlockingComponent->GetCollisionResponseToChannel(ECC_WorldStatic), ECR_Block);
+	TestEqual(TEXT("While closed, the gate should Block ECC_WorldDynamic - the channel the real player pawn actually presents (issue #218 regression)"),
+		Door->GateBlockingComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
 
 	EnemyOne->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
 	EnemyOne->ReceiveControl(EAbilitySlot::Stun);        // Alert -> Controlled
@@ -98,7 +100,8 @@ bool FKrowdKontrolRoomActorDoorGatingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Door should open (NoCollision) once the last owned enemy reaches Banked"),
 		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
-	// (3): a wave-spawned addition to an already-open room re-gates the door. Door is
+	// (3): a wave-spawned addition to an already-opened room must NOT re-gate the door -
+	// once opened, a door never re-closes behind the player (issue #218 AC3). Door is
 	// already bound to Room's OnRoomClearedStateChanged from its earlier BeginPlay, so
 	// no re-spawn/defer is needed here.
 	AEnemyBaseTestActor* WaveEnemy = World->SpawnActor<AEnemyBaseTestActor>();
@@ -107,13 +110,13 @@ bool FKrowdKontrolRoomActorDoorGatingTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Room->AddOwnedEnemy(WaveEnemy);
-	TestEqual(TEXT("A wave-spawned addition to an already-open room should re-gate the door until it too is Banked"),
-		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+	TestEqual(TEXT("A wave-spawned addition to an already-opened room should NOT re-gate the door (issue #218 AC3)"),
+		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	WaveEnemy->TickCheckDetection(ZeroDistanceLocation);
 	WaveEnemy->ReceiveControl(EAbilitySlot::Stun);
 	WaveEnemy->TransitionToBanked();
-	TestEqual(TEXT("Door should re-open once the wave-spawned enemy also reaches Banked"),
+	TestEqual(TEXT("Door should remain open once the wave-spawned enemy also reaches Banked"),
 		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	// (4): a door with no resolvable GatingRoom defaults open. Nothing needs to be set

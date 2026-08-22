@@ -96,6 +96,11 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 	// comparison and is out of this test's reach.
 	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
 
+	// Issue #211 pass-1 review follow-up: proves EnsureBankingZonesWired() actually has
+	// something real to heal in this shipped level, not just that the marker array is
+	// non-empty (already covered above).
+	KrowdKontrolLevelTestUtils::CheckRoomBankingZonesSelfHeal(*this, Rooms);
+
 	// Issue #189: room spacing compression and enemy density ramp, both independently
 	// falsifiable rather than resting on changelog prose (D-009).
 	KrowdKontrolLevelTestUtils::CheckAdjacentRoomSpacingCompressed(*this, Rooms);
@@ -160,8 +165,8 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 		{
 			TestEqual(TEXT("A real door gating a freshly-loaded, un-cleared room should be blocked (issue #218)"),
 				Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
-			TestEqual(TEXT("While blocked, the real door should Block ECC_WorldStatic (issue #218 regression)"),
-				Door->GateBlockingComponent->GetCollisionResponseToChannel(ECC_WorldStatic), ECR_Block);
+			TestEqual(TEXT("While blocked, the real door should Block ECC_WorldDynamic - the channel the real player pawn actually presents (issue #218 regression)"),
+				Door->GateBlockingComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
 		}
 	}
 

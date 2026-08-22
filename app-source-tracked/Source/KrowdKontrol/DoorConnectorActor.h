@@ -68,8 +68,10 @@ public:
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Door Connector")
 	TObjectPtr<ARoomActor> GatingRoom;
 
-	// True once GatingRoom is null or GatingRoom->IsRoomCleared(); false (impassable)
-	// otherwise.
+	// True once the gate has ever been open (GatingRoom null or cleared); latches
+	// permanently from that point on so a door already opened for the player never
+	// re-closes behind them (issue #218 AC3), even if GatingRoom->IsRoomCleared() later
+	// flips back to false. False (impassable) until the first time that happens.
 	bool IsGateOpen() const { return bIsGateOpen; }
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
@@ -95,12 +97,17 @@ private:
 	// repeating the same three SetVisibility(false) calls at each call site.
 	void HideConnectorVisuals();
 
-	// Recomputes bIsGateOpen from GatingRoom's IsRoomCleared() and applies it to
-	// GateBlockingComponent's collision. UFUNCTION so it can bind directly to
-	// ARoomActor::OnRoomClearedStateChanged (a dynamic multicast delegate); also called
-	// directly from BeginPlay. Safe/idempotent to call repeatedly.
+	// Recomputes bIsGateOpen from GatingRoom's IsRoomCleared(), latched through
+	// bGateEverOpened so a previously-opened gate never re-closes (issue #218 AC3), and
+	// applies the result to GateBlockingComponent's collision. UFUNCTION so it can bind
+	// directly to ARoomActor::OnRoomClearedStateChanged (a dynamic multicast delegate);
+	// also called directly from BeginPlay. Safe/idempotent to call repeatedly.
 	UFUNCTION()
 	void RefreshGateState();
 
 	bool bIsGateOpen = true;
+
+	// Latches true the first time RefreshGateState() finds the gate open, and never
+	// resets back to false - see IsGateOpen()'s comment (issue #218 AC3).
+	bool bGateEverOpened = false;
 };

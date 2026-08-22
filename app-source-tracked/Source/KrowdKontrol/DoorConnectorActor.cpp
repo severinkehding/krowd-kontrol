@@ -74,9 +74,9 @@ ADoorConnectorActor::ADoorConnectorActor()
 	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	// Unconfigured primitives default to BlockAllDynamic - reset to Ignore-all first so
 	// the gate only ever blocks the one channel it's meant to (see RefreshGateState()'s
-	// comment below for why that channel is WorldStatic, not Pawn).
+	// comment below for why that channel is WorldDynamic, not WorldStatic or Pawn).
 	GateBlockingComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	GateBlockingComponent->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	GateBlockingComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
 	GateBlockingComponent->SetGenerateOverlapEvents(false);
 }
 
@@ -85,7 +85,11 @@ void ADoorConnectorActor::HideConnectorVisuals()
 	ConnectorFloorMeshComponent->SetVisibility(false);
 	DoorMarkerMeshComponent->SetVisibility(false);
 	DoorMarkerLightComponent->SetVisibility(false);
-	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Route through RefreshGateState() rather than hardcoding NoCollision, so a
+	// GatingRoom that's still un-cleared stays blocked even while the connector's visuals
+	// are hidden (e.g. RecomputeConnectorGeometry() called again post-placement with a
+	// degenerate RoomA/RoomB span - see GatingRoom's header comment).
+	RefreshGateState();
 }
 
 void ADoorConnectorActor::RecomputeConnectorGeometry()
@@ -158,18 +162,26 @@ void ADoorConnectorActor::BeginPlay()
 
 void ADoorConnectorActor::RefreshGateState()
 {
-	bIsGateOpen = (GatingRoom == nullptr) || GatingRoom->IsRoomCleared();
+	const bool bRoomCleared = (GatingRoom == nullptr) || GatingRoom->IsRoomCleared();
+	// Latch: once the gate has ever been open, it stays open, even if a later
+	// OnRoomClearedStateChanged broadcast (e.g. a wave-spawned enemy added to an
+	// already-cleared room) would otherwise re-close it - issue #218 AC3, "doors, once
+	// opened, never re-close behind the player." A door not yet opened still correctly
+	// re-derives bIsGateOpen from GatingRoom on every call (AC4).
+	if (bRoomCleared)
+	{
+		bGateEverOpened = true;
+	}
+	bIsGateOpen = bGateEverOpened;
 
-	// Root-cause fix (issue #218, attempt 2): the real player pawn's moving collision
-	// component (AFlatCamera3DPrototypePawn::MeshComponent) has never had an explicit
-	// profile set, so it inherits UStaticMeshComponent's engine-default "BlockAll"
-	// profile - object type WorldStatic, not Pawn (FlatCamera3DPrototypePawn.cpp never
-	// calls SetCollisionObjectType/SetCollisionProfileName; RoomActor.cpp's
-	// FloorMeshComponent comment confirms the same default already applies to the level
-	// geometry the player walks on today). Attempt 1 blocked only ECC_Pawn here, which
-	// is a no-op against the real player - QueryOnly still blocks WorldStatic-channel
-	// traces (the constructor's collision-response setup above), so this line only
-	// needs to toggle enabled/disabled, not the per-channel responses.
+	// Root-cause fix (issue #218, attempt 3): live PIE inspection of the real possessed
+	// player pawn (AFlatCamera3DPrototypePawn::MeshComponent) shows it presents
+	// objectType=ECC_WorldDynamic, collisionProfileName=BlockAllDynamic - not
+	// ECC_WorldStatic as attempt 2 assumed from source inspection alone (attempt 1
+	// blocked only ECC_Pawn, also a no-op against the real player). QueryOnly still
+	// blocks WorldDynamic-channel sweeps (the constructor's collision-response setup
+	// above), so this line only needs to toggle enabled/disabled, not the per-channel
+	// responses.
 	GateBlockingComponent->SetCollisionEnabled(
 		bIsGateOpen ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
 }
