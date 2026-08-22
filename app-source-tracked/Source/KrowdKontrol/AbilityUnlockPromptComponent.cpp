@@ -46,6 +46,9 @@ void UAbilityUnlockPromptComponent::HandleAbilityUnlocked(EAbilitySlot Ability)
 	}
 
 	const FString& AbilityDisplayName = GetAbilityDisplayName(Ability);
+	// Assumes EAbilitySlot's declared order (Stun, Sleep, Root, Fear, Snare - see
+	// AbilitySlot.h) is contiguous and locked, per that enum's own comment; the on-screen
+	// key number is simply "declaration index + 1".
 	const int32 KeyNumber = static_cast<int32>(Ability) + 1;
 	const EEnemyType Countered = AbilityData::Get(Ability).CounteredEnemyType;
 	const FString& EnemyPluralDisplayName = GetEnemyPluralDisplayName(Countered);

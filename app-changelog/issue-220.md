@@ -23,7 +23,7 @@ instance.
 |---|---|
 | Reuses `UOnScreenPromptWidget` — no new UI framework introduced | Done |
 | On each of levels 2-5, exactly one correctly-worded prompt fires | Done — covered by `KrowdKontrol.Unit.AbilityUnlockPromptComponent` case (a) |
-| Each prompt fires at most once per ability per run, no re-fire on a repeat `NotifyLevelReached` | Done — case (b) |
+| Each prompt fires at most once per ability per run, no re-fire on a repeat `NotifyLevelReached` | Done — case (b) exercises the integration end-to-end; the underlying guarantee that `OnAbilityUnlocked` fires at most once per ability is proven directly against `UAbilityUnlockComponent` in `KrowdKontrolAbilityUnlockSequenceTest.cpp` case (f) |
 | Automation test covers all acceptance-criteria bullets | Done — cases (a)-(d), including missing-widget defensive behavior and real-pawn constructor wiring |
 | No regressions in existing tests | `AbilityUnlockSequence`, `AbilityMatchupNudgeComponent`, `AbilityUnlockLevelSubsystem` untouched by this change |
 | Code mirrors `AbilityMatchupNudgeComponent`'s existing patterns | Done — same lazy prompt-widget resolution, one-shot warning, `AddDynamic` wiring shape |

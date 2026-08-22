@@ -111,6 +111,13 @@ bool FKrowdKontrolAbilityUnlockPromptComponentTest::RunTest(const FString& Param
 		}
 
 		// (b) A repeat NotifyLevelReached for an already-unlocked level must not re-fire.
+		// Note: this passes because UAbilityUnlockComponent::UnlockAbility() early-returns
+		// for an already-unlocked slot before OnAbilityUnlocked ever broadcasts a second
+		// time, so HandleAbilityUnlocked is never invoked here - this case is a smoke-check
+		// of that integration, not a standalone proof. The actual proof that
+		// OnAbilityUnlocked fires at most once per ability lives in
+		// KrowdKontrolAbilityUnlockSequenceTest.cpp case (f), which tests
+		// UAbilityUnlockComponent directly.
 		UnlockComponent->NotifyLevelReached(2);
 		TestFalse(TEXT("Prompt must not re-fire on a repeat NotifyLevelReached for an already-unlocked level"),
 			Controller->OnScreenPromptWidgetInstance->IsPromptVisible());
