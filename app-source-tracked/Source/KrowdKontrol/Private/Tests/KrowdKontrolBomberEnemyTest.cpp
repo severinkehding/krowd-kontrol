@@ -363,6 +363,63 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Bomber should revert to Alert once the Fear duration elapses"),
 		static_cast<uint8>(ExpiryBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 
+	// (u) issue #221: the attack telegraph's escalation stage starts Early and
+	// advances monotonically Early -> Mid -> Imminent as the fuse burns down,
+	// verifiable without rendering - the pulsing light intensity itself is
+	// presentation-only, playtest-verified per the issue's AC (see BomberEnemy.h's
+	// GetAttackTelegraphStage() comment).
+	ABomberEnemy* EscalationBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(EscalationBomber, ZeroDistanceLocation);
+	TestEqual(TEXT("telegraph starts at Early stage"),
+		static_cast<uint8>(EscalationBomber->GetAttackTelegraphStage()), static_cast<uint8>(EBomberTelegraphStage::Early));
+
+	EscalationBomber->AdvanceAttackTelegraph(EscalationBomber->AttackTelegraphSeconds * 0.1f); // 10% elapsed
+	TestEqual(TEXT("telegraph stays Early well before the Mid threshold"),
+		static_cast<uint8>(EscalationBomber->GetAttackTelegraphStage()), static_cast<uint8>(EBomberTelegraphStage::Early));
+
+	EscalationBomber->AdvanceAttackTelegraph(EscalationBomber->AttackTelegraphSeconds * 0.4f); // 50% elapsed total
+	TestEqual(TEXT("telegraph reaches Mid stage past the Mid threshold"),
+		static_cast<uint8>(EscalationBomber->GetAttackTelegraphStage()), static_cast<uint8>(EBomberTelegraphStage::Mid));
+
+	EscalationBomber->AdvanceAttackTelegraph(EscalationBomber->AttackTelegraphSeconds * 0.3f); // 80% elapsed total
+	TestEqual(TEXT("telegraph reaches Imminent stage past the Imminent threshold"),
+		static_cast<uint8>(EscalationBomber->GetAttackTelegraphStage()), static_cast<uint8>(EBomberTelegraphStage::Imminent));
+
+	// (v) the stage never regresses once advanced, even as remaining time keeps
+	// decreasing toward (but not yet reaching) explosion - the monotonic,
+	// non-decreasing guarantee the AC requires.
+	EscalationBomber->AdvanceAttackTelegraph(EscalationBomber->AttackTelegraphSeconds * 0.19f); // 99% elapsed, not yet exploded
+	TestEqual(TEXT("telegraph stays Imminent, does not regress"),
+		static_cast<uint8>(EscalationBomber->GetAttackTelegraphStage()), static_cast<uint8>(EBomberTelegraphStage::Imminent));
+
+	// (w) a fresh OnAttackEntry() resets the stage back to Early, mirroring
+	// bExplodedForCurrentAttack's own reset in the same function - proven directly via
+	// friend access to the protected OnAttackEntry() hook, same idiom this file already
+	// uses for other protected/private members.
+	ABomberEnemy* ResetBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(ResetBomber, ZeroDistanceLocation);
+	ResetBomber->AdvanceAttackTelegraph(ResetBomber->AttackTelegraphSeconds); // exploded; stage is Imminent
+	TestEqual(TEXT("exploded bomber's stage is Imminent"),
+		static_cast<uint8>(ResetBomber->GetAttackTelegraphStage()), static_cast<uint8>(EBomberTelegraphStage::Imminent));
+	ResetBomber->OnAttackEntry(); // simulate a fresh attack entry directly
+	TestEqual(TEXT("a fresh OnAttackEntry resets the stage back to Early"),
+		static_cast<uint8>(ResetBomber->GetAttackTelegraphStage()), static_cast<uint8>(EBomberTelegraphStage::Early));
+
+	// (x) the real Tick() path (not just direct AdvanceAttackTelegraph calls) also
+	// drives the stage forward - mirrors case (m)'s same proof for the explosion.
+	UWorld* EscalationWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the escalation test"), EscalationWorld))
+	{
+		ABomberEnemy* TickedEscalationBomber = EscalationWorld->SpawnActor<ABomberEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the escalation test World"), TickedEscalationBomber))
+		{
+			AdvanceToAttack(TickedEscalationBomber, ZeroDistanceLocation);
+			TickedEscalationBomber->Tick(TickedEscalationBomber->AttackTelegraphSeconds * 0.5f);
+			TestEqual(TEXT("Tick() drives the stage to Mid at the halfway point"),
+				static_cast<uint8>(TickedEscalationBomber->GetAttackTelegraphStage()), static_cast<uint8>(EBomberTelegraphStage::Mid));
+		}
+	}
+
 	return true;
 }
 

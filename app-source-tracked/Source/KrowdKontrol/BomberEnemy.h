@@ -12,6 +12,21 @@ class UAudioComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBomberExploded);
 
+// Discrete escalation stage of the attack telegraph, derived each tick from the
+// elapsed fraction of AttackTelegraphSeconds - Early/Mid/Imminent, advances
+// forward-only across a single telegraph (never regresses), reset to Early on
+// each fresh OnAttackEntry(). This is the render-independent, automation-testable
+// "unmistakable escalation" signal issue #221's AC asks for; the pulsing
+// AttackTellLightComponent intensity itself is presentation only and
+// playtest-verified, not asserted by the automation test.
+UENUM(BlueprintType)
+enum class EBomberTelegraphStage : uint8
+{
+	Early,
+	Mid,
+	Imminent
+};
+
 // B0-0MR: short-range explosive attacker (PRD 03). Extends AEnemyBase (issue #12)
 // with a sphere silhouette, Fear-only Orange "core glow", attack-tell + telegraph,
 // a one-shot attack-tell audio cue (issue #33) fired from the same OnAttackEntry()
@@ -63,6 +78,31 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber")
 	float AttackTellIntensity = 2000.0f;
 
+	// Fraction of AttackTelegraphSeconds elapsed at which GetAttackTelegraphStage()
+	// advances Early -> Mid. See TelegraphImminentThreshold below for the Mid ->
+	// Imminent edge; keep this <= that value for the stages to stay monotonic
+	// (EditDefaultsOnly, designer-set - not enforced in code, same trust-the-panel
+	// shape every other tunable on this class already uses).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TelegraphMidThreshold = 0.33f;
+
+	// Fraction of AttackTelegraphSeconds elapsed at which GetAttackTelegraphStage()
+	// advances Mid -> Imminent. See TelegraphMidThreshold above.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TelegraphImminentThreshold = 0.66f;
+
+	// Pulse rate (Hz) AttackTellLightComponent flashes at during each stage -
+	// increases Early -> Mid -> Imminent so the flicker itself visibly speeds up as
+	// detonation nears (PRD docs/prd-teaching-arc.md REQ-4's "flash rate... clearly
+	// increases" example). Placeholder-quality (MISSION.md) - presentation only, not
+	// asserted by the automation test (see GetAttackTelegraphStage() above instead).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0"))
+	float EarlyPulseFrequencyHz = 2.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0"))
+	float MidPulseFrequencyHz = 4.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0"))
+	float ImminentPulseFrequencyHz = 8.0f;
+
 	// Defaults to /Engine/EngineSounds/WhiteNoise (set in the constructor via
 	// ConstructorHelpers::FObjectFinder, same pattern as MeshComponent's
 	// SphereMeshFinder below) so issue #33's "a distinct sound effect plays" AC is met
@@ -96,6 +136,13 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Bomber")
 	FOnBomberExploded OnBomberExploded;
 
+	// Only meaningful while GetEnemyState() == Attack (or was, for the most recently
+	// entered attack); retains its last value otherwise - same "stale read, guarded
+	// by state" contract AEnemyBase::GetRemainingControlledSeconds() documents.
+	// Monotonic forward-only within a single telegraph (Early -> Mid -> Imminent,
+	// never regresses); reset to Early on each fresh OnAttackEntry().
+	EBomberTelegraphStage GetAttackTelegraphStage() const { return CurrentTelegraphStage; }
+
 protected:
 	virtual float GetAttackRangeUnits() const override;
 	virtual float GetMovementSpeedUnitsPerSecond() const override;
@@ -107,9 +154,11 @@ protected:
 private:
 	void AdvanceAttackTelegraph(float DeltaSeconds);
 	void TriggerExplosion();
+	void UpdateTelegraphEscalation();
 
 	float RemainingTelegraphSeconds = 0.0f;
 	bool bExplodedForCurrentAttack = false;
+	EBomberTelegraphStage CurrentTelegraphStage = EBomberTelegraphStage::Early;
 
 	// Test-visible via the existing FKrowdKontrolBomberEnemyTest friend grant above -
 	// set by OnAttackEntry() when AttackTellSound resolves, so the Automation test can
