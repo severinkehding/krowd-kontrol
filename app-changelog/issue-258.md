@@ -113,6 +113,49 @@ ability-roster, enemy-roster, engine/dimensionality, networking, or `app`-tracki
 invariant is touched — this only adds alternate key bindings to already-existing
 abilities via already-existing routing.
 
+## E2E test environment (pass-1 fix)
+
+Pass-1's E2E holdout could not verify the 5 new key bindings route through the
+existing `UAbilityCastComponent::TryCastAbility` entry point (rather than some
+forked path) because the only Editor session it could reach had loaded a blank
+`Untitled` level with a stock `DefaultPawn` — there was no `FlatCamera3DPrototypePawn`
+or enemy target present to press LMB/RMB/Q/E/MMB against and observe a cast.
+
+Root cause: `[/Script/EngineSettings.GameMapsSettings]` in
+`app/Config/DefaultEngine.ini` had no `EditorStartupMap`, so a freshly-launched
+Editor (as `scripts/ue_editor_launch_and_wait.sh` does before every E2E holdout run)
+opened whatever blank level the Editor defaults to rather than a populated one.
+`app/Content/Maps/L_Level01.umap` already exists and contains a
+`FlatCamera3DPrototypePawn` plus 6 enemy actors (3 `BomberEnemy`, 1 `RunnerEnemy`, 2
+`TrooperEnemy`) — the smallest of this project's populated gameplay levels with both
+a player pawn and enemy targets — so pointing `EditorStartupMap` at it, rather than
+adding a new level, is the minimal fix.
+
+Like `DefaultInput.ini`, `DefaultEngine.ini` has no `app-source-tracked/` mirror
+(D-009 only mirrors `.h`/`.cpp`/`.Build.cs`), so this before/after excerpt is the only
+diff-visible record of the change:
+
+Before:
+
+```ini
+[/Script/EngineSettings.GameMapsSettings]
+GameDefaultMap=/Engine/Maps/Templates/OpenWorld
+GlobalDefaultGameMode=/Script/KrowdKontrol.KrowdKontrolGameMode
+```
+
+After:
+
+```ini
+[/Script/EngineSettings.GameMapsSettings]
+GameDefaultMap=/Engine/Maps/Templates/OpenWorld
+GlobalDefaultGameMode=/Script/KrowdKontrol.KrowdKontrolGameMode
+EditorStartupMap=/Game/Maps/L_Level01
+```
+
+This only changes which level the Editor opens on a fresh launch — it does not touch
+`GameDefaultMap` (packaged/PIE-without-override runtime start) or any gameplay code,
+so it carries no MISSION.md Hard Invariant risk.
+
 ---
 
 The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
