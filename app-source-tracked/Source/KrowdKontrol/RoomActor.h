@@ -6,6 +6,7 @@
 #include "RoomActor.generated.h"
 
 class APlaceholderTargetZoneActor;
+class ATargetZone;
 class UStaticMeshComponent;
 class AEnemyBase;
 
@@ -49,6 +50,19 @@ public:
 	AActor* AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> MarkerClass = nullptr);
 
 	const TArray<FRoomTargetZone>& GetTargetZones() const { return TargetZones; }
+
+	// Self-heals a colour-tagged ATargetZone attached to each already-placed marker
+	// in TargetZones that doesn't have one yet (issue #211) - the code-only path for
+	// rooms placed/serialized before this class carried banking behaviour, mirroring
+	// APlaceholderTargetZoneActor::EnsureBeaconHierarchy()'s "unconditionally re-check
+	// and fix, safe to call more than once" shape. Called automatically from
+	// BeginPlay(); exposed publicly (and made idempotent) so callers - including the
+	// Automation Framework test - can trigger it deterministically without needing to
+	// drive the engine's full actor BeginPlay lifecycle, same rationale
+	// URoomEnemyBudgetController::InitializeRoom() documents for its own public
+	// idempotent entry point.
+	UFUNCTION(BlueprintCallable, Category = "Room")
+	void EnsureBankingZonesWired();
 
 	// Enemies this room must clear before its gated door(s) open. Auto-discovered in
 	// BeginPlay via nearest-room-by-distance over every AEnemyBase in the world (issue
@@ -121,16 +135,21 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
-	// Bound to each owned enemy's OnEnemyBanked.
+	// Routes a banked regular enemy into its own TransitionToBanked() - the "room-
+	// scope owner" subscriber the issue's Ask #3 calls out as an acceptable
+	// alternative to the zone subscribing to itself. Deliberately does NOT call
+	// URoomEnemyBudgetController::NotifyEnemyBanked() - that integration is separate,
+	// out-of-scope future work per RoomEnemyBudgetController.h's own comment.
+	UFUNCTION()
+	void HandleZoneActorBanked(AActor* BankedActor);
+
 	UFUNCTION()
 	void HandleOwnedEnemyBanked();
 
-	// Bound to each owned enemy's AActor::OnDestroyed - a room whose last un-banked
-	// enemy is destroyed by something other than banking (e.g. editor/engine-level
-	// destruction) still re-evaluates and opens its gated door instead of soft-locking.
-	// AActor::OnDestroyed fires synchronously while the actor is still IsValid() (not
-	// yet garbage), which is why IsRoomCleared() also checks IsActorBeingDestroyed(),
-	// not just enemy state.
+	// Bound to each owned enemy's AActor::OnDestroyed so a room whose last un-banked
+	// enemy is destroyed by something other than banking (Hard Invariant #2 forbids
+	// gameplay code from doing this today, but editor/engine-level destruction is still
+	// possible) still re-evaluates and opens its gated door, instead of soft-locking.
 	UFUNCTION()
 	void HandleOwnedEnemyDestroyed(AActor* DestroyedActor);
 

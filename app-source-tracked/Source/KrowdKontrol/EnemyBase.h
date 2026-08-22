@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "AbilitySlot.h"
 #include "ThreatState.h"
+#include "Herdable.h"
 #include "EnemyBase.generated.h"
 
 class UPlayerEnergyComponent;
@@ -44,7 +45,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyControlledExpired);
 // Banked, never a kill" guarantee. Abstract: never placed/spawned directly, only
 // subclassed. See issue #12.
 UCLASS(Abstract)
-class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
+class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public IHerdable
 {
 	GENERATED_BODY()
 
@@ -98,6 +99,18 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState
 	// detection. Non-transitive - see MusicSubsystem.h's friend-class comment.
 	friend class FKrowdKontrolPunishmentArbitrationComponentTest;
 
+	// Same grant, for the IHerdable coverage test (issue #211), which drives
+	// AEnemyBaseTestActor through Idle->Alert via the private TickCheckDetection
+	// before calling the public ReceiveControl()/TransitionToBanked() to reach
+	// Controlled/Banked. Non-transitive - see MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolEnemyBaseHerdableTest;
+
+	// Same grant, for the ARoomActor banking-wiring end-to-end test (issue #211),
+	// which drives a real concrete AEnemyBase subclass through Idle->Alert via the
+	// private TickCheckDetection before ReceiveControl(), to prove a physical zone
+	// overlap reaches Banked through the real OnActorBanked->TransitionToBanked wire.
+	friend class FKrowdKontrolRoomActorBankingWiringTest;
+
 	// Same grant, for the room-door-gating test (issue #218), which drives real
 	// AEnemyBase subclasses through Idle->Alert via the private TickCheckDetection
 	// before ReceiveControl()/TransitionToBanked(), to prove a door's gate opens/closes
@@ -112,6 +125,17 @@ public:
 	// where the enemy is actively engaged, not just mid-attack. Idle and Banked both
 	// read as "Idle" - not yet aggroed, or pacified. See ThreatState.h.
 	virtual EThreatState GetThreatState() const override;
+
+	// IHerdable (issue #79/#211): IsControlled() reads the same CurrentState the
+	// public GetEnemyState() accessor exposes - Controlled is the one state where an
+	// ATargetZone should recognize this actor as bankable. GetHerdColourTag() reads
+	// through AbilityData::Get(ControllingAbility) rather than a local switch, so the
+	// ability<->colour mapping has exactly one source of truth (AbilityData.cpp).
+	// Both inherit ControllingAbility's own "stale read, guarded by state" contract -
+	// GetHerdColourTag() is only meaningful while IsControlled() is true, same as
+	// GetControllingAbility() itself already documents.
+	virtual bool IsControlled() const override;
+	virtual FName GetHerdColourTag() const override;
 
 	// Fires exactly once, on the transition into Banked.
 	UPROPERTY(BlueprintAssignable, Category = "Enemy")

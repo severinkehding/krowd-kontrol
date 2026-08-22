@@ -1,6 +1,8 @@
 #include "RoomActor.h"
 #include "PlaceholderTargetZoneActor.h"
+#include "TargetZone.h"
 #include "EnemyBase.h"
+#include "AbilityData.h"
 #include "Engine/World.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -107,6 +109,7 @@ AActor* ARoomActor::AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> Mark
 void ARoomActor::BeginPlay()
 {
 	Super::BeginPlay();
+	EnsureBankingZonesWired();
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -146,22 +149,95 @@ ARoomActor* ARoomActor::FindNearestRoom(const AActor* Actor, const TArray<ARoomA
 	return Nearest;
 }
 
-void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
+void ARoomActor::EnsureBankingZonesWired()
 {
-	if (!IsValid(Enemy))
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("ARoomActor: AddOwnedEnemy() called on '%s' with an invalid Enemy - ignoring."),
-			*GetNameSafe(this));
-		return;
-	}
-	if (OwnedEnemies.Contains(Enemy))
+	UWorld* World = GetWorld();
+	if (!World)
 	{
 		return;
 	}
-	OwnedEnemies.Add(Enemy);
-	BindOwnedEnemyDelegate(Enemy);
-	OnRoomClearedStateChanged.Broadcast();
+
+	// AbilityData::GetAll() is the single source of truth for which ability counters
+	// which EEnemyType (FAbilityData::CounteredEnemyType, AbilityData.h:47-51) - build
+	// a lookup once rather than re-deriving it per TargetZones entry below.
+	TArray<FAbilityData> AllAbilities = AbilityData::GetAll();
+
+	for (const FRoomTargetZone& Zone : TargetZones)
+	{
+		if (!Zone.MarkerActor)
+		{
+			continue;
+		}
+
+		// Idempotency check: skip *spawning* a marker that already has an attached
+		// ATargetZone, so repeated calls (e.g. from a test that also drives BeginPlay)
+		// never double-spawn - same "safe to call more than once" contract
+		// EnsureBeaconHierarchy() establishes for the sibling self-heal pattern this
+		// mirrors. This must not also skip *binding*: a zone can be attached to a
+		// marker through a path other than this function (e.g. hand-placed by a level
+		// designer), in which case its OnActorBanked delegate was never bound - so any
+		// already-attached zone still gets AddUniqueDynamic'd below before the loop
+		// moves on, using the same idempotent-bind idiom TargetZone.cpp:25 already
+		// establishes for this codebase.
+		TArray<AActor*> AttachedActors;
+		Zone.MarkerActor->GetAttachedActors(AttachedActors);
+		ATargetZone* ExistingZone = nullptr;
+		for (AActor* Attached : AttachedActors)
+		{
+			if (ATargetZone* AttachedZone = Cast<ATargetZone>(Attached))
+			{
+				ExistingZone = AttachedZone;
+				break;
+			}
+		}
+		if (ExistingZone)
+		{
+			ExistingZone->OnActorBanked.AddUniqueDynamic(this, &ARoomActor::HandleZoneActorBanked);
+			continue;
+		}
+
+		// Resolve this marker's EnemyType to the one non-Stun ability that counters
+		// it (Sleep<->SN_1PR, Root<->TR_UPR, Fear<->B0_0MR, Snare<->RU_NNR - see
+		// AbilityData.cpp), then use that ability's ColourTag. A marker whose
+		// EnemyType has no countering ability entry (should not happen given the 4
+		// locked types each have exactly one counter) is left NAME_None, matching
+		// ATargetZone::ZoneColourTag's own safe default.
+		FName ResolvedColourTag = NAME_None;
+		for (const FAbilityData& AbilityEntry : AllAbilities)
+		{
+			if (!AbilityEntry.bIsColourNeutral && AbilityEntry.CounteredEnemyType == Zone.EnemyType)
+			{
+				ResolvedColourTag = AbilityEntry.ColourTag;
+				break;
+			}
+		}
+
+		ATargetZone* BankingZone = World->SpawnActor<ATargetZone>(
+			Zone.MarkerActor->GetActorLocation(), Zone.MarkerActor->GetActorRotation());
+		if (!BankingZone)
+		{
+			continue;
+		}
+
+		// Attach the banking zone to the marker (issue #211's literal ask) rather than
+		// to this room - KeepWorldTransform since SpawnActor above already placed it
+		// at the marker's world location/rotation.
+		BankingZone->AttachToActor(Zone.MarkerActor, FAttachmentTransformRules::KeepWorldTransform);
+		// Colour stays as metadata (visuals/bonus); acceptance is type-keyed
+		// (operator ruling 2026-08-22): this pen takes its own enemy type only.
+		BankingZone->ZoneColourTag = ResolvedColourTag;
+		BankingZone->bAcceptAnyEnemyType = false;
+		BankingZone->ZoneEnemyType = Zone.EnemyType;
+		BankingZone->OnActorBanked.AddUniqueDynamic(this, &ARoomActor::HandleZoneActorBanked);
+	}
+}
+
+void ARoomActor::HandleZoneActorBanked(AActor* BankedActor)
+{
+	if (AEnemyBase* Enemy = Cast<AEnemyBase>(BankedActor))
+	{
+		Enemy->TransitionToBanked();
+	}
 }
 
 bool ARoomActor::IsRoomCleared() const
@@ -188,6 +264,24 @@ void ARoomActor::BindOwnedEnemyDelegate(AEnemyBase* Enemy)
 		Enemy->OnEnemyBanked.AddUniqueDynamic(this, &ARoomActor::HandleOwnedEnemyBanked);
 		Enemy->OnDestroyed.AddUniqueDynamic(this, &ARoomActor::HandleOwnedEnemyDestroyed);
 	}
+}
+
+void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
+{
+	if (!IsValid(Enemy))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ARoomActor: AddOwnedEnemy() called on '%s' with an invalid Enemy - ignoring."),
+			*GetNameSafe(this));
+		return;
+	}
+	if (OwnedEnemies.Contains(Enemy))
+	{
+		return;
+	}
+	OwnedEnemies.Add(Enemy);
+	BindOwnedEnemyDelegate(Enemy);
+	OnRoomClearedStateChanged.Broadcast();
 }
 
 void ARoomActor::HandleOwnedEnemyBanked()
