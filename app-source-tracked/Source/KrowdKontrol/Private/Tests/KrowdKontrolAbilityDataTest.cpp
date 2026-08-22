@@ -120,6 +120,12 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// (6) Default-constructed FAbilityData's TargetType is SelfCircle - not reachable
+	// through AbilityData::Get()/GetAll() today (all 5 rows override it explicitly),
+	// but pins the value so a future change to the default isn't silent.
+	TestEqual(TEXT("Default FAbilityData TargetType should be SelfCircle"),
+		static_cast<uint8>(FAbilityData{}.TargetType), static_cast<uint8>(EAbilityTargetType::SelfCircle));
+
 	return true;
 }
 
