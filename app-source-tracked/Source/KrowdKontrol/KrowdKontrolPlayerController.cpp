@@ -4,8 +4,11 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "EnergyMeterWidget.h"
 #include "OnScreenPromptWidget.h"
+#include "QuestTrackerWidget.h"
+#include "BriefingCardWidget.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityUnlockLevelSubsystem.h"
+#include "LevelBriefingSubsystem.h"
 #include "AbilityUnlockPromptComponent.h"
 #include "AbilityLockoutComponent.h"
 #include "PlayerEnergyComponent.h"
@@ -19,12 +22,14 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "InputCoreTypes.h"
 
 void AKrowdKontrolPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 	CreateHUDWidgets();
 	RefreshTargetZoneBeacons();
+	RetryPendingBriefing();
 	// If the pawn was already possessed before BeginPlay ran (order isn't guaranteed
 	// relative to AutoPossessPlayer), wire it now instead of waiting for a
 	// possession that already happened.
@@ -69,6 +74,56 @@ void AKrowdKontrolPlayerController::CreateHUDWidgets()
 		{
 			OnScreenPromptWidgetInstance->AddToViewport();
 		}
+	}
+	if (!QuestTrackerWidgetInstance)
+	{
+		QuestTrackerWidgetInstance = CreateWidget<UQuestTrackerWidget>(this, UQuestTrackerWidget::StaticClass());
+		if (QuestTrackerWidgetInstance)
+		{
+			QuestTrackerWidgetInstance->AddToViewport();
+		}
+	}
+	if (!BriefingCardWidgetInstance)
+	{
+		BriefingCardWidgetInstance = CreateWidget<UBriefingCardWidget>(this, UBriefingCardWidget::StaticClass());
+		if (BriefingCardWidgetInstance)
+		{
+			BriefingCardWidgetInstance->AddToViewport();
+		}
+	}
+	// Covers the race where ULevelBriefingSubsystem::HandleLevelBegin() already
+	// called ShowLevelBriefing() - buffering the row because BriefingCardWidgetInstance
+	// didn't exist yet - before CreateHUDWidgets() ran (same shape as the
+	// OnScreenPromptWidgetInstance flush above, issue #235).
+	if (bHasPendingLevelBriefing && BriefingCardWidgetInstance)
+	{
+		bHasPendingLevelBriefing = false;
+		BriefingCardWidgetInstance->ShowBriefing(PendingLevelBriefingRow);
+	}
+}
+
+void AKrowdKontrolPlayerController::ShowLevelBriefing(const FLevelBriefingRow& Row)
+{
+	if (!BriefingCardWidgetInstance)
+	{
+		bHasPendingLevelBriefing = true;
+		PendingLevelBriefingRow = Row;
+		return;
+	}
+	BriefingCardWidgetInstance->ShowBriefing(Row);
+}
+
+void AKrowdKontrolPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+	InputComponent->BindKey(EKeys::AnyKey, IE_Pressed, this, &AKrowdKontrolPlayerController::HandleBriefingDismissInput);
+}
+
+void AKrowdKontrolPlayerController::HandleBriefingDismissInput()
+{
+	if (BriefingCardWidgetInstance && BriefingCardWidgetInstance->IsBriefingVisible())
+	{
+		BriefingCardWidgetInstance->DismissBriefing();
 	}
 }
 
@@ -198,6 +253,14 @@ void AKrowdKontrolPlayerController::RetryPendingAbilityUnlock(APawn* InPawn)
 	if (UAbilityUnlockLevelSubsystem* UnlockSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UAbilityUnlockLevelSubsystem>() : nullptr)
 	{
 		UnlockSubsystem->RetryPendingUnlockForPawn(InPawn);
+	}
+}
+
+void AKrowdKontrolPlayerController::RetryPendingBriefing()
+{
+	if (ULevelBriefingSubsystem* BriefingSubsystem = GetWorld() ? GetWorld()->GetSubsystem<ULevelBriefingSubsystem>() : nullptr)
+	{
+		BriefingSubsystem->RetryPendingBriefingForController(this);
 	}
 }
 

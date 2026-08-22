@@ -25,7 +25,7 @@ Two connected pieces:
 
 ## Requirements
 
-### REQ-1: Pre-level briefing card (P0)
+### REQ-1: Pre-level briefing card (P0) — ✅ implemented, issue #246 / PR #272
 - On level-begin (the merged `ULevelLifecycleSubsystem::OnLevelBegin`), show a
   briefing overlay: level name, the objective in imperative one-liners (e.g.
   "PACIFY ALL 8 ROBOTS — STUN THEM, HERD THEM TO THEIR PENS"), and any newly

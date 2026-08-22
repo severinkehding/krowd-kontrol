@@ -4,11 +4,14 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "LevelBriefingData.h"
 #include "KrowdKontrolPlayerController.generated.h"
 
 class UAbilityCooldownTrayWidget;
 class UEnergyMeterWidget;
 class UOnScreenPromptWidget;
+class UBriefingCardWidget;
+class UQuestTrackerWidget;
 class APlaceholderTargetZoneActor;
 class ULevelClearTimeSubsystem;
 class ULevelFailComponent;
@@ -34,6 +37,13 @@ class KROWDKONTROL_API AKrowdKontrolPlayerController : public APlayerController
 	friend class FKrowdKontrolLevelRestartTest;
 	friend class FKrowdKontrolBossCheckpointRestartTest;
 
+	// Grants the Automation Framework test direct access to HandleBriefingDismissInput()
+	// (issue #246) - the real entry point bound to EKeys::AnyKey in SetupInputComponent(),
+	// so the test exercises the actual dismiss-input handler (including its
+	// IsBriefingVisible() no-op guard) rather than bypassing it via a direct
+	// DismissBriefing() call on the widget.
+	friend class FKrowdKontrolLevelBriefingSubsystemTest;
+
 public:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
 	TObjectPtr<UAbilityCooldownTrayWidget> AbilityTrayWidget;
@@ -48,6 +58,25 @@ public:
 	// consumers reach out to the controller instead (the opposite direction).
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
 	TObjectPtr<UOnScreenPromptWidget> OnScreenPromptWidgetInstance;
+
+	// Foundational quest-tracker HUD widget (issue #247, PRD "Mission Briefing & Live
+	// Quest Tracker" REQ-2) - like OnScreenPromptWidgetInstance, nothing in
+	// WireWidgetsToPawn() binds a pawn component to this widget; it self-binds to
+	// ULevelLifecycleSubsystem::OnLevelBegin instead (see QuestTrackerWidget.h).
+	UPROPERTY(BlueprintReadOnly, Category = "HUD")
+	TObjectPtr<UQuestTrackerWidget> QuestTrackerWidgetInstance;
+
+	// Pre-level briefing card (issue #246). Populated on
+	// ULevelLifecycleSubsystem::OnLevelBegin via ShowLevelBriefing() below.
+	UPROPERTY(BlueprintReadOnly, Category = "HUD")
+	TObjectPtr<UBriefingCardWidget> BriefingCardWidgetInstance;
+
+	// Called by ULevelBriefingSubsystem::HandleLevelBegin. If BriefingCardWidgetInstance
+	// doesn't exist yet (OnLevelBegin fires before CreateHUDWidgets(), same race issue
+	// #235 fixed for OnScreenPromptWidgetInstance), buffers Row and CreateHUDWidgets()
+	// flushes it once the widget is live.
+	UFUNCTION(BlueprintCallable, Category = "HUD")
+	void ShowLevelBriefing(const FLevelBriefingRow& Row);
 
 	// Beacon hook (issue #132's third scoped deliverable, PRD 13 REQ-6): the live
 	// world-space target-zone beacons, collected at BeginPlay and re-collectable via
@@ -92,11 +121,25 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void SetupInputComponent() override;
 
 private:
 	// Constructs all HUD widgets and adds them to the viewport. Idempotent - a repeat
 	// call (e.g. accidental double BeginPlay) is a no-op if the widgets already exist.
 	void CreateHUDWidgets();
+
+	// Bound to EKeys::AnyKey in SetupInputComponent() (issue #246): dismisses the
+	// briefing card on any player input, if one is currently showing. No-ops
+	// otherwise, so a stray keypress with no briefing up is harmless.
+	UFUNCTION()
+	void HandleBriefingDismissInput();
+
+	// Set true when ShowLevelBriefing() arrives before BriefingCardWidgetInstance
+	// exists (OnLevelBegin racing CreateHUDWidgets(), same shape as
+	// UAbilityUnlockPromptComponent's FlushPendingPrompts() race, issue #235).
+	// CreateHUDWidgets() flushes this once the widget is live.
+	bool bHasPendingLevelBriefing = false;
+	FLevelBriefingRow PendingLevelBriefingRow;
 
 	// Binds the newly-possessed pawn's UAbilityUnlockComponent/UPlayerEnergyComponent
 	// (if present - FindComponentByClass returns nullptr otherwise, and both Bind*
@@ -185,6 +228,15 @@ private:
 	// OnPossess(), mirroring the same dual-call-site shape. No-ops if no unlock is
 	// pending or no UAbilityUnlockLevelSubsystem exists.
 	void RetryPendingAbilityUnlock(APawn* InPawn);
+
+	// Forwards to ULevelBriefingSubsystem::RetryPendingBriefingForController(), in
+	// case this level's OnLevelBegin found a row but no AKrowdKontrolPlayerController
+	// yet (e.g. the controller itself wasn't spawned/registered until after
+	// OnLevelBegin fired). Only needs calling from BeginPlay() - unlike
+	// RetryPendingAbilityUnlock's pawn-possession hazard, this controller instance is
+	// guaranteed to exist by the time its own BeginPlay() runs. No-ops if no briefing
+	// is pending or no ULevelBriefingSubsystem exists.
+	void RetryPendingBriefing();
 
 	// Never reset back to false once set - moot in the real game-world path, since a
 	// successful OpenLevel() destroys this controller along with the rest of the old
