@@ -93,6 +93,55 @@ deduping per-actor at the source) was explicitly scoped out by the review itself
 out-of-scope for this issue — the widget-side mitigation above covers it without
 touching `TargetZone`'s own already-noted, already-deferred gap.
 
+## Pass-1 validation fixes (cycle 2)
+
+Applied in response to PR #271 validation pass 1's `request_changes` verdict (a
+high-severity code-review finding plus a live-PIE E2E failure):
+
+- **`TotalEnemyCount` missed wave-spawned enemies** (`QuestTrackerWidget.h`/`.cpp`) —
+  `HandleLevelBegin()`'s one-shot `TActorIterator<AEnemyBase>` sweep ran before
+  `ARootSurgeBoss`'s `UWaveSpawnerComponent` had spawned any of its accelerated-cadence
+  `TR-UPR` adds (3-9s into the fight), so those adds were never added to the
+  denominator despite being bankable — an impossible "Robots penned: 6/5" once banked.
+  Fixed by binding a new `HandleWaveSpawned()` handler to every live
+  `UWaveSpawnerComponent::OnWaveSpawned` (discovered the same
+  `TActorIterator<AActor>` + `GetComponents()` way
+  `ULevelLifecycleSubsystem::RefreshLevelClearState()` already does, to stay
+  single-world-safe under the Automation Framework), which re-sweeps
+  `TActorIterator<AEnemyBase>` via a new shared `RecountTotalEnemies()` helper. A
+  fresh sweep (not an incremented counter) is safe because `ATargetZone` never
+  destroys a banked actor (`TargetZone.h`'s own documented contract), so the count is
+  monotonic non-decreasing. Covered by new test case (10).
+- **Widget stuck at "Robots penned: 0/0" in live PIE** (`QuestTrackerWidget.h`/`.cpp`,
+  plus a new `ULevelLifecycleSubsystem::HasLevelBegun()` accessor in
+  `LevelLifecycleSubsystem.h`) — root cause found by inspection, since this factory
+  worktree has no live Unreal MCP connection to reproduce the holdout's PIE session
+  directly: `AKrowdKontrolPlayerController::CreateHUDWidgets()` (where this widget is
+  constructed and self-subscribes to `OnLevelBegin` from `NativeOnInitialized()`) is
+  called from the controller's own `BeginPlay()`, and this file's own header comment
+  wrongly assumed `OnLevelBegin` "fires only after every actor's `BeginPlay()` has
+  already completed." That assumption is contradicted by an already-documented,
+  already-fixed instance of the exact same race in this codebase:
+  `AKrowdKontrolPlayerController::WireWidgetsToPawn()`'s comment and
+  `UAbilityUnlockPromptComponent::FlushPendingPrompts()`'s comment (issue #235) both
+  record `UAbilityUnlockLevelSubsystem::HandleLevelBegin()` broadcasting before
+  `CreateHUDWidgets()` ran, in real gameplay. Since `ULevelLifecycleSubsystem::OnLevelBegin`
+  only ever broadcasts once per world, a widget that subscribes after that already
+  happened would never receive it — exactly the holdout's "stuck at 0/0 for several
+  minutes despite 6 real enemies" observation, and not something the existing
+  automation test could catch, since it always creates the widget *before* manually
+  firing `OnWorldBeginPlay()`. Fixed with the same "late subscriber catches up" shape
+  issue #235 already established: `ULevelLifecycleSubsystem` gains a `HasLevelBegun()`
+  query (mirroring its own private `bHasFiredLevelBegin`), and
+  `BindToLevelLifecycle()` calls `HandleLevelBegin()` directly if that's already true
+  at bind time. Covered by new test case (11), which reverses the existing tests'
+  create-widget-then-fire-OnWorldBeginPlay order specifically to exercise this path.
+  **Not independently re-verified live in PIE** — this factory worktree cannot reach
+  the Unreal MCP server (a known, separate infrastructure gap), so this fix rests on
+  the in-repo precedent above plus the new automation coverage, not a fresh holdout
+  pass. Flagging for pass-2/human attention per the fix-PR procedure's honesty
+  requirement.
+
 ## Validation evidence
 
 Direct `UnrealBuildTool` invocation (`KrowdKontrolEditor Win64 Development`):

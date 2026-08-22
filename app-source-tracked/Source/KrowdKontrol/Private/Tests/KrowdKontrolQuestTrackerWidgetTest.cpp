@@ -10,7 +10,13 @@
 // KrowdKontrolEnergyMeterWidgetTest.cpp section 9b documents), and (6) its chrome
 // colours come from HUDChromeColours, mirroring KrowdKontrolEnergyMeterWidgetTest.cpp's
 // own in-file chrome check rather than KrowdKontrolReservedGameplayColoursTest.cpp's
-// shared audit (see plan.md's Alternatives Rejected for why).
+// shared audit (see plan.md's Alternatives Rejected for why). Pass-1 validation fix
+// coverage: (10) a UWaveSpawnerComponent present before OnLevelBegin but whose wave
+// lands afterward (mirroring ARootSurgeBoss) still gets counted into TotalEnemyCount
+// when OnWaveSpawned fires, and (11) a widget created after OnLevelBegin already
+// broadcast (AKrowdKontrolPlayerController::CreateHUDWidgets() racing
+// ULevelLifecycleSubsystem::OnWorldBeginPlay(), issue #235's already-documented hazard)
+// still catches up to the real enemy count instead of staying stuck at "0/0".
 //
 // World->InitializeActorsForPlay(FURL()) is called up front, before spawning any
 // actor, purely defensively: KrowdKontrolDualZoneBossTest.cpp's own file comment
@@ -26,6 +32,7 @@
 #include "QuestTrackerWidget.h"
 #include "EnemyBaseTestActor.h"
 #include "TargetZone.h"
+#include "WaveSpawnerComponent.h"
 #include "LevelLifecycleSubsystem.h"
 #include "HUDChromeColours.h"
 #include "Blueprint/WidgetTree.h"
@@ -218,6 +225,101 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 					SecondZone->OnActorBanked.Broadcast(SecondDummyActor);
 					TestEqual(TEXT("Banked count should sum broadcasts from both zones"), MultiZoneWidget->GetBankedCount(), 2);
 				}
+			}
+		}
+	}
+
+	// (10) Wave-spawner recount (pass-1 validation fix): a UWaveSpawnerComponent that
+	// exists before OnLevelBegin (mirroring ARootSurgeBoss's CreateDefaultSubobject
+	// spawner) but spawns its adds afterward must still get counted into
+	// TotalEnemyCount when its OnWaveSpawned fires - otherwise the denominator
+	// undercounts once those adds are bankable, producing an impossible "banked >
+	// total" display.
+	UWorld* WaveSpawnerWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the wave-spawner test"), WaveSpawnerWorld))
+	{
+		WaveSpawnerWorld->InitializeActorsForPlay(FURL());
+
+		constexpr int32 InitialEnemies = 2;
+		for (int32 Index = 0; Index < InitialEnemies; ++Index)
+		{
+			WaveSpawnerWorld->SpawnActor<AEnemyBaseTestActor>();
+		}
+
+		// Spawner exists before OnLevelBegin, same as ARootSurgeBoss's
+		// WaveSpawnerComponent (a CreateDefaultSubobject, present from construction) -
+		// only its wave actually landing is delayed.
+		AActor* SpawnerOwner = WaveSpawnerWorld->SpawnActor<AActor>();
+		UWaveSpawnerComponent* Spawner = TestNotNull(TEXT("Spawner owner should spawn into the wave-spawner test World"), SpawnerOwner)
+			? NewObject<UWaveSpawnerComponent>(SpawnerOwner)
+			: nullptr;
+		if (TestNotNull(TEXT("UWaveSpawnerComponent should construct"), Spawner))
+		{
+			Spawner->RegisterComponent();
+
+			constexpr int32 WaveEnemies = 3;
+			FWaveEntry Entry;
+			Entry.EnemyClass = AEnemyBaseTestActor::StaticClass();
+			Entry.Count = WaveEnemies;
+			Entry.DelaySeconds = 0.0f;
+			Spawner->Waves = { Entry };
+
+			UQuestTrackerWidget* WaveSpawnerWidget = CreateWidget<UQuestTrackerWidget>(WaveSpawnerWorld, UQuestTrackerWidget::StaticClass());
+			if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the wave-spawner test"), WaveSpawnerWidget))
+			{
+				ULevelLifecycleSubsystem* WaveSpawnerLifecycleSubsystem = WaveSpawnerWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+				if (TestNotNull(TEXT("Wave-spawner test World should auto-instantiate ULevelLifecycleSubsystem"), WaveSpawnerLifecycleSubsystem))
+				{
+					WaveSpawnerLifecycleSubsystem->OnWorldBeginPlay(*WaveSpawnerWorld);
+					TestEqual(TEXT("Total enemy count should be the initial sweep before any wave spawns"),
+						WaveSpawnerWidget->GetTotalEnemyCount(), InitialEnemies);
+
+					// The wave lands after OnLevelBegin, same as ARootSurgeBoss's
+					// accelerated-cadence adds arriving 3-9s into the fight.
+					Spawner->StartWaves();
+					TestEqual(TEXT("Total enemy count should include the wave's adds after OnWaveSpawned"),
+						WaveSpawnerWidget->GetTotalEnemyCount(), InitialEnemies + WaveEnemies);
+					TestEqual(TEXT("Display text should reflect the updated total after a wave spawns"),
+						WaveSpawnerWidget->GetQuestTrackerDisplayText().ToString(),
+						FString::Printf(TEXT("Robots penned: 0/%d"), InitialEnemies + WaveEnemies));
+				}
+			}
+		}
+	}
+
+	// (11) Late-subscribe catch-up (pass-1 validation fix): if OnLevelBegin already
+	// broadcast before this widget existed to subscribe -
+	// AKrowdKontrolPlayerController::CreateHUDWidgets()'s order relative to
+	// ULevelLifecycleSubsystem::OnWorldBeginPlay() isn't guaranteed in real gameplay,
+	// same documented hazard as UAbilityUnlockLevelSubsystem/OnScreenPromptWidget
+	// (issue #235) - the widget must still pick up the current enemy count immediately
+	// at construction, not stay stuck at "Robots penned: 0/0" forever since
+	// OnLevelBegin never re-fires.
+	UWorld* LateSubscribeWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the late-subscribe test"), LateSubscribeWorld))
+	{
+		LateSubscribeWorld->InitializeActorsForPlay(FURL());
+
+		constexpr int32 LateSubscribeEnemies = 6;
+		for (int32 Index = 0; Index < LateSubscribeEnemies; ++Index)
+		{
+			LateSubscribeWorld->SpawnActor<AEnemyBaseTestActor>();
+		}
+
+		ULevelLifecycleSubsystem* LateSubscribeLifecycleSubsystem = LateSubscribeWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (TestNotNull(TEXT("Late-subscribe test World should auto-instantiate ULevelLifecycleSubsystem"), LateSubscribeLifecycleSubsystem))
+		{
+			// OnLevelBegin fires BEFORE the widget exists - the exact race this fix covers.
+			LateSubscribeLifecycleSubsystem->OnWorldBeginPlay(*LateSubscribeWorld);
+
+			UQuestTrackerWidget* LateSubscribeWidget = CreateWidget<UQuestTrackerWidget>(LateSubscribeWorld, UQuestTrackerWidget::StaticClass());
+			if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the late-subscribe test"), LateSubscribeWidget))
+			{
+				TestEqual(TEXT("A late-created widget should still catch up to the already-broadcast enemy total"),
+					LateSubscribeWidget->GetTotalEnemyCount(), LateSubscribeEnemies);
+				TestEqual(TEXT("A late-created widget's display should not be stuck at 0/0"),
+					LateSubscribeWidget->GetQuestTrackerDisplayText().ToString(),
+					FString::Printf(TEXT("Robots penned: 0/%d"), LateSubscribeEnemies));
 			}
 		}
 	}

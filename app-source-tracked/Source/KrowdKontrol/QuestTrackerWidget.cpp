@@ -2,6 +2,7 @@
 #include "HUDChromeColours.h"
 #include "TargetZone.h"
 #include "EnemyBase.h"
+#include "WaveSpawnerComponent.h"
 #include "LevelLifecycleSubsystem.h"
 #include "EngineUtils.h"
 #include "Blueprint/WidgetTree.h"
@@ -80,6 +81,14 @@ void UQuestTrackerWidget::BindToLevelLifecycle()
 	if (ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>())
 	{
 		LifecycleSubsystem->OnLevelBegin.AddUniqueDynamic(this, &UQuestTrackerWidget::HandleLevelBegin);
+
+		// Late-subscribe catch-up - see this function's header comment and
+		// ULevelLifecycleSubsystem::HasLevelBegun()'s comment for why this widget's
+		// creation isn't guaranteed to precede the broadcast it just subscribed to.
+		if (LifecycleSubsystem->HasLevelBegun())
+		{
+			HandleLevelBegin(NAME_None);
+		}
 	}
 }
 
@@ -91,15 +100,25 @@ void UQuestTrackerWidget::HandleLevelBegin(FName MapName)
 		return;
 	}
 
-	TotalEnemyCount = 0;
-	for (TActorIterator<AEnemyBase> It(World); It; ++It)
-	{
-		++TotalEnemyCount;
-	}
+	RecountTotalEnemies();
 
 	for (TActorIterator<ATargetZone> It(World); It; ++It)
 	{
 		It->OnActorBanked.AddUniqueDynamic(this, &UQuestTrackerWidget::HandleActorBanked);
+	}
+
+	// TActorIterator<AActor> + GetComponents(), not a bare
+	// TObjectIterator<UWaveSpawnerComponent>: same rationale as
+	// ULevelLifecycleSubsystem::RefreshLevelClearState() - avoids picking up a spawner
+	// from another concurrently-loaded Automation test world.
+	for (TActorIterator<AActor> ActorIt(World); ActorIt; ++ActorIt)
+	{
+		TArray<UWaveSpawnerComponent*> Spawners;
+		ActorIt->GetComponents<UWaveSpawnerComponent>(Spawners);
+		for (UWaveSpawnerComponent* Spawner : Spawners)
+		{
+			Spawner->OnWaveSpawned.AddUniqueDynamic(this, &UQuestTrackerWidget::HandleWaveSpawned);
+		}
 	}
 
 	RefreshDisplay();
@@ -115,6 +134,27 @@ void UQuestTrackerWidget::HandleActorBanked(AActor* BankedActor)
 	BankedActors.Add(BankedActor);
 	++BankedCount;
 	RefreshDisplay();
+}
+
+void UQuestTrackerWidget::HandleWaveSpawned(int32 WaveIndex)
+{
+	RecountTotalEnemies();
+	RefreshDisplay();
+}
+
+void UQuestTrackerWidget::RecountTotalEnemies()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TotalEnemyCount = 0;
+	for (TActorIterator<AEnemyBase> It(World); It; ++It)
+	{
+		++TotalEnemyCount;
+	}
 }
 
 void UQuestTrackerWidget::RefreshDisplay()
