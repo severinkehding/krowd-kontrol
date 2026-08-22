@@ -117,6 +117,29 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Room 3 should have exactly 3 enemies (issue #189)"), EnemyCountByRoom.FindRef(SortedRooms[2]), 3);
 	}
 
+	// Issue #218: real-level regression coverage for room/door gating. LoadMap does not
+	// start play, so DispatchBeginPlay() (the public, legal route - see
+	// KrowdKontrolCrowdMasteryBeginPlayWiringTest.cpp for the same pattern; a direct
+	// BeginPlay() call would not compile, it's protected) is required to exercise
+	// ADoorConnectorActor's GatingRoom auto-derivation and ARoomActor's owned-enemy
+	// auto-discovery against this shipped level's actual placed actors - the exact gap
+	// the E2E holdout caught in attempt 1 (PR #228), where correct C++ logic shipped
+	// with GatingRoom=None and empty OwnedEnemies on every real door/room.
+	for (ADoorConnectorActor* Door : Doors)
+	{
+		Door->DispatchBeginPlay();
+		TestNotNull(TEXT("Every real door should resolve a GatingRoom automatically (issue #218)"),
+			Door->GatingRoom.Get());
+	}
+	for (ARoomActor* Room : Rooms)
+	{
+		Room->DispatchBeginPlay();
+		TestTrue(TEXT("Every real room should auto-discover at least one owned enemy (issue #218)"),
+			Room->GetOwnedEnemies().Num() >= 1);
+		TestEqual(TEXT("Auto-discovered OwnedEnemies count should match nearest-room-by-distance (issue #218)"),
+			Room->GetOwnedEnemies().Num(), EnemyCountByRoom.FindRef(Room));
+	}
+
 	return true;
 }
 

@@ -3,6 +3,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/BoxComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -64,6 +65,19 @@ ADoorConnectorActor::ADoorConnectorActor()
 	// Placeholder tuning, not calibrated against any real level's ambient lighting yet.
 	DoorMarkerLightComponent->SetIntensity(2500.0f);
 	DoorMarkerLightComponent->SetAttenuationRadius(250.0f);
+
+	GateBlockingComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("GateBlockingComponent"));
+	GateBlockingComponent->SetupAttachment(DoorConnectorRoot);
+	// Starts open (no collision) - matches bIsGateOpen's default and "ungated until a
+	// GatingRoom is assigned" behaviour; RecomputeConnectorGeometry()/RefreshGateState()
+	// correct this once real room/gating data is available.
+	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Unconfigured primitives default to BlockAllDynamic - reset to Ignore-all first so
+	// the gate only ever blocks the one channel it's meant to (see RefreshGateState()'s
+	// comment below for why that channel is WorldStatic, not Pawn).
+	GateBlockingComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	GateBlockingComponent->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	GateBlockingComponent->SetGenerateOverlapEvents(false);
 }
 
 void ADoorConnectorActor::HideConnectorVisuals()
@@ -71,6 +85,7 @@ void ADoorConnectorActor::HideConnectorVisuals()
 	ConnectorFloorMeshComponent->SetVisibility(false);
 	DoorMarkerMeshComponent->SetVisibility(false);
 	DoorMarkerLightComponent->SetVisibility(false);
+	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void ADoorConnectorActor::RecomputeConnectorGeometry()
@@ -102,6 +117,11 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	DoorMarkerMeshComponent->SetWorldLocation(Midpoint + FVector(0.f, 0.f, DoorMarkerHeight));
 	DoorMarkerMeshComponent->SetVisibility(true);
 	DoorMarkerLightComponent->SetVisibility(true);
+
+	GateBlockingComponent->SetWorldLocation(Midpoint);
+	GateBlockingComponent->SetWorldRotation(Delta.Rotation());
+	GateBlockingComponent->SetBoxExtent(FVector(
+		ConnectorFloorThickness, ConnectorFloorWidth * 0.5f, DoorMarkerHeight));
 }
 
 void ADoorConnectorActor::OnConstruction(const FTransform& Transform)
@@ -114,4 +134,34 @@ void ADoorConnectorActor::BeginPlay()
 {
 	Super::BeginPlay();
 	RecomputeConnectorGeometry();
+
+	if (!GatingRoom && ConnectsValidRooms())
+	{
+		GatingRoom = RoomA->GetActorLocation().X <= RoomB->GetActorLocation().X ? RoomA : RoomB;
+	}
+
+	if (GatingRoom)
+	{
+		GatingRoom->OnRoomClearedStateChanged.AddUniqueDynamic(this, &ADoorConnectorActor::RefreshGateState);
+	}
+
+	RefreshGateState();
+}
+
+void ADoorConnectorActor::RefreshGateState()
+{
+	bIsGateOpen = (GatingRoom == nullptr) || GatingRoom->IsRoomCleared();
+
+	// Root-cause fix (issue #218, attempt 2): the real player pawn's moving collision
+	// component (AFlatCamera3DPrototypePawn::MeshComponent) has never had an explicit
+	// profile set, so it inherits UStaticMeshComponent's engine-default "BlockAll"
+	// profile - object type WorldStatic, not Pawn (FlatCamera3DPrototypePawn.cpp never
+	// calls SetCollisionObjectType/SetCollisionProfileName; RoomActor.cpp's
+	// FloorMeshComponent comment confirms the same default already applies to the level
+	// geometry the player walks on today). Attempt 1 blocked only ECC_Pawn here, which
+	// is a no-op against the real player - QueryOnly still blocks WorldStatic-channel
+	// traces (the constructor's collision-response setup above), so this line only
+	// needs to toggle enabled/disabled, not the per-channel responses.
+	GateBlockingComponent->SetCollisionEnabled(
+		bIsGateOpen ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
 }

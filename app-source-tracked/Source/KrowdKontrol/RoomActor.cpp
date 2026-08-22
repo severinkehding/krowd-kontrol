@@ -1,10 +1,12 @@
 #include "RoomActor.h"
 #include "PlaceholderTargetZoneActor.h"
+#include "EnemyBase.h"
 #include "Engine/World.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "EngineUtils.h"
 
 namespace
 {
@@ -100,4 +102,93 @@ AActor* ARoomActor::AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> Mark
 	TargetZones.Add(TargetZone);
 
 	return MarkerActor;
+}
+
+void ARoomActor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TArray<ARoomActor*> AllRooms;
+	for (TActorIterator<ARoomActor> It(World); It; ++It)
+	{
+		AllRooms.Add(*It);
+	}
+
+	for (TActorIterator<AEnemyBase> It(World); It; ++It)
+	{
+		AEnemyBase* Enemy = *It;
+		if (FindNearestRoom(Enemy, AllRooms) == this)
+		{
+			AddOwnedEnemy(Enemy);
+		}
+	}
+}
+
+ARoomActor* ARoomActor::FindNearestRoom(const AActor* Actor, const TArray<ARoomActor*>& Rooms)
+{
+	ARoomActor* Nearest = nullptr;
+	float NearestDistSq = TNumericLimits<float>::Max();
+	for (ARoomActor* Room : Rooms)
+	{
+		const float DistSq = FVector::DistSquared(Actor->GetActorLocation(), Room->GetActorLocation());
+		if (DistSq < NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			Nearest = Room;
+		}
+	}
+	return Nearest;
+}
+
+void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
+{
+	if (!IsValid(Enemy) || OwnedEnemies.Contains(Enemy))
+	{
+		return;
+	}
+	OwnedEnemies.Add(Enemy);
+	BindOwnedEnemyDelegate(Enemy);
+	OnRoomClearedStateChanged.Broadcast();
+}
+
+bool ARoomActor::IsRoomCleared() const
+{
+	for (const TObjectPtr<AEnemyBase>& Enemy : OwnedEnemies)
+	{
+		// IsActorBeingDestroyed() matters here, not just IsValid(): AActor::OnDestroyed
+		// broadcasts synchronously from inside UWorld::DestroyActor() *before* the actor
+		// is marked garbage, so a HandleOwnedEnemyDestroyed()-triggered re-check would
+		// otherwise still see this un-banked enemy as IsValid() and blocking, and the
+		// door would never actually re-open.
+		if (IsValid(Enemy) && !Enemy->IsActorBeingDestroyed() && Enemy->GetEnemyState() != EEnemyState::Banked)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void ARoomActor::BindOwnedEnemyDelegate(AEnemyBase* Enemy)
+{
+	if (IsValid(Enemy))
+	{
+		Enemy->OnEnemyBanked.AddUniqueDynamic(this, &ARoomActor::HandleOwnedEnemyBanked);
+		Enemy->OnDestroyed.AddUniqueDynamic(this, &ARoomActor::HandleOwnedEnemyDestroyed);
+	}
+}
+
+void ARoomActor::HandleOwnedEnemyBanked()
+{
+	OnRoomClearedStateChanged.Broadcast();
+}
+
+void ARoomActor::HandleOwnedEnemyDestroyed(AActor* DestroyedActor)
+{
+	OnRoomClearedStateChanged.Broadcast();
 }

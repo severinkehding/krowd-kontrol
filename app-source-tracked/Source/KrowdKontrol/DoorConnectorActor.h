@@ -7,6 +7,7 @@
 class ARoomActor;
 class UStaticMeshComponent;
 class UPointLightComponent;
+class UBoxComponent;
 
 // Placeable, hand-authoring-era building block declaring that two rooms are connected
 // by a door (PRD 05 REQ-1/REQ-2, issue #39). "Exactly two rooms" is a structural
@@ -52,6 +53,22 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
 	TObjectPtr<UPointLightComponent> DoorMarkerLightComponent;
 
+	// The room whose OwnedEnemies gate this door. When unset (the common, real-level
+	// case), BeginPlay derives it as whichever of RoomA/RoomB sits closer to the level
+	// entrance (lower world X) - the room this door is the exit from - so real placed
+	// doors (which already carry RoomA/RoomB for their connector visuals) gate correctly
+	// with no additional per-instance authoring. A level author can still hand-set this
+	// to override the heuristic for a future non-linear chain.
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<ARoomActor> GatingRoom;
+
+	// True once GatingRoom is null or GatingRoom->IsRoomCleared(); false (impassable)
+	// otherwise.
+	bool IsGateOpen() const { return bIsGateOpen; }
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<UBoxComponent> GateBlockingComponent;
+
 	// Positions/rotates/scales ConnectorFloorMeshComponent and DoorMarkerMeshComponent/
 	// DoorMarkerLightComponent to span/mark the straight line between RoomA and RoomB's
 	// live GetActorLocation(), or hides both if the door doesn't yet connect two valid,
@@ -71,4 +88,13 @@ private:
 	// zero-length span) so the floor/marker mesh/marker light stay in lockstep without
 	// repeating the same three SetVisibility(false) calls at each call site.
 	void HideConnectorVisuals();
+
+	// Recomputes bIsGateOpen from GatingRoom's IsRoomCleared() and applies it to
+	// GateBlockingComponent's collision. UFUNCTION so it can bind directly to
+	// ARoomActor::OnRoomClearedStateChanged (a dynamic multicast delegate); also called
+	// directly from BeginPlay. Safe/idempotent to call repeatedly.
+	UFUNCTION()
+	void RefreshGateState();
+
+	bool bIsGateOpen = true;
 };
