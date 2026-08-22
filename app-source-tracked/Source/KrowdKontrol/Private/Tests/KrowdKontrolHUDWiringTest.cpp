@@ -124,8 +124,11 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 
 				if (TestNotNull(TEXT("Ability tray should be bound"), ToRawPtr(Controller->AbilityTrayWidget)))
 				{
-					TestTrue(TEXT("A real punishment trigger after a real cast should lock the tray's Stun slot via production wiring"),
-						Controller->AbilityTrayWidget->IsSlotLocked(EAbilitySlot::Stun));
+					// PunishmentLockout, not NotYetUnlocked/IsSlotLocked() (issue #261) -
+					// production punishment lockout is tracked as its own tile state now,
+					// distinct from the not-yet-unlocked state IsSlotLocked() still reports.
+					TestEqual(TEXT("A real punishment trigger after a real cast should read PunishmentLockout on the tray's Stun slot via production wiring"),
+						Controller->AbilityTrayWidget->GetSlotState(EAbilitySlot::Stun), EAbilityTileState::PunishmentLockout);
 				}
 			}
 		}

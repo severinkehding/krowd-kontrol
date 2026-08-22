@@ -20,6 +20,21 @@ class UCanvasPanel;
 // each slot with a distinct placeholder cooldown duration on construction, purely to
 // prove the visualization works. StartCooldown() is the wiring point a future real
 // ability-cast system replaces the placeholder seeding with.
+// Distinct, checkable state per ability tile (issue #261) - PunishmentLockout and
+// NotYetUnlocked both render with the same locked-style border/label (see
+// UpdateSlotVisual), but are backed by independent state and are distinguishable
+// via this accessor (PunishmentLockout additionally shows a live numeric
+// countdown; NotYetUnlocked never does). Precedence when multiple could apply:
+// PunishmentLockout > NotYetUnlocked > Cooldown > Ready.
+UENUM(BlueprintType)
+enum class EAbilityTileState : uint8
+{
+	Ready,
+	Cooldown,
+	PunishmentLockout,
+	NotYetUnlocked
+};
+
 UCLASS()
 class KROWDKONTROL_API UAbilityCooldownTrayWidget : public UUserWidget
 {
@@ -61,6 +76,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
 	bool IsSlotLocked(EAbilitySlot AbilitySlot) const;
 
+	// Single-value, provably-distinct state per tile (issue #261 acceptance
+	// criterion) - prefer this over combining IsSlotOnCooldown()/IsSlotLocked()
+	// individually when the caller needs to tell punishment lockout apart from
+	// not-yet-unlocked.
+	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
+	EAbilityTileState GetSlotState(EAbilitySlot AbilitySlot) const;
+
+	// Live remaining seconds for the punishment-lockout state specifically (0 if the
+	// slot isn't currently punishment-locked) - distinct from GetSlotRemainingSeconds()
+	// which reports the underlying cooldown timer, and unaffected by it.
+	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
+	float GetSlotPunishmentLockoutRemainingSeconds(EAbilitySlot AbilitySlot) const;
+
 	// Production wiring for issue #69's level-gated unlocks: initializes every slot's
 	// locked visual from the component's current unlock state (Stun unlocked, the
 	// rest locked at run start) and keeps it live by subscribing to OnAbilityUnlocked,
@@ -71,13 +99,24 @@ public:
 	void BindAbilityUnlockComponent(UAbilityUnlockComponent* UnlockComponent);
 
 	// Production wiring for issue #178's Punishment 1 (real ability lockout on contact
-	// damage): binds SetSlotLocked directly to the component's OnAbilityLockoutChanged
-	// delegate (FOnAbilityLockoutChanged's (EAbilitySlot, bool) signature matches
-	// SetSlotLocked's exactly, so no adapter method is needed). Unlike
-	// BindAbilityUnlockComponent above, no per-slot seeding loop is needed - a freshly
-	// bound pawn's UAbilityLockoutComponent never has an active lockout yet.
+	// damage): binds a dedicated adapter (HandleAbilityLockoutChanged below) to the
+	// component's OnAbilityLockoutChanged delegate, and keeps a weak reference to the
+	// component so RefreshPunishmentLockoutReadouts() can poll its live remaining time
+	// every frame (issue #261 - punishment lockout needs its own numeric readout,
+	// distinct from the plain locked-style visual SetSlotLocked drives for
+	// not-yet-unlocked). Unlike BindAbilityUnlockComponent above, no per-slot seeding
+	// loop is needed - a freshly bound pawn's UAbilityLockoutComponent never has an
+	// active lockout yet.
 	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
 	void BindAbilityLockoutComponent(UAbilityLockoutComponent* LockoutComponent);
+
+	// Polls the bound UAbilityLockoutComponent's live remaining-time for every
+	// currently punishment-locked slot and refreshes its numeric readout - called
+	// every frame from NativeTick() (mirrors AdvanceCooldowns()'s own call site) and
+	// directly by the Automation test, which can't drive a live tick loop under the
+	// -nullrhi headless run (same reasoning as AdvanceCooldowns()).
+	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
+	void RefreshPunishmentLockoutReadouts();
 
 	// Read-only accessor for what's currently displayed - used by the Automation
 	// Framework test, also generally useful to anything that wants to confirm the
@@ -108,6 +147,14 @@ protected:
 private:
 	UFUNCTION()
 	void HandleAbilityUnlocked(EAbilitySlot Ability);
+
+	// Adapter for OnAbilityLockoutChanged (issue #261) - unlike HandleAbilityUnlocked's
+	// one-line SetSlotLocked() forward, this also seeds/clears
+	// SlotPunishmentLockoutRemaining from the bound component so the tile's numeric
+	// readout has a correct value on the very frame the lockout starts, before
+	// RefreshPunishmentLockoutReadouts() next runs.
+	UFUNCTION()
+	void HandleAbilityLockoutChanged(EAbilitySlot Ability, bool bLocked);
 
 	void BuildWidgetTree();
 
@@ -149,6 +196,24 @@ private:
 	// widget's cooldown-tracking arrays entirely.
 	UPROPERTY()
 	TArray<bool> SlotLocked;
+
+	// Punishment-lockout-specific state (issue #261) - deliberately separate from
+	// SlotLocked (which continues to mean "not-yet-unlocked" only) so the two
+	// locked-style states remain independently trackable and distinguishable via
+	// GetSlotState(), even though they currently share the same border/label
+	// treatment in UpdateSlotVisual().
+	UPROPERTY()
+	TArray<bool> SlotPunishmentLockoutActive;
+
+	UPROPERTY()
+	TArray<float> SlotPunishmentLockoutRemaining;
+
+	// Weak - the tray widget does not own the pawn's lockout component's lifetime.
+	// Used by RefreshPunishmentLockoutReadouts() to poll GetRemainingLockoutSeconds()
+	// every frame; left unset (IsValid() == false) until BindAbilityLockoutComponent()
+	// is called with a non-null component.
+	UPROPERTY()
+	TWeakObjectPtr<UAbilityLockoutComponent> BoundLockoutComponent;
 
 	// Distinct placeholder durations (Stun/Sleep/Root/Fear/Snare) - not real ability
 	// balance data (issue #71 owns that) - chosen distinct so each slot's countdown and
