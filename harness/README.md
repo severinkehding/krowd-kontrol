@@ -24,6 +24,26 @@ GATE_OK mode=quick
 | `e2e.py` | This repo. Placeholder - `NotImplementedError` until there's an app and MISSION.md defines what "working" means. |
 | `static.py` / `unit.py` | **Not present yet.** Add these if the stack ends up split across multiple sub-projects (e.g. a backend + frontend that each need their own check command aggregated into one `static`/`unit` rung) - dark-factory-experiment's version of these files exists for exactly that reason. A single-stack app can usually just put one command directly in `harness.config.json`. |
 
+## When a feature needs a KrowdKontrol.PIE test, not just Unit coverage
+
+If a feature's failure mode involves begin-play order, ticking, serialized
+instances, PIE map-naming, or save/load, it needs a `KrowdKontrol.PIE.`
+scenario test (per `docs/prd-functional-pie-tests.md` REQ-1) - `KrowdKontrol.Unit.`
+coverage alone is not enough, because unit tests run in `CreateNewMap()`
+worlds and drive lifecycle methods by direct call, bypassing exactly those
+paths. Three incidents already shipped past a fully green unit-only gate for
+this reason:
+
+1. **#199** - serialized placed-actor healing: the `PostInitializeComponents`
+   self-heal never runs in editor worlds.
+2. **#223** - PIE map-name mangling on restart: the `UEDPIE_0_` prefix only
+   exists in a real PIE session.
+3. **#234** - lifecycle subsystem only ever exercised by direct call
+   (`OnWorldBeginPlay()` / `RefreshLevelClearState()`), never through a real
+   tick path.
+
+See `docs/prd-functional-pie-tests.md` for the full PRD.
+
 ## The bootstrap gap, stated honestly
 
 There is no app, so:
