@@ -212,18 +212,16 @@ void UAbilityCooldownTrayWidget::BindAbilityLockoutComponent(UAbilityLockoutComp
 			TEXT("AbilityCooldownTrayWidget::BindAbilityLockoutComponent called with null component - tray keeps its current locked states"));
 		return;
 	}
-	if (UAbilityLockoutComponent* PreviousComponent = BoundLockoutComponent.Get())
+	UAbilityLockoutComponent* PreviousComponent = BoundLockoutComponent.Get();
+	if (PreviousComponent && PreviousComponent != LockoutComponent)
 	{
-		if (PreviousComponent != LockoutComponent)
-		{
-			// Without this, a rebind to a still-live component would leave the old
-			// component's delegate subscribed too - since FOnAbilityLockoutChanged has
-			// no sender parameter, HandleAbilityLockoutChanged always reads from
-			// whichever component is *currently* bound, so a stale broadcast could
-			// show a wrong countdown or clear an in-progress lockout. Mirrors
-			// UEnergyMeterWidget::BindToEnergyComponent's identical guard.
-			PreviousComponent->OnAbilityLockoutChanged.RemoveDynamic(this, &UAbilityCooldownTrayWidget::HandleAbilityLockoutChanged);
-		}
+		// Without this, a rebind to a still-live component would leave the old
+		// component's delegate subscribed too - since FOnAbilityLockoutChanged has
+		// no sender parameter, HandleAbilityLockoutChanged always reads from
+		// whichever component is *currently* bound, so a stale broadcast could
+		// show a wrong countdown or clear an in-progress lockout. Mirrors
+		// UEnergyMeterWidget::BindToEnergyComponent's identical guard.
+		PreviousComponent->OnAbilityLockoutChanged.RemoveDynamic(this, &UAbilityCooldownTrayWidget::HandleAbilityLockoutChanged);
 	}
 	BoundLockoutComponent = LockoutComponent;
 	// AddUniqueDynamic so a repeated bind (e.g. HUD rebuild on level transition,
