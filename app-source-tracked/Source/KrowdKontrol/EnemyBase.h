@@ -131,6 +131,20 @@ public:
 	// state" contract CurrentState itself guards every other accessor with.
 	EAbilitySlot GetControllingAbility() const { return ControllingAbility; }
 
+	// Only meaningful while GetEnemyState() == Controlled; retains its last value
+	// otherwise (never reset on reversion or banking) - same "stale read, guarded by
+	// state" contract GetControllingAbility() itself documents.
+	float GetRemainingControlledSeconds() const { return RemainingControlledSeconds; }
+
+	// The actual duration applied when this Controlled window began - includes any
+	// GetControlledDurationOverrideSeconds() override (e.g. Sniper's 7s Sleep lock),
+	// never the ability's unmodified AbilityData::BaseDurationSeconds when an
+	// override applies. Same "stale read, guarded by state" contract as
+	// GetRemainingControlledSeconds() above. Defaults to 0.0f before the first
+	// ReceiveControl() call - callers computing Remaining/Total must first confirm
+	// GetEnemyState() == Controlled (or has been) to avoid a 0.0f/0.0f division.
+	float GetTotalControlledSeconds() const { return TotalControlledSeconds; }
+
 	// Idle->Alert proximity radius. Base-defined, not overridden per concrete type -
 	// issue #12's AC only calls out attack range as the per-type-overridable one.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Detection")
@@ -260,4 +274,6 @@ private:
 	EAbilitySlot ControllingAbility = EAbilitySlot::Stun;
 
 	float RemainingControlledSeconds = 0.0f;
+
+	float TotalControlledSeconds = 0.0f;
 };
