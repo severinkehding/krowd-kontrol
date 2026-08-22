@@ -111,6 +111,13 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// overlap reaches Banked through the real OnActorBanked->TransitionToBanked wire.
 	friend class FKrowdKontrolRoomActorBankingWiringTest;
 
+	// Same grant, for the room-door-gating test (issue #218), which drives real
+	// AEnemyBase subclasses through Idle->Alert via the private TickCheckDetection
+	// before ReceiveControl()/TransitionToBanked(), to prove a door's gate opens/closes
+	// as its ARoomActor's OwnedEnemies reach Banked. Non-transitive - see
+	// MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolRoomActorDoorGatingTest;
+
 public:
 	AEnemyBase();
 

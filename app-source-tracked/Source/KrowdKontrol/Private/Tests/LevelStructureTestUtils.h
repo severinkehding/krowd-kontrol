@@ -51,21 +51,12 @@ namespace KrowdKontrolLevelTestUtils
 	// room/enemy link exists for static placeholder-density enemies, so nearest-room-
 	// by-distance is how "which room is this enemy in" is determined. Rooms in a
 	// hand-authored linear chain are spaced far enough apart that closest-room
-	// assignment is unambiguous.
+	// assignment is unambiguous. Delegates to ARoomActor::FindNearestRoom (issue #218)
+	// rather than duplicating the comparison, so this test utility's expectations and
+	// ARoomActor::BeginPlay's own owned-enemy auto-discovery can never drift apart.
 	inline ARoomActor* FindNearestRoom(const AActor* Enemy, const TArray<ARoomActor*>& Rooms)
 	{
-		ARoomActor* Nearest = nullptr;
-		float NearestDistSq = TNumericLimits<float>::Max();
-		for (ARoomActor* Room : Rooms)
-		{
-			const float DistSq = FVector::DistSquared(Enemy->GetActorLocation(), Room->GetActorLocation());
-			if (DistSq < NearestDistSq)
-			{
-				NearestDistSq = DistSq;
-				Nearest = Room;
-			}
-		}
-		return Nearest;
+		return ARoomActor::FindNearestRoom(Enemy, Rooms);
 	}
 
 	// Count/individual-validity checks on rooms and doors don't rule out doors leaving

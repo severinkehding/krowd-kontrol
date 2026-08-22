@@ -26,6 +26,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Editor.h"
+#include "Components/BoxComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -111,7 +112,8 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 	// itself a stronger, independently-checkable proxy for the claimed .umap state,
 	// since the underlying binary edit is invisible to the diff (D-009).
 	TArray<ARoomActor*> SortedRooms = KrowdKontrolLevelTestUtils::SortRoomsByX(Rooms);
-	if (TestEqual(TEXT("L_Level01 should have exactly 3 rooms for the exact-position/count check below"), SortedRooms.Num(), 3))
+	const bool bHasExpectedRoomCount = TestEqual(TEXT("L_Level01 should have exactly 3 rooms for the exact-position/count check below"), SortedRooms.Num(), 3);
+	if (bHasExpectedRoomCount)
 	{
 		TestEqual(TEXT("Room 1 (entrance) should stay fixed at X=0 (issue #189)"), SortedRooms[0]->GetActorLocation().X, 0.0);
 		TestEqual(TEXT("Room 2 should sit at X=2400 (issue #189)"), SortedRooms[1]->GetActorLocation().X, 2400.0);
@@ -120,6 +122,52 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Room 1 should have exactly 1 enemy (issue #189)"), EnemyCountByRoom.FindRef(SortedRooms[0]), 1);
 		TestEqual(TEXT("Room 2 should have exactly 2 enemies (issue #189)"), EnemyCountByRoom.FindRef(SortedRooms[1]), 2);
 		TestEqual(TEXT("Room 3 should have exactly 3 enemies (issue #189)"), EnemyCountByRoom.FindRef(SortedRooms[2]), 3);
+	}
+
+	// Issue #218: real-level regression coverage for room/door gating. LoadMap does not
+	// start play, so DispatchBeginPlay() (the public, legal route - see
+	// KrowdKontrolCrowdMasteryBeginPlayWiringTest.cpp for the same pattern; a direct
+	// BeginPlay() call would not compile, it's protected) is required to exercise
+	// ADoorConnectorActor's GatingRoom auto-derivation and ARoomActor's owned-enemy
+	// auto-discovery against this shipped level's actual placed actors - the exact gap
+	// the E2E holdout caught in attempt 1 (PR #228), where correct C++ logic shipped
+	// with GatingRoom=None and empty OwnedEnemies on every real door/room. Rooms are
+	// dispatched before doors so each door's own BeginPlay-time RefreshGateState() sees
+	// already-populated OwnedEnemies on its first evaluation.
+	for (ARoomActor* Room : Rooms)
+	{
+		Room->DispatchBeginPlay();
+		TestTrue(TEXT("Every real room should auto-discover at least one owned enemy (issue #218)"),
+			Room->GetOwnedEnemies().Num() >= 1);
+	}
+	if (bHasExpectedRoomCount)
+	{
+		// Ground-truth literal counts (issue #189, above), not EnemyCountByRoom - that
+		// map is now built via the same ARoomActor::FindNearestRoom this PR's BeginPlay
+		// auto-discovery also calls, so comparing against it would be tautological and
+		// miss a regression in FindNearestRoom's own spatial math.
+		TestEqual(TEXT("Room 1 should auto-discover exactly 1 owned enemy (issue #218)"),
+			SortedRooms[0]->GetOwnedEnemies().Num(), 1);
+		TestEqual(TEXT("Room 2 should auto-discover exactly 2 owned enemies (issue #218)"),
+			SortedRooms[1]->GetOwnedEnemies().Num(), 2);
+		TestEqual(TEXT("Room 3 should auto-discover exactly 3 owned enemies (issue #218)"),
+			SortedRooms[2]->GetOwnedEnemies().Num(), 3);
+	}
+	for (ADoorConnectorActor* Door : Doors)
+	{
+		Door->DispatchBeginPlay();
+		TestNotNull(TEXT("Every real door should resolve a GatingRoom automatically (issue #218)"),
+			Door->GatingRoom.Get());
+		// Confirm the mechanism didn't just wire a reference, but converged to the
+		// correct closed collision state - the exact gap that let attempt 1 (PR #228)
+		// ship unwired and undetected until a live incident.
+		if (Door->GatingRoom && !Door->GatingRoom->IsRoomCleared())
+		{
+			TestEqual(TEXT("A real door gating a freshly-loaded, un-cleared room should be blocked (issue #218)"),
+				Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+			TestEqual(TEXT("While blocked, the real door should Block ECC_WorldDynamic - the channel the real player pawn actually presents (issue #218 regression)"),
+				Door->GateBlockingComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
+		}
 	}
 
 	return true;
