@@ -134,7 +134,12 @@ void AKrowdKontrolPlayerController::RequestLevelRestart()
 FName AKrowdKontrolPlayerController::ComputeRestartLevelName() const
 {
 	const UWorld* World = GetWorld();
-	return World ? FName(*World->GetMapName()) : NAME_None;
+	return World ? StripPIEPrefixFromMapName(World->GetMapName()) : NAME_None;
+}
+
+FName AKrowdKontrolPlayerController::StripPIEPrefixFromMapName(const FString& MapName)
+{
+	return FName(*UWorld::RemovePIEPrefix(MapName));
 }
 
 FString AKrowdKontrolPlayerController::ComputeRestartOptions() const
