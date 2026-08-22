@@ -61,6 +61,24 @@ total=92`. The 2 failures are unrelated to this diff:
   other symbol this change touches. Not fixed here — those files are out of scope for
   this issue and belong to other in-flight PRs.
 
+## Post-review follow-ups (PR #274 review)
+
+- **Performance**: `IsPlayerInOwningRoom` no longer rebuilds the full
+  `TActorIterator<ARoomActor>` room list from scratch on every call — a per-frame
+  cache (`GetCachedRoomList` in `EnemyBase.cpp`) now collapses what was an
+  O(enemies × rooms) scan/allocation every tick into one shared scan per frame.
+- **Test coverage**: added a 4th case to `KrowdKontrolEnemyRoomDetectionGateTest.cpp`
+  proving an already-Alert gated enemy still reaches Attack purely on distance even
+  with the player outside `OwningRoom` — directly covers the "already-Alert enemies
+  are unaffected" AC above, not just the code structure that happens to guarantee it
+  today.
+- **Test coverage**: added `KrowdKontrol.Unit.RoomActorFindNearestRoom` to
+  `KrowdKontrolRoomActorTest.cpp` — direct 3-room + empty-array coverage for
+  `ARoomActor::FindNearestRoom`, which the gate test only ever exercised transitively
+  with two rooms.
+- **Docs**: marked `docs/prd-room-encounter-flow.md` REQ-2 as implemented (PR #274),
+  matching this repo's existing `— ✅ implemented, PR #NNN` convention.
+
 ## Files
 
 | File | Action |
@@ -70,6 +88,8 @@ total=92`. The 2 failures are unrelated to this diff:
 | `app/Source/KrowdKontrol/EnemyBase.h` | UPDATE |
 | `app/Source/KrowdKontrol/EnemyBase.cpp` | UPDATE |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolEnemyRoomDetectionGateTest.cpp` | CREATE |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolRoomActorTest.cpp` | UPDATE |
+| `docs/prd-room-encounter-flow.md` | UPDATE |
 
 ## Out of scope (follow-up)
 

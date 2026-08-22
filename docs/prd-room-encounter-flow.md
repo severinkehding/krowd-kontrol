@@ -40,7 +40,7 @@ room activates and its enemies engage. Once per room per run.
   the perimeter, or a `KrowdKontrol.PIE.` scenario sweep once that tier —
   issues #236–#240 — lands).
 
-### REQ-2: Room-scoped aggro (P0)
+### REQ-2: Room-scoped aggro (P0) — ✅ implemented, PR #274
 - An enemy may only begin detection (Idle → Alert) while the player is inside
   its own room — walls stop being transparent to aggro. Derive "its own room"
   from the merged ownership model (`ARoomActor::OwnedEnemies`, issue #218) and

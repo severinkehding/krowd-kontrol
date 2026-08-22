@@ -80,6 +80,35 @@ bool FKrowdKontrolEnemyRoomDetectionGateTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("An enemy with no OwningRoom should keep unscoped proximity-only Idle->Alert behaviour"),
 		static_cast<uint8>(UnownedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 
+	// (4) Already-Alert gated enemy should still reach Attack purely on distance, even
+	// with the player outside OwningRoom - proves the room gate is confined to
+	// Idle->Alert per the issue's "already-Alert enemies are unaffected" AC. Spawned at
+	// the same (1400,0,0) as GatedEnemy above so the same case-(2) player location
+	// (1300,0,0) resolves nearest to OwnRoom and advances it to Alert. AEnemyBaseTestActor
+	// doesn't override GetAttackRangeUnits() (base default 0.0f - see
+	// KrowdKontrolEnemyBaseTest.cpp's boundary case), so triggering Alert->Attack needs
+	// Distance == 0 exactly; the enemy is relocated to OtherRoom's territory first so
+	// that zero-distance point still resolves away from OwningRoom, isolating "is the
+	// player in OwningRoom" from "is Alert->Attack gated on it" (it isn't).
+	AEnemyBaseTestActor* AlertGatedEnemy = World->SpawnActor<AEnemyBaseTestActor>(AEnemyBaseTestActor::StaticClass(), FTransform(FVector(1400.f, 0.f, 0.f)));
+	if (!TestNotNull(TEXT("AlertGatedEnemy should spawn into the test World"), AlertGatedEnemy))
+	{
+		return false;
+	}
+	OwnRoom->AddOwnedEnemy(AlertGatedEnemy);
+	AlertGatedEnemy->TickCheckDetection(FVector(1300.f, 0.f, 0.f)); // inside OwnRoom -> Idle->Alert
+	TestEqual(TEXT("Setup: AlertGatedEnemy should be Alert before the regression check"),
+		static_cast<uint8>(AlertGatedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+	// Relocate the enemy itself into OtherRoom's territory: FindNearestRoom((2900,0,0))
+	// resolves to OtherRoom (|2900-3000|=100 < |2900-0|=2900), while OwningRoom (set via
+	// AddOwnedEnemy above) stays OwnRoom - i.e. the player, standing where the enemy now
+	// is, is genuinely outside OwningRoom by the same rule case (1) uses.
+	AlertGatedEnemy->SetActorLocation(FVector(2900.f, 0.f, 0.f));
+	AlertGatedEnemy->TickCheckDetection(FVector(2900.f, 0.f, 0.f)); // Distance 0 -> within GetAttackRangeUnits()
+	TestEqual(TEXT("Alert->Attack should proceed on distance alone even when the player has left OwningRoom"),
+		static_cast<uint8>(AlertGatedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+
 	return true;
 }
 

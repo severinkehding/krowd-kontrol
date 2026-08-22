@@ -9,6 +9,42 @@
 #include "Engine/World.h"
 #include "Components/PrimitiveComponent.h"
 #include "RoomActor.h"
+#include "CoreGlobals.h"
+
+namespace
+{
+	// Issue #274 code-review follow-up: without this cache, IsPlayerInOwningRoom
+	// below reruns a full TActorIterator<ARoomActor> world scan + TArray allocation
+	// from scratch on every call - once per Tick() for every Idle enemy with a
+	// non-null OwningRoom while the player is in range, i.e. O(enemies x rooms) scans
+	// per frame. Collapses that down to one scan per frame shared by every enemy that
+	// ticks this frame, mirroring the existing "scan TActorIterator once, reuse
+	// across N comparisons" shape at RoomActor.cpp's BeginPlay. Rooms are static,
+	// hand-placed level geometry that never changes at runtime in this codebase today
+	// (RoomActor.h's own class comment), so a lazy once-per-frame refresh - rather
+	// than invalidating on room spawn/destroy - is safe. Single-entry (not
+	// world-keyed): this codebase never ticks more than one World at a time, and a
+	// mismatched World pointer alone forces a rescan, so switching worlds (e.g.
+	// between Automation tests) can't return stale data.
+	const TArray<ARoomActor*>& GetCachedRoomList(UWorld* World)
+	{
+		static TWeakObjectPtr<UWorld> CachedWorld;
+		static uint64 CachedFrameNumber = TNumericLimits<uint64>::Max();
+		static TArray<ARoomActor*> CachedRooms;
+
+		if (CachedWorld.Get() != World || CachedFrameNumber != GFrameCounter)
+		{
+			CachedRooms.Reset();
+			for (TActorIterator<ARoomActor> It(World); It; ++It)
+			{
+				CachedRooms.Add(*It);
+			}
+			CachedWorld = World;
+			CachedFrameNumber = GFrameCounter;
+		}
+		return CachedRooms;
+	}
+}
 
 AEnemyBase::AEnemyBase()
 {
@@ -115,12 +151,7 @@ bool AEnemyBase::IsPlayerInOwningRoom(const FVector& PlayerLocation) const
 	{
 		return true;
 	}
-	TArray<ARoomActor*> AllRooms;
-	for (TActorIterator<ARoomActor> It(World); It; ++It)
-	{
-		AllRooms.Add(*It);
-	}
-	return ARoomActor::FindNearestRoom(PlayerLocation, AllRooms) == Room;
+	return ARoomActor::FindNearestRoom(PlayerLocation, GetCachedRoomList(World)) == Room;
 }
 
 void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)
