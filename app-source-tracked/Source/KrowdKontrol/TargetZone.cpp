@@ -1,5 +1,6 @@
 #include "TargetZone.h"
 #include "Components/BoxComponent.h"
+#include "EnemyTypeIndicatorComponent.h"
 #include "Herdable.h"
 
 ATargetZone::ATargetZone()
@@ -32,12 +33,22 @@ void ATargetZone::HandleZoneOverlap(UPrimitiveComponent* OverlappedComponent, AA
 	{
 		return;
 	}
-	// ZoneColourTag == NAME_None on both sides (an unconfigured zone and an
-	// unconfigured IHerdable actor) matching by default is correct per the issue -
-	// colour-matching is a hard requirement this issue does not redefine.
-	if (Herdable->GetHerdColourTag() != ZoneColourTag)
+	// Type-keyed acceptance (operator ruling 2026-08-22, PR #212 review): the pen
+	// cares what enemy TYPE arrives, never which ability controls it. The previous
+	// colour gate (controlling-ability colour vs counter-ability colour) made
+	// Stun - colour-neutral, the only Level 1 ability - bankable nowhere, i.e.
+	// Level 1 unwinnable; MISSION `02` specifies colour-matching as a bonus
+	// (control duration), not the win-condition gate. bAcceptAnyEnemyType's
+	// default (true) preserves issue #80's documented unconfigured-matches
+	// behaviour for zones nothing has typed.
+	if (!bAcceptAnyEnemyType)
 	{
-		return;
+		const UEnemyTypeIndicatorComponent* TypeIndicator =
+			OtherActor->FindComponentByClass<UEnemyTypeIndicatorComponent>();
+		if (!TypeIndicator || TypeIndicator->EnemyType != ZoneEnemyType)
+		{
+			return;
+		}
 	}
 	OnActorBanked.Broadcast(OtherActor);
 }

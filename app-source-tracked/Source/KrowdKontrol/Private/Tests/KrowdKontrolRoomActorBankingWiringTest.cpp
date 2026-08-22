@@ -19,6 +19,7 @@
 #include "RoomActor.h"
 #include "TargetZone.h"
 #include "TrooperEnemy.h"
+#include "RunnerEnemy.h"
 #include "EnemyType.h"
 #include "AbilitySlot.h"
 #include "ReservedGameplayColours.h"
@@ -126,11 +127,13 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("EnsureBankingZonesWired should be idempotent for the second marker too"),
 		CountAttachedZones(SecondMarker), 1);
 
-	// Any concrete AEnemyBase subclass works here - ATrooperEnemy (TR-UPR) is used
-	// purely as a spawnable non-abstract instance. Its native EnemyType is irrelevant:
-	// GetHerdColourTag() derives from whichever ability lands (ControllingAbility),
-	// not from the enemy's own EnemyType (see EnemyBase.cpp's GetHerdColourTag()).
-	ATrooperEnemy* Enemy = World->SpawnActor<ATrooperEnemy>(
+	// Type-keyed acceptance (operator ruling 2026-08-22): the zone is a pen for the
+	// marker's EEnemyType, so the enemy's own type is what matters now - ARunnerEnemy
+	// (RU-NNR) matches the first marker's zone. Controlled with STUN deliberately:
+	// the colour-neutral starter ability must bank at a type-matched pen (MISSION
+	// "each ability viable solo at base effectiveness"), the exact case the old
+	// colour gate made impossible.
+	ARunnerEnemy* Enemy = World->SpawnActor<ARunnerEnemy>(
 		BankingZone->GetActorLocation() + FVector(1000.f, 0.f, 0.f), FRotator::ZeroRotator);
 	if (!TestNotNull(TEXT("Enemy should spawn"), Enemy))
 	{
@@ -150,9 +153,9 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 
 	// Drive Idle -> Alert via the friend-granted private TickCheckDetection (distance
 	// 0 from itself is always within DetectionRangeUnits), then ReceiveControl (public)
-	// into Controlled with Snare - RU-NNR's counter, matching the zone's Purple tag.
+	// into Controlled with Stun - colour-neutral, proving acceptance is type-keyed.
 	Enemy->TickCheckDetection(Enemy->GetActorLocation());
-	Enemy->ReceiveControl(EAbilitySlot::Snare);
+	Enemy->ReceiveControl(EAbilitySlot::Stun);
 	TestEqual(TEXT("Enemy should be Controlled before overlapping the zone"),
 		static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 
@@ -167,16 +170,17 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	// ATargetZoneTestActor fixture in KrowdKontrolTargetZoneTest.cpp, which never had
 	// the Block-vs-Overlap problem this PR's EnemyBase::BeginPlay() fix resolves.
 
-	// A controlled enemy with the *wrong* colour physically overlapping the zone
-	// should not bank.
+	// A controlled enemy of the *wrong type* physically overlapping the zone should
+	// not bank - the pen takes Runners, a Trooper stays Controlled (type-keyed
+	// rejection; the ability used is irrelevant either way).
 	ATrooperEnemy* MismatchedEnemy = World->SpawnActor<ATrooperEnemy>(
 		BankingZone->GetActorLocation() + FVector(1000.f, 500.f, 0.f), FRotator::ZeroRotator);
 	if (TestNotNull(TEXT("Mismatched enemy should spawn"), MismatchedEnemy))
 	{
 		MismatchedEnemy->TickCheckDetection(MismatchedEnemy->GetActorLocation());
-		MismatchedEnemy->ReceiveControl(EAbilitySlot::Root); // Teal - zone is Purple.
+		MismatchedEnemy->ReceiveControl(EAbilitySlot::Root);
 		MismatchedEnemy->SetActorLocation(BankingZone->GetActorLocation(), /*bSweep=*/true);
-		TestEqual(TEXT("A colour-mismatched controlled enemy overlapping the zone should not bank"),
+		TestEqual(TEXT("A wrong-type controlled enemy overlapping the zone should not bank (type-keyed)"),
 			static_cast<uint8>(MismatchedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 	}
 
