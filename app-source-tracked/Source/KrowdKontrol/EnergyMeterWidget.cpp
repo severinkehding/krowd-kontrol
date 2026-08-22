@@ -26,6 +26,12 @@ bool UEnergyMeterWidget::Initialize()
 	return bNewlyInitialized;
 }
 
+void UEnergyMeterWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	AdvanceDamageFlashTimer(InDeltaTime);
+}
+
 void UEnergyMeterWidget::EnsureWidgetTreeBuilt()
 {
 	// Whichever of NativeOnInitialized()/Initialize() fires first builds the tree; the
@@ -90,6 +96,20 @@ void UEnergyMeterWidget::BuildWidgetTree()
 			TEXT("UEnergyMeterWidget: AddChildToOverlay(ValueText) returned null slot on '%s' - value text will render unaligned."),
 			*GetNameSafe(this));
 	}
+
+	// Saturated red, deliberately outside the 5 reserved gameplay colours (nearest
+	// is Orange at (1.0, 0.5, 0.0) - well separated by the green channel) - same
+	// "informational, not chrome" justification as FillColor above.
+	const FLinearColor DamageFlashColor(0.95f, 0.12f, 0.12f, 1.0f);
+
+	DamageFlashOverlay = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("MeterDamageFlashOverlay"));
+	DamageFlashOverlay->SetBrushColor(DamageFlashColor);
+	// Hidden by default - PlayDamageFlash() is what makes this visible. Never
+	// ESlateVisibility::Visible - HitTestInvisible (used when shown, in
+	// PlayDamageFlash()) keeps it from ever intercepting player input, matching
+	// OnScreenPromptWidget.cpp's identical choice.
+	DamageFlashOverlay->SetVisibility(ESlateVisibility::Collapsed);
+	MeterOverlay->AddChildToOverlay(DamageFlashOverlay); // added last - renders on top of fill/text
 }
 
 void UEnergyMeterWidget::SetEnergy(float CurrentEnergy, float MaxEnergy)
@@ -142,6 +162,41 @@ void UEnergyMeterWidget::BindToEnergyComponent(UPlayerEnergyComponent* EnergyCom
 void UEnergyMeterWidget::HandleEnergyChanged(float NewEnergy)
 {
 	SetEnergy(NewEnergy, BoundEnergyComponent ? BoundEnergyComponent->MaxEnergy : PlaceholderMaxEnergy);
+	PlayDamageFlash();
+}
+
+void UEnergyMeterWidget::PlayDamageFlash()
+{
+	DamageFlashRemainingSeconds = DamageFlashDurationSeconds;
+	if (DamageFlashOverlay)
+	{
+		DamageFlashOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+}
+
+void UEnergyMeterWidget::AdvanceDamageFlashTimer(float DeltaSeconds)
+{
+	if (DamageFlashRemainingSeconds > 0.0f)
+	{
+		DamageFlashRemainingSeconds = FMath::Max(0.0f, DamageFlashRemainingSeconds - DeltaSeconds);
+		if (DamageFlashRemainingSeconds <= 0.0f)
+		{
+			ClearDamageFlash();
+		}
+	}
+}
+
+void UEnergyMeterWidget::ClearDamageFlash()
+{
+	if (DamageFlashOverlay)
+	{
+		DamageFlashOverlay->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+bool UEnergyMeterWidget::IsDamageFlashActive() const
+{
+	return DamageFlashRemainingSeconds > 0.0f;
 }
 
 float UEnergyMeterWidget::GetDisplayedFraction() const

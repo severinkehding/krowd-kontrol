@@ -31,6 +31,7 @@
 #include "EnergyMeterWidget.h"
 #include "PlayerEnergyComponent.h"
 #include "HUDChromeColours.h"
+#include "ReservedGameplayColours.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Blueprint/WidgetTree.h"
@@ -104,6 +105,39 @@ bool FKrowdKontrolEnergyMeterWidgetTest::RunTest(const FString& Parameters)
 	EnergyComponent->ApplyContactDamage(30.0f, nullptr);
 	TestEqual(TEXT("Fraction should follow OnEnergyChanged after ApplyContactDamage"), Widget->GetDisplayedFraction(), 0.5f);
 	TestEqual(TEXT("Display text should follow OnEnergyChanged after ApplyContactDamage"), Widget->GetEnergyDisplayText().ToString(), FString(TEXT("50/100")));
+
+	// (7b) Same-frame damage-flash reaction (issue #222, PRD "Level Progression &
+	// Teaching Arc" REQ-4) - HandleEnergyChanged's PlayDamageFlash() activates
+	// synchronously off the exact ApplyContactDamage() broadcast used in (7), before
+	// any NativeTick. AdvanceDamageFlashTimer() is called directly afterward to
+	// simulate the countdown expiring, mirroring
+	// KrowdKontrolAbilityVFXColourTest.cpp's direct ClearCastFlash() call - this
+	// Automation Unit test never drives a live NativeTick()/tick loop.
+	TestTrue(TEXT("Damage flash should be active immediately after a real ApplyContactDamage() broadcast"),
+		Widget->IsDamageFlashActive());
+	if (TestNotNull(TEXT("DamageFlashOverlay should exist"), ToRawPtr(Widget->DamageFlashOverlay)))
+	{
+		TestEqual(TEXT("Damage flash overlay should be visible immediately after the broadcast"),
+			Widget->DamageFlashOverlay->GetVisibility(), ESlateVisibility::HitTestInvisible);
+		const FLinearColor FlashColour = Widget->DamageFlashOverlay->GetBrushColor();
+		TestFalse(TEXT("Damage flash overlay colour should not collide with a reserved gameplay colour"),
+			ReservedGameplayColours::GetAll().ContainsByPredicate(
+				[FlashColour](const FLinearColor& Reserved) { return Reserved.Equals(FlashColour, 0.01f); }));
+	}
+
+	Widget->AdvanceDamageFlashTimer(UEnergyMeterWidget::DamageFlashDurationSeconds + 0.01f);
+	TestFalse(TEXT("Damage flash should clear once its duration has fully elapsed"), Widget->IsDamageFlashActive());
+	if (Widget->DamageFlashOverlay)
+	{
+		TestEqual(TEXT("Damage flash overlay should be collapsed again after it clears"),
+			Widget->DamageFlashOverlay->GetVisibility(), ESlateVisibility::Collapsed);
+	}
+
+	// A direct SetEnergy() call (not via the OnEnergyChanged path) must NOT trigger
+	// the flash - the reaction hook is tied specifically to the energy-decrease
+	// broadcast, not to every display update.
+	Widget->SetEnergy(40.0f, 100.0f);
+	TestFalse(TEXT("A direct SetEnergy() call should not itself trigger the damage flash"), Widget->IsDamageFlashActive());
 
 	// (8) Rebind isolation - switching to a second component unsubscribes from the first.
 	UPlayerEnergyComponent* SecondEnergyComponent = NewObject<UPlayerEnergyComponent>();

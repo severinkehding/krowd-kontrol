@@ -18,7 +18,9 @@ class UPlayerEnergyComponent;
 // UI tree in C++ (no Widget Blueprint asset, mirroring UPostRunSummaryWidget's issue
 // #74 precedent) and seeds itself with a placeholder value on construction so it's
 // self-demonstrating; BindToEnergyComponent() is the wiring point that swaps in a
-// real UPlayerEnergyComponent (issue #78) for live updates.
+// real UPlayerEnergyComponent (issue #78) for live updates. Issue #222 adds a
+// same-frame damage-flash reaction (DamageFlashOverlay) so a hit visibly registers
+// the instant it lands, not just via the fill bar/text slowly changing.
 UCLASS()
 class KROWDKONTROL_API UEnergyMeterWidget : public UUserWidget
 {
@@ -48,6 +50,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Energy Meter")
 	FText GetEnergyDisplayText() const;
 
+	// Decrements the damage-flash countdown and hides DamageFlashOverlay once it
+	// hits zero. Called every frame from NativeTick() once this widget is in a live
+	// viewport, and called directly by the Automation test (which can't drive
+	// NativeTick under the -nullrhi headless run) - mirrors
+	// UOnScreenPromptWidget::AdvanceDismissTimer()'s identical shape.
+	UFUNCTION(BlueprintCallable, Category = "Energy Meter")
+	void AdvanceDamageFlashTimer(float DeltaSeconds);
+
+	UFUNCTION(BlueprintPure, Category = "Energy Meter")
+	bool IsDamageFlashActive() const;
+
 protected:
 	// Fires synchronously from CreateWidget(), before any Slate/viewport realization -
 	// matters for the -nullrhi headless Automation run this project's tests use (see
@@ -59,6 +72,8 @@ protected:
 	// when CreateWidget() is called without an owning player/controller (exactly how
 	// the Automation Framework test constructs this widget).
 	virtual bool Initialize() override;
+
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 	void BuildWidgetTree();
@@ -74,6 +89,18 @@ private:
 	UFUNCTION()
 	void HandleEnergyChanged(float NewEnergy);
 
+	// Same-frame placeholder HUD reaction to an energy decrease (issue #222, PRD
+	// "Level Progression & Teaching Arc" REQ-4): HandleEnergyChanged() calls
+	// PlayDamageFlash() to make DamageFlashOverlay briefly visible; NativeTick()
+	// (via AdvanceDamageFlashTimer(), same pattern as
+	// UOnScreenPromptWidget::AdvanceDismissTimer()) hides it again after
+	// DamageFlashDurationSeconds. Every OnEnergyChanged broadcast is guaranteed to
+	// be a decrease (UPlayerEnergyComponent::ApplyContactDamage() is its only
+	// public mutator and only ever subtracts - see PlayerEnergyComponent.h), so
+	// PlayDamageFlash() never needs an old-vs-new energy comparison.
+	void PlayDamageFlash();
+	void ClearDamageFlash();
+
 	UPROPERTY()
 	TObjectPtr<UBorder> BackgroundBorder;
 
@@ -86,6 +113,14 @@ private:
 	UPROPERTY()
 	TObjectPtr<UPlayerEnergyComponent> BoundEnergyComponent;
 
+	UPROPERTY()
+	TObjectPtr<UBorder> DamageFlashOverlay;
+
+	// Runtime countdown state, not designer config - same reasoning as
+	// UOnScreenPromptWidget::RemainingSeconds.
+	UPROPERTY()
+	float DamageFlashRemainingSeconds = 0.0f;
+
 	// Placeholder values only - real energy tracking lives in UPlayerEnergyComponent
 	// (issue #78), consumed via BindToEnergyComponent().
 	static constexpr float PlaceholderCurrentEnergy = 72.0f;
@@ -97,4 +132,6 @@ private:
 	static constexpr float MeterMarginPx = 24.0f;
 	static constexpr float MeterWidthPx = 220.0f;
 	static constexpr float MeterHeightPx = 28.0f;
+
+	static constexpr float DamageFlashDurationSeconds = 0.15f;
 };
