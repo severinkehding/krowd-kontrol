@@ -25,6 +25,8 @@
 #include "PunishmentArbitrationComponent.h"
 #include "LevelFailComponent.h"
 #include "OvercrowdDetectionComponent.h"
+#include "AbilityTargetingIndicatorComponent.h"
+#include "AbilityPressHoldComponent.h"
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
@@ -74,6 +76,12 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	// SetUpdatedComponent above) rather than a lookup-by-class in BeginPlay -
 	// both components are guaranteed to exist by this point in the constructor.
 	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityCastVFXComponent, &UAbilityCastVFXComponent::HandleAbilityCastApplied);
+
+	AbilityTargetingIndicatorComponent = CreateDefaultSubobject<UAbilityTargetingIndicatorComponent>(TEXT("AbilityTargetingIndicatorComponent"));
+
+	AbilityPressHoldComponent = CreateDefaultSubobject<UAbilityPressHoldComponent>(TEXT("AbilityPressHoldComponent"));
+	AbilityPressHoldComponent->CastComponent = AbilityCastComponent;
+	AbilityPressHoldComponent->IndicatorComponent = AbilityTargetingIndicatorComponent;
 
 	GizmoFirstContactComponent = CreateDefaultSubobject<UGizmoFirstContactComponent>(TEXT("GizmoFirstContactComponent"));
 	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(GizmoFirstContactComponent, &UGizmoFirstContactComponent::HandleAbilityCastApplied);
@@ -178,6 +186,12 @@ void AFlatCamera3DPrototypePawn::SetupPlayerInputComponent(UInputComponent* Play
 	PlayerInputComponent->BindAction(TEXT("CastRoot"), IE_Pressed, this, &AFlatCamera3DPrototypePawn::CastRootAbility);
 	PlayerInputComponent->BindAction(TEXT("CastFear"), IE_Pressed, this, &AFlatCamera3DPrototypePawn::CastFearAbility);
 	PlayerInputComponent->BindAction(TEXT("CastSnare"), IE_Pressed, this, &AFlatCamera3DPrototypePawn::CastSnareAbility);
+
+	PlayerInputComponent->BindAction(TEXT("CastStun"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseStunAbility);
+	PlayerInputComponent->BindAction(TEXT("CastSleep"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseSleepAbility);
+	PlayerInputComponent->BindAction(TEXT("CastRoot"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseRootAbility);
+	PlayerInputComponent->BindAction(TEXT("CastFear"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseFearAbility);
+	PlayerInputComponent->BindAction(TEXT("CastSnare"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseSnareAbility);
 }
 
 void AFlatCamera3DPrototypePawn::MoveForward(float Value)
@@ -195,40 +209,80 @@ void AFlatCamera3DPrototypePawn::MoveRight(float Value)
 
 void AFlatCamera3DPrototypePawn::CastStunAbility()
 {
-	if (AbilityCastComponent)
+	if (AbilityPressHoldComponent)
 	{
-		AbilityCastComponent->TryCastAbility(EAbilitySlot::Stun);
+		AbilityPressHoldComponent->HandleAbilityKeyPressed(EAbilitySlot::Stun);
 	}
 }
 
 void AFlatCamera3DPrototypePawn::CastSleepAbility()
 {
-	if (AbilityCastComponent)
+	if (AbilityPressHoldComponent)
 	{
-		AbilityCastComponent->TryCastAbility(EAbilitySlot::Sleep);
+		AbilityPressHoldComponent->HandleAbilityKeyPressed(EAbilitySlot::Sleep);
 	}
 }
 
 void AFlatCamera3DPrototypePawn::CastRootAbility()
 {
-	if (AbilityCastComponent)
+	if (AbilityPressHoldComponent)
 	{
-		AbilityCastComponent->TryCastAbility(EAbilitySlot::Root);
+		AbilityPressHoldComponent->HandleAbilityKeyPressed(EAbilitySlot::Root);
 	}
 }
 
 void AFlatCamera3DPrototypePawn::CastFearAbility()
 {
-	if (AbilityCastComponent)
+	if (AbilityPressHoldComponent)
 	{
-		AbilityCastComponent->TryCastAbility(EAbilitySlot::Fear);
+		AbilityPressHoldComponent->HandleAbilityKeyPressed(EAbilitySlot::Fear);
 	}
 }
 
 void AFlatCamera3DPrototypePawn::CastSnareAbility()
 {
-	if (AbilityCastComponent)
+	if (AbilityPressHoldComponent)
 	{
-		AbilityCastComponent->TryCastAbility(EAbilitySlot::Snare);
+		AbilityPressHoldComponent->HandleAbilityKeyPressed(EAbilitySlot::Snare);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::ReleaseStunAbility()
+{
+	if (AbilityPressHoldComponent)
+	{
+		AbilityPressHoldComponent->HandleAbilityKeyReleased(EAbilitySlot::Stun);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::ReleaseSleepAbility()
+{
+	if (AbilityPressHoldComponent)
+	{
+		AbilityPressHoldComponent->HandleAbilityKeyReleased(EAbilitySlot::Sleep);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::ReleaseRootAbility()
+{
+	if (AbilityPressHoldComponent)
+	{
+		AbilityPressHoldComponent->HandleAbilityKeyReleased(EAbilitySlot::Root);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::ReleaseFearAbility()
+{
+	if (AbilityPressHoldComponent)
+	{
+		AbilityPressHoldComponent->HandleAbilityKeyReleased(EAbilitySlot::Fear);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::ReleaseSnareAbility()
+{
+	if (AbilityPressHoldComponent)
+	{
+		AbilityPressHoldComponent->HandleAbilityKeyReleased(EAbilitySlot::Snare);
 	}
 }

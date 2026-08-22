@@ -27,6 +27,8 @@ class USpeedReductionPunishmentComponent;
 class UPunishmentArbitrationComponent;
 class ULevelFailComponent;
 class UOvercrowdDetectionComponent;
+class UAbilityTargetingIndicatorComponent;
+class UAbilityPressHoldComponent;
 
 // Minimal flat-camera-3D prototype pawn for PRD 14 REQ-1's Paper2D-vs-flat-camera-3D
 // pipeline comparison (issue #56). A primitive cube mesh driven by WASD/arrow input in
@@ -136,6 +138,19 @@ public:
 	// AbilityCastComponent.h.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityCastComponent> AbilityCastComponent;
+
+	// Shared ground indicator (issue #264, PRD "Cursor & Aiming Foundation" REQ-3) -
+	// one instance wired onto this pawn, driven by AbilityPressHoldComponent below.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityTargetingIndicatorComponent> AbilityTargetingIndicatorComponent;
+
+	// Press/hold indicator semantics (issue #265, PRD "Cursor & Aiming Foundation"
+	// REQ-3) - the 5 Cast*Ability() wrappers below delegate through this component
+	// instead of calling AbilityCastComponent directly, so a press flashes
+	// AbilityTargetingIndicatorComponent and casts, while holding previews without an
+	// extra cast. See AbilityPressHoldComponent.h for the full state machine.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityPressHoldComponent> AbilityPressHoldComponent;
 
 	// Punishment 1 (issue #178, PRD "Punishment System" REQ-2) - locks the most
 	// recently cast ability (Stun fallback if none yet) for a fixed duration whenever
@@ -261,4 +276,13 @@ private:
 	void CastRootAbility();
 	void CastFearAbility();
 	void CastSnareAbility();
+
+	// Thin IE_Released counterparts to the 5 wrappers above - route through
+	// AbilityPressHoldComponent::HandleAbilityKeyReleased so holding a key never
+	// triggers a delayed cast on release.
+	void ReleaseStunAbility();
+	void ReleaseSleepAbility();
+	void ReleaseRootAbility();
+	void ReleaseFearAbility();
+	void ReleaseSnareAbility();
 };
