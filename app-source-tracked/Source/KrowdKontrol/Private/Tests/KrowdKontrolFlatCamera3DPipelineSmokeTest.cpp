@@ -522,12 +522,13 @@ bool FKrowdKontrolFlatCamera3DCameraFramingTest::RunTest(const FString& Paramete
 	TestTrue(TEXT("CameraFieldOfView default should be within the documented [60, 90] range"),
 		Pawn->CameraFieldOfView >= 60.0f && Pawn->CameraFieldOfView <= 90.0f);
 
+	// CameraArmLength is now asserted to be FARTHER than the pre-#188 800cm hardcoded
+	// value (the opposite direction from #188's original "closer than 800cm" ask),
+	// mirroring #251's actual intent rather than dropping regression coverage entirely.
 	// CameraBoomPitch is untouched by issue #251 and keeps its original less-extreme-
-	// than-the-pre-#188-hardcoded-value assertion below. CameraArmLength has no
-	// equivalent assertion any more: issue #251 deliberately retunes it to 1500,
-	// which is GREATER than the pre-#188 800cm hardcoded value (the opposite
-	// direction from #188's original "closer than 800cm" ask), so that comparison
-	// no longer applies.
+	// than-the-pre-#188-hardcoded-value assertion below.
+	TestTrue(TEXT("CameraArmLength default should be farther than the old 800cm hardcoded value"),
+		Pawn->CameraArmLength > 800.0f);
 	TestTrue(TEXT("CameraBoomPitch default should be less extreme than the old -80 degree hardcoded value"),
 		Pawn->CameraBoomPitch > -80.0f);
 

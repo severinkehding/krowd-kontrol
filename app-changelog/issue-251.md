@@ -24,9 +24,21 @@ retuning the `UPROPERTY` defaults/clamp meta is sufficient.
 | File | Action | What it contains |
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/FlatCamera3DPrototypePawn.h` | UPDATE | `CameraArmLength` default/clamp widened, `CameraFieldOfView` default raised |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | UPDATE | `FKrowdKontrolFlatCamera3DCameraFramingTest`'s asserted bounds/fixture values updated to match; dropped the now-inverted "closer than 800cm" `CameraArmLength` assertion |
-| `app-source-tracked/Source/KrowdKontrol/FlatCamera3DPrototypePawn.h` | UPDATE | Plain-text mirror |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | UPDATE | `FKrowdKontrolFlatCamera3DCameraFramingTest`'s asserted bounds/fixture values updated to match; replaced the now-inverted "closer than 800cm" `CameraArmLength` assertion with its opposite-direction equivalent (`> 800.0f`) rather than dropping it |
+| `app-source-tracked/Source/KrowdKontrol/FlatCamera3DPrototypePawn.h` | UPDATE | Plain-text mirror of the camera-framing change only — see note below on the leaked #262 hunk |
 | `app-source-tracked/Source/KrowdKontrol/Private/Tests/KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp` | UPDATE | Mirror |
+
+**Note on `app/` vs `app-source-tracked/` divergence**: review of this PR found that the
+shared `app/` symlink (concurrently written by in-flight issue #262/PR #266 work) had
+leaked `GetCursorWorldPosition`/`IntersectRayWithGroundPlane` declarations into this task's
+`app-source-tracked/FlatCamera3DPrototypePawn.h` mirror at PR-creation time — unrelated to
+this issue's camera-framing scope, with no matching `.cpp` implementation or test anywhere
+in this PR's diff. Per review recommendation, that hunk was stripped from
+`app-source-tracked/` only (self-fix pass, 2026-08-23); `app/`'s live copy was deliberately
+left untouched since it's shared with the still-in-progress #262 task/PR #266, which owns
+that API. As a result `app/` and `app-source-tracked/` are **not** byte-identical for
+`FlatCamera3DPrototypePawn.h` as of this note — `app/` still carries the #262 declarations
+(and their real `.cpp` implementation + test file) that belong to PR #266, not this PR.
 
 ## Acceptance criteria
 
@@ -37,9 +49,10 @@ retuning the `UPROPERTY` defaults/clamp meta is sufficient.
 - [x] `KrowdKontrol.Unit.FlatCamera3DPipelineCameraFraming`'s documented/asserted bounds
       match the new clamp range and defaults
 - [x] No new camera mechanics introduced — `ApplyCameraFraming()`, `CameraBoomPitch`, and
-      every other property/component on the pawn are unchanged
-- [x] `app/` and `app-source-tracked/` are byte-identical for both edited files (zero diff
-      confirmed)
+      every other property/component on the pawn are unchanged (leaked #262 API stripped
+      from `app-source-tracked/` in a post-review self-fix pass; see note above)
+- [x] `app/` and `app-source-tracked/` match for `KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp`;
+      `FlatCamera3DPrototypePawn.h` intentionally diverges — see note above (owned by #262/PR #266)
 - [ ] `python harness/ci.py` (full mode) reports `GATE_OK` with the `FlatCamera3D*` suite
       passing — see Validation below
 
