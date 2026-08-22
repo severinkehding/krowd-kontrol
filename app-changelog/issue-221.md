@@ -26,9 +26,11 @@ single-fire guard.
 - [x] No change to `AttackTelegraphSeconds`, `TriggerExplosion`'s trigger condition,
       `ExplosionDamageAmount`, or the no-kill clamp path — existing cases (g)/(h)/(g2)/(o)
       pass unmodified, confirmed by the full-mode run below.
-- [x] Automation test (`KrowdKontrol.Unit.BomberEnemy`, new cases (u)-(x)) proves
+- [x] Automation test (`KrowdKontrol.Unit.BomberEnemy`, new cases (u)-(z)) proves
       `GetAttackTelegraphStage()` changes in clearly distinguishable, monotonic
-      (forward-only) steps across the fuse duration, verifiable without rendering.
+      (forward-only) steps across the fuse duration, verifiable without rendering,
+      including the zero-duration divide-by-zero guard (y), the exact `>=` threshold
+      boundary (z), and the stale-read-after-interruption contract (extended case (l)).
 - [x] Visual pulse quality itself is not asserted by the automation test — only the
       discrete `GetAttackTelegraphStage()` value is checked.
 - [x] `app/` and `app-source-tracked/` copies of all changed files are byte-identical
@@ -61,6 +63,32 @@ ability-roster, enemy-roster, engine/dimensionality, networking, or `app`-tracki
 invariant is touched — `ExplosionDamageAmount`/`TriggerExplosion`'s clamp path are
 untouched, and the escalation is purely a derived presentational state driven off the
 existing telegraph countdown.
+
+---
+
+## Review follow-up (self-fix pass)
+
+Addressed all findings from the PR #233 review (`code-review`, `test-coverage`,
+`comment-quality`, `docs-impact` agents):
+
+- Added case (y): zero-duration `AttackTelegraphSeconds` guard, proving
+  `UpdateTelegraphEscalation()` treats `0.0f` as immediately `Imminent` rather than
+  dividing by zero (HIGH, test-coverage).
+- Added case (z): exact `>=` threshold-boundary assertions at `TelegraphMidThreshold`,
+  single-call (non-accumulated) to avoid the float-accumulation flakiness case (g2)
+  documents (MEDIUM, code-review + test-coverage).
+- Extended case (l) to prove `GetAttackTelegraphStage()`'s claimed "stale read, guarded
+  by state" contract actually holds across a mid-telegraph interruption (MEDIUM,
+  test-coverage).
+- Documented the previously-unexplained per-stage `StageFloorFraction` magic numbers
+  (`BomberEnemy.cpp`) as an intentional, deliberately-hardcoded second escalation axis
+  (MEDIUM, comment-quality + code-review).
+- Narrowed `TelegraphMidThreshold`'s doc-comment to stop overstating an existing
+  codebase precedent for its unenforced ordering constraint (LOW, comment-quality).
+- Skipped: promoting `StageFloorFraction` to `EditDefaultsOnly` tunables (both source
+  agents recommended the docs-only fix over this, to avoid scope creep beyond the
+  issue's AC) and backfilling `CLAUDE.md`'s `TBD` Conventions section (docs-impact
+  agent's own verdict was `NO_CHANGES_NEEDED`/no action for this PR).
 
 ---
 

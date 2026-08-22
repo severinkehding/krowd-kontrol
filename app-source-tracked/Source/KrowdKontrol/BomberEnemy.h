@@ -81,8 +81,9 @@ public:
 	// Fraction of AttackTelegraphSeconds elapsed at which GetAttackTelegraphStage()
 	// advances Early -> Mid. See TelegraphImminentThreshold below for the Mid ->
 	// Imminent edge; keep this <= that value for the stages to stay monotonic
-	// (EditDefaultsOnly, designer-set - not enforced in code, same trust-the-panel
-	// shape every other tunable on this class already uses).
+	// (EditDefaultsOnly, designer-set, not enforced in code - same trust-the-panel
+	// philosophy this class's other ClampMin/ClampMax tunables already rely on,
+	// though this is the first cross-property ordering constraint on this class).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float TelegraphMidThreshold = 0.33f;
 
