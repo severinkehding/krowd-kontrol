@@ -12,9 +12,10 @@ colour stays a bonus) — that ruling is #212's fix scope, not this PRD's.
 
 1. **Nothing advances the game.** Clearing a level fires `OnLevelClear` (merged),
    shows the summary (#175, in progress), and… stops. No system loads the next
-   level, and nothing ever calls `UAbilityUnlockComponent::NotifyLevelReached`,
-   so Sleep/Root/Fear/Snare are permanently locked in real play (verified across
-   two operator playtests: keys 2–5 always "not unlocked").
+   level. (Unlock-call half fixed by #217: `NotifyLevelReached` now fires via
+   `UAbilityUnlockLevelSubsystem` on every level start, using an interim
+   map-name-derived index. Level-advance-on-clear with a configured sequence is
+   still open — #216.)
 2. **Rooms don't gate.** The operator walked into room 2 and 3 of L_Level01
    without touching room 1; with escalate-only detection and no de-aggro, this
    snowballed every enemy in the level into one mob converging on spawn
@@ -93,9 +94,16 @@ trigger. Room-cleared signal for REQ-3's prompt should bind to
 
 ## Existing surfaces to build on (do not reinvent)
 `ULevelLifecycleSubsystem` (`OnLevelClear`, final-map/run-complete config);
+<<<<<<< HEAD
+`UAbilityUnlockComponent::NotifyLevelReached` (mapping merged; now called via
+`UAbilityUnlockLevelSubsystem`, #217 — level index is still map-name-derived,
+pending #216's sequence config);
+`ARoomActor` / `ADoorConnectorActor` (+ door markers) / `RoomEnemyBudgetController`;
+=======
 `UAbilityUnlockComponent::NotifyLevelReached` (mapping merged, uncalled);
 `ARoomActor` (`OwnedEnemies`/`OnRoomClearedStateChanged`, issue #218) /
 `ADoorConnectorActor` (+ door markers, `GatingRoom`/`RefreshGateState`);
+>>>>>>> origin/main
 the on-screen prompt widget + `AbilityMatchupNudgeComponent` pattern;
 `GizmoFirstContactComponent` / `FirstStunBeaconComponent` (first-cast hooks);
 `ABomberEnemy`'s `AttackTellLightComponent` + explosion path;
