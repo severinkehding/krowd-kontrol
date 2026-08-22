@@ -9,6 +9,7 @@
 class UAbilityCooldownTrayWidget;
 class UEnergyMeterWidget;
 class UOnScreenPromptWidget;
+class UQuestTrackerWidget;
 class APlaceholderTargetZoneActor;
 class ULevelClearTimeSubsystem;
 class ULevelFailComponent;
@@ -48,6 +49,13 @@ public:
 	// consumers reach out to the controller instead (the opposite direction).
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
 	TObjectPtr<UOnScreenPromptWidget> OnScreenPromptWidgetInstance;
+
+	// Foundational quest-tracker HUD widget (issue #247, PRD "Mission Briefing & Live
+	// Quest Tracker" REQ-2) - like OnScreenPromptWidgetInstance, nothing in
+	// WireWidgetsToPawn() binds a pawn component to this widget; it self-binds to
+	// ULevelLifecycleSubsystem::OnLevelBegin instead (see QuestTrackerWidget.h).
+	UPROPERTY(BlueprintReadOnly, Category = "HUD")
+	TObjectPtr<UQuestTrackerWidget> QuestTrackerWidgetInstance;
 
 	// Beacon hook (issue #132's third scoped deliverable, PRD 13 REQ-6): the live
 	// world-space target-zone beacons, collected at BeginPlay and re-collectable via
