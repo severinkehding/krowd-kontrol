@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class UPointLightComponent;
+class UEnemyTypeIndicatorComponent;
 class USoundBase;
 class UAudioComponent;
 
@@ -51,6 +52,14 @@ public:
 	// per-subclass rather than once on AEnemyBase.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Trooper")
 	TObjectPtr<UPointLightComponent> EliteTrimLightComponent;
+
+	// Colourblind-safe non-colour marker (PRD 13 REQ-7, issue #77) - "TR-UPR" text
+	// floating above the mesh, independent of GlowLightComponent's Teal. Also the
+	// component ATargetZone::HandleZoneOverlap's type-keyed acceptance (PR #212)
+	// resolves via FindComponentByClass - without it, this enemy could never bank
+	// at any type-keyed zone (issue #242).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Trooper")
+	TObjectPtr<UEnemyTypeIndicatorComponent> EnemyTypeIndicatorComponent;
 
 	// Rapid cadence - clearly shorter than Sniper's 1.2f and Bomber's 2.0f, reflecting
 	// "rapid" in the PRD table.

@@ -4,6 +4,8 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
+#include "EnemyTypeIndicatorComponent.h"
+#include "EnemyType.h"
 #include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/AudioComponent.h"
@@ -56,6 +58,9 @@ ATrooperEnemy::ATrooperEnemy()
 	AttackTellLightComponent->SetLightColor(FLinearColor(1.0f, 0.1f, 0.6f));
 	AttackTellLightComponent->SetIntensity(0.0f); // off until Attack entry
 	AttackTellLightComponent->SetAttenuationRadius(300.0f);
+
+	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
+	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::TR_UPR;
 
 	// Placeholder-first default (MISSION.md) so issue #30's "a distinct sound
 	// effect plays" AC holds without waiting on a designer to configure

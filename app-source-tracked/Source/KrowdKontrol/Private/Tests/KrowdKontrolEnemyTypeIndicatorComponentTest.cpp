@@ -19,6 +19,8 @@
 #include "EnemyType.h"
 #include "BomberEnemy.h"
 #include "SniperEnemy.h"
+#include "RunnerEnemy.h"
+#include "TrooperEnemy.h"
 #include "EnemyBaseTestActor.h"
 #include "ReservedGameplayColours.h"
 #include "Tests/AutomationEditorCommon.h"
@@ -68,6 +70,38 @@ bool FKrowdKontrolEnemyTypeIndicatorComponentTest::RunTest(const FString& Parame
 	TestEqual(TEXT("Sniper's marker text matches EEnemyType::SN_1PR's own DisplayName"),
 		SniperIndicator->GetMarkerText().ToString(),
 		StaticEnum<EEnemyType>()->GetDisplayNameTextByValue(static_cast<int64>(EEnemyType::SN_1PR)).ToString());
+
+	ARunnerEnemy* Runner = NewObject<ARunnerEnemy>();
+	if (!TestNotNull(TEXT("ARunnerEnemy should construct"), Runner))
+	{
+		return false;
+	}
+	UEnemyTypeIndicatorComponent* RunnerIndicatorReal = Runner->EnemyTypeIndicatorComponent;
+	if (!TestNotNull(TEXT("ARunnerEnemy should have an EnemyTypeIndicatorComponent"), RunnerIndicatorReal))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Runner's EnemyTypeIndicatorComponent is RU_NNR"),
+		static_cast<uint8>(RunnerIndicatorReal->EnemyType), static_cast<uint8>(EEnemyType::RU_NNR));
+	TestEqual(TEXT("Runner's marker text matches EEnemyType::RU_NNR's own DisplayName"),
+		RunnerIndicatorReal->GetMarkerText().ToString(),
+		StaticEnum<EEnemyType>()->GetDisplayNameTextByValue(static_cast<int64>(EEnemyType::RU_NNR)).ToString());
+
+	ATrooperEnemy* Trooper = NewObject<ATrooperEnemy>();
+	if (!TestNotNull(TEXT("ATrooperEnemy should construct"), Trooper))
+	{
+		return false;
+	}
+	UEnemyTypeIndicatorComponent* TrooperIndicatorReal = Trooper->EnemyTypeIndicatorComponent;
+	if (!TestNotNull(TEXT("ATrooperEnemy should have an EnemyTypeIndicatorComponent"), TrooperIndicatorReal))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Trooper's EnemyTypeIndicatorComponent is TR_UPR"),
+		static_cast<uint8>(TrooperIndicatorReal->EnemyType), static_cast<uint8>(EEnemyType::TR_UPR));
+	TestEqual(TEXT("Trooper's marker text matches EEnemyType::TR_UPR's own DisplayName"),
+		TrooperIndicatorReal->GetMarkerText().ToString(),
+		StaticEnum<EEnemyType>()->GetDisplayNameTextByValue(static_cast<int64>(EEnemyType::TR_UPR)).ToString());
 
 	// (b) World-backed: spawn real actors for all 4 core types (2 concrete gameplay
 	// actors, 2 AEnemyBaseTestActor stand-ins for RU-NNR/TR-UPR, which have no

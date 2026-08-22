@@ -101,6 +101,27 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	// Third marker (TR_UPR, countered by Root/Teal) - issue #242's acceptance
+	// criterion: a Controlled Trooper delivered onto its own type-matched zone must
+	// reach Banked, proving the fix (ATrooperEnemy now owns an
+	// EnemyTypeIndicatorComponent) closes the real gap, not just the synthetic one.
+	AActor* TrooperMarker = Room->AddTargetZone(EEnemyType::TR_UPR);
+	if (!TestNotNull(TEXT("Trooper marker should spawn"), TrooperMarker))
+	{
+		return false;
+	}
+	// AddTargetZone() snaps every marker to the room's own location (no per-marker
+	// placement param), so Marker/SecondMarker/TrooperMarker - and therefore their
+	// self-healed ATargetZones below - would otherwise all sit exactly on top of one
+	// another. That's harmless for the first two (their enemy types never match each
+	// other), but the existing wrong-type fixture below deliberately overlaps a real
+	// ATrooperEnemy onto `BankingZone` (RU_NNR) to prove type-keyed rejection - if
+	// TrooperBankingZone stayed co-located with it, that same physical overlap would
+	// also satisfy TrooperBankingZone's TR_UPR match and incorrectly bank there.
+	// Moving this marker well clear of the others keeps the two scenarios physically
+	// independent.
+	TrooperMarker->SetActorLocation(FVector(5000.f, 5000.f, 0.f));
+
 	Room->FinishSpawning(FTransform::Identity);
 
 	ATargetZone* BankingZone = FindAttachedZone(Marker);
@@ -118,6 +139,14 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Second banking zone should be colour-tagged Blue for an SN-1PR marker"),
 		SecondBankingZone->ZoneColourTag, ReservedGameplayColours::GetBlueTag());
+
+	ATargetZone* TrooperBankingZone = FindAttachedZone(TrooperMarker);
+	if (!TestNotNull(TEXT("Trooper marker should have a self-healed ATargetZone attached via BeginPlay()"), TrooperBankingZone))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Trooper banking zone should be colour-tagged Teal for a TR_UPR marker"),
+		TrooperBankingZone->ZoneColourTag, ReservedGameplayColours::GetTealTag());
 
 	// Calling EnsureBankingZonesWired() a second time must not double-spawn, for
 	// either marker.
@@ -193,6 +222,27 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 		TestNotEqual(TEXT("An uncontrolled enemy overlapping the zone should not bank"),
 			static_cast<uint8>(UncontrolledEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 	}
+
+	// Issue #242 acceptance criterion: a Controlled Trooper delivered onto its own
+	// TR_UPR-typed zone reaches Banked. Controlled with Root deliberately - Root is
+	// TR_UPR's own countering ability (AbilityData.cpp), though type-keyed acceptance
+	// means any controlling ability would bank here; Stun is already covered by the
+	// RU-NNR happy path above, so this exercises a second ability for coverage.
+	ATrooperEnemy* BankableTrooper = World->SpawnActor<ATrooperEnemy>(
+		TrooperBankingZone->GetActorLocation() + FVector(1000.f, 0.f, 0.f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Bankable trooper should spawn"), BankableTrooper))
+	{
+		return false;
+	}
+	BankableTrooper->TickCheckDetection(BankableTrooper->GetActorLocation());
+	BankableTrooper->ReceiveControl(EAbilitySlot::Root);
+	TestEqual(TEXT("Trooper should be Controlled before overlapping its zone"),
+		static_cast<uint8>(BankableTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	BankableTrooper->SetActorLocation(TrooperBankingZone->GetActorLocation(), /*bSweep=*/true);
+
+	TestEqual(TEXT("A controlled Trooper overlapping its own TR_UPR zone should reach Banked (issue #242)"),
+		static_cast<uint8>(BankableTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 
 	return true;
 }
