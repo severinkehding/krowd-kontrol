@@ -25,7 +25,6 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "Materials/Material.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -56,15 +55,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString& Parameters)
 {
-	// InitializeIndicatorVisual() now logs a warning (see error-handling fix) whenever
-	// the placeholder M_AbilityIndicator material fails to load - and per this issue's
-	// own Known Gaps, that asset was never authored in this environment, so every
-	// component instance below that reaches this code path will log it once. Not this
-	// test's concern (it's exercised independently of whether the content asset
-	// exists - see the forced-MID injection below), so expect any number of
-	// occurrences. Occurrences=0 means "any count"; IsRegex=false per the D-012
-	// AddExpectedError convention.
-	AddExpectedError(TEXT("failed to load placeholder material"), EAutomationExpectedErrorFlags::Contains, 0, false);
+	// InitializeIndicatorVisual() logs a warning (see error-handling fix) whenever the
+	// placeholder M_AbilityIndicator material fails to load, but the asset now ships
+	// (see this issue's Known Gaps resolution) and loads successfully in every case
+	// this test exercises, so no AddExpectedError is registered for it here - unlike
+	// EAutomationExpectedErrorFlags::Contains with 0 occurrences elsewhere in this
+	// codebase, this UE version's AutomationController treats an expected error's
+	// ExpectedNumberOfOccurrences=0 as "must occur at least once", not "any count
+	// including zero" - confirmed empirically: this test failed with "Expected
+	// suppressed ... did not occur" once the warning stopped firing.
 
 	// (a) Construction: spawn an AActor + manual USceneComponent root in a
 	// CreateNewMap() World, NewObject + RegisterComponent, then drive
@@ -105,14 +104,12 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 	TestTrue(TEXT("A second InitializeIndicatorVisual() call should not create a duplicate IndicatorMeshComponent"),
 		Indicator->IndicatorMeshComponent == FirstMeshComponent);
 
-	// Force material-parameter coverage independent of whether the placeholder
-	// M_AbilityIndicator content asset exists in this environment (it may not - see
-	// this issue's Known Gaps). Uses the engine's always-available default material as
-	// the base so ApplyMaterialParameters() is exercised unconditionally by (b)/(c)
-	// below, rather than silently skipping their material-param assertions.
-	Indicator->IndicatorMaterialInstance = UMaterialInstanceDynamic::Create(
-		UMaterial::GetDefaultMaterial(MD_Surface), Indicator);
-	if (!TestNotNull(TEXT("Forced IndicatorMaterialInstance for material-param coverage should be non-null"),
+	// M_AbilityIndicator now exists as a real content asset (see this issue's Known
+	// Gaps resolution), so InitializeIndicatorVisual() above should already have loaded
+	// it and created a real IndicatorMaterialInstance from it - assert that directly
+	// rather than force-injecting a substitute MID, so (b)/(c) below exercise the
+	// actual shipped material's "Colour"/"ConeHalfAngleDegrees" parameters.
+	if (!TestNotNull(TEXT("IndicatorMaterialInstance should be created from the real M_AbilityIndicator asset after InitializeIndicatorVisual"),
 		ToRawPtr(Indicator->IndicatorMaterialInstance)))
 	{
 		return false;
@@ -157,15 +154,11 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 		TestTrue(*FString::Printf(TEXT("Indicator colour for slot %d should be one of the 5 reserved gameplay colours"), static_cast<int32>(Slot)),
 			AllReserved.ContainsByPredicate([SlotColour](const FLinearColor& Reserved) { return Reserved.Equals(SlotColour, 0.01f); }));
 
-		if (Indicator->IndicatorMaterialInstance)
-		{
-			FLinearColor MaterialColour;
-			if (Indicator->IndicatorMaterialInstance->GetVectorParameterValue(FMaterialParameterInfo(TEXT("Colour")), MaterialColour))
-			{
-				TestTrue(*FString::Printf(TEXT("MID Colour param for slot %d should match its locked AbilityData colour"), static_cast<int32>(Slot)),
-					MaterialColour.Equals(SlotColour, 0.01f));
-			}
-		}
+		FLinearColor MaterialColour;
+		TestTrue(*FString::Printf(TEXT("MID should expose a 'Colour' vector parameter for slot %d"), static_cast<int32>(Slot)),
+			Indicator->IndicatorMaterialInstance->GetVectorParameterValue(FMaterialParameterInfo(TEXT("Colour")), MaterialColour));
+		TestTrue(*FString::Printf(TEXT("MID Colour param for slot %d should match its locked AbilityData colour"), static_cast<int32>(Slot)),
+			MaterialColour.Equals(SlotColour, 0.01f));
 	}
 
 	// (c) Shape-kind-switching AC: each of the 4 shape kinds, with distinct
@@ -216,9 +209,13 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 			Indicator->IndicatorMeshComponent->GetComponentLocation().Equals(ExpectedLocation, 0.5f));
 		TestTrue(*FString::Printf(TEXT("IndicatorMeshComponent world rotation should match FacingRotation for shape kind %d"), static_cast<int32>(Case.Kind)),
 			Indicator->IndicatorMeshComponent->GetComponentRotation().Equals(Case.FacingRotation, 0.5f));
+		// /Engine/BasicShapes/Plane is 100uu at scale 1.0 - same convention as
+		// RoomActor.cpp/DoorConnectorActor.cpp - so the expected scale is the diameter
+		// divided by 100, not the raw diameter.
 		const float ExpectedDiameter = Case.RangeUnits * 2.0f;
-		TestTrue(*FString::Printf(TEXT("IndicatorMeshComponent world scale should be 2x RangeUnits for shape kind %d"), static_cast<int32>(Case.Kind)),
-			Indicator->IndicatorMeshComponent->GetComponentScale().Equals(FVector(ExpectedDiameter, ExpectedDiameter, 1.0f), 0.5f));
+		const float ExpectedPlaneScale = ExpectedDiameter / 100.0f;
+		TestTrue(*FString::Printf(TEXT("IndicatorMeshComponent world scale should be 2x RangeUnits / 100 for shape kind %d"), static_cast<int32>(Case.Kind)),
+			Indicator->IndicatorMeshComponent->GetComponentScale().Equals(FVector(ExpectedPlaneScale, ExpectedPlaneScale, 1.0f), 0.05f));
 
 		// GetEffectiveMaskHalfAngleDegrees is private - reachable here via this test
 		// class's friend grant on UAbilityTargetingIndicatorComponent, same idiom
@@ -226,15 +223,11 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 		TestEqual(*FString::Printf(TEXT("Effective mask half-angle should match for shape kind %d"), static_cast<int32>(Case.Kind)),
 			UAbilityTargetingIndicatorComponent::GetEffectiveMaskHalfAngleDegrees(ShapeSpec), Case.ExpectedMaskHalfAngleDegrees);
 
-		if (Indicator->IndicatorMaterialInstance)
-		{
-			float MaterialMaskAngle = 0.0f;
-			if (Indicator->IndicatorMaterialInstance->GetScalarParameterValue(FMaterialParameterInfo(TEXT("ConeHalfAngleDegrees")), MaterialMaskAngle))
-			{
-				TestEqual(*FString::Printf(TEXT("MID ConeHalfAngleDegrees param should match for shape kind %d"), static_cast<int32>(Case.Kind)),
-					MaterialMaskAngle, Case.ExpectedMaskHalfAngleDegrees);
-			}
-		}
+		float MaterialMaskAngle = 0.0f;
+		TestTrue(*FString::Printf(TEXT("MID should expose a 'ConeHalfAngleDegrees' scalar parameter for shape kind %d"), static_cast<int32>(Case.Kind)),
+			Indicator->IndicatorMaterialInstance->GetScalarParameterValue(FMaterialParameterInfo(TEXT("ConeHalfAngleDegrees")), MaterialMaskAngle));
+		TestEqual(*FString::Printf(TEXT("MID ConeHalfAngleDegrees param should match for shape kind %d"), static_cast<int32>(Case.Kind)),
+			MaterialMaskAngle, Case.ExpectedMaskHalfAngleDegrees);
 	}
 
 	// (d) Show/Hide AC.

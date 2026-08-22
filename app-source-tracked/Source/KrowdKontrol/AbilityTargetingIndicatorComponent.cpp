@@ -178,8 +178,11 @@ void UAbilityTargetingIndicatorComponent::ApplyShapeTransform(const FAbilityIndi
 	constexpr float GroundZOffsetUnits = 2.0f;
 	IndicatorMeshComponent->SetWorldLocation(ShapeSpec.Origin + FVector(0.0f, 0.0f, GroundZOffsetUnits));
 	IndicatorMeshComponent->SetWorldRotation(ShapeSpec.FacingRotation);
+	// /Engine/BasicShapes/Plane is 100uu at scale 1.0, so scale = desired size-in-cm /
+	// 100 - same convention as RoomActor.cpp and DoorConnectorActor.cpp.
 	const float Diameter = FMath::Max(ShapeSpec.RangeUnits, 0.0f) * 2.0f;
-	IndicatorMeshComponent->SetWorldScale3D(FVector(Diameter, Diameter, 1.0f));
+	const float PlaneScale = Diameter / 100.0f;
+	IndicatorMeshComponent->SetWorldScale3D(FVector(PlaneScale, PlaneScale, 1.0f));
 }
 
 void UAbilityTargetingIndicatorComponent::ApplyMaterialParameters(const FAbilityIndicatorShapeSpec& ShapeSpec, FLinearColor Colour)

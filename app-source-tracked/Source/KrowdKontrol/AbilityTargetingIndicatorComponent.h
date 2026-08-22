@@ -65,6 +65,13 @@ struct FAbilityIndicatorShapeSpec
 // owner-relative" idiom as UAbilityCastVFXComponent::CastFlashLightComponent, and for
 // the same reason: the shape's world position must not silently drag with whatever
 // actor happens to own this component.
+//
+// InitializeIndicatorVisual() creates IndicatorMeshComponent under GetOwner() with a
+// fixed name ("AbilityIndicatorMeshComponent") rather than a generated unique one, so
+// only one UAbilityTargetingIndicatorComponent instance per Owner is supported - a
+// second instance on the same Owner would collide with the first one's mesh component
+// name. Give each ability/caller its own Owner (or its own component-holding actor) if
+// more than one indicator is needed at once.
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KROWDKONTROL_API UAbilityTargetingIndicatorComponent : public UActorComponent
 {
