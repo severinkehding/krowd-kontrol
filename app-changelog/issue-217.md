@@ -12,8 +12,20 @@ subscribes to the already-existing `ULevelLifecycleSubsystem::OnLevelBegin` sign
 `Initialize()` (mirroring the already-merged `UCrowdMasterySubsystem` precedent exactly)
 and forwards the level index — parsed from the map's `L_LevelNN` name, with an interim
 default of level 1 for non-matching/prototype maps — to the possessed pawn's
-`UAbilityUnlockComponent`. No existing file was modified; both `UAbilityUnlockComponent`
-and `ULevelLifecycleSubsystem` were consumed as-is.
+`UAbilityUnlockComponent`.
+
+**Post-review fix pass**: code review flagged that `HandleLevelBegin`'s pawn lookup had
+no fallback if `OnLevelBegin` (which fires exactly once per world) beat
+`AutoPossessPlayer`'s pawn possession — an unrecoverable, silent miss reproducing the
+original bug in a narrower window. Fixed by adding
+`UAbilityUnlockLevelSubsystem::RetryPendingUnlockForPawn()`, called from
+`AKrowdKontrolPlayerController::BeginPlay()`/`OnPossess()` (mirroring that class's
+existing `WireWidgetsToPawn`/`ApplyBossCheckpointIfRequested` dual-call-site idiom for
+the same timing hazard) — this does modify `KrowdKontrolPlayerController.h/.cpp` and
+`AbilityUnlockComponent.h`'s stale doc comment, unlike the original scope-discipline
+claim above. Also removed a dead `friend class` declaration (granted no access beyond
+already-`public` members) and added test coverage for the missing-pawn/-component
+branch and the new retry path.
 
 ## Acceptance Criteria
 
@@ -33,11 +45,13 @@ and `ULevelLifecycleSubsystem` were consumed as-is.
   `KrowdKontrol.Unit.AbilityUnlockLevelSubsystem`), `UE_BUILD_OK`,
   `UE_AUTOMATION_RESULT passed=1 total=1`, `E2E_PASSED steps=1`. Passed clean on first
   run, no fixes required.
-- Scope check: diff touches only the three new files under
+- Scope check: diff touches the three original new files plus, after the review fix
+  pass, `KrowdKontrolPlayerController.h/.cpp` (retry wiring) and
+  `AbilityUnlockComponent.h` (one comment line) under
   `app-source-tracked/Source/KrowdKontrol/...` — no governance files, no `.github/`, no
   deploy config.
 - `app/` vs `app-source-tracked/` parity: confirmed byte-identical via `diff` for all
-  three files (no concurrent-task leakage from the shared `app/` symlink).
+  six touched files (no concurrent-task leakage from the shared `app/` symlink).
 - Hard invariants (MISSION.md): reviewed by inspection — the change only wires an
   existing ability-unlock mapping into real play; introduces no new ability, colour, or
   enemy type, and doesn't touch kill/banking rules, engine choice, or networking scope.

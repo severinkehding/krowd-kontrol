@@ -28,8 +28,15 @@ void UAbilityUnlockLevelSubsystem::HandleLevelBegin(FName MapName)
 	const APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
 	const APawn* Pawn = PlayerController ? PlayerController->GetPawn() : nullptr;
 	UAbilityUnlockComponent* UnlockComponent = Pawn ? Pawn->FindComponentByClass<UAbilityUnlockComponent>() : nullptr;
+	const int32 LevelIndex = ParseLevelIndexFromMapName(MapName);
 	if (!UnlockComponent)
 	{
+		// AutoPossessPlayer's timing relative to OnLevelBegin isn't guaranteed (same
+		// hazard AKrowdKontrolPlayerController::BeginPlay() already documents for
+		// itself) - remember this level's index so RetryPendingUnlockForPawn() can
+		// still deliver it once a pawn is possessed, since OnLevelBegin only fires once.
+		bLevelBeginFiredWithNoPawn = true;
+		PendingLevelIndex = LevelIndex;
 		if (!bHasWarnedMissingAbilityUnlockComponent)
 		{
 			bHasWarnedMissingAbilityUnlockComponent = true;
@@ -39,7 +46,22 @@ void UAbilityUnlockLevelSubsystem::HandleLevelBegin(FName MapName)
 		}
 		return;
 	}
-	UnlockComponent->NotifyLevelReached(ParseLevelIndexFromMapName(MapName));
+	UnlockComponent->NotifyLevelReached(LevelIndex);
+}
+
+void UAbilityUnlockLevelSubsystem::RetryPendingUnlockForPawn(APawn* PossessedPawn)
+{
+	if (!bLevelBeginFiredWithNoPawn)
+	{
+		return;
+	}
+	UAbilityUnlockComponent* UnlockComponent = PossessedPawn ? PossessedPawn->FindComponentByClass<UAbilityUnlockComponent>() : nullptr;
+	if (!UnlockComponent)
+	{
+		return;
+	}
+	bLevelBeginFiredWithNoPawn = false;
+	UnlockComponent->NotifyLevelReached(PendingLevelIndex);
 }
 
 int32 UAbilityUnlockLevelSubsystem::ParseLevelIndexFromMapName(FName MapName)

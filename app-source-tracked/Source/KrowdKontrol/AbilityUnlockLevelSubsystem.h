@@ -18,8 +18,8 @@
 // separately - "Advance to next level on level-clear per a configured level sequence",
 // issue #216) - this uses the map's own name as the interim per-map source, parsing
 // the trailing digits from the project's established "L_LevelNN" naming (L_Level01,
-// L_Level02 exist on disk today; see LevelLightingRigActor.h's identical reliance on
-// this convention). Any non-matching map name (including the two prototype maps,
+// L_Level02 exist on disk today, per LevelLightingRigActor.h's class comment). Any
+// non-matching map name (including the two prototype maps,
 // L_FlatCamera3DPrototype/L_Paper2DPrototype) defaults to level 1, which
 // UAbilityUnlockComponent::NotifyLevelReached already documents as a safe no-op -
 // revisit ParseLevelIndexFromMapName() once issue #216's sequence config lands, per
@@ -28,12 +28,6 @@ UCLASS()
 class KROWDKONTROL_API UAbilityUnlockLevelSubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()
-
-	// Grants the Automation Framework test direct access to HandleLevelBegin/
-	// ParseLevelIndexFromMapName without needing a real OnLevelBegin broadcast for
-	// every level index under test, mirroring UCrowdMasterySubsystem's own
-	// test-drivable-handler shape.
-	friend class FKrowdKontrolAbilityUnlockLevelSubsystemTest;
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
@@ -59,10 +53,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Unlock")
 	static int32 ParseLevelIndexFromMapName(FName MapName);
 
+	// Called by AKrowdKontrolPlayerController::BeginPlay()/OnPossess() when a pawn
+	// becomes possessed. OnLevelBegin fires exactly once per world
+	// (ULevelLifecycleSubsystem::bHasFiredLevelBegin), so if HandleLevelBegin ran
+	// before AutoPossessPlayer resolved (order isn't guaranteed - see
+	// AKrowdKontrolPlayerController::BeginPlay()'s own comment on this), the unlock
+	// would otherwise be skipped for the rest of this world's lifetime. No-ops if
+	// HandleLevelBegin already found a pawn+component, or hasn't fired yet.
+	void RetryPendingUnlockForPawn(APawn* PossessedPawn);
+
 private:
 	// One-shot guard so a level with no possessed pawn/AbilityUnlockComponent (e.g. a
 	// future menu map added to the lifecycle-eligible set) only logs once per world
 	// instance, matching AKrowdKontrolPlayerController::bHasWarnedMissingLevelClearTimeSubsystem's
 	// identical idiom.
 	bool bHasWarnedMissingAbilityUnlockComponent = false;
+
+	// Set when HandleLevelBegin finds no possessed pawn/component, so a later
+	// RetryPendingUnlockForPawn() call can still deliver this level's unlock once a
+	// pawn is possessed.
+	bool bLevelBeginFiredWithNoPawn = false;
+	int32 PendingLevelIndex = 1;
 };

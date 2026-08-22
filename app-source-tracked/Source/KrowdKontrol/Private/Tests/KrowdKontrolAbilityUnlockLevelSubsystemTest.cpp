@@ -3,8 +3,11 @@
 // L_LevelNN convention, its two prototype-map no-op exceptions, and PIE name-mangling;
 // (b) the acceptance criteria itself - driving HandleLevelBegin through levels 1-5 in
 // order unlocks Sleep/Root/Fear/Snare on a possessed pawn's UAbilityUnlockComponent;
-// and (c) the real Initialize()-time OnLevelBegin subscription, not just the handler
-// logic in isolation.
+// (c) the real Initialize()-time OnLevelBegin subscription, not just the handler logic
+// in isolation; (d) the no-possessed-pawn/no-component branch's one-shot warning guard;
+// and (e) the AutoPossessPlayer-races-OnLevelBegin recovery path, where a level's
+// unlock arrives late via AKrowdKontrolPlayerController::OnPossess ->
+// RetryPendingUnlockForPawn() instead of being lost.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -133,6 +136,80 @@ bool FKrowdKontrolAbilityUnlockLevelSubsystemTest::RunTest(const FString& Parame
 		TestTrue(TEXT("Stun should still be the only unlocked ability for a non-L_LevelNN map name"),
 			UnlockComponent->IsAbilityUnlocked(EAbilitySlot::Stun));
 		TestFalse(TEXT("Sleep should stay locked for a non-L_LevelNN map name (safe no-op, not a crash)"),
+			UnlockComponent->IsAbilityUnlocked(EAbilitySlot::Sleep));
+	}
+
+	// (d) No possessed pawn / no UAbilityUnlockComponent: HandleLevelBegin must not
+	// crash, and the missing-component warning must fire exactly once even across
+	// repeated calls (bHasWarnedMissingAbilityUnlockComponent).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		UAbilityUnlockLevelSubsystem* Subsystem = World->GetSubsystem<UAbilityUnlockLevelSubsystem>();
+		if (!TestNotNull(TEXT("UAbilityUnlockLevelSubsystem should exist"), Subsystem))
+		{
+			return false;
+		}
+
+		AddExpectedError(TEXT("no possessed pawn with a UAbilityUnlockComponent found"),
+			EAutomationExpectedErrorFlags::Contains, 1, false);
+
+		// No pawn/controller spawned at all - GetFirstPlayerController() resolves null,
+		// matching a menu map with no playable pawn.
+		Subsystem->HandleLevelBegin(FName(TEXT("L_Level02")));
+		Subsystem->HandleLevelBegin(FName(TEXT("L_Level03")));
+		// The AddExpectedError count of 1 above asserts the second call did not log again.
+	}
+
+	// (e) OnLevelBegin racing pawn possession: if HandleLevelBegin fires before the
+	// pawn is possessed, the unlock must still land once AKrowdKontrolPlayerController
+	// possesses the pawn, via RetryPendingUnlockForPawn() - not be silently dropped for
+	// the rest of the world's lifetime.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		UAbilityUnlockLevelSubsystem* Subsystem = World->GetSubsystem<UAbilityUnlockLevelSubsystem>();
+		if (!TestNotNull(TEXT("UAbilityUnlockLevelSubsystem should exist"), Subsystem))
+		{
+			return false;
+		}
+
+		APawn* Pawn = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Pawn);
+		UnlockComponent->RegisterComponent();
+
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller))
+		{
+			return false;
+		}
+		// Registers the controller in the world's controller list (see the (b)/(c)
+		// comment above on CreateNewMap() skipping PostInitializeComponents) without
+		// possessing the pawn yet, so GetFirstPlayerController() resolves the
+		// controller while GetPawn() still returns null - the exact "OnLevelBegin fired
+		// before AutoPossessPlayer resolved" ordering this fix targets.
+		World->AddController(Controller);
+
+		AddExpectedError(TEXT("no possessed pawn with a UAbilityUnlockComponent found"),
+			EAutomationExpectedErrorFlags::Contains, 1, false);
+
+		Subsystem->HandleLevelBegin(FName(TEXT("L_Level02")));
+		TestFalse(TEXT("Sleep should still be locked - the pawn isn't possessed yet"),
+			UnlockComponent->IsAbilityUnlocked(EAbilitySlot::Sleep));
+
+		// Possessing now drives AKrowdKontrolPlayerController::OnPossess ->
+		// RetryPendingAbilityUnlock() -> RetryPendingUnlockForPawn(), delivering the
+		// unlock this level's OnLevelBegin couldn't land a moment ago.
+		Controller->Possess(Pawn);
+		TestTrue(TEXT("Sleep should unlock once the pawn is possessed, via the retry path"),
 			UnlockComponent->IsAbilityUnlocked(EAbilitySlot::Sleep));
 	}
 

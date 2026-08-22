@@ -39,9 +39,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability Unlock")
 	bool IsAbilityUnlocked(EAbilitySlot Ability) const;
 
-	// Explicit level-progression signal a caller (today, a test double; later, a real
-	// level-progression subsystem - PRD 05/03 don't expose one yet, per issue #69's
-	// Notes) invokes once per level reached. Idempotent per level: unlocking the
+	// Explicit level-progression signal a caller (UAbilityUnlockLevelSubsystem in real
+	// play, per issue #217; a test double in Automation tests) invokes once per level
+	// reached. Idempotent per level: unlocking the
 	// ability mapped to LevelIndex only happens once, repeat calls are no-ops. Level 1
 	// (Stun, already unlocked at construction) is a silent no-op - a real
 	// level-progression signal firing once per level transition will naturally include
