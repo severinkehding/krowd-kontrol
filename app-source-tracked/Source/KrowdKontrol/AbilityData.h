@@ -39,6 +39,11 @@ struct FAbilityData
 	EAbilityTargetType TargetType = EAbilityTargetType::Single;
 	FLinearColor Colour = FLinearColor::Black;
 
+	// FName counterpart to Colour above - issue #211's IHerdable::GetHerdColourTag()
+	// derivation reads this instead of re-deriving a second switch statement, same
+	// "one source of truth" rationale Colour's own comment documents for FLinearColor.
+	FName ColourTag = NAME_None;
+
 	// True only for Stun (MISSION.md Hard Invariant 4: Stun has no countered-enemy
 	// colour matchup). See CounteredEnemyType below for the actual countered-enemy
 	// value the other 4 abilities carry.

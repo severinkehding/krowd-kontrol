@@ -61,6 +61,17 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 		}
 	}
 
+	// (1a) Each GetXTag() accessor's FName literal, pinned against its expected plain-
+	// English string - every other place these accessors are exercised (AbilityData,
+	// EnemyBase, RoomActor tests) only compares production output against a call to the
+	// same accessor, which is circular for verifying the literal itself. This is the
+	// one independent ground-truth check.
+	TestEqual(TEXT("GetPurpleTag() should be 'Purple'"), ReservedGameplayColours::GetPurpleTag(), FName(TEXT("Purple")));
+	TestEqual(TEXT("GetTealTag() should be 'Teal'"), ReservedGameplayColours::GetTealTag(), FName(TEXT("Teal")));
+	TestEqual(TEXT("GetOrangeTag() should be 'Orange'"), ReservedGameplayColours::GetOrangeTag(), FName(TEXT("Orange")));
+	TestEqual(TEXT("GetBlueTag() should be 'Blue'"), ReservedGameplayColours::GetBlueTag(), FName(TEXT("Blue")));
+	TestEqual(TEXT("GetWhiteTag() should be 'White'"), ReservedGameplayColours::GetWhiteTag(), FName(TEXT("White")));
+
 	// (1b) White (pure 1,1,1,1) is distinguishable from both widgets' actual text
 	// colour (0.85,0.85,0.85,1.0) - proves the audit below isn't vacuously passing by
 	// coincidence.
