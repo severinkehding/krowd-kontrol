@@ -129,6 +129,12 @@ bool FKrowdKontrolLevelRestartTest::RunTest(const FString& Parameters)
 		AKrowdKontrolPlayerController::StripPIEPrefixFromMapName(TEXT("UEDPIE_0_L_Level01")),
 		FName(TEXT("L_Level01")));
 
+	// A multiplayer PIE session with more than one client window mangles with a
+	// non-zero instance index - confirm stripping isn't accidentally instance-0-specific.
+	TestEqual(TEXT("PIE-mangled map name with a non-zero instance ID should also be stripped"),
+		AKrowdKontrolPlayerController::StripPIEPrefixFromMapName(TEXT("UEDPIE_1_L_Level01")),
+		FName(TEXT("L_Level01")));
+
 	return true;
 }
 
