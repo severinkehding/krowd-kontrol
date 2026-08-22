@@ -61,20 +61,23 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UCameraComponent> TopDownCamera;
 
-	// Camera framing (issue #188, PRD "Level Playability & Presentation" REQ-4) -
-	// EditAnywhere so designers can retune "feels far away / hard to read" without a
-	// C++ recompile. Ranges below are the newly documented defaults' valid bounds;
-	// KrowdKontrol.Unit.FlatCamera3DPipelineCameraFraming asserts both the bounds and
-	// that these properties genuinely drive CameraBoom/TopDownCamera via
-	// ApplyCameraFraming() below, not just at construction time.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "300.0", ClampMax = "600.0"))
-	float CameraArmLength = 450.0f;
+	// Camera framing (issue #188, PRD "Level Playability & Presentation" REQ-4;
+	// arm length and field of view retuned by issue #251, PRD "Mission Briefing &
+	// Live Quest Tracker" REQ-4, after 2026-08-22 playtests found the shipped
+	// default too close for crowd management) - EditAnywhere so designers can
+	// retune "feels far away / hard to read" without a C++ recompile. Ranges
+	// below are the newly documented defaults' valid bounds;
+	// KrowdKontrol.Unit.FlatCamera3DPipelineCameraFraming asserts both the
+	// bounds and that these properties genuinely drive CameraBoom/TopDownCamera
+	// via ApplyCameraFraming() below, not just at construction time.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "600.0", ClampMax = "2000.0"))
+	float CameraArmLength = 1500.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "-75.0", ClampMax = "-45.0"))
 	float CameraBoomPitch = -60.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype|Camera", meta = (ClampMin = "60.0", ClampMax = "90.0"))
-	float CameraFieldOfView = 75.0f;
+	float CameraFieldOfView = 90.0f;
 
 	// Makes the run's crowd-control unlock state (issue #69) reachable from the only
 	// pawn placed in the project's actual playable level - this pawn was previously
