@@ -47,7 +47,7 @@ exists.
 - Automation tests: facing derives from a given cursor world position;
   movement unaffected by facing.
 
-### REQ-3: Shared targeting-indicator system (P0)
+### REQ-3: Shared targeting-indicator system (P0) — ✅ rendering primitive implemented, issue #264 (press/hold input wiring still open)
 - A reusable indicator component/system that any ability can drive with a
   shape spec (circle-at-actor, circle-at-cursor, cone, line — shapes
   parameterized; the concrete per-ability values live in the shapes PRD):
