@@ -35,6 +35,20 @@ bool UAbilityCastComponent::TryCastAbility(EAbilitySlot Ability)
 	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: entry, Ability=%s"),
 		*UEnum::GetValueAsString(Ability));
 
+	// Issue #246: the pre-level briefing card pauses the world while shown, but
+	// APlayerController ticks/processes input even while paused (engine default, so
+	// pause menus stay interactive) - so the briefing's EKeys::AnyKey dismiss-bind
+	// and an ability-cast key can both fire from the same keypress without this gate.
+	if (const UWorld* World = GetWorld())
+	{
+		if (World->IsPaused())
+		{
+			UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s world is paused (briefing/safe-state active)"),
+				*UEnum::GetValueAsString(Ability));
+			return false;
+		}
+	}
+
 	AActor* Owner = GetOwner();
 	if (!Owner)
 	{

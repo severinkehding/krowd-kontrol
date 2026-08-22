@@ -4,11 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "LevelBriefingData.h"
 #include "KrowdKontrolPlayerController.generated.h"
 
 class UAbilityCooldownTrayWidget;
 class UEnergyMeterWidget;
 class UOnScreenPromptWidget;
+class UBriefingCardWidget;
 class APlaceholderTargetZoneActor;
 class ULevelClearTimeSubsystem;
 class ULevelFailComponent;
@@ -48,6 +50,18 @@ public:
 	// consumers reach out to the controller instead (the opposite direction).
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
 	TObjectPtr<UOnScreenPromptWidget> OnScreenPromptWidgetInstance;
+
+	// Pre-level briefing card (issue #246). Populated on
+	// ULevelLifecycleSubsystem::OnLevelBegin via ShowLevelBriefing() below.
+	UPROPERTY(BlueprintReadOnly, Category = "HUD")
+	TObjectPtr<UBriefingCardWidget> BriefingCardWidgetInstance;
+
+	// Called by ULevelBriefingSubsystem::HandleLevelBegin. If BriefingCardWidgetInstance
+	// doesn't exist yet (OnLevelBegin fires before CreateHUDWidgets(), same race issue
+	// #235 fixed for OnScreenPromptWidgetInstance), buffers Row and CreateHUDWidgets()
+	// flushes it once the widget is live.
+	UFUNCTION(BlueprintCallable, Category = "HUD")
+	void ShowLevelBriefing(const FLevelBriefingRow& Row);
 
 	// Beacon hook (issue #132's third scoped deliverable, PRD 13 REQ-6): the live
 	// world-space target-zone beacons, collected at BeginPlay and re-collectable via
@@ -92,11 +106,25 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void SetupInputComponent() override;
 
 private:
 	// Constructs all HUD widgets and adds them to the viewport. Idempotent - a repeat
 	// call (e.g. accidental double BeginPlay) is a no-op if the widgets already exist.
 	void CreateHUDWidgets();
+
+	// Bound to EKeys::AnyKey in SetupInputComponent() (issue #246): dismisses the
+	// briefing card on any player input, if one is currently showing. No-ops
+	// otherwise, so a stray keypress with no briefing up is harmless.
+	UFUNCTION()
+	void HandleBriefingDismissInput();
+
+	// Set true when ShowLevelBriefing() arrives before BriefingCardWidgetInstance
+	// exists (OnLevelBegin racing CreateHUDWidgets(), same shape as
+	// UAbilityUnlockPromptComponent's FlushPendingPrompts() race, issue #235).
+	// CreateHUDWidgets() flushes this once the widget is live.
+	bool bHasPendingLevelBriefing = false;
+	FLevelBriefingRow PendingLevelBriefingRow;
 
 	// Binds the newly-possessed pawn's UAbilityUnlockComponent/UPlayerEnergyComponent
 	// (if present - FindComponentByClass returns nullptr otherwise, and both Bind*

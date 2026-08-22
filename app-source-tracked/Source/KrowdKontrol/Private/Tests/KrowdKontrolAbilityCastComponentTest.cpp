@@ -24,6 +24,8 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
+#include "GameFramework/WorldSettings.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -391,6 +393,51 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 
 		const bool bCastResult = CastComponent->TryCastAbility(EAbilitySlot::Root);
 		TestTrue(TEXT("Casting an unlocked ability should succeed while a different ability is locked"), bCastResult);
+	}
+
+	// (k) world-paused gate (issue #246): the pre-level briefing card pauses the
+	// world while shown, and TryCastAbility must fail while World->IsPaused() is
+	// true - even with an eligible target present - so no stray ability cast can
+	// land while the briefing is up.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		// UGameplayStatics::SetGamePaused()/APlayerController::SetPause() both require
+		// a live AGameModeBase (World->GetAuthGameMode()), which CreateNewMap() test
+		// Worlds never spawn - going through either would silently no-op here. Setting
+		// AWorldSettings::PauserPlayerState directly is what actually latches
+		// World->IsPaused() (see UWorld::IsPaused()'s own check), bypassing the
+		// GameMode requirement entirely - this test only needs IsPaused() to read
+		// true, not a full real-gameplay pause flow.
+		APlayerState* PauserPlayerState = NewObject<APlayerState>(Owner);
+		World->GetWorldSettings()->SetPauserPlayerState(PauserPlayerState);
+		if (!TestTrue(TEXT("World should report paused after SetPauserPlayerState()"), World->IsPaused()))
+		{
+			return false;
+		}
+
+		const bool bCastResult = CastComponent->TryCastAbility(EAbilitySlot::Stun);
+		TestFalse(TEXT("TryCastAbility should fail while the world is paused"), bCastResult);
+		TestEqual(TEXT("A paused-world cast attempt should not change the enemy's state"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 	}
 
 	return true;

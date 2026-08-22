@@ -1,0 +1,61 @@
+#include "LevelBriefingSubsystem.h"
+#include "LevelLifecycleSubsystem.h"
+#include "KrowdKontrolPlayerController.h"
+#include "GameFramework/PlayerController.h"
+#include "Engine/DataTable.h"
+#include "Engine/World.h"
+
+void ULevelBriefingSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	// Force ULevelLifecycleSubsystem to construct/Initialize() before we look it up
+	// below, mirroring UAbilityUnlockLevelSubsystem::Initialize()'s identical
+	// InitializeDependency() call.
+	Collection.InitializeDependency<ULevelLifecycleSubsystem>();
+	if (UWorld* World = GetWorld())
+	{
+		if (ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>())
+		{
+			LifecycleSubsystem->OnLevelBegin.AddDynamic(this, &ULevelBriefingSubsystem::HandleLevelBegin);
+		}
+	}
+}
+
+void ULevelBriefingSubsystem::HandleLevelBegin(FName MapName)
+{
+	if (!LevelBriefingTable)
+	{
+		if (!bHasWarnedMissingBriefingTable)
+		{
+			bHasWarnedMissingBriefingTable = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("ULevelBriefingSubsystem: LevelBriefingTable is unset - no pre-level briefing will show for map '%s'."),
+				*MapName.ToString());
+		}
+		return;
+	}
+
+	const FString BareMapName = UWorld::RemovePIEPrefix(MapName.ToString());
+	// bWarnIfRowMissing=false - a missing row is an expected, silent no-op (matches
+	// UAbilityUnlockLevelSubsystem's prototype-maps-default-to-no-op precedent), and
+	// this function already logs its own one-shot warning below.
+	const FLevelBriefingRow* Row = LevelBriefingTable->FindRow<FLevelBriefingRow>(FName(*BareMapName), TEXT("ULevelBriefingSubsystem::HandleLevelBegin"), false);
+	if (!Row)
+	{
+		if (!bHasWarnedMissingBriefingRow)
+		{
+			bHasWarnedMissingBriefingRow = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("ULevelBriefingSubsystem: no LevelBriefingTable row found for map '%s' - no pre-level briefing will show."),
+				*BareMapName);
+		}
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+	if (AKrowdKontrolPlayerController* Controller = Cast<AKrowdKontrolPlayerController>(PlayerController))
+	{
+		Controller->ShowLevelBriefing(*Row);
+	}
+}
