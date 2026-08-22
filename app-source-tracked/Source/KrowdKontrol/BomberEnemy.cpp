@@ -143,34 +143,27 @@ void ABomberEnemy::UpdateTelegraphEscalation()
 		? 1.0f - (RemainingTelegraphSeconds / AttackTelegraphSeconds)
 		: 1.0f;
 
-	if (ElapsedFraction >= TelegraphImminentThreshold)
-	{
-		CurrentTelegraphStage = EBomberTelegraphStage::Imminent;
-	}
-	else if (ElapsedFraction >= TelegraphMidThreshold)
-	{
-		CurrentTelegraphStage = EBomberTelegraphStage::Mid;
-	}
-	else
-	{
-		CurrentTelegraphStage = EBomberTelegraphStage::Early;
-	}
-
 	// Floor fractions (0.3/0.5/0.7) are a second, independent escalation axis -
 	// minimum brightness rises alongside pulse rate - deliberately hardcoded rather
 	// than exposed as EditDefaultsOnly like PulseFrequencyHz above; revisit if a
 	// designer needs to tune brightness floor independently of frequency.
 	float PulseFrequencyHz = EarlyPulseFrequencyHz;
 	float StageFloorFraction = 0.3f;
-	if (CurrentTelegraphStage == EBomberTelegraphStage::Mid)
+	if (ElapsedFraction >= TelegraphImminentThreshold)
 	{
+		CurrentTelegraphStage = EBomberTelegraphStage::Imminent;
+		PulseFrequencyHz = ImminentPulseFrequencyHz;
+		StageFloorFraction = 0.7f;
+	}
+	else if (ElapsedFraction >= TelegraphMidThreshold)
+	{
+		CurrentTelegraphStage = EBomberTelegraphStage::Mid;
 		PulseFrequencyHz = MidPulseFrequencyHz;
 		StageFloorFraction = 0.5f;
 	}
-	else if (CurrentTelegraphStage == EBomberTelegraphStage::Imminent)
+	else
 	{
-		PulseFrequencyHz = ImminentPulseFrequencyHz;
-		StageFloorFraction = 0.7f;
+		CurrentTelegraphStage = EBomberTelegraphStage::Early;
 	}
 
 	// Placeholder-quality flash (MISSION.md, docs/prd-teaching-arc.md REQ-4) -
