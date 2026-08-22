@@ -83,6 +83,9 @@ bool FKrowdKontrolEnemyTypeIndicatorComponentTest::RunTest(const FString& Parame
 	}
 	TestEqual(TEXT("Runner's EnemyTypeIndicatorComponent is RU_NNR"),
 		static_cast<uint8>(RunnerIndicatorReal->EnemyType), static_cast<uint8>(EEnemyType::RU_NNR));
+	TestEqual(TEXT("Runner's marker text matches EEnemyType::RU_NNR's own DisplayName"),
+		RunnerIndicatorReal->GetMarkerText().ToString(),
+		StaticEnum<EEnemyType>()->GetDisplayNameTextByValue(static_cast<int64>(EEnemyType::RU_NNR)).ToString());
 
 	ATrooperEnemy* Trooper = NewObject<ATrooperEnemy>();
 	if (!TestNotNull(TEXT("ATrooperEnemy should construct"), Trooper))
@@ -96,6 +99,9 @@ bool FKrowdKontrolEnemyTypeIndicatorComponentTest::RunTest(const FString& Parame
 	}
 	TestEqual(TEXT("Trooper's EnemyTypeIndicatorComponent is TR_UPR"),
 		static_cast<uint8>(TrooperIndicatorReal->EnemyType), static_cast<uint8>(EEnemyType::TR_UPR));
+	TestEqual(TEXT("Trooper's marker text matches EEnemyType::TR_UPR's own DisplayName"),
+		TrooperIndicatorReal->GetMarkerText().ToString(),
+		StaticEnum<EEnemyType>()->GetDisplayNameTextByValue(static_cast<int64>(EEnemyType::TR_UPR)).ToString());
 
 	// (b) World-backed: spawn real actors for all 4 core types (2 concrete gameplay
 	// actors, 2 AEnemyBaseTestActor stand-ins for RU-NNR/TR-UPR, which have no
