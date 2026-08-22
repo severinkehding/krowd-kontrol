@@ -29,9 +29,11 @@ struct FRoomTargetZone
 
 // Placeable, hand-authoring-era building block for a level's room topology (PRD 05
 // REQ-1/REQ-2, issue #39): holds an arbitrary number of tagged target-zone marker
-// children, added via AddTargetZone(). Structural/topology only - no enemy AI,
-// ability, or HUD logic. Room-pool/connector-shuffler generation (PRD 05
-// REQ-4/REQ-5/REQ-6) is a separate future P1 issue, not built here.
+// children, added via AddTargetZone(). No ability or HUD logic. Since issue #218,
+// also tracks which enemies it owns and whether they've all reached Banked, purely to
+// drive door gating (see OwnedEnemies/IsRoomCleared) - no enemy AI decision-making
+// lives here. Room-pool/connector-shuffler generation (PRD 05 REQ-4/REQ-5/REQ-6) is a
+// separate future P1 issue, not built here.
 UCLASS()
 class KROWDKONTROL_API ARoomActor : public AActor
 {
@@ -64,9 +66,9 @@ public:
 
 	// Adds Enemy to this room's ownership (no-op if already owned or invalid) and binds
 	// its OnEnemyBanked/OnDestroyed so the room's cleared-state is re-evaluated when it
-	// banks or is otherwise removed. Broadcasts OnRoomClearedStateChanged immediately - a
-	// room that was previously cleared becomes un-cleared the moment a new enemy is
-	// added, re-gating any door bound to it. This is the hook a future wave-spawner
+	// banks or is otherwise removed. Broadcasts OnRoomClearedStateChanged immediately -
+	// if Enemy isn't already Banked, this turns a previously-cleared room un-cleared,
+	// re-gating any door bound to it. This is the hook a future wave-spawner
 	// integration calls; this issue's own tests call it directly to simulate that
 	// without depending on UWaveSpawnerComponent (unwired to ARoomActor today).
 	UFUNCTION(BlueprintCallable, Category = "Room|Enemies")

@@ -69,8 +69,8 @@ ADoorConnectorActor::ADoorConnectorActor()
 	GateBlockingComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("GateBlockingComponent"));
 	GateBlockingComponent->SetupAttachment(DoorConnectorRoot);
 	// Starts open (no collision) - matches bIsGateOpen's default and "ungated until a
-	// GatingRoom is assigned" behaviour; RecomputeConnectorGeometry()/RefreshGateState()
-	// correct this once real room/gating data is available.
+	// GatingRoom is assigned" behaviour; RefreshGateState() corrects this once real
+	// room/gating data is available (called from BeginPlay, after GatingRoom resolves).
 	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	// Unconfigured primitives default to BlockAllDynamic - reset to Ignore-all first so
 	// the gate only ever blocks the one channel it's meant to (see RefreshGateState()'s
@@ -143,6 +143,14 @@ void ADoorConnectorActor::BeginPlay()
 	if (GatingRoom)
 	{
 		GatingRoom->OnRoomClearedStateChanged.AddUniqueDynamic(this, &ADoorConnectorActor::RefreshGateState);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ADoorConnectorActor: '%s' has no resolvable GatingRoom (RoomA/RoomB unset, ")
+			TEXT("identical, or auto-derivation skipped) - this door will never gate and stays ")
+			TEXT("permanently open."),
+			*GetNameSafe(this));
 	}
 
 	RefreshGateState();

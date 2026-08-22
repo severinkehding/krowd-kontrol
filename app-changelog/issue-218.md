@@ -111,6 +111,50 @@ followed by a later property assignment.
 | `app/Source/KrowdKontrol/Private/Tests/LevelStructureTestUtils.h` | UPDATE |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolLevel01Test.cpp` | UPDATE |
 
+## Review-fix pass (PR #229)
+
+Addressed all CRITICAL/HIGH/MEDIUM findings and most LOW findings from the 5-agent
+review of PR #229:
+
+- `KrowdKontrolLevel01Test.cpp` now asserts, after `DispatchBeginPlay()` on the real
+  shipped `L_Level01` actors, that every un-cleared door's `GateBlockingComponent`
+  is actually `QueryOnly`/blocking `ECC_WorldStatic` — not just that `GatingRoom`
+  resolved to a non-null pointer. Rooms now dispatch before doors so this converges
+  correctly on the first evaluation. Replaced the tautological `OwnedEnemies` count
+  check (compared against a value derived from the same `FindNearestRoom` function
+  under test) with the pre-existing literal 1/2/3 ground truth.
+- New isolated test case: `GatingRoom` auto-derives to the lower-X room even when
+  `RoomA`/`RoomB` are assigned in reversed order — the "zero `.umap` authoring"
+  heuristic itself previously had no correctness coverage.
+- New isolated test case: a valid `GatingRoom` with zero owned enemies is vacuously
+  cleared, so its door defaults open (documents intentional behaviour).
+- `ADoorConnectorActor::BeginPlay()` now logs a `UE_LOG(LogTemp, Warning, ...)` when
+  `GatingRoom` stays unresolved (bad `RoomA`/`RoomB` wiring) instead of silently
+  shipping a door that never gates.
+- `ARoomActor::AddOwnedEnemy()` now logs a warning on an invalid `Enemy` argument
+  (distinct from the routine already-owned dedup no-op).
+- Fixed a stale `ARoomActor` class doc ("no enemy AI... logic", contradicted by this
+  issue's own `OwnedEnemies`/`IsRoomCleared` additions), a misattributed constructor
+  comment (`RecomputeConnectorGeometry()` doesn't touch `GateBlockingComponent`'s
+  collision, only `RefreshGateState()` does), `ADoorConnectorActor`'s class doc (now
+  mentions the gating collision), `AddOwnedEnemy()`'s doc (qualified the re-gating
+  claim to "if Enemy isn't already Banked"), and `GatingRoom`'s doc (now warns that a
+  hand-set override without `RoomA`/`RoomB` produces an invisible blocking wall).
+- `docs/prd-teaching-arc.md` REQ-2 no longer credits `RoomEnemyBudgetController`
+  (issue #82, an unrelated, unwired placeholder-budget component) as part of this
+  mechanism, and adds an explicit implementation note pointing REQ-3's future
+  room-clear binding at `ARoomActor::OnRoomClearedStateChanged`.
+- Not fixed (reviewer's own recommendation, matches CLAUDE.md's "don't design for
+  hypothetical future requirements"): `OwnedEnemies` never prunes destroyed entries —
+  no session exercises this today since wave-spawning isn't wired to
+  `AddOwnedEnemy()` yet; left for that future integration's own issue.
+
+Full gate re-run clean after these changes: `python harness/ci.py` (full mode) →
+`UE_BUILD_OK`, `UE_AUTOMATION_RESULT passed=81 total=81`, `GATE_OK mode=full`
+(one earlier run flagged `KrowdKontrol.Unit.GameModeLevelsDoNotOverrideGameMode` as
+failed; confirmed pre-existing test-order flakiness unrelated to this diff — passes
+individually and on a clean re-run of the full suite).
+
 ## Out of scope (follow-up)
 
 - Wiring `UWaveSpawnerComponent` to call `ARoomActor::AddOwnedEnemy()` for real wave

@@ -156,6 +156,48 @@ bool FKrowdKontrolRoomActorDoorGatingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Door should re-open once its last un-Banked owned enemy is destroyed rather than banked"),
 		DestroyDoor->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
+	// (7): GatingRoom auto-derives to the lower-X of RoomA/RoomB when left unset - the
+	// mechanism this issue's "zero .umap authoring" claim rests on. RoomA/RoomB are
+	// deliberately assigned in reversed order from the expected result so a swapped
+	// comparison or operand would be caught.
+	ARoomActor* NearRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(0.f, 0.f, 0.f)));
+	ARoomActor* FarRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(3000.f, 0.f, 0.f)));
+	if (!TestNotNull(TEXT("Near ARoomActor should spawn into the test World"), NearRoom) ||
+		!TestNotNull(TEXT("Far ARoomActor should spawn into the test World"), FarRoom))
+	{
+		return false;
+	}
+	ADoorConnectorActor* DerivedDoor = World->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	if (!TestNotNull(TEXT("Fourth ADoorConnectorActor should spawn into the test World"), DerivedDoor))
+	{
+		return false;
+	}
+	DerivedDoor->RoomA = FarRoom;
+	DerivedDoor->RoomB = NearRoom;
+	DerivedDoor->FinishSpawning(FTransform::Identity);
+
+	TestEqual(TEXT("GatingRoom should auto-derive to the lower-X room regardless of RoomA/RoomB order (issue #218)"),
+		DerivedDoor->GatingRoom.Get(), NearRoom);
+
+	// (8): a valid GatingRoom with zero owned enemies is vacuously cleared, so its door
+	// defaults open - documents the intentional behaviour rather than leaving it
+	// coverage-free.
+	ARoomActor* EmptyRoom = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("Empty ARoomActor should spawn into the test World"), EmptyRoom))
+	{
+		return false;
+	}
+	ADoorConnectorActor* EmptyRoomDoor = World->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	if (!TestNotNull(TEXT("Fifth ADoorConnectorActor should spawn into the test World"), EmptyRoomDoor))
+	{
+		return false;
+	}
+	EmptyRoomDoor->GatingRoom = EmptyRoom;
+	EmptyRoomDoor->FinishSpawning(FTransform::Identity);
+
+	TestEqual(TEXT("A door gating a room with zero owned enemies should default open (vacuous clear, issue #218)"),
+		EmptyRoomDoor->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+
 	return true;
 }
 

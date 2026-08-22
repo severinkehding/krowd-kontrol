@@ -13,8 +13,10 @@ class UBoxComponent;
 // by a door (PRD 05 REQ-1/REQ-2, issue #39). "Exactly two rooms" is a structural
 // guarantee of the two named properties below, not a runtime-checked invariant on a
 // collection. No longer topology-only: it also carries a floor strip spanning the
-// connector (issue #187) and a visible doorway marker - mesh + point light (issue
-// #191) - so a bare USceneComponent root is no longer the whole picture.
+// connector (issue #187), a visible doorway marker - mesh + point light (issue #191) -
+// and, since issue #218, a real blocking collision (GateBlockingComponent) that gates
+// passage until GatingRoom's owned enemies are all Banked - so a bare USceneComponent
+// root is no longer the whole picture.
 UCLASS()
 class KROWDKONTROL_API ADoorConnectorActor : public AActor
 {
@@ -59,6 +61,10 @@ public:
 	// doors (which already carry RoomA/RoomB for their connector visuals) gate correctly
 	// with no additional per-instance authoring. A level author can still hand-set this
 	// to override the heuristic for a future non-linear chain.
+	// Note: RefreshGateState() applies blocking collision independent of RoomA/RoomB - a
+	// hand-set GatingRoom without valid RoomA/RoomB produces an invisible blocking wall
+	// (no connector floor/marker to show for it). Keep RoomA/RoomB set whenever GatingRoom
+	// is hand-overridden.
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Door Connector")
 	TObjectPtr<ARoomActor> GatingRoom;
 

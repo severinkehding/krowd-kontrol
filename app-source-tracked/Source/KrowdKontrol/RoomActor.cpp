@@ -148,7 +148,14 @@ ARoomActor* ARoomActor::FindNearestRoom(const AActor* Actor, const TArray<ARoomA
 
 void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
 {
-	if (!IsValid(Enemy) || OwnedEnemies.Contains(Enemy))
+	if (!IsValid(Enemy))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ARoomActor: AddOwnedEnemy() called on '%s' with an invalid Enemy - ignoring."),
+			*GetNameSafe(this));
+		return;
+	}
+	if (OwnedEnemies.Contains(Enemy))
 	{
 		return;
 	}
