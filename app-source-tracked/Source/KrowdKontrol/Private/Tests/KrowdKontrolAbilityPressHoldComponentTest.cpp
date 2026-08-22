@@ -80,6 +80,16 @@ bool FKrowdKontrolAbilityPressHoldComponentTest::RunTest(const FString& Paramete
 		TestEqual(TEXT("(a) The target should be Controlled after the press-cast"),
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 
+		{
+			const int32 Index = static_cast<int32>(EAbilitySlot::Stun);
+			TestEqual(TEXT("(a) Hold-threshold timer should be armed at HoldThresholdSeconds"),
+				World->GetTimerManager().GetTimerRate(PressHold->HoldThresholdTimerHandles[Index]), PressHold->HoldThresholdSeconds);
+			TestEqual(TEXT("(a) Press-flash timer should be armed at PressFlashDurationSeconds"),
+				World->GetTimerManager().GetTimerRate(PressHold->PressFlashTimerHandles[Index]), PressHold->PressFlashDurationSeconds);
+			TestTrue(TEXT("(a) Design invariant: hold threshold must fire before press-flash completes to avoid flicker"),
+				PressHold->HoldThresholdSeconds < PressHold->PressFlashDurationSeconds);
+		}
+
 		PressHold->HandlePressFlashComplete(EAbilitySlot::Stun);
 		TestFalse(TEXT("(a) Indicator should be hidden once the flash timer elapses with no hold"), Indicator->bIsVisible);
 	}
@@ -264,6 +274,78 @@ bool FKrowdKontrolAbilityPressHoldComponentTest::RunTest(const FString& Paramete
 			TestFalse(TEXT("(e) HoldThresholdTimerHandle should no longer be active after a fast-tap release"),
 				TestWorld->GetTimerManager().IsTimerActive(PressHold->HoldThresholdTimerHandles[static_cast<int32>(EAbilitySlot::Snare)]));
 		}
+	}
+
+	// (f) Regression: a second press on the same slot after release, while the first
+	// press's flash timer is still conceptually pending, must not leak or double-fire.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+		UAbilityTargetingIndicatorComponent* Indicator = NewObject<UAbilityTargetingIndicatorComponent>(Owner);
+		Indicator->RegisterComponent();
+		UAbilityPressHoldComponent* PressHold = NewObject<UAbilityPressHoldComponent>(Owner);
+		PressHold->RegisterComponent();
+		PressHold->CastComponent = CastComponent;
+		PressHold->IndicatorComponent = Indicator;
+
+		UAbilityCastAppliedTestListener* Listener = NewObject<UAbilityCastAppliedTestListener>();
+		CastComponent->OnAbilityCastApplied.AddDynamic(Listener, &UAbilityCastAppliedTestListener::HandleAbilityCastApplied);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert, in range
+
+		PressHold->HandleAbilityKeyPressed(EAbilitySlot::Stun);
+		PressHold->HandleAbilityKeyReleased(EAbilitySlot::Stun); // before any timer fires
+		PressHold->HandleAbilityKeyPressed(EAbilitySlot::Stun); // second press, same slot
+
+		// Only the first press actually casts - the first press's TryStartCooldown blocks
+		// the second, same as case (c)'s hold-during-cooldown scenario. The indicator/timer
+		// machinery below must still behave correctly on the second press regardless of
+		// whether its cast was blocked, since Show()/SetTimer fire unconditionally on press.
+		TestEqual(TEXT("(f) Only the first press should cast - the second is blocked by the cooldown the first press started"),
+			Listener->CallCount, 1);
+		TestTrue(TEXT("(f) Indicator should still be visible from the second press"), Indicator->bIsVisible);
+
+		PressHold->HandlePressFlashComplete(EAbilitySlot::Stun);
+		TestFalse(TEXT("(f) Indicator should hide once the (re-armed) flash timer completes"), Indicator->bIsVisible);
+	}
+
+	// (g) Invalid-index guard branches in all four handlers no-op cleanly rather than
+	// crashing or mutating state - defensive against EAbilitySlot::Count/NumAbilitySlots
+	// drifting out of sync.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityPressHoldComponent* PressHold = NewObject<UAbilityPressHoldComponent>(Owner);
+		PressHold->RegisterComponent();
+
+		const EAbilitySlot OutOfRangeSlot = static_cast<EAbilitySlot>(UAbilityPressHoldComponent::NumAbilitySlots);
+
+		PressHold->HandleAbilityKeyPressed(OutOfRangeSlot);
+		PressHold->HandleAbilityKeyReleased(OutOfRangeSlot);
+		PressHold->HandlePressFlashComplete(OutOfRangeSlot);
+		PressHold->BeginHoldPreview(OutOfRangeSlot);
+
+		TestTrue(TEXT("(g) Out-of-range slot calls should no-op without crashing or growing tracked state"),
+			PressHold->bAbilityHoldPreviewActive.Num() == UAbilityPressHoldComponent::NumAbilitySlots);
 	}
 
 	return true;

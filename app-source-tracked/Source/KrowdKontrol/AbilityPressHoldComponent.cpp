@@ -33,6 +33,12 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability)
 	{
 		ShapeSpec.Origin = Owner->GetActorLocation();
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - indicator will show at world origin."),
+			*GetNameSafe(this));
+	}
 	ShapeSpec.RangeUnits = (CastComponent ? CastComponent->CastRangeUnits : 300.0f);
 
 	// Show(), not Flash() - see the class-level GOTCHA in AbilityPressHoldComponent.h /
@@ -154,4 +160,18 @@ void UAbilityPressHoldComponent::BeginHoldPreview(EAbilitySlot Ability)
 	{
 		bAbilityHoldPreviewActive[Index] = true;
 	}
+}
+
+void UAbilityPressHoldComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		FTimerManager& TimerManager = World->GetTimerManager();
+		for (int32 Index = 0; Index < NumAbilitySlots; ++Index)
+		{
+			TimerManager.ClearTimer(PressFlashTimerHandles[Index]);
+			TimerManager.ClearTimer(HoldThresholdTimerHandles[Index]);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
 }

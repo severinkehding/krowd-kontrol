@@ -62,6 +62,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability Press Hold")
 	TArray<bool> bAbilityHoldPreviewActive;
 
+protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 private:
 	// Timer callback, fires PressFlashDurationSeconds after a press.
 	void HandlePressFlashComplete(EAbilitySlot Ability);

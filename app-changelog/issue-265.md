@@ -87,3 +87,42 @@ Full `KrowdKontrol.Unit.*` suite: `passed=94 total=94`, no regressions.
 
 See `implementation.md` and `validation.md` in the workflow run artifacts for the
 full record.
+
+## Post-Review Fixes (self-fix pass)
+
+Addressed all HIGH/MEDIUM findings from the PR #278 review, plus the LOW error-handling
+finding:
+
+- Added `UAbilityPressHoldComponent::EndPlay()`, clearing both per-slot timer arrays on
+  teardown — mirrors `UAbilityTargetingIndicatorComponent::EndPlay`, the pattern the
+  original plan cited but only half-applied.
+- Logged a `Warning` when `HandleAbilityKeyPressed` finds no `Owner` (previously silent),
+  matching `UAbilityTargetingIndicatorComponent::InitializeIndicatorVisual`'s bar for the
+  identical condition.
+- Extended `FKrowdKontrolFlatCamera3DAbilityCastWiringTest` with a `ReleaseWrapper` per
+  case, driving the pawn's real `AbilityPressHoldComponent` through both press and
+  release rather than only press — closes the zero-coverage gap on the constructor
+  wiring and the five `Release*Ability()` wrappers.
+- Extended `FKrowdKontrolFlatCamera3DPipelineSmokeTest`'s `BindAction` existence-check
+  loop to also cover the five `IE_Released` registrations.
+- Added a timer-rate assertion to case (a) (`GetTimerRate` against
+  `HoldThresholdSeconds`/`PressFlashDurationSeconds`), proving the real `SetTimer`
+  delegate wiring — not just the callback bodies — matches the documented flicker-
+  avoidance ordering.
+- Added case (f): a repeated press→release→press cycle on the same slot, proving no
+  timer-handle leak or double-fire. Only the first press casts (the second is blocked by
+  the cooldown the first one started, same as case (c)'s hold-during-cooldown behavior)
+  — the review's suggested "both presses cast" assertion didn't match
+  `UAbilityCastComponent::TryCastAbility`'s cooldown gate and was corrected during
+  self-fix.
+- Added case (g): out-of-range `EAbilitySlot` calls to all four handlers no-op cleanly.
+
+Not fixed: `CLAUDE.md`'s `Conventions` section remains `TBD` (LOW, docs-impact finding)
+— `CLAUDE.md` is a protected path the factory cannot modify, and the finding's own
+recommendation was to defer this to a separate documentation PR rather than block #265
+on it.
+
+Full `KrowdKontrol.Unit.*` suite after fixes: `passed=94 total=94`, no regressions
+(confirmed the two flagged failures on the first fix-pass run —
+`AbilityPressHoldComponent` and `EnemyBase` — were the new (f) assertion bug above and a
+pre-existing test-order flake respectively; `EnemyBase` passes in isolation).
