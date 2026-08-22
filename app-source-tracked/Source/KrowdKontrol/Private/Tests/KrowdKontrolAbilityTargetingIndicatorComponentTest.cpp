@@ -29,6 +29,26 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+namespace
+{
+	// Shared by cases (a) and (a2) below, which each need their own Owner actor with a
+	// registered root component (a fresh UAbilityTargetingIndicatorComponent creates its
+	// IndicatorMeshComponent under Owner with a fixed name, so two indicators can't share
+	// one Owner).
+	AActor* SpawnActorWithRegisteredRoot(UWorld* World)
+	{
+		AActor* Owner = World->SpawnActor<AActor>();
+		if (!Owner)
+		{
+			return nullptr;
+		}
+		USceneComponent* Root = NewObject<USceneComponent>(Owner);
+		Root->RegisterComponent();
+		Owner->SetRootComponent(Root);
+		return Owner;
+	}
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FKrowdKontrolAbilityTargetingIndicatorComponentTest,
 	"KrowdKontrol.Unit.AbilityTargetingIndicatorComponent",
@@ -54,14 +74,11 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 	{
 		return false;
 	}
-	AActor* Owner = World->SpawnActor<AActor>();
+	AActor* Owner = SpawnActorWithRegisteredRoot(World);
 	if (!TestNotNull(TEXT("AActor owner should spawn into the test World"), Owner))
 	{
 		return false;
 	}
-	USceneComponent* Root = NewObject<USceneComponent>(Owner);
-	Root->RegisterComponent();
-	Owner->SetRootComponent(Root);
 
 	UAbilityTargetingIndicatorComponent* Indicator = NewObject<UAbilityTargetingIndicatorComponent>(Owner);
 	Indicator->RegisterComponent();
@@ -108,10 +125,7 @@ bool FKrowdKontrolAbilityTargetingIndicatorComponentTest::RunTest(const FString&
 	// Owner actor, not the (a) Indicator's, since InitializeIndicatorVisual() creates
 	// its IndicatorMeshComponent under Owner with a fixed name - a second component on
 	// the same Owner would collide with the (a) Indicator's mesh component name.
-	AActor* LazyOwner = World->SpawnActor<AActor>();
-	USceneComponent* LazyRoot = NewObject<USceneComponent>(LazyOwner);
-	LazyRoot->RegisterComponent();
-	LazyOwner->SetRootComponent(LazyRoot);
+	AActor* LazyOwner = SpawnActorWithRegisteredRoot(World);
 	UAbilityTargetingIndicatorComponent* LazyIndicator = NewObject<UAbilityTargetingIndicatorComponent>(LazyOwner);
 	LazyIndicator->RegisterComponent();
 	FAbilityIndicatorShapeSpec LazyInitTestSpec;
