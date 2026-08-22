@@ -52,6 +52,21 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
 	TObjectPtr<UPointLightComponent> DoorMarkerLightComponent;
 
+	// The room whose OwnedEnemies gate this door. Null means "ungated" (always open) -
+	// the default for doors with no gating configured, e.g. the level's first door. This
+	// is explicit, hand-placed data (not inferred from RoomA/RoomB) since which side of a
+	// connector is "the room you must clear first" is a level-design decision, not
+	// something derivable from geometry or placement order.
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<ARoomActor> GatingRoom;
+
+	// True once GatingRoom is null or IsRoomCleared(); false (impassable) otherwise.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	bool bIsGateOpen = true;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<class UBoxComponent> GateBlockingComponent;
+
 	// Positions/rotates/scales ConnectorFloorMeshComponent and DoorMarkerMeshComponent/
 	// DoorMarkerLightComponent to span/mark the straight line between RoomA and RoomB's
 	// live GetActorLocation(), or hides both if the door doesn't yet connect two valid,
@@ -71,4 +86,12 @@ private:
 	// zero-length span) so the floor/marker mesh/marker light stay in lockstep without
 	// repeating the same three SetVisibility(false) calls at each call site.
 	void HideConnectorVisuals();
+
+	UFUNCTION()
+	void HandleGatingRoomClearedStateChanged();
+
+	// Recomputes bIsGateOpen from GatingRoom and applies it to GateBlockingComponent's
+	// collision. Safe/idempotent to call repeatedly (constructor default, BeginPlay,
+	// every OnRoomClearedStateChanged broadcast).
+	void RefreshGateState();
 };

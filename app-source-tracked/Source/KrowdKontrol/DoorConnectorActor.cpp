@@ -3,6 +3,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/BoxComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -64,6 +65,15 @@ ADoorConnectorActor::ADoorConnectorActor()
 	// Placeholder tuning, not calibrated against any real level's ambient lighting yet.
 	DoorMarkerLightComponent->SetIntensity(2500.0f);
 	DoorMarkerLightComponent->SetAttenuationRadius(250.0f);
+
+	GateBlockingComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("GateBlockingComponent"));
+	GateBlockingComponent->SetupAttachment(DoorConnectorRoot);
+	// Starts open (no collision) - matches bIsGateOpen's default and "ungated until a
+	// GatingRoom is assigned" behaviour; RecomputeConnectorGeometry()/RefreshGateState()
+	// correct this once real room/gating data is available.
+	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GateBlockingComponent->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	GateBlockingComponent->SetGenerateOverlapEvents(false);
 }
 
 void ADoorConnectorActor::HideConnectorVisuals()
@@ -71,6 +81,7 @@ void ADoorConnectorActor::HideConnectorVisuals()
 	ConnectorFloorMeshComponent->SetVisibility(false);
 	DoorMarkerMeshComponent->SetVisibility(false);
 	DoorMarkerLightComponent->SetVisibility(false);
+	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void ADoorConnectorActor::RecomputeConnectorGeometry()
@@ -102,6 +113,11 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	DoorMarkerMeshComponent->SetWorldLocation(Midpoint + FVector(0.f, 0.f, DoorMarkerHeight));
 	DoorMarkerMeshComponent->SetVisibility(true);
 	DoorMarkerLightComponent->SetVisibility(true);
+
+	GateBlockingComponent->SetWorldLocation(Midpoint);
+	GateBlockingComponent->SetWorldRotation(Delta.Rotation());
+	GateBlockingComponent->SetBoxExtent(FVector(
+		ConnectorFloorThickness, ConnectorFloorWidth * 0.5f, DoorMarkerHeight));
 }
 
 void ADoorConnectorActor::OnConstruction(const FTransform& Transform)
@@ -114,4 +130,22 @@ void ADoorConnectorActor::BeginPlay()
 {
 	Super::BeginPlay();
 	RecomputeConnectorGeometry();
+	if (GatingRoom)
+	{
+		GatingRoom->OnRoomClearedStateChanged.AddUniqueDynamic(
+			this, &ADoorConnectorActor::HandleGatingRoomClearedStateChanged);
+	}
+	RefreshGateState();
+}
+
+void ADoorConnectorActor::RefreshGateState()
+{
+	bIsGateOpen = (GatingRoom == nullptr) || GatingRoom->IsRoomCleared();
+	GateBlockingComponent->SetCollisionEnabled(
+		bIsGateOpen ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
+}
+
+void ADoorConnectorActor::HandleGatingRoomClearedStateChanged()
+{
+	RefreshGateState();
 }

@@ -1,5 +1,6 @@
 #include "RoomActor.h"
 #include "PlaceholderTargetZoneActor.h"
+#include "EnemyBase.h"
 #include "Engine/World.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -100,4 +101,49 @@ AActor* ARoomActor::AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> Mark
 	TargetZones.Add(TargetZone);
 
 	return MarkerActor;
+}
+
+void ARoomActor::BeginPlay()
+{
+	Super::BeginPlay();
+	for (const TObjectPtr<AEnemyBase>& Enemy : OwnedEnemies)
+	{
+		BindOwnedEnemyDelegate(Enemy);
+	}
+}
+
+bool ARoomActor::IsRoomCleared() const
+{
+	for (const TObjectPtr<AEnemyBase>& Enemy : OwnedEnemies)
+	{
+		if (IsValid(Enemy) && Enemy->GetEnemyState() != EEnemyState::Banked)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void ARoomActor::BindOwnedEnemyDelegate(AEnemyBase* Enemy)
+{
+	if (IsValid(Enemy))
+	{
+		Enemy->OnEnemyBanked.AddUniqueDynamic(this, &ARoomActor::HandleOwnedEnemyBanked);
+	}
+}
+
+void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
+{
+	if (!IsValid(Enemy) || OwnedEnemies.Contains(Enemy))
+	{
+		return;
+	}
+	OwnedEnemies.Add(Enemy);
+	BindOwnedEnemyDelegate(Enemy);
+	OnRoomClearedStateChanged.Broadcast();
+}
+
+void ARoomActor::HandleOwnedEnemyBanked()
+{
+	OnRoomClearedStateChanged.Broadcast();
 }
