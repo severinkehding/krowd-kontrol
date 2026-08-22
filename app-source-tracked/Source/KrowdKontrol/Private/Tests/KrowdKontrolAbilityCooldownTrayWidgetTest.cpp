@@ -345,8 +345,10 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		Widget->GetSlotRemainingSeconds(EAbilitySlot::Stun), 2.0f);
 
 	// (k) BindAbilityLockoutComponent (issue #178, Punishment 1) drives the tray
-	// through real activation and expiry - acceptance criterion (c). AdvanceLockouts
-	// is friend-accessible per this test class's grant on UAbilityLockoutComponent.
+	// through real activation and expiry via its own tracked state (issue #261) -
+	// GetSlotState() reports PunishmentLockout, not merely IsSlotLocked(), and the
+	// numeric readout tracks the component's live remaining time as it counts down,
+	// not just at the start/expiry transitions.
 	{
 		UAbilityLockoutComponent* LockoutComponent = NewObject<UAbilityLockoutComponent>();
 		if (!TestNotNull(TEXT("UAbilityLockoutComponent should construct"), LockoutComponent))
@@ -355,25 +357,96 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		}
 		Widget->BindAbilityLockoutComponent(LockoutComponent);
 
-		TestFalse(TEXT("Sleep should read unlocked before any punishment trigger"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+		TestEqual(TEXT("Sleep should read Ready before any punishment trigger"),
+			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::Ready);
 
 		LockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Sleep, nullptr);
 		LockoutComponent->HandlePunishmentTriggered();
-		TestTrue(TEXT("Sleep should read locked on the tray after a real punishment trigger"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+		TestEqual(TEXT("Sleep should read PunishmentLockout on the tray after a real punishment trigger"),
+			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::PunishmentLockout);
+		TestEqual(TEXT("Sleep's punishment-lockout remaining should seed from the component's full duration"),
+			Widget->GetSlotPunishmentLockoutRemainingSeconds(EAbilitySlot::Sleep), UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
+		TestEqual(TEXT("Sleep's cooldown display text should show the punishment-lockout countdown"),
+			Widget->GetSlotCooldownDisplayText(EAbilitySlot::Sleep).ToString(),
+			FString::FromInt(FMath::CeilToInt(UAbilityLockoutComponent::DefaultLockoutDurationSeconds)));
+
+		// Partial advance - the numeric readout must track the live remaining time,
+		// not just show a value frozen at activation.
+		LockoutComponent->AdvanceLockouts(3.0f);
+		Widget->RefreshPunishmentLockoutReadouts();
+		TestEqual(TEXT("Sleep's punishment-lockout remaining should reflect the partial advance"),
+			Widget->GetSlotPunishmentLockoutRemainingSeconds(EAbilitySlot::Sleep), UAbilityLockoutComponent::DefaultLockoutDurationSeconds - 3.0f);
+		TestEqual(TEXT("Sleep should still read PunishmentLockout mid-countdown"),
+			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::PunishmentLockout);
 
 		LockoutComponent->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
-		TestFalse(TEXT("Sleep should read unlocked on the tray again after the lockout expires"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+		TestEqual(TEXT("Sleep should read Ready on the tray again after the lockout expires"),
+			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::Ready);
+		TestEqual(TEXT("Sleep's punishment-lockout remaining should clear to 0 on expiry"),
+			Widget->GetSlotPunishmentLockoutRemainingSeconds(EAbilitySlot::Sleep), 0.0f);
 	}
 
 	// (l) Null-guard branches on BindAbilityLockoutComponent/BindAbilityUnlockComponent
 	// must degrade safely (log-and-return) rather than crash, and must leave the tray's
-	// current locked states untouched.
+	// current state untouched.
 	{
-		TestFalse(TEXT("Sleep should still read unlocked before the null-guard calls"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+		TestEqual(TEXT("Sleep should still read Ready before the null-guard calls"),
+			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::Ready);
 		Widget->BindAbilityLockoutComponent(nullptr);
 		Widget->BindAbilityUnlockComponent(nullptr);
 		TestTrue(TEXT("BindAbilityLockoutComponent(nullptr)/BindAbilityUnlockComponent(nullptr) should not crash"), true);
-		TestFalse(TEXT("Sleep should still read unlocked after the null-guard calls"), Widget->IsSlotLocked(EAbilitySlot::Sleep));
+		TestEqual(TEXT("Sleep should still read Ready after the null-guard calls"),
+			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::Ready);
+	}
+
+	// (m) Four-state distinctness (issue #261's explicit acceptance criterion) - a
+	// single slot (Snare, untouched and idle since block (e)'s large-delta clear)
+	// walked through Ready -> Cooldown -> NotYetUnlocked -> PunishmentLockout,
+	// asserting GetSlotState() reports the correct, distinct value at each step, and
+	// that the two locked-style states (NotYetUnlocked, PunishmentLockout) - which
+	// render with the same border/label treatment - are still distinguishable via
+	// the numeric-readout-presence the issue calls out explicitly.
+	{
+		TestEqual(TEXT("Snare should read Ready before this block"), Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::Ready);
+		TestTrue(TEXT("Snare should show empty display text while Ready"), Widget->GetSlotCooldownDisplayText(EAbilitySlot::Snare).IsEmpty());
+
+		Widget->StartCooldown(EAbilitySlot::Snare, 4.0f);
+		TestEqual(TEXT("Snare should read Cooldown after StartCooldown()"), Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::Cooldown);
+		TestEqual(TEXT("Snare cooldown display should show ceil(4.0) = 4"),
+			Widget->GetSlotCooldownDisplayText(EAbilitySlot::Snare).ToString(), FString(TEXT("4")));
+
+		Widget->SetSlotLocked(EAbilitySlot::Snare, true);
+		TestEqual(TEXT("Snare should read NotYetUnlocked once locked, overriding Cooldown"), Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::NotYetUnlocked);
+		TestTrue(TEXT("Snare should show NO numeric readout while NotYetUnlocked"), Widget->GetSlotCooldownDisplayText(EAbilitySlot::Snare).IsEmpty());
+		Widget->SetSlotLocked(EAbilitySlot::Snare, false);
+		TestEqual(TEXT("Snare should revert to Cooldown after unlocking (its cooldown was still running underneath)"),
+			Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::Cooldown);
+		Widget->AdvanceCooldowns(100.0f);
+		TestEqual(TEXT("Snare should read Ready again after its cooldown fully clears"), Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::Ready);
+
+		UAbilityLockoutComponent* SnareLockoutComponent = NewObject<UAbilityLockoutComponent>();
+		if (TestNotNull(TEXT("Second UAbilityLockoutComponent should construct for the distinctness block"), SnareLockoutComponent))
+		{
+			Widget->BindAbilityLockoutComponent(SnareLockoutComponent);
+			SnareLockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Snare, nullptr);
+			SnareLockoutComponent->HandlePunishmentTriggered();
+			TestEqual(TEXT("Snare should read PunishmentLockout, distinct from NotYetUnlocked and Cooldown"),
+				Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::PunishmentLockout);
+			TestFalse(TEXT("Snare should show a NON-empty numeric readout while PunishmentLockout - this is what distinguishes it from NotYetUnlocked"),
+				Widget->GetSlotCooldownDisplayText(EAbilitySlot::Snare).IsEmpty());
+
+			// Simultaneity: locking Snare as not-yet-unlocked WHILE it is also
+			// punishment-locked must keep PunishmentLockout as the reported state
+			// (precedence), proving the two states are tracked independently rather
+			// than collapsing into one bool.
+			Widget->SetSlotLocked(EAbilitySlot::Snare, true);
+			TestEqual(TEXT("PunishmentLockout must take precedence over a simultaneous NotYetUnlocked flag"),
+				Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::PunishmentLockout);
+			Widget->SetSlotLocked(EAbilitySlot::Snare, false);
+
+			SnareLockoutComponent->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
+			TestEqual(TEXT("Snare should read Ready once the punishment lockout expires"), Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::Ready);
+		}
 	}
 
 	return true;

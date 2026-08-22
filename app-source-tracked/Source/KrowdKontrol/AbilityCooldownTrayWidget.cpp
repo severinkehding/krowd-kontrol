@@ -57,6 +57,7 @@ void UAbilityCooldownTrayWidget::NativeTick(const FGeometry& MyGeometry, float I
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	AdvanceCooldowns(InDeltaTime);
+	RefreshPunishmentLockoutReadouts();
 }
 
 void UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()
@@ -110,6 +111,8 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 	SlotCooldownRemaining.SetNum(NumAbilitySlots);
 	SlotCooldownDuration.SetNum(NumAbilitySlots);
 	SlotLocked.SetNum(NumAbilitySlots);
+	SlotPunishmentLockoutActive.SetNum(NumAbilitySlots);
+	SlotPunishmentLockoutRemaining.SetNum(NumAbilitySlots);
 
 	for (int32 Index = 0; Index < NumAbilitySlots; ++Index)
 	{
@@ -209,7 +212,44 @@ void UAbilityCooldownTrayWidget::BindAbilityLockoutComponent(UAbilityLockoutComp
 			TEXT("AbilityCooldownTrayWidget::BindAbilityLockoutComponent called with null component - tray keeps its current locked states"));
 		return;
 	}
-	LockoutComponent->OnAbilityLockoutChanged.AddUniqueDynamic(this, &UAbilityCooldownTrayWidget::SetSlotLocked);
+	BoundLockoutComponent = LockoutComponent;
+	// AddUniqueDynamic so a repeated bind (e.g. HUD rebuild on level transition,
+	// issue #132) can't stack duplicate subscriptions - same reasoning as
+	// BindAbilityUnlockComponent's identical guard above.
+	LockoutComponent->OnAbilityLockoutChanged.AddUniqueDynamic(this, &UAbilityCooldownTrayWidget::HandleAbilityLockoutChanged);
+}
+
+void UAbilityCooldownTrayWidget::HandleAbilityLockoutChanged(EAbilitySlot Ability, bool bLocked)
+{
+	const int32 Index = static_cast<int32>(Ability);
+	if (!SlotPunishmentLockoutActive.IsValidIndex(Index))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityCooldownTrayWidget::HandleAbilityLockoutChanged: index %d invalid on '%s' (tray not yet built?) - lockout state dropped."),
+			Index, *GetNameSafe(this));
+		return;
+	}
+	SlotPunishmentLockoutActive[Index] = bLocked;
+	SlotPunishmentLockoutRemaining[Index] = (bLocked && BoundLockoutComponent.IsValid())
+		? BoundLockoutComponent->GetRemainingLockoutSeconds(Ability)
+		: 0.0f;
+	UpdateSlotVisual(Ability);
+}
+
+void UAbilityCooldownTrayWidget::RefreshPunishmentLockoutReadouts()
+{
+	if (!BoundLockoutComponent.IsValid())
+	{
+		return;
+	}
+	for (int32 Index = 0; Index < SlotPunishmentLockoutActive.Num(); ++Index)
+	{
+		if (SlotPunishmentLockoutActive[Index])
+		{
+			SlotPunishmentLockoutRemaining[Index] = BoundLockoutComponent->GetRemainingLockoutSeconds(static_cast<EAbilitySlot>(Index));
+			UpdateSlotVisual(static_cast<EAbilitySlot>(Index));
+		}
+	}
 }
 
 void UAbilityCooldownTrayWidget::AdvanceCooldowns(float DeltaSeconds)
@@ -241,11 +281,13 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 		return;
 	}
 
-	const bool bLocked = SlotLocked.IsValidIndex(Index) && SlotLocked[Index];
+	const bool bNotYetUnlocked = SlotLocked.IsValidIndex(Index) && SlotLocked[Index];
+	const bool bPunishmentLockout = SlotPunishmentLockoutActive.IsValidIndex(Index) && SlotPunishmentLockoutActive[Index];
+	const bool bLockedStyle = bNotYetUnlocked || bPunishmentLockout;
 
 	if (SlotIconBorders.IsValidIndex(Index) && SlotIconBorders[Index])
 	{
-		SlotIconBorders[Index]->SetBrushColor(bLocked ? GetLockedBorderColor() : HUDChromeColours::GetBackground());
+		SlotIconBorders[Index]->SetBrushColor(bLockedStyle ? GetLockedBorderColor() : HUDChromeColours::GetBackground());
 	}
 	else if (SlotIconBorders.IsValidIndex(Index))
 	{
@@ -255,7 +297,7 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 	}
 	if (SlotIconLabels.IsValidIndex(Index) && SlotIconLabels[Index])
 	{
-		SlotIconLabels[Index]->SetText(FText::FromString(bLocked ? LockedSlotLabel : SlotLabels[Index]));
+		SlotIconLabels[Index]->SetText(FText::FromString(bLockedStyle ? LockedSlotLabel : SlotLabels[Index]));
 	}
 	else if (SlotIconLabels.IsValidIndex(Index))
 	{
@@ -264,12 +306,25 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 			Index, *GetNameSafe(this));
 	}
 
-	if (bLocked)
+	if (bPunishmentLockout)
 	{
-		// Locked overrides the cooldown countdown entirely (PRD 13 REQ-3) - a locked
-		// slot isn't "ready soon", it's inaccessible, so a numeric ETA would be
-		// actively misleading regardless of any cooldown time still counting down
-		// underneath.
+		// Punishment lockout gets its own live numeric readout (issue #261),
+		// layered on top of the same locked-style border/label as not-yet-unlocked -
+		// this is the one piece of this function that makes the two locked-style
+		// states visually distinguishable from each other.
+		const float Remaining = SlotPunishmentLockoutRemaining.IsValidIndex(Index) ? SlotPunishmentLockoutRemaining[Index] : 0.0f;
+		CooldownText->SetText(FText::AsNumber(FMath::CeilToInt(Remaining)));
+		CooldownText->SetVisibility(ESlateVisibility::HitTestInvisible);
+		return;
+	}
+
+	if (bNotYetUnlocked)
+	{
+		// Not-yet-unlocked overrides the cooldown countdown entirely (PRD 13 REQ-3) -
+		// a locked slot isn't "ready soon", it's inaccessible, so a numeric ETA would
+		// be actively misleading regardless of any cooldown time still counting down
+		// underneath. Unlike punishment lockout above, this state never shows a
+		// timer - that's the explicit, unchanged behavior this issue must preserve.
 		CooldownText->SetText(FText::GetEmpty());
 		CooldownText->SetVisibility(ESlateVisibility::Collapsed);
 		return;
@@ -303,6 +358,30 @@ bool UAbilityCooldownTrayWidget::IsSlotLocked(EAbilitySlot AbilitySlot) const
 {
 	const int32 Index = static_cast<int32>(AbilitySlot);
 	return SlotLocked.IsValidIndex(Index) && SlotLocked[Index];
+}
+
+EAbilityTileState UAbilityCooldownTrayWidget::GetSlotState(EAbilitySlot AbilitySlot) const
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	if (SlotPunishmentLockoutActive.IsValidIndex(Index) && SlotPunishmentLockoutActive[Index])
+	{
+		return EAbilityTileState::PunishmentLockout;
+	}
+	if (SlotLocked.IsValidIndex(Index) && SlotLocked[Index])
+	{
+		return EAbilityTileState::NotYetUnlocked;
+	}
+	if (IsSlotOnCooldown(AbilitySlot))
+	{
+		return EAbilityTileState::Cooldown;
+	}
+	return EAbilityTileState::Ready;
+}
+
+float UAbilityCooldownTrayWidget::GetSlotPunishmentLockoutRemainingSeconds(EAbilitySlot AbilitySlot) const
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	return SlotPunishmentLockoutRemaining.IsValidIndex(Index) ? SlotPunishmentLockoutRemaining[Index] : 0.0f;
 }
 
 FText UAbilityCooldownTrayWidget::GetSlotCooldownDisplayText(EAbilitySlot AbilitySlot) const
