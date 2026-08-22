@@ -26,9 +26,10 @@ enum class EAbilityRange : uint8
 
 enum class EAbilityTargetType : uint8
 {
-	Single,
-	Area,
-	Cone
+	SelfCircle, // Fear
+	Cone, // Snare
+	Line, // Root
+	ThrownCircle // Stun, Sleep - distinguished from each other by Range (Short/Long)
 };
 
 struct FAbilityData
@@ -36,7 +37,7 @@ struct FAbilityData
 	EAbilitySlot Ability = EAbilitySlot::Stun;
 	float BaseDurationSeconds = 0.0f;
 	EAbilityRange Range = EAbilityRange::Short;
-	EAbilityTargetType TargetType = EAbilityTargetType::Single;
+	EAbilityTargetType TargetType = EAbilityTargetType::SelfCircle;
 	FLinearColor Colour = FLinearColor::Black;
 
 	// FName counterpart to Colour above - issue #211's IHerdable::GetHerdColourTag()

@@ -6,7 +6,7 @@ namespace
 	const FAbilityData& GetStun()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Stun, 3.0f, EAbilityRange::Short,
-			EAbilityTargetType::Single, ReservedGameplayColours::GetWhite(),
+			EAbilityTargetType::ThrownCircle, ReservedGameplayColours::GetWhite(),
 			ReservedGameplayColours::GetWhiteTag(), true };
 		return Data;
 	}
@@ -14,7 +14,7 @@ namespace
 	const FAbilityData& GetSleep()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Sleep, 5.0f, EAbilityRange::Long,
-			EAbilityTargetType::Single, ReservedGameplayColours::GetBlue(),
+			EAbilityTargetType::ThrownCircle, ReservedGameplayColours::GetBlue(),
 			ReservedGameplayColours::GetBlueTag(), false, EEnemyType::SN_1PR };
 		return Data;
 	}
@@ -22,7 +22,7 @@ namespace
 	const FAbilityData& GetRoot()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Root, 5.0f, EAbilityRange::Long,
-			EAbilityTargetType::Single, ReservedGameplayColours::GetTeal(),
+			EAbilityTargetType::Line, ReservedGameplayColours::GetTeal(),
 			ReservedGameplayColours::GetTealTag(), false, EEnemyType::TR_UPR };
 		return Data;
 	}
@@ -30,7 +30,7 @@ namespace
 	const FAbilityData& GetFear()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Fear, 5.0f, EAbilityRange::Short,
-			EAbilityTargetType::Area, ReservedGameplayColours::GetOrange(),
+			EAbilityTargetType::SelfCircle, ReservedGameplayColours::GetOrange(),
 			ReservedGameplayColours::GetOrangeTag(), false, EEnemyType::B0_0MR };
 		return Data;
 	}
