@@ -21,7 +21,9 @@ record of that change, see the closing note below)
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/EnergyMeterWidget.h` | UPDATE | `DamageFlashOverlay` member, `NativeTick()` override, `AdvanceDamageFlashTimer()`/`IsDamageFlashActive()` public API, `PlayDamageFlash()`/`ClearDamageFlash()` private helpers, `DamageFlashRemainingSeconds`/`DamageFlashDurationSeconds` state. |
 | `app/Source/KrowdKontrol/EnergyMeterWidget.cpp` | UPDATE | Constructs `DamageFlashOverlay` (hidden, `Collapsed`) in `BuildWidgetTree()`; `HandleEnergyChanged()` now also calls `PlayDamageFlash()`; `NativeTick()` calls `AdvanceDamageFlashTimer()` every frame, which decrements the countdown and calls `ClearDamageFlash()` once it hits zero. |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolEnergyMeterWidgetTest.cpp` | UPDATE | New check (7b), attached immediately after the existing (7) live `ApplyContactDamage()`-driven assertion: flash activates synchronously off the same broadcast, flash colour doesn't collide with a reserved gameplay colour, `AdvanceDamageFlashTimer()` clears the flash after its duration, and a direct `SetEnergy()` call does not itself trigger the flash. |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolEnergyMeterWidgetTest.cpp` | UPDATE | New check (7b), attached immediately after the existing (7) live `ApplyContactDamage()`-driven assertion: flash activates synchronously off the same broadcast, flash colour doesn't collide with a reserved gameplay colour, `AdvanceDamageFlashTimer()` clears the flash after its duration, and a direct `SetEnergy()` call does not itself trigger the flash. Extended by the pass-1 fix pass (commit 0712205) with three more assertions: sampling `AdvanceDamageFlashTimer()` mid-flight at half duration (not just the two endpoints), check (7c) confirming a re-trigger mid-countdown resets to full duration rather than accumulating/being ignored, and extending check (12) to bind a real `UPlayerEnergyComponent` and fire `ApplyContactDamage()` on the unbuilt widget to exercise `PlayDamageFlash()`'s null-`DamageFlashOverlay` guard. `NativeTick()` itself remains unexercised by an Automation test (accepted precedent, headless `-nullrhi`; tracked as a separate PIE-driven Smoke-tier follow-up). |
+| `app/Source/KrowdKontrol/EnergyMeterWidget.h` / `.cpp` | UPDATE (pass-1 fix pass) | Added `GetDamageFlashRemainingSeconds()` (`BlueprintPure`) so the countdown itself, not just the active/inactive bool, is reflected for structured before/after reads. |
+| `app/Source/KrowdKontrol/PlayerEnergyComponent.h` | UPDATE (pass-1 fix pass) | `GetCurrentEnergy()` is now `UFUNCTION(BlueprintPure)` (was a plain C++ accessor), so it's reflected the same way. |
 
 ## Acceptance criteria
 
@@ -47,10 +49,32 @@ record of that change, see the closing note below)
 
 ## Validation evidence
 
-```
-<to be filled in by the validation pass — python harness/ci.py output, run against
-the real Unreal Editor on the Windows host>
-```
+Per PR #232 pass-1 fix commit (0712205): verified via `harness/ci.py` full mode,
+`KrowdKontrol.Unit.EnergyMeterWidget` passes with all new assertions (mid-flight
+sample, re-trigger reset, null-overlay guard). One unrelated
+`GizmoFirstContactComponent` flake did not reproduce on rerun (transient failure,
+unrelated to this change).
+
+## Governance note: `DamageFlashColor` and the 5-colour lock (open, pass-1 security finding)
+
+Pass-1 security review flagged `DamageFlashColor` (`FLinearColor(0.95, 0.12, 0.12,
+1.0)`, saturated red) as a new informational-purpose HUD colour and asked for
+explicit human product-owner confirmation before merge that it does not amount to
+introducing a 6th saturated information colour under MISSION.md Hard Invariant 3.
+
+The PR's position (also now stated inline at the colour's declaration in
+`EnergyMeterWidget.cpp`): the five reserved colours (Purple/Snare, Teal/Root,
+Orange/Fear, Blue/Sleep, White/Stun) identify a specific ability or enemy type: this
+flash identifies nothing — it's a generic, momentary "you were hit" reaction with no
+persistent or type-specific meaning, closer to a screen-shake than to a gameplay-
+information colour, and it does not visually collide with any of the five (nearest is
+Orange, well separated by the green channel).
+
+This is a defensible reading but has not had explicit human sign-off. **This fix pass
+could not manufacture that confirmation** (it requires an actual product-owner
+decision, not a code change) — flagging it here explicitly so a human reviewer can
+approve or reject the specific claim above before merge, rather than fixing it
+silently.
 
 ## Closing note on `app-source-tracked/`
 

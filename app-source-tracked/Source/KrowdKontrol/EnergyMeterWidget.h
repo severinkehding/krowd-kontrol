@@ -61,6 +61,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Energy Meter")
 	bool IsDamageFlashActive() const;
 
+	// Read-only accessor for the flash countdown itself (not just the active/inactive
+	// bool above) - lets an external caller (e.g. an MCP-driven Automation/behavioral
+	// check that can't sample fast enough to catch the 0.15s flash live) do a
+	// structured before/after property read instead of relying on visual capture.
+	UFUNCTION(BlueprintPure, Category = "Energy Meter")
+	float GetDamageFlashRemainingSeconds() const;
+
 protected:
 	// Fires synchronously from CreateWidget(), before any Slate/viewport realization -
 	// matters for the -nullrhi headless Automation run this project's tests use (see

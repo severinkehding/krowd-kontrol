@@ -97,9 +97,18 @@ void UEnergyMeterWidget::BuildWidgetTree()
 			*GetNameSafe(this));
 	}
 
-	// Saturated red, deliberately outside the 5 reserved gameplay colours (nearest
-	// is Orange at (1.0, 0.5, 0.0) - well separated by the green channel) - same
-	// "informational, not chrome" justification as FillColor above.
+	// Saturated red, deliberately outside the 5 reserved gameplay colours (Purple/
+	// Snare, Teal/Root, Orange/Fear, Blue/Sleep, White/Stun - MISSION.md Hard
+	// Invariant 3; nearest is Orange at (1.0, 0.5, 0.0), well separated by the green
+	// channel). Invariant 3 reserves these five as an ability/enemy-type-identifying
+	// channel ("no other gameplay-relevant object... may use these five colours for
+	// non-informational purposes"; "a 6th saturated information colour must never be
+	// introduced"). This flash does not identify an ability or enemy type - it is a
+	// generic, momentary "you were hit" reaction with no persistent meaning, the same
+	// category as a screen-shake or hit-stop, not a 6th entry in the ability/enemy
+	// colour channel. PRODUCT-OWNER SIGN-OFF NEEDED (flagged by PR #232 pass-1
+	// security review): this reasoning has not yet had explicit human confirmation -
+	// see app-changelog/issue-222.md's Governance note.
 	const FLinearColor DamageFlashColor(0.95f, 0.12f, 0.12f, 1.0f);
 
 	DamageFlashOverlay = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("MeterDamageFlashOverlay"));
@@ -197,6 +206,11 @@ void UEnergyMeterWidget::ClearDamageFlash()
 bool UEnergyMeterWidget::IsDamageFlashActive() const
 {
 	return DamageFlashRemainingSeconds > 0.0f;
+}
+
+float UEnergyMeterWidget::GetDamageFlashRemainingSeconds() const
+{
+	return DamageFlashRemainingSeconds;
 }
 
 float UEnergyMeterWidget::GetDisplayedFraction() const
