@@ -99,6 +99,7 @@ void ABomberEnemy::OnAttackEntry()
 	AttackTellLightComponent->SetIntensity(AttackTellIntensity);
 	RemainingTelegraphSeconds = AttackTelegraphSeconds;
 	bExplodedForCurrentAttack = false;
+	CurrentTelegraphStage = EBomberTelegraphStage::Early;
 
 	// AttackTellSound defaults to a placeholder engine noise burst (see the
 	// constructor), so this resolves normally out of the box; the else-branch below is
@@ -124,12 +125,58 @@ void ABomberEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 		return;
 	}
 	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds);
+	UpdateTelegraphEscalation();
 	if (RemainingTelegraphSeconds <= 0.0f)
 	{
 		// "Fire exactly once" guard, mirroring ASniperEnemy::AdvanceAttackTelegraph.
 		bExplodedForCurrentAttack = true;
 		TriggerExplosion();
 	}
+}
+
+void ABomberEnemy::UpdateTelegraphEscalation()
+{
+	// AttackTelegraphSeconds is ClampMin=0.0 but not guaranteed nonzero (a designer
+	// could set it to 0) - treat that edge case as "already Imminent", the closest
+	// safe interpretation, rather than dividing by zero.
+	const float ElapsedFraction = AttackTelegraphSeconds > 0.0f
+		? 1.0f - (RemainingTelegraphSeconds / AttackTelegraphSeconds)
+		: 1.0f;
+
+	// Floor fractions (0.3/0.5/0.7) are a second, independent escalation axis -
+	// minimum brightness rises alongside pulse rate - deliberately hardcoded rather
+	// than exposed as EditDefaultsOnly like PulseFrequencyHz above; revisit if a
+	// designer needs to tune brightness floor independently of frequency.
+	float PulseFrequencyHz = EarlyPulseFrequencyHz;
+	float StageFloorFraction = 0.3f;
+	if (ElapsedFraction >= TelegraphImminentThreshold)
+	{
+		CurrentTelegraphStage = EBomberTelegraphStage::Imminent;
+		PulseFrequencyHz = ImminentPulseFrequencyHz;
+		StageFloorFraction = 0.7f;
+	}
+	else if (ElapsedFraction >= TelegraphMidThreshold)
+	{
+		CurrentTelegraphStage = EBomberTelegraphStage::Mid;
+		PulseFrequencyHz = MidPulseFrequencyHz;
+		StageFloorFraction = 0.5f;
+	}
+	else
+	{
+		CurrentTelegraphStage = EBomberTelegraphStage::Early;
+	}
+
+	// Placeholder-quality flash (MISSION.md, docs/prd-teaching-arc.md REQ-4) -
+	// sinusoidal so the tell never fully blacks out mid-fuse, pulsing between a
+	// per-stage floor and the full AttackTellIntensity ceiling; PulseFrequencyHz
+	// rising per stage is the "flash rate clearly increases" signal. Presentation
+	// only - not asserted by the automation test, which checks
+	// GetAttackTelegraphStage() instead (see BomberEnemy.h's comment on that
+	// accessor for why).
+	const float ElapsedSeconds = AttackTelegraphSeconds - RemainingTelegraphSeconds;
+	const float PulseAlpha = 0.5f + 0.5f * FMath::Sin(ElapsedSeconds * PulseFrequencyHz * 2.0f * PI);
+	const float FloorIntensity = AttackTellIntensity * StageFloorFraction;
+	AttackTellLightComponent->SetIntensity(FMath::Lerp(FloorIntensity, AttackTellIntensity, PulseAlpha));
 }
 
 void ABomberEnemy::TriggerExplosion()
