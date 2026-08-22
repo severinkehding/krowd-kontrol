@@ -125,13 +125,37 @@ bool FKrowdKontrolEnergyMeterWidgetTest::RunTest(const FString& Parameters)
 				[FlashColour](const FLinearColor& Reserved) { return Reserved.Equals(FlashColour, 0.01f); }));
 	}
 
-	Widget->AdvanceDamageFlashTimer(UEnergyMeterWidget::DamageFlashDurationSeconds + 0.01f);
+	// Sample strictly between activation and full expiry so the actual per-frame
+	// decrement is exercised, not just the two endpoints - a regression that clears
+	// the flash on the first tick regardless of DeltaSeconds would otherwise still
+	// pass every assertion in this check.
+	Widget->AdvanceDamageFlashTimer(UEnergyMeterWidget::DamageFlashDurationSeconds * 0.5f);
+	TestTrue(TEXT("Damage flash should still be active partway through its duration"),
+		Widget->IsDamageFlashActive());
+	if (Widget->DamageFlashOverlay)
+	{
+		TestEqual(TEXT("Damage flash overlay should still be visible partway through its duration"),
+			Widget->DamageFlashOverlay->GetVisibility(), ESlateVisibility::HitTestInvisible);
+	}
+
+	Widget->AdvanceDamageFlashTimer(UEnergyMeterWidget::DamageFlashDurationSeconds * 0.5f + 0.01f);
 	TestFalse(TEXT("Damage flash should clear once its duration has fully elapsed"), Widget->IsDamageFlashActive());
 	if (Widget->DamageFlashOverlay)
 	{
 		TestEqual(TEXT("Damage flash overlay should be collapsed again after it clears"),
 			Widget->DamageFlashOverlay->GetVisibility(), ESlateVisibility::Collapsed);
 	}
+
+	// (7c) Re-triggering while already active resets the countdown rather than being
+	// ignored or accumulating - the realistic rapid-hit case (two enemy hits inside
+	// one 0.15s window).
+	EnergyComponent->ApplyContactDamage(5.0f, nullptr);
+	TestTrue(TEXT("Damage flash should still be active after a second hit mid-countdown"), Widget->IsDamageFlashActive());
+	Widget->AdvanceDamageFlashTimer(UEnergyMeterWidget::DamageFlashDurationSeconds * 0.5f);
+	TestTrue(TEXT("Damage flash should still be active - the second hit should have reset the countdown to its full duration"),
+		Widget->IsDamageFlashActive());
+	Widget->AdvanceDamageFlashTimer(UEnergyMeterWidget::DamageFlashDurationSeconds * 0.5f + 0.01f);
+	TestFalse(TEXT("Damage flash should clear once the reset countdown fully elapses"), Widget->IsDamageFlashActive());
 
 	// A direct SetEnergy() call (not via the OnEnergyChanged path) must NOT trigger
 	// the flash - the reaction hook is tied specifically to the energy-decrease
@@ -244,6 +268,20 @@ bool FKrowdKontrolEnergyMeterWidgetTest::RunTest(const FString& Parameters)
 	UnbuiltWidget->SetEnergy(50.0f, 100.0f);
 	UnbuiltWidget->BindToEnergyComponent(nullptr);
 	TestTrue(TEXT("SetEnergy()/BindToEnergyComponent(nullptr) on an unbuilt tree should not crash"), true);
+
+	// PlayDamageFlash()'s null-DamageFlashOverlay guard must also hold on an unbuilt
+	// tree - bind a real component and fire a real damage broadcast rather than just
+	// exercising SetEnergy()/BindToEnergyComponent(nullptr) above.
+	UPlayerEnergyComponent* UnboundTreeEnergyComponent = NewObject<UPlayerEnergyComponent>();
+	if (TestNotNull(TEXT("UPlayerEnergyComponent should construct for unbuilt-tree flash test"), UnboundTreeEnergyComponent))
+	{
+		UnboundTreeEnergyComponent->MaxEnergy = 100.0f;
+		UnboundTreeEnergyComponent->MaxDamagePerHit = 50.0f;
+		UnboundTreeEnergyComponent->CurrentEnergy = 100.0f;
+		UnbuiltWidget->BindToEnergyComponent(UnboundTreeEnergyComponent);
+		UnboundTreeEnergyComponent->ApplyContactDamage(10.0f, nullptr);
+		TestTrue(TEXT("PlayDamageFlash() on an unbuilt tree (null DamageFlashOverlay) should not crash"), true);
+	}
 
 	// (13) AddToViewport()/IsInViewport() - CreateNewMap() gives an editor-context
 	// UWorld with no PIE session and no live game viewport (see
