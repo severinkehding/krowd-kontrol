@@ -329,6 +329,9 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 	TestTrue(TEXT("Unbuilt widget should report empty icon label text"), UnbuiltWidget->GetSlotIconLabelText(EAbilitySlot::Stun).IsEmpty());
 	TestEqual(TEXT("Unbuilt widget should report black icon tint colour"), UnbuiltWidget->GetSlotIconTintColour(EAbilitySlot::Stun), FLinearColor::Black);
 	TestFalse(TEXT("Unbuilt widget should report not locked"), UnbuiltWidget->IsSlotLocked(EAbilitySlot::Stun));
+	TestEqual(TEXT("Unbuilt widget should report Ready state"), UnbuiltWidget->GetSlotState(EAbilitySlot::Stun), EAbilityTileState::Ready);
+	TestEqual(TEXT("Unbuilt widget should report 0 punishment-lockout remaining seconds"),
+		UnbuiltWidget->GetSlotPunishmentLockoutRemainingSeconds(EAbilitySlot::Stun), 0.0f);
 	UnbuiltWidget->AdvanceCooldowns(1.0f);
 	UnbuiltWidget->StartCooldown(EAbilitySlot::Stun, 2.0f);
 	UnbuiltWidget->SetSlotLocked(EAbilitySlot::Stun, true);
@@ -379,6 +382,18 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		TestEqual(TEXT("Sleep should still read PunishmentLockout mid-countdown"),
 			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::PunishmentLockout);
 
+		// Lock a second slot (Root) on the same component alongside Sleep, to prove
+		// RefreshPunishmentLockoutReadouts()'s per-slot loop updates every active slot
+		// in one call, not just the first it finds.
+		LockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Root, nullptr);
+		LockoutComponent->HandlePunishmentTriggered();
+		LockoutComponent->AdvanceLockouts(1.0f);
+		Widget->RefreshPunishmentLockoutReadouts();
+		TestEqual(TEXT("Sleep's readout should still update while a second slot is also locked out"),
+			Widget->GetSlotPunishmentLockoutRemainingSeconds(EAbilitySlot::Sleep), UAbilityLockoutComponent::DefaultLockoutDurationSeconds - 4.0f);
+		TestEqual(TEXT("Root's readout should update independently of Sleep's"),
+			Widget->GetSlotPunishmentLockoutRemainingSeconds(EAbilitySlot::Root), UAbilityLockoutComponent::DefaultLockoutDurationSeconds - 1.0f);
+
 		LockoutComponent->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
 		TestEqual(TEXT("Sleep should read Ready on the tray again after the lockout expires"),
 			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::Ready);
@@ -428,12 +443,27 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		if (TestNotNull(TEXT("Second UAbilityLockoutComponent should construct for the distinctness block"), SnareLockoutComponent))
 		{
 			Widget->BindAbilityLockoutComponent(SnareLockoutComponent);
+
+			// PunishmentLockout must win against an actually-active Cooldown, not just
+			// a cleared one - direct proof of that precedence leg, independent of the
+			// NotYetUnlocked simultaneity case tested below.
+			Widget->StartCooldown(EAbilitySlot::Snare, 3.0f);
+			TestEqual(TEXT("Snare should read Cooldown right before the punishment trigger"), Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::Cooldown);
+
 			SnareLockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Snare, nullptr);
 			SnareLockoutComponent->HandlePunishmentTriggered();
+			TestEqual(TEXT("PunishmentLockout must take precedence over a simultaneous active Cooldown"),
+				Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::PunishmentLockout);
 			TestEqual(TEXT("Snare should read PunishmentLockout, distinct from NotYetUnlocked and Cooldown"),
 				Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::PunishmentLockout);
 			TestFalse(TEXT("Snare should show a NON-empty numeric readout while PunishmentLockout - this is what distinguishes it from NotYetUnlocked"),
 				Widget->GetSlotCooldownDisplayText(EAbilitySlot::Snare).IsEmpty());
+			TestEqual(TEXT("Snare label should swap to LCK while PunishmentLockout, same as NotYetUnlocked"),
+				Widget->GetSlotIconLabelText(EAbilitySlot::Snare).ToString(), FString(TEXT("LCK")));
+
+			// Clear the cooldown started above so it doesn't linger underneath and
+			// affect the state read once the punishment lockout itself expires below.
+			Widget->AdvanceCooldowns(100.0f);
 
 			// Simultaneity: locking Snare as not-yet-unlocked WHILE it is also
 			// punishment-locked must keep PunishmentLockout as the reported state
@@ -446,6 +476,34 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 
 			SnareLockoutComponent->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
 			TestEqual(TEXT("Snare should read Ready once the punishment lockout expires"), Widget->GetSlotState(EAbilitySlot::Snare), EAbilityTileState::Ready);
+		}
+	}
+
+	// (n) Rebind-to-a-different-live-component (issue #268 code-review Finding 1) -
+	// BindAbilityLockoutComponent() must unbind from a previously-bound component
+	// before subscribing to a new one, so a broadcast from the OLD component after
+	// the rebind can't corrupt the tray via HandleAbilityLockoutChanged's
+	// currently-bound-component read.
+	{
+		UAbilityLockoutComponent* FirstComponent = NewObject<UAbilityLockoutComponent>();
+		UAbilityLockoutComponent* SecondComponent = NewObject<UAbilityLockoutComponent>();
+		if (TestNotNull(TEXT("First UAbilityLockoutComponent should construct for the rebind test"), FirstComponent)
+			&& TestNotNull(TEXT("Second UAbilityLockoutComponent should construct for the rebind test"), SecondComponent))
+		{
+			Widget->BindAbilityLockoutComponent(FirstComponent);
+			FirstComponent->HandleAbilityCastApplied(EAbilitySlot::Fear, nullptr);
+			FirstComponent->HandlePunishmentTriggered();
+			TestEqual(TEXT("Fear should read PunishmentLockout while bound to the first component"),
+				Widget->GetSlotState(EAbilitySlot::Fear), EAbilityTileState::PunishmentLockout);
+
+			Widget->BindAbilityLockoutComponent(SecondComponent);
+
+			// The old (first) component's lockout expiring should NOT reach the tray
+			// anymore - if the widget were still subscribed, this broadcast would
+			// spuriously clear Fear's PunishmentLockout state.
+			FirstComponent->AdvanceLockouts(UAbilityLockoutComponent::DefaultLockoutDurationSeconds);
+			TestEqual(TEXT("Fear should still read PunishmentLockout after rebinding - the old component's expiry broadcast must not reach the widget"),
+				Widget->GetSlotState(EAbilitySlot::Fear), EAbilityTileState::PunishmentLockout);
 		}
 	}
 
