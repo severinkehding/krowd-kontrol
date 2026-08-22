@@ -24,6 +24,8 @@
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
+#include "EnemyTypeIndicatorComponent.h"
+#include "EnemyType.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -64,6 +66,19 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 		MeshPath, FString(TEXT("/Engine/BasicShapes/Sphere.Sphere")));
 	TestTrue(TEXT("MeshComponent should use the distinct standing-panel silhouette scale"),
 		Mesh->GetRelativeScale3D().Equals(FVector(1.2f, 0.15f, 1.6f), 0.01f));
+
+	// (a2) EnemyTypeIndicatorComponent is wired to TR_UPR - PRD 13 REQ-7's colourblind-
+	// safe marker, and (issue #242) the component ATargetZone's type-keyed acceptance
+	// resolves via FindComponentByClass. Not implied by the component's own field
+	// default (which happens to also be TR_UPR) - this proves the constructor's
+	// explicit assignment, not the default, is what's in effect.
+	UEnemyTypeIndicatorComponent* TrooperIndicator = Trooper->EnemyTypeIndicatorComponent;
+	if (TestNotNull(TEXT("ATrooperEnemy should have an EnemyTypeIndicatorComponent"), TrooperIndicator))
+	{
+		TestEqual(TEXT("EnemyTypeIndicatorComponent should report TR_UPR"),
+			static_cast<uint8>(TrooperIndicator->EnemyType),
+			static_cast<uint8>(EEnemyType::TR_UPR));
+	}
 
 	// (b) Teal glow at baseline intensity, un-intensified at construction.
 	UPointLightComponent* Glow = Trooper->GlowLightComponent;
