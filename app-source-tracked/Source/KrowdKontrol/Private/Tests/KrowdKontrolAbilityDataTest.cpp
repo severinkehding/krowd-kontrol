@@ -61,14 +61,14 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	const FAbilityData& Stun = AbilityData::Get(EAbilitySlot::Stun);
 	TestEqual(TEXT("Stun BaseDurationSeconds should be 3.0"), Stun.BaseDurationSeconds, 3.0f);
 	TestEqual(TEXT("Stun Range should be Short"), static_cast<uint8>(Stun.Range), static_cast<uint8>(EAbilityRange::Short));
-	TestEqual(TEXT("Stun TargetType should be Single"), static_cast<uint8>(Stun.TargetType), static_cast<uint8>(EAbilityTargetType::Single));
+	TestEqual(TEXT("Stun TargetType should be ThrownCircle"), static_cast<uint8>(Stun.TargetType), static_cast<uint8>(EAbilityTargetType::ThrownCircle));
 	TestEqual(TEXT("Stun Colour should be the reserved White"), Stun.Colour, ReservedGameplayColours::GetWhite());
 	TestEqual(TEXT("Stun ColourTag should be White"), Stun.ColourTag, ReservedGameplayColours::GetWhiteTag());
 
 	const FAbilityData& Sleep = AbilityData::Get(EAbilitySlot::Sleep);
 	TestEqual(TEXT("Sleep BaseDurationSeconds should be 5.0"), Sleep.BaseDurationSeconds, 5.0f);
 	TestEqual(TEXT("Sleep Range should be Long"), static_cast<uint8>(Sleep.Range), static_cast<uint8>(EAbilityRange::Long));
-	TestEqual(TEXT("Sleep TargetType should be Single"), static_cast<uint8>(Sleep.TargetType), static_cast<uint8>(EAbilityTargetType::Single));
+	TestEqual(TEXT("Sleep TargetType should be ThrownCircle"), static_cast<uint8>(Sleep.TargetType), static_cast<uint8>(EAbilityTargetType::ThrownCircle));
 	TestEqual(TEXT("Sleep Colour should be the reserved Blue"), Sleep.Colour, ReservedGameplayColours::GetBlue());
 	TestEqual(TEXT("Sleep ColourTag should be Blue"), Sleep.ColourTag, ReservedGameplayColours::GetBlueTag());
 	TestEqual(TEXT("Sleep CounteredEnemyType should be SN-1PR"), static_cast<uint8>(Sleep.CounteredEnemyType), static_cast<uint8>(EEnemyType::SN_1PR));
@@ -76,7 +76,7 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	const FAbilityData& Root = AbilityData::Get(EAbilitySlot::Root);
 	TestEqual(TEXT("Root BaseDurationSeconds should be 5.0"), Root.BaseDurationSeconds, 5.0f);
 	TestEqual(TEXT("Root Range should be Long"), static_cast<uint8>(Root.Range), static_cast<uint8>(EAbilityRange::Long));
-	TestEqual(TEXT("Root TargetType should be Single"), static_cast<uint8>(Root.TargetType), static_cast<uint8>(EAbilityTargetType::Single));
+	TestEqual(TEXT("Root TargetType should be Line"), static_cast<uint8>(Root.TargetType), static_cast<uint8>(EAbilityTargetType::Line));
 	TestEqual(TEXT("Root Colour should be the reserved Teal"), Root.Colour, ReservedGameplayColours::GetTeal());
 	TestEqual(TEXT("Root ColourTag should be Teal"), Root.ColourTag, ReservedGameplayColours::GetTealTag());
 	TestEqual(TEXT("Root CounteredEnemyType should be TR-UPR"), static_cast<uint8>(Root.CounteredEnemyType), static_cast<uint8>(EEnemyType::TR_UPR));
@@ -84,7 +84,7 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	const FAbilityData& Fear = AbilityData::Get(EAbilitySlot::Fear);
 	TestEqual(TEXT("Fear BaseDurationSeconds should be 5.0"), Fear.BaseDurationSeconds, 5.0f);
 	TestEqual(TEXT("Fear Range should be Short"), static_cast<uint8>(Fear.Range), static_cast<uint8>(EAbilityRange::Short));
-	TestEqual(TEXT("Fear TargetType should be Area"), static_cast<uint8>(Fear.TargetType), static_cast<uint8>(EAbilityTargetType::Area));
+	TestEqual(TEXT("Fear TargetType should be SelfCircle"), static_cast<uint8>(Fear.TargetType), static_cast<uint8>(EAbilityTargetType::SelfCircle));
 	TestEqual(TEXT("Fear Colour should be the reserved Orange"), Fear.Colour, ReservedGameplayColours::GetOrange());
 	TestEqual(TEXT("Fear ColourTag should be Orange"), Fear.ColourTag, ReservedGameplayColours::GetOrangeTag());
 	TestEqual(TEXT("Fear CounteredEnemyType should be B0-0MR"), static_cast<uint8>(Fear.CounteredEnemyType), static_cast<uint8>(EEnemyType::B0_0MR));
@@ -119,6 +119,12 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 				AllAbilities[i].ColourTag, AllAbilities[j].ColourTag);
 		}
 	}
+
+	// (6) Default-constructed FAbilityData's TargetType is SelfCircle - not reachable
+	// through AbilityData::Get()/GetAll() today (all 5 rows override it explicitly),
+	// but pins the value so a future change to the default isn't silent.
+	TestEqual(TEXT("Default FAbilityData TargetType should be SelfCircle"),
+		static_cast<uint8>(FAbilityData{}.TargetType), static_cast<uint8>(EAbilityTargetType::SelfCircle));
 
 	return true;
 }
