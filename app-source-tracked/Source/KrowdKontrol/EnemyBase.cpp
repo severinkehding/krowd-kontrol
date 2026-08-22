@@ -43,6 +43,7 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 	ControllingAbility = Ability;
 	const float OverrideSeconds = GetControlledDurationOverrideSeconds(Ability);
 	RemainingControlledSeconds = OverrideSeconds >= 0.0f ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
+	TotalControlledSeconds = RemainingControlledSeconds;
 	OnControlledEntry(Ability);
 }
 
