@@ -94,16 +94,11 @@ trigger. Room-cleared signal for REQ-3's prompt should bind to
 
 ## Existing surfaces to build on (do not reinvent)
 `ULevelLifecycleSubsystem` (`OnLevelClear`, final-map/run-complete config);
-<<<<<<< HEAD
 `UAbilityUnlockComponent::NotifyLevelReached` (mapping merged; now called via
 `UAbilityUnlockLevelSubsystem`, #217 — level index is still map-name-derived,
 pending #216's sequence config);
-`ARoomActor` / `ADoorConnectorActor` (+ door markers) / `RoomEnemyBudgetController`;
-=======
-`UAbilityUnlockComponent::NotifyLevelReached` (mapping merged, uncalled);
 `ARoomActor` (`OwnedEnemies`/`OnRoomClearedStateChanged`, issue #218) /
 `ADoorConnectorActor` (+ door markers, `GatingRoom`/`RefreshGateState`);
->>>>>>> origin/main
 the on-screen prompt widget + `AbilityMatchupNudgeComponent` pattern;
 `GizmoFirstContactComponent` / `FirstStunBeaconComponent` (first-cast hooks);
 `ABomberEnemy`'s `AttackTellLightComponent` + explosion path;
