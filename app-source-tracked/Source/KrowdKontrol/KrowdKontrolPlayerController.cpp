@@ -27,6 +27,15 @@
 void AKrowdKontrolPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	// In-game cursor (issue #262, PRD "Cursor & Aiming Foundation" REQ-1) - every
+	// ability in this PRD is aimed at the mouse cursor, so it must be visible
+	// during real gameplay. Independent of DefaultInput.ini's
+	// DefaultViewportMouseCaptureMode=CapturePermanently_IncludingInitialMouseDown /
+	// DefaultViewportMouseLockMode=LockOnCapture settings - those govern whether
+	// the OS cursor is confined/locked to the viewport, not whether a cursor is
+	// rendered at all. (Restored by the operator 2026-08-23 after a concurrent fix
+	// run clobbered this block out of the shared workspace - see PR #266's notes.)
+	bShowMouseCursor = true;
 	CreateHUDWidgets();
 	RefreshTargetZoneBeacons();
 	RetryPendingBriefing();

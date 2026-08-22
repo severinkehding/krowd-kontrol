@@ -71,6 +71,7 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("BeginPlay should construct the ability tray widget"), ToRawPtr(Controller->AbilityTrayWidget));
 	TestNotNull(TEXT("BeginPlay should construct the energy meter widget"), ToRawPtr(Controller->EnergyMeterWidgetInstance));
 	TestNotNull(TEXT("BeginPlay should construct the on-screen prompt widget"), ToRawPtr(Controller->OnScreenPromptWidgetInstance));
+	TestNotNull(TEXT("BeginPlay should construct the quest tracker widget"), ToRawPtr(Controller->QuestTrackerWidgetInstance));
 
 	// AddToViewport() is a documented no-op under this project's -nullrhi Automation
 	// run (no UGameViewportSubsystem target) - assert no-crash only, matching
@@ -124,8 +125,11 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 
 				if (TestNotNull(TEXT("Ability tray should be bound"), ToRawPtr(Controller->AbilityTrayWidget)))
 				{
-					TestTrue(TEXT("A real punishment trigger after a real cast should lock the tray's Stun slot via production wiring"),
-						Controller->AbilityTrayWidget->IsSlotLocked(EAbilitySlot::Stun));
+					// PunishmentLockout, not NotYetUnlocked/IsSlotLocked() (issue #261) -
+					// production punishment lockout is tracked as its own tile state now,
+					// distinct from the not-yet-unlocked state IsSlotLocked() still reports.
+					TestEqual(TEXT("A real punishment trigger after a real cast should read PunishmentLockout on the tray's Stun slot via production wiring"),
+						Controller->AbilityTrayWidget->GetSlotState(EAbilitySlot::Stun), EAbilityTileState::PunishmentLockout);
 				}
 			}
 		}

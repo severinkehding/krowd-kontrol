@@ -1,0 +1,174 @@
+# Issue #247: Persistent Quest Tracker Panel (Banked-Count Line)
+
+Adds `UQuestTrackerWidget` (`app/Source/KrowdKontrol/QuestTrackerWidget.h/.cpp`), a
+new C++-only UMG HUD widget showing a single always-visible line —
+`"Robots penned: X/Y"` — anchored to the top-right corner of the screen. `X` (banked
+count) updates live, event-driven only, from every `ATargetZone::OnActorBanked`
+broadcast in the level; `Y` (the level's total enemy count) is captured once via a
+`TActorIterator<AEnemyBase>` sweep when `ULevelLifecycleSubsystem::OnLevelBegin`
+fires — not from `NativeOnInitialized()`/`CreateHUDWidgets()` timing, since
+`ATargetZone` instances aren't guaranteed to exist yet at that point
+(`ARoomActor::BeginPlay()`'s `EnsureBankingZonesWired()` is what spawns/wires them).
+The widget is created and added to the viewport from
+`AKrowdKontrolPlayerController::CreateHUDWidgets()`, alongside the three existing
+persistent HUD widgets (`UEnergyMeterWidget`, `UAbilityCooldownTrayWidget`,
+`UOnScreenPromptWidget`). This is the foundational widget for PRD "Mission Briefing &
+Live Quest Tracker" REQ-2 — the "current room state" and "suggested ability" lines are
+explicitly out of scope, deferred to follow-up issues attaching to this same widget
+class.
+
+## Acceptance criteria
+
+- [x] New compact, corner-anchored UMG widget class (`UQuestTrackerWidget`) created
+      and shown from `CreateHUDWidgets()`, alongside the level's existing HUD widgets.
+- [x] Concrete, documented max-size envelope: 184px (160px width + 24px margin) ≈
+      14.4% of a 1280px-wide reference viewport, under the issue's ~15% ceiling —
+      documented in `QuestTrackerWidget.h`'s constants comment, enforced by the
+      resolution-safety test.
+- [x] `"Robots penned: X/Y"` line, `X` from `ATargetZone::OnActorBanked`, `Y` the
+      level's total enemy count.
+- [x] Event-driven only, no per-frame polling — no `NativeTick()` override, matches
+      `UEnergyMeterWidget`'s convention.
+- [x] Chrome uses `HUDChromeColours`, no reserved gameplay colours used — verified by
+      the new test's in-file chrome assertion.
+- [x] Automation test fires `OnActorBanked` N times, asserts displayed count reaches
+      N (`KrowdKontrol.Unit.QuestTrackerWidget`).
+- [x] Level 1-3 validation commands pass with exit 0.
+- [x] No regressions in existing tests (`HUDWiring`, and the wider suite — see
+      evidence below).
+- [x] `app/` and `app-source-tracked/` copies identical (`diff` clean).
+- [x] `app-changelog/issue-247.md` written (this file).
+
+## Deviation from plan.md
+
+`plan.md`'s Task 3 code block for `KrowdKontrolQuestTrackerWidgetTest.cpp` omitted
+`#include "Blueprint/WidgetTree.h"`, needed for the full `UWidgetTree` definition
+before `Widget->WidgetTree->RootWidget` compiles (`UserWidget.h` only forward-declares
+`UWidgetTree`). `KrowdKontrolEnergyMeterWidgetTest.cpp` (the plan's own mirror
+target) already includes it. Added the same include; no other change from the plan.
+
+`app/`'s live `KrowdKontrolPlayerController.cpp` and
+`Private/Tests/KrowdKontrolHUDWiringTest.cpp` also carry in-progress edits from two
+other concurrent tasks sharing the same `app/` symlink target — a
+`bShowMouseCursor = true;` block (issue #262, branch `archon/task-fix-issue-262`,
+not on `main`) and a `PunishmentLockout`/`GetSlotState` assertion change (issue
+#261, commit `c6ae0a7`, not on `main`). Neither is part of this issue. The
+`app-source-tracked/` mirror for both files intentionally omits those hunks — it
+mirrors only this issue's own diff (the `QuestTrackerWidgetInstance` wiring in the
+first file, the single new `TestNotNull` line in the second) against each file's
+last-committed `app-source-tracked/` content, not a byte-for-byte copy of `app/`'s
+current live state. `diff -r app/ app-source-tracked/` on these two specific files
+is therefore expected to show the other tasks' unrelated pending work, not a
+parity failure of this issue's own change.
+
+## Post-review fixes
+
+Applied in response to PR #271's automated code-review and test-coverage passes:
+
+- **Per-actor dedup on `HandleActorBanked()`** (`QuestTrackerWidget.h`/`.cpp`) —
+  `ATargetZone::OnActorBanked` fires once per overlapping *component*, not once per
+  actor (`TargetZone.cpp`'s own "KNOWN GAP" comment). No current `AEnemyBase`
+  subclass has more than one collision component, so this was dormant, but this
+  widget is the first consumer that turns the raw broadcast into a number the player
+  sees. Added a `TArray<TWeakObjectPtr<AActor>> BankedActors` member; `HandleActorBanked()`
+  now only counts an actor the first time it's seen. Covered by a new test case (3b)
+  that re-broadcasts an already-banked actor and asserts the count doesn't move — this
+  also required changing the existing N-broadcasts test (case 3) to broadcast N
+  *distinct* actors instead of the same actor N times, since the old version was
+  actually exercising the dedup path it hadn't earned yet.
+- **No-grouping number formatting** (`QuestTrackerWidget.cpp`) — `FText::AsNumber()`
+  now passes `FNumberFormattingOptions().SetUseGrouping(false)` for both the banked
+  and total counts, so a future large enemy roster can't render as
+  "Robots penned: 1,024/2,048".
+- **Three new test cases** in `KrowdKontrolQuestTrackerWidgetTest.cpp`, all ported
+  from `KrowdKontrolEnergyMeterWidgetTest.cpp`'s equivalent coverage for the class
+  this widget mirrors:
+  - `Initialize()` guard against tree rebuild when `NativeOnInitialized()` already ran.
+  - Unbuilt-tree safety (bare `NewObject()`, no init call) — safe defaults, no crash.
+  - Multi-zone binding — two live `ATargetZone`s in one level both feed the same
+    banked count.
+
+Not fixed: the review's suggested root-cause fix (`ATargetZone::HandleZoneOverlap`
+deduping per-actor at the source) was explicitly scoped out by the review itself as
+out-of-scope for this issue — the widget-side mitigation above covers it without
+touching `TargetZone`'s own already-noted, already-deferred gap.
+
+## Pass-1 validation fixes (cycle 2)
+
+Applied in response to PR #271 validation pass 1's `request_changes` verdict (a
+high-severity code-review finding plus a live-PIE E2E failure):
+
+- **`TotalEnemyCount` missed wave-spawned enemies** (`QuestTrackerWidget.h`/`.cpp`) —
+  `HandleLevelBegin()`'s one-shot `TActorIterator<AEnemyBase>` sweep ran before
+  `ARootSurgeBoss`'s `UWaveSpawnerComponent` had spawned any of its accelerated-cadence
+  `TR-UPR` adds (3-9s into the fight), so those adds were never added to the
+  denominator despite being bankable — an impossible "Robots penned: 6/5" once banked.
+  Fixed by binding a new `HandleWaveSpawned()` handler to every live
+  `UWaveSpawnerComponent::OnWaveSpawned` (discovered the same
+  `TActorIterator<AActor>` + `GetComponents()` way
+  `ULevelLifecycleSubsystem::RefreshLevelClearState()` already does, to stay
+  single-world-safe under the Automation Framework), which re-sweeps
+  `TActorIterator<AEnemyBase>` via a new shared `RecountTotalEnemies()` helper. A
+  fresh sweep (not an incremented counter) is safe because `ATargetZone` never
+  destroys a banked actor (`TargetZone.h`'s own documented contract), so the count is
+  monotonic non-decreasing. Covered by new test case (10).
+- **Widget stuck at "Robots penned: 0/0" in live PIE** (`QuestTrackerWidget.h`/`.cpp`,
+  plus a new `ULevelLifecycleSubsystem::HasLevelBegun()` accessor in
+  `LevelLifecycleSubsystem.h`) — root cause found by inspection, since this factory
+  worktree has no live Unreal MCP connection to reproduce the holdout's PIE session
+  directly: `AKrowdKontrolPlayerController::CreateHUDWidgets()` (where this widget is
+  constructed and self-subscribes to `OnLevelBegin` from `NativeOnInitialized()`) is
+  called from the controller's own `BeginPlay()`, and this file's own header comment
+  wrongly assumed `OnLevelBegin` "fires only after every actor's `BeginPlay()` has
+  already completed." That assumption is contradicted by an already-documented,
+  already-fixed instance of the exact same race in this codebase:
+  `AKrowdKontrolPlayerController::WireWidgetsToPawn()`'s comment and
+  `UAbilityUnlockPromptComponent::FlushPendingPrompts()`'s comment (issue #235) both
+  record `UAbilityUnlockLevelSubsystem::HandleLevelBegin()` broadcasting before
+  `CreateHUDWidgets()` ran, in real gameplay. Since `ULevelLifecycleSubsystem::OnLevelBegin`
+  only ever broadcasts once per world, a widget that subscribes after that already
+  happened would never receive it — exactly the holdout's "stuck at 0/0 for several
+  minutes despite 6 real enemies" observation, and not something the existing
+  automation test could catch, since it always creates the widget *before* manually
+  firing `OnWorldBeginPlay()`. Fixed with the same "late subscriber catches up" shape
+  issue #235 already established: `ULevelLifecycleSubsystem` gains a `HasLevelBegun()`
+  query (mirroring its own private `bHasFiredLevelBegin`), and
+  `BindToLevelLifecycle()` calls `HandleLevelBegin()` directly if that's already true
+  at bind time. Covered by new test case (11), which reverses the existing tests'
+  create-widget-then-fire-OnWorldBeginPlay order specifically to exercise this path.
+  **Not independently re-verified live in PIE** — this factory worktree cannot reach
+  the Unreal MCP server (a known, separate infrastructure gap), so this fix rests on
+  the in-repo precedent above plus the new automation coverage, not a fresh holdout
+  pass. Flagging for pass-2/human attention per the fix-PR procedure's honesty
+  requirement.
+
+## Validation evidence
+
+Direct `UnrealBuildTool` invocation (`KrowdKontrolEditor Win64 Development`):
+`Result: Succeeded`.
+
+Targeted Automation runs during implementation:
+```
+KrowdKontrol.Unit.QuestTrackerWidget -> UE_AUTOMATION_RESULT passed=1 total=1
+KrowdKontrol.Unit.HUDWiring          -> UE_AUTOMATION_RESULT passed=1 total=1
+```
+
+`python harness/ci.py --quick`:
+```
+HARNESS_START mode=quick driver=cli
+STATIC_SKIPPED no 'static' command in harness.config.json
+UNIT_PASSED tests=89
+GATE_OK mode=quick
+```
+
+MISSION.md Hard Invariants reviewed against this diff: chrome uses
+`HUDChromeColours` exclusively (Hard Invariant 3, the 5-colour lock, is untouched —
+no reserved gameplay colour is read or displayed by this widget); no kill-rule,
+ability-roster, enemy-roster, engine/dimensionality, networking, or `app`-tracking
+invariant is touched.
+
+---
+
+The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
+its matching `app-source-tracked/` copy are the tracked-repo record of that change,
+per D-009. Not a substitute for reading `app-source-tracked/` directly.

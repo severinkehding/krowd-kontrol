@@ -83,6 +83,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Level Lifecycle")
 	bool HasReachedBossCheckpoint() const { return bHasReachedBossCheckpoint; }
 
+	// Whether OnLevelBegin has already broadcast for this world instance. OnLevelBegin
+	// never re-fires, so a subscriber whose own creation timing isn't guaranteed to
+	// precede this subsystem's OnWorldBeginPlay() - e.g. a HUD widget self-subscribing
+	// from NativeOnInitialized() when AKrowdKontrolPlayerController::CreateHUDWidgets()
+	// runs - must check this after binding and self-invoke its handler if it's already
+	// true, or it misses the broadcast permanently. Same documented hazard as
+	// UAbilityUnlockLevelSubsystem::HandleLevelBegin() racing
+	// OnScreenPromptWidgetInstance's creation (issue #235,
+	// AKrowdKontrolPlayerController::WireWidgetsToPawn()'s comment).
+	UFUNCTION(BlueprintPure, Category = "Level Lifecycle")
+	bool HasLevelBegun() const { return bHasFiredLevelBegin; }
+
 	// Re-evaluates the boss-checkpoint condition and latches bHasReachedBossCheckpoint
 	// if newly met. Called automatically from Tick(); public so the Automation
 	// Framework test can drive it deterministically without a real per-frame tick loop -
