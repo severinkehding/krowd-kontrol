@@ -104,6 +104,14 @@ private:
 	UPROPERTY()
 	int32 TotalEnemyCount = 0;
 
+	// Actors already counted into BankedCount - ATargetZone::OnActorBanked fires once
+	// per overlapping *component*, not once per actor (see TargetZone.cpp's own
+	// "KNOWN GAP" comment), so this widget dedups at the point it turns the raw
+	// broadcast into a number the player sees, rather than assuming the source is
+	// already actor-unique.
+	UPROPERTY()
+	TArray<TWeakObjectPtr<AActor>> BankedActors;
+
 	// Fixed pixel footprint from the viewport's top-right corner. 160px + 24px margin
 	// = 184px footprint, which is ~14.4% of a 1280px-wide viewport (this project's
 	// documented minimum target resolution - see the resolution-safety test) - inside

@@ -61,6 +61,38 @@ current live state. `diff -r app/ app-source-tracked/` on these two specific fil
 is therefore expected to show the other tasks' unrelated pending work, not a
 parity failure of this issue's own change.
 
+## Post-review fixes
+
+Applied in response to PR #271's automated code-review and test-coverage passes:
+
+- **Per-actor dedup on `HandleActorBanked()`** (`QuestTrackerWidget.h`/`.cpp`) —
+  `ATargetZone::OnActorBanked` fires once per overlapping *component*, not once per
+  actor (`TargetZone.cpp`'s own "KNOWN GAP" comment). No current `AEnemyBase`
+  subclass has more than one collision component, so this was dormant, but this
+  widget is the first consumer that turns the raw broadcast into a number the player
+  sees. Added a `TArray<TWeakObjectPtr<AActor>> BankedActors` member; `HandleActorBanked()`
+  now only counts an actor the first time it's seen. Covered by a new test case (3b)
+  that re-broadcasts an already-banked actor and asserts the count doesn't move — this
+  also required changing the existing N-broadcasts test (case 3) to broadcast N
+  *distinct* actors instead of the same actor N times, since the old version was
+  actually exercising the dedup path it hadn't earned yet.
+- **No-grouping number formatting** (`QuestTrackerWidget.cpp`) — `FText::AsNumber()`
+  now passes `FNumberFormattingOptions().SetUseGrouping(false)` for both the banked
+  and total counts, so a future large enemy roster can't render as
+  "Robots penned: 1,024/2,048".
+- **Three new test cases** in `KrowdKontrolQuestTrackerWidgetTest.cpp`, all ported
+  from `KrowdKontrolEnergyMeterWidgetTest.cpp`'s equivalent coverage for the class
+  this widget mirrors:
+  - `Initialize()` guard against tree rebuild when `NativeOnInitialized()` already ran.
+  - Unbuilt-tree safety (bare `NewObject()`, no init call) — safe defaults, no crash.
+  - Multi-zone binding — two live `ATargetZone`s in one level both feed the same
+    banked count.
+
+Not fixed: the review's suggested root-cause fix (`ATargetZone::HandleZoneOverlap`
+deduping per-actor at the source) was explicitly scoped out by the review itself as
+out-of-scope for this issue — the widget-side mitigation above covers it without
+touching `TargetZone`'s own already-noted, already-deferred gap.
+
 ## Validation evidence
 
 Direct `UnrealBuildTool` invocation (`KrowdKontrolEditor Win64 Development`):

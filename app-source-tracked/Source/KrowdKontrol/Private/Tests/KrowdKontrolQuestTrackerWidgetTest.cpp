@@ -95,22 +95,33 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Display text should reflect 0/TotalEnemies after OnLevelBegin"),
 		Widget->GetQuestTrackerDisplayText().ToString(), FString(TEXT("Robots penned: 0/5")));
 
-	AActor* DummyActor = World->SpawnActor<AActor>();
-	if (!TestNotNull(TEXT("A dummy AActor should spawn into the test World"), DummyActor))
-	{
-		return false;
-	}
-
-	// (3) N broadcasts -> displayed count reaches N. The issue's explicit AC.
+	// (3) N broadcasts, one per distinct banked actor -> displayed count reaches N.
+	// The issue's explicit AC. Distinct actors, not one actor broadcast N times -
+	// real gameplay banks N different enemies, and HandleActorBanked() dedups by
+	// actor identity (see (3b) below), so reusing one actor here would only ever
+	// reach 1.
 	constexpr int32 BankFireCount = 3;
+	AActor* BankedActorsForTest[BankFireCount];
 	for (int32 Index = 0; Index < BankFireCount; ++Index)
 	{
-		Zone->OnActorBanked.Broadcast(DummyActor);
+		BankedActorsForTest[Index] = World->SpawnActor<AActor>();
+		if (!TestNotNull(TEXT("A dummy AActor should spawn into the test World"), BankedActorsForTest[Index]))
+		{
+			return false;
+		}
+		Zone->OnActorBanked.Broadcast(BankedActorsForTest[Index]);
 	}
 
 	TestEqual(TEXT("Banked count should reach N after N OnActorBanked broadcasts"), Widget->GetBankedCount(), BankFireCount);
 	TestEqual(TEXT("Display text should reflect N/TotalEnemies after N broadcasts"),
 		Widget->GetQuestTrackerDisplayText().ToString(), FString(TEXT("Robots penned: 3/5")));
+
+	// (3b) Per-actor dedup - ATargetZone::OnActorBanked fires once per overlapping
+	// component, not once per actor (TargetZone.cpp's own "KNOWN GAP" comment); a
+	// repeat broadcast for an already-banked actor must not double-count it.
+	Zone->OnActorBanked.Broadcast(BankedActorsForTest[0]);
+	TestEqual(TEXT("A repeat broadcast for an already-banked actor should not increment the count"),
+		Widget->GetBankedCount(), BankFireCount);
 
 	// (4) Corner anchoring.
 	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(Widget->WidgetTree->RootWidget);
@@ -150,6 +161,66 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 		Widget->ChromeBorder->GetBrushColor(), HUDChromeColours::GetBackground());
 	TestEqual(TEXT("Text colour should come from HUDChromeColours::GetText()"),
 		Widget->BankedCountText->GetColorAndOpacity().GetSpecifiedColor(), HUDChromeColours::GetText());
+
+	// (7) Initialize() guard - must not rebuild the tree when NativeOnInitialized()
+	// already ran. Mirrors KrowdKontrolEnergyMeterWidgetTest.cpp's case (11).
+	UQuestTrackerWidget* GuardWidget = NewObject<UQuestTrackerWidget>();
+	if (TestNotNull(TEXT("UQuestTrackerWidget should construct for guard test"), GuardWidget))
+	{
+		GuardWidget->NativeOnInitialized();
+		if (TestNotNull(TEXT("BankedCountText should be populated after NativeOnInitialized()"), ToRawPtr(GuardWidget->BankedCountText)))
+		{
+			UTextBlock* FirstBankedCountText = GuardWidget->BankedCountText;
+			GuardWidget->Initialize();
+			TestEqual(TEXT("Initialize() must not rebuild the tree when already built"),
+				ToRawPtr(GuardWidget->BankedCountText), FirstBankedCountText);
+		}
+	}
+
+	// (8) Unbuilt-tree safety - a widget whose tree was never built (bare
+	// NewObject(), neither NativeOnInitialized() nor Initialize() called) should
+	// degrade safely. Mirrors KrowdKontrolEnergyMeterWidgetTest.cpp's case (12).
+	UQuestTrackerWidget* UnbuiltWidget = NewObject<UQuestTrackerWidget>();
+	if (TestNotNull(TEXT("UQuestTrackerWidget should construct for unbuilt-tree test"), UnbuiltWidget))
+	{
+		TestTrue(TEXT("Unbuilt widget should report empty display text"),
+			UnbuiltWidget->GetQuestTrackerDisplayText().IsEmpty());
+		TestEqual(TEXT("Unbuilt widget should report 0 banked count"), UnbuiltWidget->GetBankedCount(), 0);
+		TestEqual(TEXT("Unbuilt widget should report 0 total enemy count"), UnbuiltWidget->GetTotalEnemyCount(), 0);
+	}
+
+	// (9) Multi-zone binding - HandleLevelBegin() must bind to every live
+	// ATargetZone, not just the first one an iterator finds. Realistic given
+	// existing dual-zone level content (KrowdKontrolDualZoneBossTest.cpp).
+	UWorld* MultiZoneWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the multi-zone test"), MultiZoneWorld))
+	{
+		MultiZoneWorld->InitializeActorsForPlay(FURL());
+
+		ATargetZone* FirstZone = MultiZoneWorld->SpawnActor<ATargetZone>();
+		ATargetZone* SecondZone = MultiZoneWorld->SpawnActor<ATargetZone>();
+		UQuestTrackerWidget* MultiZoneWidget = CreateWidget<UQuestTrackerWidget>(MultiZoneWorld, UQuestTrackerWidget::StaticClass());
+		if (TestNotNull(TEXT("First ATargetZone should spawn into the multi-zone test World"), FirstZone)
+			&& TestNotNull(TEXT("Second ATargetZone should spawn into the multi-zone test World"), SecondZone)
+			&& TestNotNull(TEXT("UQuestTrackerWidget should construct for the multi-zone test"), MultiZoneWidget))
+		{
+			ULevelLifecycleSubsystem* MultiZoneLifecycleSubsystem = MultiZoneWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+			if (TestNotNull(TEXT("Multi-zone test World should auto-instantiate ULevelLifecycleSubsystem"), MultiZoneLifecycleSubsystem))
+			{
+				MultiZoneLifecycleSubsystem->OnWorldBeginPlay(*MultiZoneWorld);
+
+				AActor* FirstDummyActor = MultiZoneWorld->SpawnActor<AActor>();
+				AActor* SecondDummyActor = MultiZoneWorld->SpawnActor<AActor>();
+				if (TestNotNull(TEXT("First dummy AActor should spawn into the multi-zone test World"), FirstDummyActor)
+					&& TestNotNull(TEXT("Second dummy AActor should spawn into the multi-zone test World"), SecondDummyActor))
+				{
+					FirstZone->OnActorBanked.Broadcast(FirstDummyActor);
+					SecondZone->OnActorBanked.Broadcast(SecondDummyActor);
+					TestEqual(TEXT("Banked count should sum broadcasts from both zones"), MultiZoneWidget->GetBankedCount(), 2);
+				}
+			}
+		}
+	}
 
 	return true;
 }

@@ -107,6 +107,12 @@ void UQuestTrackerWidget::HandleLevelBegin(FName MapName)
 
 void UQuestTrackerWidget::HandleActorBanked(AActor* BankedActor)
 {
+	if (BankedActors.ContainsByPredicate(
+		[BankedActor](const TWeakObjectPtr<AActor>& Existing) { return Existing.Get() == BankedActor; }))
+	{
+		return;
+	}
+	BankedActors.Add(BankedActor);
 	++BankedCount;
 	RefreshDisplay();
 }
@@ -120,10 +126,12 @@ void UQuestTrackerWidget::RefreshDisplay()
 			*GetNameSafe(this));
 		return;
 	}
+	FNumberFormattingOptions NoGrouping;
+	NoGrouping.SetUseGrouping(false);
 	BankedCountText->SetText(FText::Format(
 		NSLOCTEXT("QuestTrackerWidget", "BankedCountFormat", "Robots penned: {0}/{1}"),
-		FText::AsNumber(BankedCount),
-		FText::AsNumber(TotalEnemyCount)));
+		FText::AsNumber(BankedCount, &NoGrouping),
+		FText::AsNumber(TotalEnemyCount, &NoGrouping)));
 }
 
 FText UQuestTrackerWidget::GetQuestTrackerDisplayText() const
