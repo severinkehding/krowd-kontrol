@@ -19,7 +19,6 @@
 #include "Tests/AutomationCommon.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
-#include "GameFramework/GameStateBase.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
