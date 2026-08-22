@@ -144,6 +144,16 @@ private:
 	// extracting an otherwise-untestable private behavior into a friend-testable seam.
 	FName ComputeRestartLevelName() const;
 
+	// Strips PIE session name-mangling (e.g. "UEDPIE_0_L_Level01" -> "L_Level01") from
+	// a map name via UWorld::RemovePIEPrefix() (issue #223). Extracted as its own static
+	// helper - rather than inlined into ComputeRestartLevelName() - purely so the
+	// Automation test can feed it a synthetic PIE-mangled string directly: this project's
+	// CreateNewMap() test Worlds are never PIE sessions, so there is no other way to
+	// exercise the stripping behavior in-process. A no-op on already-bare names (the
+	// CreateNewMap() case), so the existing "restart targets the current map by name"
+	// assertion in KrowdKontrolLevelRestartTest.cpp is unaffected.
+	static FName StripPIEPrefixFromMapName(const FString& MapName);
+
 	// Computes the OpenLevel Options string for the pending restart (issue #173, PRD
 	// "Run Lifecycle & Progression Signals" REQ-4 boss-checkpoint sub-requirement).
 	// Returns "BossCheckpoint" if this world's ULevelLifecycleSubsystem has latched

@@ -118,6 +118,17 @@ bool FKrowdKontrolLevelRestartTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Restart should target the current map by name"),
 		Controller->ComputeRestartLevelName(), FName(*World->GetMapName()));
 
+	// Issue #223: a real bug reached the operator because PIE mangles GetMapName()
+	// into e.g. "UEDPIE_0_L_Level01", and ComputeRestartLevelName() used to return
+	// that verbatim, sending OpenLevel to an unresolvable target that silently fell
+	// back to GameDefaultMap (the Epic engine template landscape) instead of
+	// reloading L_Level01. CreateNewMap() Worlds are never PIE sessions, so this
+	// can't be reproduced by calling ComputeRestartLevelName() itself above - instead
+	// feed a synthetic mangled name straight into the extracted stripping helper.
+	TestEqual(TEXT("PIE-mangled map name should have the UEDPIE prefix stripped"),
+		AKrowdKontrolPlayerController::StripPIEPrefixFromMapName(TEXT("UEDPIE_0_L_Level01")),
+		FName(TEXT("L_Level01")));
+
 	return true;
 }
 
