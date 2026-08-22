@@ -6,7 +6,9 @@
 // (same race issue #235 fixed for OnScreenPromptWidgetInstance); (d) dismiss on
 // player input; (e) dismiss on the 8s auto-timeout; (f) the real
 // ULevelLifecycleSubsystem::OnLevelBegin broadcast wiring, including the safe
-// missing-row no-op for a non-L_LevelNN map name; (g) the missing-table no-op.
+// missing-row no-op for a non-L_LevelNN map name; (g) the missing-table no-op;
+// (h) OnLevelBegin racing controller existence - the briefing must still land via
+// RetryPendingBriefingForController(), not be silently dropped.
 //
 // Each case uses its own FAutomationEditorCommonUtils::CreateNewMap() World, per
 // this module's established per-scenario isolation convention (see
@@ -158,10 +160,25 @@ bool FKrowdKontrolLevelBriefingSubsystemTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("New-ability line should be populated"),
 			Controller->BriefingCardWidgetInstance->GetNewAbilityDisplayText().ToString(),
 			TEXT("NEW: SLEEP - PRESS 2 - STRONG VS SNIPERS"));
+		// UGameplayStatics::SetGamePaused() requires a live AGameModeBase
+		// (World->GetAuthGameMode()), which CreateNewMap() test Worlds never spawn -
+		// see KrowdKontrolAbilityCastComponentTest.cpp's identical note. Documenting
+		// the no-op explicitly here rather than leaving ShowBriefing()'s pause side
+		// effect completely unchecked.
+		TestFalse(TEXT("SetGamePaused() is a documented no-op in CreateNewMap() worlds without a GameMode - see KrowdKontrolAbilityCastComponentTest.cpp"),
+			World->IsPaused());
 
-		// (d) Dismiss on player input.
-		Controller->BriefingCardWidgetInstance->DismissBriefing();
-		TestFalse(TEXT("Briefing should no longer be visible after DismissBriefing()"),
+		// (d) Dismiss on player input - drives the real HandleBriefingDismissInput()
+		// handler bound to EKeys::AnyKey in SetupInputComponent(), not just
+		// DismissBriefing() directly, so a regression to the handler itself (e.g. its
+		// IsBriefingVisible() guard) would fail this test.
+		Controller->HandleBriefingDismissInput();
+		TestFalse(TEXT("Briefing should no longer be visible after HandleBriefingDismissInput()"),
+			Controller->BriefingCardWidgetInstance->IsBriefingVisible());
+
+		// Guard: calling it again while nothing is showing must be a safe no-op.
+		Controller->HandleBriefingDismissInput();
+		TestFalse(TEXT("HandleBriefingDismissInput() should no-op when no briefing is visible"),
 			Controller->BriefingCardWidgetInstance->IsBriefingVisible());
 
 		// (e) Dismiss on the 8s auto-timeout.
@@ -248,6 +265,14 @@ bool FKrowdKontrolLevelBriefingSubsystemTest::RunTest(const FString& Parameters)
 
 		TestFalse(TEXT("No briefing should show for a map name with no matching row (safe no-op, not a crash)"),
 			Controller->BriefingCardWidgetInstance && Controller->BriefingCardWidgetInstance->IsBriefingVisible());
+
+		// OnWorldBeginPlay() only fires OnLevelBegin once per world
+		// (ULevelLifecycleSubsystem::bHasFiredLevelBegin), so the missing-row warn-once
+		// guard's repeated-call behavior is exercised via a direct second
+		// HandleLevelBegin() call instead - mirrors case (g)'s identical pattern for the
+		// missing-table guard. The AddExpectedError count of 1 above asserts this second
+		// call did not log again.
+		Subsystem->HandleLevelBegin(FName(TEXT("L_Level99")));
 	}
 
 	// (g) Missing-table no-op: HandleLevelBegin must not crash, and the
@@ -271,6 +296,53 @@ bool FKrowdKontrolLevelBriefingSubsystemTest::RunTest(const FString& Parameters)
 		Subsystem->HandleLevelBegin(FName(TEXT("L_Level01")));
 		Subsystem->HandleLevelBegin(FName(TEXT("L_Level02")));
 		// The AddExpectedError count of 1 above asserts the second call did not log again.
+	}
+
+	// (h) OnLevelBegin racing controller existence: if HandleLevelBegin fires before
+	// any AKrowdKontrolPlayerController exists in the world, the briefing must still
+	// land once one is spawned/registered, via RetryPendingBriefingForController() -
+	// not be silently dropped for the rest of the world's lifetime (mirrors
+	// KrowdKontrolAbilityUnlockLevelSubsystemTest.cpp case (e)'s identical shape).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelBriefingSubsystem* Subsystem = World->GetSubsystem<ULevelBriefingSubsystem>();
+		if (!TestNotNull(TEXT("ULevelBriefingSubsystem should exist"), Subsystem))
+		{
+			return false;
+		}
+		Subsystem->LevelBriefingTable = BuildBriefingTable();
+
+		AddExpectedError(TEXT("no AKrowdKontrolPlayerController found"),
+			EAutomationExpectedErrorFlags::Contains, 1, false);
+
+		// No controller spawned at all yet - GetFirstPlayerController() resolves null,
+		// matching the controller not having been spawned/registered by the time
+		// OnLevelBegin fires.
+		Subsystem->HandleLevelBegin(FName(TEXT("L_Level01")));
+
+		APawn* Pawn = World->SpawnActor<APawn>();
+		AKrowdKontrolPlayerController* Controller = SpawnPossessedController(World, Pawn);
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller))
+		{
+			return false;
+		}
+		TestNull(TEXT("BriefingCardWidgetInstance should not exist yet"), ToRawPtr(Controller->BriefingCardWidgetInstance));
+
+		// DispatchBeginPlay() drives AKrowdKontrolPlayerController::BeginPlay() ->
+		// RetryPendingBriefing() -> RetryPendingBriefingForController(), delivering the
+		// briefing this level's OnLevelBegin couldn't land a moment ago.
+		Controller->DispatchBeginPlay();
+		if (!TestNotNull(TEXT("BriefingCardWidgetInstance should exist after DispatchBeginPlay()"), ToRawPtr(Controller->BriefingCardWidgetInstance)))
+		{
+			return false;
+		}
+		TestTrue(TEXT("The briefing should be visible once the controller exists, via the retry path"),
+			Controller->BriefingCardWidgetInstance->IsBriefingVisible());
 	}
 
 	return true;

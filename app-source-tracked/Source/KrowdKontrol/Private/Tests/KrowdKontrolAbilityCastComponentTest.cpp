@@ -21,8 +21,13 @@
 #include "AbilityCooldownComponent.h"
 #include "AbilityLockoutComponent.h"
 #include "EnemyBaseTestActor.h"
+#include "KrowdKontrolPlayerController.h"
+#include "BriefingCardWidget.h"
+#include "LevelBriefingData.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/Engine.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/WorldSettings.h"
@@ -438,6 +443,79 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("TryCastAbility should fail while the world is paused"), bCastResult);
 		TestEqual(TEXT("A paused-world cast attempt should not change the enemy's state"),
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (l) briefing-visible gate, independent of World->IsPaused() (issue #246 PR
+	// review, MEDIUM finding 1): the briefing's EKeys::AnyKey dismiss-bind lives on
+	// the controller's InputComponent, this cast bind lives on the pawn's, so whether
+	// World->IsPaused() still reads true for a same-keypress event depends on UE5's
+	// per-frame input-stack processing order between the two - unpinned by this
+	// codebase. TryCastAbility must fail while the owning pawn's controller reports a
+	// visible briefing card, even when World->IsPaused() itself reads false - exactly
+	// what CreateNewMap() test Worlds always report, since SetGamePaused() silently
+	// no-ops without a live AGameModeBase (same note as case (k)) - and must succeed
+	// again once the briefing is dismissed.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		if (!TestNotNull(TEXT("APawn should spawn into the test World"), Owner))
+		{
+			return false;
+		}
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		// Mirrors KrowdKontrolLevelBriefingSubsystemTest.cpp's SpawnPossessedController()
+		// shape - the local-player setup is what CreateWidget<T>(Controller, Class)
+		// requires inside CreateHUDWidgets(), and World->AddController() is what
+		// CreateNewMap() worlds otherwise skip (no PostInitializeComponents).
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller))
+		{
+			return false;
+		}
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		Controller->Possess(Owner);
+		World->AddController(Controller);
+		Controller->DispatchBeginPlay();
+		if (!TestNotNull(TEXT("BriefingCardWidgetInstance should exist"), ToRawPtr(Controller->BriefingCardWidgetInstance)))
+		{
+			return false;
+		}
+
+		FLevelBriefingRow Row;
+		Row.LevelDisplayName = FText::FromString(TEXT("LEVEL 1"));
+		Controller->BriefingCardWidgetInstance->ShowBriefing(Row);
+		if (!TestFalse(TEXT("World->IsPaused() stays false in CreateNewMap() worlds - see case (k)'s note"), World->IsPaused()))
+		{
+			return false;
+		}
+
+		const bool bCastResultWhileVisible = CastComponent->TryCastAbility(EAbilitySlot::Stun);
+		TestFalse(TEXT("TryCastAbility should fail while the briefing card is visible, even though World->IsPaused() reads false"),
+			bCastResultWhileVisible);
+		TestEqual(TEXT("A briefing-visible cast attempt should not change the enemy's state"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+		Controller->BriefingCardWidgetInstance->DismissBriefing();
+		const bool bCastResultAfterDismiss = CastComponent->TryCastAbility(EAbilitySlot::Stun);
+		TestTrue(TEXT("TryCastAbility should succeed again once the briefing card is dismissed"), bCastResultAfterDismiss);
 	}
 
 	return true;

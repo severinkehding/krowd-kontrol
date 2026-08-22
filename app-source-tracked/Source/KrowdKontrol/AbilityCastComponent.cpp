@@ -4,8 +4,11 @@
 #include "AbilityLockoutComponent.h"
 #include "EnemyBase.h"
 #include "CrowdMasterySubsystem.h"
+#include "KrowdKontrolPlayerController.h"
+#include "BriefingCardWidget.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 
 UAbilityCastComponent::UAbilityCastComponent()
 {
@@ -46,6 +49,27 @@ bool UAbilityCastComponent::TryCastAbility(EAbilitySlot Ability)
 			UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s world is paused (briefing/safe-state active)"),
 				*UEnum::GetValueAsString(Ability));
 			return false;
+		}
+	}
+
+	// Belt-and-suspenders for the same-keypress race the comment above describes: the
+	// dismiss bind lives on the controller's InputComponent, this cast bind lives on
+	// the pawn's, so whether World->IsPaused() above still reads true for this event
+	// depends on UE5's per-frame input-stack processing order between the two -
+	// unpinned by this codebase. Checking the widget's own IsBriefingVisible() state
+	// directly, via the owning pawn's controller, closes that gap regardless of
+	// ordering: DismissBriefing() flips this to false as part of the exact same call
+	// that unpauses the world, so the two checks can never disagree with each other.
+	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		if (const AKrowdKontrolPlayerController* Controller = Cast<AKrowdKontrolPlayerController>(OwnerPawn->GetController()))
+		{
+			if (Controller->BriefingCardWidgetInstance && Controller->BriefingCardWidgetInstance->IsBriefingVisible())
+			{
+				UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastAbility: exit, Ability=%s briefing card still visible"),
+					*UEnum::GetValueAsString(Ability));
+				return false;
+			}
 		}
 	}
 

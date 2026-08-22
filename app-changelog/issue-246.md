@@ -78,6 +78,61 @@ live `app/` copies only (not into this branch's git mirror, since it belongs to
 #247's own PR) and verified byte-for-byte against #247's committed source. Not a
 code change under review here — see `implementation.md` for the full account.
 
+## Self-fix pass (PR #272 review findings)
+
+Addressed all 4 HIGH, both MEDIUM, and 2 of 4 LOW findings from the PR review
+(`consolidated-review.md`):
+
+- **HIGH1** (error-handling): `HandleLevelBegin` no longer silently drops the
+  briefing when no `AKrowdKontrolPlayerController` is resolvable yet — buffers the
+  row (`bLevelBeginFiredWithNoController`/`PendingBriefingRow`) with a one-shot
+  warning, delivered via a new `RetryPendingBriefingForController()` called from
+  `AKrowdKontrolPlayerController::BeginPlay()`, mirroring
+  `UAbilityUnlockLevelSubsystem::RetryPendingUnlockForPawn()`'s exact shape. New
+  test case (h) in `KrowdKontrolLevelBriefingSubsystemTest.cpp`.
+- **HIGH2** (test-coverage): the "dismiss on player input" test case now calls the
+  real `HandleBriefingDismissInput()` handler (via a new friend declaration on
+  `AKrowdKontrolPlayerController`) instead of bypassing it with a direct
+  `DismissBriefing()` call, plus a no-op-when-nothing-visible guard case.
+- **HIGH3** (test-coverage): added documented `World->IsPaused()` no-op assertions
+  (citing `KrowdKontrolAbilityCastComponentTest.cpp`'s identical
+  `SetGamePaused()`-needs-a-GameMode note) after `ShowBriefing()`/`DismissBriefing()`
+  in both the widget and subsystem tests, so the pause/unpause side effect is no
+  longer completely unchecked.
+- **HIGH4** (comment-quality): fixed `AdvanceDismissTimer()`'s header comment, which
+  wrongly claimed `NativeTick()` can't be driven under `-nullrhi` — the PR's own test
+  case (f) already calls it directly and passes.
+- **MEDIUM1** (code-review): closed the same-keypress dismiss+cast ordering gap
+  outright (Option B) rather than just testing for it — `TryCastAbility()` now also
+  checks the owning pawn's controller's `BriefingCardWidgetInstance->IsBriefingVisible()`
+  directly, order-independent of `World->IsPaused()`. New test case (l) in
+  `KrowdKontrolAbilityCastComponentTest.cpp` proves the gate holds even when
+  `World->IsPaused()` reads false (the exact state every `CreateNewMap()` test World
+  is in, since `SetGamePaused()` no-ops without a GameMode) — i.e. it isolates the
+  new check from the pre-existing one.
+- **MEDIUM2** (docs-impact): annotated `docs/prd-mission-briefing-tracker.md` REQ-1
+  as `✅ implemented, issue #246 / PR #272`, matching the established convention in
+  `docs/prd-teaching-arc.md`.
+- **LOW** (test-coverage): added a second `HandleLevelBegin()` call in test case (f)
+  to verify the missing-row warn-once guard doesn't re-log, symmetric with case (g)'s
+  existing missing-table coverage.
+- **LOW** (comment-quality): `LevelBriefingTable`'s comment no longer credits a
+  friend-class declaration for public-property access; removed the now-unused
+  `friend class FKrowdKontrolLevelBriefingSubsystemTest;` from `ULevelBriefingSubsystem`
+  (confirmed no private member is accessed by that test).
+- Skipped (per the review's own recommendation, not a live bug): ref-counting
+  `SetGamePaused()` calls (only one consumer exists today), and writing up a
+  HUD-widget/lifecycle-subsystem convention in `CLAUDE.md` (belongs to a future
+  PRD/issue, not this fix pass).
+
+Validation: `harness/run_ue_automation.sh "KrowdKontrol.Unit."` — `passed=90
+total=91`, same single pre-existing/out-of-scope `PlayerControllerShowsMouseCursor`
+failure documented above (untouched by this pass, confirmed by diffing
+`app-source-tracked` before/after — no unrelated file changed). All 3
+directly-affected suites (`KrowdKontrol.Unit.LevelBriefingSubsystem`,
+`KrowdKontrol.Unit.BriefingCardWidget`, `KrowdKontrol.Unit.AbilityCastComponent`)
+pass in isolation too.
+
 ---
 
 Source lives under `app/` (gitignored, D-003) — this file is the tracked-repo record

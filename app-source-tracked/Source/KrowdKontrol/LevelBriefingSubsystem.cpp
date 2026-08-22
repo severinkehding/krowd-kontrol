@@ -57,5 +57,29 @@ void ULevelBriefingSubsystem::HandleLevelBegin(FName MapName)
 	if (AKrowdKontrolPlayerController* Controller = Cast<AKrowdKontrolPlayerController>(PlayerController))
 	{
 		Controller->ShowLevelBriefing(*Row);
+		return;
 	}
+
+	// No AKrowdKontrolPlayerController resolvable yet - remember this row so
+	// RetryPendingBriefingForController() can still deliver it once the controller
+	// exists, since OnLevelBegin only fires once per world.
+	bLevelBeginFiredWithNoController = true;
+	PendingBriefingRow = *Row;
+	if (!bHasWarnedMissingController)
+	{
+		bHasWarnedMissingController = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ULevelBriefingSubsystem: no AKrowdKontrolPlayerController found for map '%s' - briefing will be shown once one is available."),
+			*BareMapName);
+	}
+}
+
+void ULevelBriefingSubsystem::RetryPendingBriefingForController(AKrowdKontrolPlayerController* Controller)
+{
+	if (!bLevelBeginFiredWithNoController || !Controller)
+	{
+		return;
+	}
+	bLevelBeginFiredWithNoController = false;
+	Controller->ShowLevelBriefing(PendingBriefingRow);
 }

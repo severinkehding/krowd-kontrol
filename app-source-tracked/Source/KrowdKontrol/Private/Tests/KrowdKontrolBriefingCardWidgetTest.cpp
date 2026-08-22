@@ -71,6 +71,13 @@ bool FKrowdKontrolBriefingCardWidgetTest::RunTest(const FString& Parameters)
 		Widget->GetNewAbilityDisplayText().ToString(), TEXT("NEW: SLEEP - PRESS 2 - STRONG VS SNIPERS"));
 	TestTrue(TEXT("New-ability text visibility should be HitTestInvisible when populated"),
 		Widget->NewAbilityText->GetVisibility() == ESlateVisibility::HitTestInvisible);
+	// UGameplayStatics::SetGamePaused() requires a live AGameModeBase
+	// (World->GetAuthGameMode()), which CreateNewMap() test Worlds never spawn - see
+	// KrowdKontrolAbilityCastComponentTest.cpp's identical note. Documenting the
+	// no-op explicitly here rather than leaving ShowBriefing()'s pause side effect
+	// completely unchecked.
+	TestFalse(TEXT("SetGamePaused() is a documented no-op in CreateNewMap() worlds without a GameMode - see KrowdKontrolAbilityCastComponentTest.cpp"),
+		World->IsPaused());
 
 	// (d) ShowBriefing() with an empty NewAbilityUnlockLine - proves the "optional"
 	// half of the AC: the new-ability line collapses instead of showing blank.
@@ -98,6 +105,9 @@ bool FKrowdKontrolBriefingCardWidgetTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Level name display text should be empty again after dismissal"), Widget->GetLevelNameDisplayText().IsEmpty());
 	TestTrue(TEXT("Root border visibility should be Collapsed after dismissal"),
 		Widget->RootBorder->GetVisibility() == ESlateVisibility::Collapsed);
+	// Same documented no-op as above, for DismissBriefing()'s unpause call.
+	TestFalse(TEXT("SetGamePaused(false) is likewise a documented no-op here - see KrowdKontrolAbilityCastComponentTest.cpp"),
+		World->IsPaused());
 
 	// (f) NativeTick actually drives the timer - the real per-frame code path a live
 	// game session ticks, not just the direct AdvanceDismissTimer() calls used above.

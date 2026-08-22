@@ -48,8 +48,10 @@ public:
 
 	// Decrements the remaining display time and dismisses the card once it hits
 	// zero. Called every frame from NativeTick() once this widget is in a live
-	// viewport, and called directly by the Automation test (which can't drive
-	// NativeTick under the -nullrhi headless run).
+	// viewport. No automatic per-frame tick loop runs under the -nullrhi headless
+	// Automation run, so tests call this directly for precise timing assertions
+	// (KrowdKontrolBriefingCardWidgetTest.cpp case (e)) and can still exercise the
+	// real NativeTick() path with an explicit call (case (f)).
 	UFUNCTION(BlueprintCallable, Category = "Level Briefing")
 	void AdvanceDismissTimer(float DeltaSeconds);
 

@@ -4,9 +4,11 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "EnergyMeterWidget.h"
 #include "OnScreenPromptWidget.h"
+#include "QuestTrackerWidget.h"
 #include "BriefingCardWidget.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityUnlockLevelSubsystem.h"
+#include "LevelBriefingSubsystem.h"
 #include "AbilityUnlockPromptComponent.h"
 #include "AbilityLockoutComponent.h"
 #include "PlayerEnergyComponent.h"
@@ -27,6 +29,7 @@ void AKrowdKontrolPlayerController::BeginPlay()
 	Super::BeginPlay();
 	CreateHUDWidgets();
 	RefreshTargetZoneBeacons();
+	RetryPendingBriefing();
 	// If the pawn was already possessed before BeginPlay ran (order isn't guaranteed
 	// relative to AutoPossessPlayer), wire it now instead of waiting for a
 	// possession that already happened.
@@ -70,6 +73,14 @@ void AKrowdKontrolPlayerController::CreateHUDWidgets()
 		if (OnScreenPromptWidgetInstance)
 		{
 			OnScreenPromptWidgetInstance->AddToViewport();
+		}
+	}
+	if (!QuestTrackerWidgetInstance)
+	{
+		QuestTrackerWidgetInstance = CreateWidget<UQuestTrackerWidget>(this, UQuestTrackerWidget::StaticClass());
+		if (QuestTrackerWidgetInstance)
+		{
+			QuestTrackerWidgetInstance->AddToViewport();
 		}
 	}
 	if (!BriefingCardWidgetInstance)
@@ -242,6 +253,14 @@ void AKrowdKontrolPlayerController::RetryPendingAbilityUnlock(APawn* InPawn)
 	if (UAbilityUnlockLevelSubsystem* UnlockSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UAbilityUnlockLevelSubsystem>() : nullptr)
 	{
 		UnlockSubsystem->RetryPendingUnlockForPawn(InPawn);
+	}
+}
+
+void AKrowdKontrolPlayerController::RetryPendingBriefing()
+{
+	if (ULevelBriefingSubsystem* BriefingSubsystem = GetWorld() ? GetWorld()->GetSubsystem<ULevelBriefingSubsystem>() : nullptr)
+	{
+		BriefingSubsystem->RetryPendingBriefingForController(this);
 	}
 }
 
