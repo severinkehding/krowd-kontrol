@@ -8,6 +8,7 @@
 #include "CrowdMasterySubsystem.h"
 #include "Engine/World.h"
 #include "Components/PrimitiveComponent.h"
+#include "RoomActor.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -102,6 +103,26 @@ void AEnemyBase::AdvanceToAttack()
 	OnAttackEntry();
 }
 
+bool AEnemyBase::IsPlayerInOwningRoom(const FVector& PlayerLocation) const
+{
+	ARoomActor* Room = OwningRoom.Get();
+	if (!Room)
+	{
+		return true;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return true;
+	}
+	TArray<ARoomActor*> AllRooms;
+	for (TActorIterator<ARoomActor> It(World); It; ++It)
+	{
+		AllRooms.Add(*It);
+	}
+	return ARoomActor::FindNearestRoom(PlayerLocation, AllRooms) == Room;
+}
+
 void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)
 {
 	const float Distance = FVector::Dist(GetActorLocation(), PlayerLocation);
@@ -110,7 +131,13 @@ void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)
 	// single frame.
 	if (CurrentState == EEnemyState::Idle && Distance <= DetectionRangeUnits)
 	{
-		AdvanceToAlert();
+		// Issue #244: proximity alone is necessary but not sufficient for Idle->Alert
+		// - the player must also be resolved to this enemy's own room (or the enemy
+		// has no owning room at all, e.g. a level with zero ARoomActors).
+		if (IsPlayerInOwningRoom(PlayerLocation))
+		{
+			AdvanceToAlert();
+		}
 	}
 	else if (CurrentState == EEnemyState::Alert && Distance <= GetAttackRangeUnits())
 	{
