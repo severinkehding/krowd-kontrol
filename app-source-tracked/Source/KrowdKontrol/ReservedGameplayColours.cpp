@@ -34,3 +34,28 @@ FLinearColor ReservedGameplayColours::GetBackground()
 {
 	return FLinearColor(0.02f, 0.02f, 0.03f, 1.0f);
 }
+
+FName ReservedGameplayColours::GetPurpleTag()
+{
+	return FName(TEXT("Purple"));
+}
+
+FName ReservedGameplayColours::GetTealTag()
+{
+	return FName(TEXT("Teal"));
+}
+
+FName ReservedGameplayColours::GetOrangeTag()
+{
+	return FName(TEXT("Orange"));
+}
+
+FName ReservedGameplayColours::GetBlueTag()
+{
+	return FName(TEXT("Blue"));
+}
+
+FName ReservedGameplayColours::GetWhiteTag()
+{
+	return FName(TEXT("White"));
+}

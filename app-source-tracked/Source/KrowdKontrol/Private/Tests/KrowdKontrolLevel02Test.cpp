@@ -128,6 +128,11 @@ bool FKrowdKontrolLevel02StructureTest::RunTest(const FString& Parameters)
 	// count, mirroring KrowdKontrolLevel01Test.cpp's own approach.
 	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
 
+	// Issue #211 pass-1 review follow-up: extends the same self-heal proof
+	// KrowdKontrolLevel01Test.cpp now has to L_Level02 - the E2E holdout only checked
+	// L_Level01 live in PIE, so this is new coverage for this level specifically.
+	KrowdKontrolLevelTestUtils::CheckRoomBankingZonesSelfHeal(*this, Rooms);
+
 	TestTrue(TEXT("L_Level02's total enemy count should be strictly greater than L_Level01's (REQ-3 difficulty ramp)"),
 		TotalLevel02EnemyCount > Level01EnemyCount);
 	// See the room-count comment above: same rationale applies to this exact-count

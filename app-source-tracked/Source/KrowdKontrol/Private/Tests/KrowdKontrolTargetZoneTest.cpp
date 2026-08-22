@@ -29,6 +29,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "TargetZone.h"
+#include "EnemyTypeIndicatorComponent.h"
 #include "TargetZoneTestActor.h"
 #include "NonHerdableTestActor.h"
 #include "TargetZoneBankedTestListener.h"
@@ -78,17 +79,44 @@ bool FKrowdKontrolTargetZoneTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("OnActorBanked should report the correct actor"),
 		Listener->LastBankedActor.Get(), static_cast<AActor*>(MatchedActor));
 
-	// (b) colour mismatch never fires.
+	// (b) type-keyed rejection (operator ruling 2026-08-22): a zone typed to a
+	// specific EEnemyType rejects a controlled herdable with no type indicator, and
+	// one carrying the wrong type - regardless of colour tags, which no longer gate
+	// (they remain metadata; case (a) above passes with mismatched-in-spirit colour
+	// state precisely because acceptance ignores colour now). The wrong-type actor
+	// gets a real UEnemyTypeIndicatorComponent so the rejection exercises the
+	// indicator comparison, not just the missing-indicator early-out.
+	Zone->bAcceptAnyEnemyType = false;
+	Zone->ZoneEnemyType = EEnemyType::RU_NNR;
 	ATargetZoneTestActor* MismatchedActor = World->SpawnActor<ATargetZoneTestActor>(FVector(1000.f, 0.f, 0.f), FRotator::ZeroRotator);
 	if (!TestNotNull(TEXT("Mismatched actor should spawn into the test World"), MismatchedActor))
 	{
 		return false;
 	}
 	MismatchedActor->SetControlled(true);
-	MismatchedActor->SetHerdColourTag(FName(TEXT("Teal")));
+	MismatchedActor->SetHerdColourTag(FName(TEXT("Purple")));
 	MismatchedActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
-	TestEqual(TEXT("OnActorBanked should not fire on a colour mismatch"),
+	TestEqual(TEXT("A typed zone should not bank a controlled actor with no type indicator"),
 		Listener->CallCount, 1);
+
+	UEnemyTypeIndicatorComponent* WrongTypeIndicator =
+		NewObject<UEnemyTypeIndicatorComponent>(MismatchedActor, TEXT("WrongTypeIndicator"));
+	WrongTypeIndicator->EnemyType = EEnemyType::TR_UPR;
+	WrongTypeIndicator->RegisterComponent();
+	MismatchedActor->SetActorLocation(FVector(1000.f, 0.f, 0.f));
+	MismatchedActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
+	TestEqual(TEXT("A typed zone should not bank a controlled actor of the wrong EEnemyType"),
+		Listener->CallCount, 1);
+
+	WrongTypeIndicator->EnemyType = EEnemyType::RU_NNR;
+	MismatchedActor->SetActorLocation(FVector(1000.f, 0.f, 0.f));
+	MismatchedActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
+	TestEqual(TEXT("A typed zone should bank a controlled actor of its own EEnemyType (any controlling colour)"),
+		Listener->CallCount, 2);
+
+	// Restore the zone to its unconfigured default for the remaining cases, which
+	// pin the accept-any behaviour.
+	Zone->bAcceptAnyEnemyType = true;
 
 	// (c) uncontrolled never fires.
 	ATargetZoneTestActor* UncontrolledActor = World->SpawnActor<ATargetZoneTestActor>(FVector(1000.f, 0.f, 0.f), FRotator::ZeroRotator);
@@ -99,7 +127,7 @@ bool FKrowdKontrolTargetZoneTest::RunTest(const FString& Parameters)
 	UncontrolledActor->SetHerdColourTag(FName(TEXT("Purple")));
 	UncontrolledActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
 	TestEqual(TEXT("OnActorBanked should not fire for an uncontrolled actor"),
-		Listener->CallCount, 1);
+		Listener->CallCount, 2);
 
 	// (d) a non-IHerdable actor overlapping the zone never fires the delegate. This is
 	// the highest-traffic real-level case (room geometry, doors, props all outnumber
@@ -112,7 +140,7 @@ bool FKrowdKontrolTargetZoneTest::RunTest(const FString& Parameters)
 	}
 	PlainActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
 	TestEqual(TEXT("OnActorBanked should not fire for a non-IHerdable actor overlap"),
-		Listener->CallCount, 1);
+		Listener->CallCount, 2);
 
 	// (e) an unconfigured zone (default ZoneColourTag == NAME_None) matches an
 	// unconfigured actor (default HerdColourTag == NAME_None) by design - pins the
@@ -139,7 +167,7 @@ bool FKrowdKontrolTargetZoneTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("An unconfigured zone should bank an unconfigured, controlled actor (documented default-match behavior)"),
 		UnconfiguredListener->CallCount, 1);
 	TestEqual(TEXT("A second zone's broadcast should not reach the first zone's listener (cross-instance isolation)"),
-		Listener->CallCount, 1);
+		Listener->CallCount, 2);
 
 	// (f) re-entry: an already-banked actor that leaves and re-enters the zone fires
 	// OnActorBanked again. Pins current (undefined-by-issue-scope) behavior so a future
@@ -149,7 +177,7 @@ bool FKrowdKontrolTargetZoneTest::RunTest(const FString& Parameters)
 	MatchedActor->SetActorLocation(FVector(1000.f, 0.f, 0.f), /*bSweep=*/true);
 	MatchedActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
 	TestEqual(TEXT("OnActorBanked should fire again when an already-banked actor re-enters the zone"),
-		Listener->CallCount, 2);
+		Listener->CallCount, 3);
 
 	return true;
 }

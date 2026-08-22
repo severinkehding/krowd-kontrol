@@ -1,14 +1,22 @@
 #include "DoorConnectorActor.h"
+#include "GameFramework/Pawn.h"
+#include "Kismet/GameplayStatics.h"
 #include "RoomActor.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/BoxComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 
 ADoorConnectorActor::ADoorConnectorActor()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Ticks (cheap, 4Hz) so the player-beyond-door term of RefreshGateState() tracks
+	// pawn movement - the room-cleared term stays event-driven via
+	// OnRoomClearedStateChanged, but no event exists for "the player crossed the
+	// door", and polling at 0.25s is imperceptible at door scale.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickInterval = 0.25f;
 
 	USceneComponent* DoorConnectorRoot = CreateDefaultSubobject<USceneComponent>(TEXT("DoorConnectorRoot"));
 	RootComponent = DoorConnectorRoot;
@@ -64,6 +72,19 @@ ADoorConnectorActor::ADoorConnectorActor()
 	// Placeholder tuning, not calibrated against any real level's ambient lighting yet.
 	DoorMarkerLightComponent->SetIntensity(2500.0f);
 	DoorMarkerLightComponent->SetAttenuationRadius(250.0f);
+
+	GateBlockingComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("GateBlockingComponent"));
+	GateBlockingComponent->SetupAttachment(DoorConnectorRoot);
+	// Starts open (no collision) - matches bIsGateOpen's default and "ungated until a
+	// GatingRoom is assigned" behaviour; RefreshGateState() corrects this once real
+	// room/gating data is available (called from BeginPlay, after GatingRoom resolves).
+	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Unconfigured primitives default to BlockAllDynamic - reset to Ignore-all first so
+	// the gate only ever blocks the one channel it's meant to (see RefreshGateState()'s
+	// comment below for why that channel is WorldDynamic, not WorldStatic or Pawn).
+	GateBlockingComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	GateBlockingComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	GateBlockingComponent->SetGenerateOverlapEvents(false);
 }
 
 void ADoorConnectorActor::HideConnectorVisuals()
@@ -71,6 +92,11 @@ void ADoorConnectorActor::HideConnectorVisuals()
 	ConnectorFloorMeshComponent->SetVisibility(false);
 	DoorMarkerMeshComponent->SetVisibility(false);
 	DoorMarkerLightComponent->SetVisibility(false);
+	// Route through RefreshGateState() rather than hardcoding NoCollision, so a
+	// GatingRoom that's still un-cleared stays blocked even while the connector's visuals
+	// are hidden (e.g. RecomputeConnectorGeometry() called again post-placement with a
+	// degenerate RoomA/RoomB span - see GatingRoom's header comment).
+	RefreshGateState();
 }
 
 void ADoorConnectorActor::RecomputeConnectorGeometry()
@@ -102,6 +128,11 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	DoorMarkerMeshComponent->SetWorldLocation(Midpoint + FVector(0.f, 0.f, DoorMarkerHeight));
 	DoorMarkerMeshComponent->SetVisibility(true);
 	DoorMarkerLightComponent->SetVisibility(true);
+
+	GateBlockingComponent->SetWorldLocation(Midpoint);
+	GateBlockingComponent->SetWorldRotation(Delta.Rotation());
+	GateBlockingComponent->SetBoxExtent(FVector(
+		ConnectorFloorThickness, ConnectorFloorWidth * 0.5f, DoorMarkerHeight));
 }
 
 void ADoorConnectorActor::OnConstruction(const FTransform& Transform)
@@ -113,5 +144,72 @@ void ADoorConnectorActor::OnConstruction(const FTransform& Transform)
 void ADoorConnectorActor::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (!GatingRoom && ConnectsValidRooms())
+	{
+		GatingRoom = RoomA->GetActorLocation().X <= RoomB->GetActorLocation().X ? RoomA : RoomB;
+	}
+
+	// After GatingRoom resolution, not before - PR #229 code review: geometry
+	// recompute must never observe a half-initialized gating state.
 	RecomputeConnectorGeometry();
+
+	if (GatingRoom)
+	{
+		GatingRoom->OnRoomClearedStateChanged.AddUniqueDynamic(this, &ADoorConnectorActor::RefreshGateState);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ADoorConnectorActor: '%s' has no resolvable GatingRoom (RoomA/RoomB unset, ")
+			TEXT("identical, or auto-derivation skipped) - this door will never gate and stays ")
+			TEXT("permanently open."),
+			*GetNameSafe(this));
+	}
+
+	RefreshGateState();
+}
+
+void ADoorConnectorActor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	RefreshGateState();
+}
+
+void ADoorConnectorActor::RefreshGateState()
+{
+	// Reconciled AC3/AC4 rule (operator decision, 2026-08-22, PR #229 escalation -
+	// replaces the bGateEverOpened permanent latch, which satisfied AC3 by
+	// inverting AC4): the door gates LIVE on its GatingRoom's cleared state, so a
+	// wave-spawned enemy re-gates its room (AC4) - but only while the player is
+	// still on the gating-room side. Once the player is closer to the far room,
+	// the door is "behind them" and stays open (AC3): re-closing then would wall
+	// the player away from a fight they already earned their way past. With no
+	// player pawn (headless Automation worlds) the player term is false and the
+	// rule reduces to the pure cleared-state gate the gating tests pin.
+	const bool bRoomCleared = (GatingRoom == nullptr) || GatingRoom->IsRoomCleared();
+	bool bPlayerBeyondDoor = false;
+	if (GatingRoom && RoomA && RoomB)
+	{
+		const ARoomActor* FarRoom = (GatingRoom == RoomA) ? ToRawPtr(RoomB) : ToRawPtr(RoomA);
+		if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+		{
+			const FVector PlayerLocation = PlayerPawn->GetActorLocation();
+			bPlayerBeyondDoor =
+				FVector::DistSquared(PlayerLocation, FarRoom->GetActorLocation()) <
+				FVector::DistSquared(PlayerLocation, GatingRoom->GetActorLocation());
+		}
+	}
+	bIsGateOpen = bRoomCleared || bPlayerBeyondDoor;
+
+	// Root-cause fix (issue #218, attempt 3): live PIE inspection of the real possessed
+	// player pawn (AFlatCamera3DPrototypePawn::MeshComponent) shows it presents
+	// objectType=ECC_WorldDynamic, collisionProfileName=BlockAllDynamic - not
+	// ECC_WorldStatic as attempt 2 assumed from source inspection alone (attempt 1
+	// blocked only ECC_Pawn, also a no-op against the real player). QueryOnly still
+	// blocks WorldDynamic-channel sweeps (the constructor's collision-response setup
+	// above), so this line only needs to toggle enabled/disabled, not the per-channel
+	// responses.
+	GateBlockingComponent->SetCollisionEnabled(
+		bIsGateOpen ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
 }

@@ -158,6 +158,11 @@ offers:
    / Sleep), White (player / Stun). No other gameplay-relevant object, UI chrome, or
    environmental prop may use these five colours for non-informational purposes. A 6th
    saturated information colour must never be introduced.
+   *Carve-out (operator decision 2026-08-22, PR #232):* **saturated red is approved
+   solely as the damage-feedback flash** (the energy meter's hit-frame reaction) —
+   a momentary feedback pulse, not a persistent information colour; it identifies
+   nothing and is never used on enemies, abilities, zones, or persistent UI state.
+   No further colour exceptions without an explicit operator ruling.
 4. **The ability roster is exactly 5: Stun, Sleep, Root, Fear, Snare.** Stun is
    deliberately colour-neutral with no enemy counter — do not add one. No 6th ability.
 5. **The core enemy roster is exactly 4 types: RU-NNR, TR-UPR, B0-0MR, SN-1PR**, plus
