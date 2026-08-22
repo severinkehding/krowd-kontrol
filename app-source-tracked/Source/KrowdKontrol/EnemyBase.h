@@ -9,6 +9,7 @@
 
 class UPlayerEnergyComponent;
 class UPointLightComponent;
+class ARoomActor;
 
 // Idle -> Alert -> Attack -> Controlled -> Banked, with Banked as the only reachable
 // "defeated" state. Transition table (no other edges exist):
@@ -118,6 +119,11 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// MusicSubsystem.h's friend-class comment.
 	friend class FKrowdKontrolRoomActorDoorGatingTest;
 
+	// Same grant, for the room-detection-gate test (issue #244), which sets
+	// OwningRoom via the public SetOwningRoom() and then drives Idle->Alert via the
+	// private TickCheckDetection to prove the gate itself, not just the wiring.
+	friend class FKrowdKontrolEnemyRoomDetectionGateTest;
+
 public:
 	AEnemyBase();
 
@@ -173,6 +179,16 @@ public:
 	// issue #12's AC only calls out attack range as the per-type-overridable one.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Detection")
 	float DetectionRangeUnits = 1500.0f;
+
+	// Issue #244: the room whose OwnedEnemies list this enemy was added to (nullptr
+	// if none - see ARoomActor::AddOwnedEnemy()'s doc comment on the auto-discovery
+	// that normally sets this with zero .umap authoring). Public so ARoomActor can
+	// set it without needing friendship, same shape as ReceiveControl()/
+	// TransitionToBanked() being the public hooks other systems call into this class.
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Detection")
+	void SetOwningRoom(ARoomActor* Room) { OwningRoom = Room; }
+
+	ARoomActor* GetOwningRoom() const { return OwningRoom.Get(); }
 
 	// No-op unless CurrentState is Alert or Attack. Interface/hook only - no CC-ability
 	// logic here; the caller (future ability-cast system) owns that entirely.
@@ -277,6 +293,15 @@ private:
 	// reason.
 	void TickCheckDetection(const FVector& PlayerLocation);
 
+	// Issue #244: true if OwningRoom is unset (unscoped legacy behaviour - an enemy
+	// with no owning room, e.g. a level with zero ARoomActors) or if PlayerLocation's
+	// nearest room (ARoomActor::FindNearestRoom - the same rule OwnedEnemies
+	// auto-discovery and ADoorConnectorActor's GatingRoom derivation already use, PR
+	// #229) is this enemy's own OwningRoom. Only ever called from
+	// TickCheckDetection's Idle->Alert branch - never gates Alert->Attack or any
+	// other transition, per the issue's "already-Alert enemies are unaffected" AC.
+	bool IsPlayerInOwningRoom(const FVector& PlayerLocation) const;
+
 	// Moves the actor in a straight line toward PlayerLocation at
 	// GetMovementSpeedUnitsPerSecond() units/second, clamped so it never overshoots
 	// past the player within one tick. No-op outside Alert - Idle hasn't detected the
@@ -300,4 +325,10 @@ private:
 	float RemainingControlledSeconds = 0.0f;
 
 	float TotalControlledSeconds = 0.0f;
+
+	// UPROPERTY so this reference doesn't leave a dangling pointer if the room is
+	// ever garbage-collected while nothing else references it - same rationale
+	// ARoomActor::OwnedEnemies (RoomActor.h:161-162) is UPROPERTY-marked.
+	UPROPERTY()
+	TObjectPtr<ARoomActor> OwningRoom;
 };

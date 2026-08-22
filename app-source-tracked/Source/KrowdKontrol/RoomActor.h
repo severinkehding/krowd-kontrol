@@ -100,6 +100,14 @@ public:
 	// suite's expectations can never drift apart.
 	static ARoomActor* FindNearestRoom(const AActor* Actor, const TArray<ARoomActor*>& Rooms);
 
+	// Same nearest-room-by-distance rule as the AActor overload above, operating
+	// directly on a world location - lets a caller resolve "which room is nearest"
+	// without a resolvable AActor for the query point (issue #244: AEnemyBase's
+	// room-detection gate only ever has a plain FVector player location, not the
+	// player pawn itself, and changing TickCheckDetection's signature to carry the
+	// pawn would ripple through ~150 existing Automation test call sites).
+	static ARoomActor* FindNearestRoom(const FVector& Location, const TArray<ARoomActor*>& Rooms);
+
 	// Half-extents (cm) of the room's greybox floor slab - full floor is 2x this.
 	// Rooms in both hand-authored levels are spaced 3000cm apart along the chain axis
 	// (docs/prd-level-playability-presentation.md:31-33), so the 1000cm default leaves

@@ -135,11 +135,16 @@ void ARoomActor::BeginPlay()
 
 ARoomActor* ARoomActor::FindNearestRoom(const AActor* Actor, const TArray<ARoomActor*>& Rooms)
 {
+	return FindNearestRoom(Actor->GetActorLocation(), Rooms);
+}
+
+ARoomActor* ARoomActor::FindNearestRoom(const FVector& Location, const TArray<ARoomActor*>& Rooms)
+{
 	ARoomActor* Nearest = nullptr;
 	float NearestDistSq = TNumericLimits<float>::Max();
 	for (ARoomActor* Room : Rooms)
 	{
-		const float DistSq = FVector::DistSquared(Actor->GetActorLocation(), Room->GetActorLocation());
+		const float DistSq = FVector::DistSquared(Location, Room->GetActorLocation());
 		if (DistSq < NearestDistSq)
 		{
 			NearestDistSq = DistSq;
@@ -280,6 +285,7 @@ void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
 		return;
 	}
 	OwnedEnemies.Add(Enemy);
+	Enemy->SetOwningRoom(this);
 	BindOwnedEnemyDelegate(Enemy);
 	OnRoomClearedStateChanged.Broadcast();
 }
