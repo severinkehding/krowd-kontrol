@@ -6,6 +6,7 @@
 #include "OnScreenPromptWidget.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityUnlockLevelSubsystem.h"
+#include "AbilityUnlockPromptComponent.h"
 #include "AbilityLockoutComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "Blueprint/UserWidget.h"
@@ -85,6 +86,19 @@ void AKrowdKontrolPlayerController::WireWidgetsToPawn(APawn* InPawn)
 	if (EnergyMeterWidgetInstance)
 	{
 		EnergyMeterWidgetInstance->BindToEnergyComponent(InPawn->FindComponentByClass<UPlayerEnergyComponent>());
+	}
+	if (OnScreenPromptWidgetInstance)
+	{
+		// Covers the race where UAbilityUnlockLevelSubsystem::HandleLevelBegin() already
+		// broadcast OnAbilityUnlocked - and so UAbilityUnlockPromptComponent already
+		// tried and failed to resolve a widget - before CreateHUDWidgets() ran. This
+		// call runs after CreateHUDWidgets() every time WireWidgetsToPawn() does (from
+		// both BeginPlay() and OnPossess()), so it's guaranteed to see a live widget at
+		// least once regardless of which of OnLevelBegin/BeginPlay/OnPossess fired first.
+		if (UAbilityUnlockPromptComponent* PromptComponent = InPawn->FindComponentByClass<UAbilityUnlockPromptComponent>())
+		{
+			PromptComponent->FlushPendingPrompts();
+		}
 	}
 	if (ULevelFailComponent* PreviouslyWired = WiredLevelFailComponent.Get())
 	{

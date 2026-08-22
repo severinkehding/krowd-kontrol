@@ -37,12 +37,29 @@ public:
 	UFUNCTION()
 	void HandleAbilityUnlocked(EAbilitySlot Ability);
 
+	// Shows any prompt(s) that arrived before a resolvable OnScreenPromptWidget
+	// existed (issue #235 E2E fix): on a real level-arrival flow,
+	// UAbilityUnlockLevelSubsystem::HandleLevelBegin() can call NotifyLevelReached()
+	// - and so broadcast OnAbilityUnlocked - before
+	// AKrowdKontrolPlayerController::CreateHUDWidgets() has created
+	// OnScreenPromptWidgetInstance, since OnAbilityUnlocked only ever broadcasts once
+	// per ability (UAbilityUnlockComponent::UnlockAbility()'s idempotency guard) a
+	// prompt missed at that moment would otherwise be lost forever. Called from
+	// AKrowdKontrolPlayerController::WireWidgetsToPawn(), which - like
+	// UAbilityUnlockLevelSubsystem::RetryPendingUnlockForPawn() - is guaranteed to run
+	// again once the widget exists regardless of the OnPossess/BeginPlay race.
+	void FlushPendingPrompts();
+
 private:
 	// Lazily resolves the world's AKrowdKontrolPlayerController-owned
 	// OnScreenPromptWidgetInstance - mirrors
 	// UAbilityMatchupNudgeComponent::ResolvePromptWidget()'s "resolve external
 	// dependency lazily, cache once found, warn exactly once if never found" shape.
 	UOnScreenPromptWidget* ResolvePromptWidget();
+
+	// Builds and shows the wording for Ability on Widget - shared by
+	// HandleAbilityUnlocked's immediate path and FlushPendingPrompts' deferred path.
+	void ShowPromptForAbility(UOnScreenPromptWidget* Widget, EAbilitySlot Ability);
 
 	UPROPERTY()
 	TObjectPtr<UOnScreenPromptWidget> CachedPromptWidget;
@@ -51,4 +68,8 @@ private:
 	// logs once per component instance, matching
 	// UAbilityMatchupNudgeComponent::bHasWarnedMissingPromptWidget's convention.
 	bool bHasWarnedMissingPromptWidget = false;
+
+	// Abilities whose prompt couldn't be shown yet because no OnScreenPromptWidget
+	// was resolvable at broadcast time - drained by FlushPendingPrompts() once one is.
+	TArray<EAbilitySlot> PendingAbilities;
 };

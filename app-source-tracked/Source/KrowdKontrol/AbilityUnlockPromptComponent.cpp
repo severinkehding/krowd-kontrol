@@ -42,9 +42,36 @@ void UAbilityUnlockPromptComponent::HandleAbilityUnlocked(EAbilitySlot Ability)
 	UOnScreenPromptWidget* Widget = ResolvePromptWidget();
 	if (!Widget)
 	{
+		PendingAbilities.Add(Ability);
 		return;
 	}
 
+	ShowPromptForAbility(Widget, Ability);
+}
+
+void UAbilityUnlockPromptComponent::FlushPendingPrompts()
+{
+	if (PendingAbilities.IsEmpty())
+	{
+		return;
+	}
+
+	UOnScreenPromptWidget* Widget = ResolvePromptWidget();
+	if (!Widget)
+	{
+		return;
+	}
+
+	const TArray<EAbilitySlot> AbilitiesToShow = MoveTemp(PendingAbilities);
+	PendingAbilities.Reset();
+	for (EAbilitySlot Ability : AbilitiesToShow)
+	{
+		ShowPromptForAbility(Widget, Ability);
+	}
+}
+
+void UAbilityUnlockPromptComponent::ShowPromptForAbility(UOnScreenPromptWidget* Widget, EAbilitySlot Ability)
+{
 	const FString& AbilityDisplayName = GetAbilityDisplayName(Ability);
 	// Assumes EAbilitySlot's declared order (Stun, Sleep, Root, Fear, Snare - see
 	// AbilitySlot.h) is contiguous and locked, per that enum's own comment; the on-screen

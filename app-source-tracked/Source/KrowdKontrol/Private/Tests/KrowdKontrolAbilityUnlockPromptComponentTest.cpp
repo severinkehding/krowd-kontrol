@@ -180,6 +180,52 @@ bool FKrowdKontrolAbilityUnlockPromptComponentTest::RunTest(const FString& Param
 			FString(TEXT("SLEEP — PRESS 2 — STRONG VS SNIPERS")));
 	}
 
+	// (e) Deferred-widget race (issue #235 E2E fix): on a real level-arrival flow,
+	// UAbilityUnlockLevelSubsystem::HandleLevelBegin() can call NotifyLevelReached() -
+	// and so broadcast OnAbilityUnlocked - before any OnScreenPromptWidget is
+	// resolvable (AKrowdKontrolPlayerController::CreateHUDWidgets() hasn't run yet).
+	// Since OnAbilityUnlocked only ever broadcasts once per ability, a prompt dropped
+	// at that moment would otherwise never show. Must be buffered and shown once
+	// FlushPendingPrompts() runs - AKrowdKontrolPlayerController::WireWidgetsToPawn()
+	// calls it for real, mirrored here directly since WireWidgetsToPawn is private.
+	{
+		AddExpectedError(TEXT("no OnScreenPromptWidget available"), EAutomationExpectedErrorFlags::Contains, 1, false);
+
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UAbilityUnlockPromptComponent* PromptComponent = NewObject<UAbilityUnlockPromptComponent>(Owner);
+		PromptComponent->RegisterComponent();
+		UnlockComponent->OnAbilityUnlocked.AddDynamic(PromptComponent, &UAbilityUnlockPromptComponent::HandleAbilityUnlocked);
+
+		// No controller (so no widget) exists yet - this broadcast must be buffered,
+		// not dropped.
+		UnlockComponent->NotifyLevelReached(2);
+
+		AKrowdKontrolPlayerController* Controller = SpawnControllerWithPromptWidget(World);
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller) ||
+			!TestNotNull(TEXT("Controller should own a live OnScreenPromptWidgetInstance"), ToRawPtr(Controller->OnScreenPromptWidgetInstance)))
+		{
+			return false;
+		}
+
+		TestFalse(TEXT("Prompt should still be unresolved before FlushPendingPrompts()"),
+			Controller->OnScreenPromptWidgetInstance->IsPromptVisible());
+
+		PromptComponent->FlushPendingPrompts();
+		TestTrue(TEXT("FlushPendingPrompts should show the prompt that arrived before any widget existed"),
+			Controller->OnScreenPromptWidgetInstance->IsPromptVisible());
+		TestEqual(TEXT("Flushed prompt text should match the expected Sleep wording"),
+			Controller->OnScreenPromptWidgetInstance->GetPromptDisplayText().ToString(),
+			FString(TEXT("SLEEP — PRESS 2 — STRONG VS SNIPERS")));
+	}
+
 	return true;
 }
 
