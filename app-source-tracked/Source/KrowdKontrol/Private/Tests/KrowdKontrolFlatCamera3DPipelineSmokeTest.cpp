@@ -207,6 +207,52 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 		TestTrue(FString::Printf(TEXT("SetupPlayerInputComponent should bind a %s action"), *ExpectedActionName.ToString()), bFound);
 	}
 
+	// New OG-GDD keybindings (issue #258, PRD "Ability Targeting Shapes & Effect
+	// Semantics" REQ-3) - BindAction() above only proves the C++ side forwards *some*
+	// key mapped to each action name to the right Cast*Ability() wrapper; it says
+	// nothing about which keys DefaultInput.ini actually maps, since .ini files have
+	// no app-source-tracked/ mirror for the harness to diff (see comment above this
+	// test's ExpectedCastActionNames loop). This closes that gap directly against
+	// UInputSettings, confirming both the original 1-5 alternate and the new OG-GDD
+	// key are present for every action - so a future edit that silently drops either
+	// one fails here instead of only being caught by manual play.
+	const UInputSettings* ProjectInputSettings = UInputSettings::GetInputSettings();
+	if (TestNotNull(TEXT("Project should have configured InputSettings"), ProjectInputSettings))
+	{
+		auto HasActionKeyMapping = [ProjectInputSettings](const FName& ActionName, const FKey& Key) -> bool
+		{
+			for (const FInputActionKeyMapping& Mapping : ProjectInputSettings->GetActionMappings())
+			{
+				if (Mapping.ActionName == ActionName && Mapping.Key == Key)
+				{
+					return true;
+				}
+			}
+			return false;
+		};
+
+		struct FExpectedKeyPair
+		{
+			FName ActionName;
+			FKey OriginalKey;
+			FKey NewKey;
+		};
+		const FExpectedKeyPair ExpectedKeyPairs[] = {
+			{ TEXT("CastStun"), EKeys::One, EKeys::LeftMouseButton },
+			{ TEXT("CastSleep"), EKeys::Two, EKeys::RightMouseButton },
+			{ TEXT("CastRoot"), EKeys::Three, EKeys::Q },
+			{ TEXT("CastFear"), EKeys::Four, EKeys::MiddleMouseButton },
+			{ TEXT("CastSnare"), EKeys::Five, EKeys::E },
+		};
+		for (const FExpectedKeyPair& Pair : ExpectedKeyPairs)
+		{
+			TestTrue(FString::Printf(TEXT("%s should still keep its original 1-5 alternate key"), *Pair.ActionName.ToString()),
+				HasActionKeyMapping(Pair.ActionName, Pair.OriginalKey));
+			TestTrue(FString::Printf(TEXT("%s should gain its new OG-GDD key"), *Pair.ActionName.ToString()),
+				HasActionKeyMapping(Pair.ActionName, Pair.NewKey));
+		}
+	}
+
 	// Invokes the bound delegates directly (as UPlayerInput::ProcessInputStack would
 	// each frame) and checks the deliberate world-space-vs-actor-relative design
 	// FlatCamera3DPrototypePawn.cpp's MoveForward()/MoveRight() call out in their own
