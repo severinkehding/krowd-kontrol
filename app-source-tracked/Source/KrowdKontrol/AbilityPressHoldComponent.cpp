@@ -91,14 +91,15 @@ void UAbilityPressHoldComponent::HandleAbilityKeyReleased(EAbilitySlot Ability)
 	{
 		// Prevents a late BeginHoldPreview from firing after release.
 		World->GetTimerManager().ClearTimer(HoldThresholdTimerHandles[Index]);
+
+		if (bAbilityHoldPreviewActive[Index])
+		{
+			World->GetTimerManager().ClearTimer(PressFlashTimerHandles[Index]);
+		}
 	}
 
 	if (bAbilityHoldPreviewActive[Index])
 	{
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(PressFlashTimerHandles[Index]);
-		}
 		if (IndicatorComponent)
 		{
 			IndicatorComponent->Hide();
