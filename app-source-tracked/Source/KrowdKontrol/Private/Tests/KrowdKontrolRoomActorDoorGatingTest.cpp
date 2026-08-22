@@ -110,8 +110,14 @@ bool FKrowdKontrolRoomActorDoorGatingTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Room->AddOwnedEnemy(WaveEnemy);
-	TestEqual(TEXT("A wave-spawned addition to an already-opened room should NOT re-gate the door (issue #218 AC3)"),
-		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	// Reconciled AC3/AC4 rule (operator decision, 2026-08-22): with no player pawn
+	// in this headless world the player-beyond-door term is false, so the gate
+	// re-derives purely from the room's cleared state - a wave-spawned un-Banked
+	// addition RE-GATES the door (issue #218 AC4). AC3's "never re-close behind
+	// the player" is the player-position exception in RefreshGateState(), not a
+	// permanent latch.
+	TestEqual(TEXT("A wave-spawned addition to an already-opened room should re-gate the door (issue #218 AC4)"),
+		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
 
 	WaveEnemy->TickCheckDetection(ZeroDistanceLocation);
 	WaveEnemy->ReceiveControl(EAbilitySlot::Stun);

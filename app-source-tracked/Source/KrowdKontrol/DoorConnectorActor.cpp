@@ -1,4 +1,6 @@
 #include "DoorConnectorActor.h"
+#include "GameFramework/Pawn.h"
+#include "Kismet/GameplayStatics.h"
 #include "RoomActor.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -9,7 +11,12 @@
 
 ADoorConnectorActor::ADoorConnectorActor()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Ticks (cheap, 4Hz) so the player-beyond-door term of RefreshGateState() tracks
+	// pawn movement - the room-cleared term stays event-driven via
+	// OnRoomClearedStateChanged, but no event exists for "the player crossed the
+	// door", and polling at 0.25s is imperceptible at door scale.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickInterval = 0.25f;
 
 	USceneComponent* DoorConnectorRoot = CreateDefaultSubobject<USceneComponent>(TEXT("DoorConnectorRoot"));
 	RootComponent = DoorConnectorRoot;
@@ -137,12 +144,15 @@ void ADoorConnectorActor::OnConstruction(const FTransform& Transform)
 void ADoorConnectorActor::BeginPlay()
 {
 	Super::BeginPlay();
-	RecomputeConnectorGeometry();
 
 	if (!GatingRoom && ConnectsValidRooms())
 	{
 		GatingRoom = RoomA->GetActorLocation().X <= RoomB->GetActorLocation().X ? RoomA : RoomB;
 	}
+
+	// After GatingRoom resolution, not before - PR #229 code review: geometry
+	// recompute must never observe a half-initialized gating state.
+	RecomputeConnectorGeometry();
 
 	if (GatingRoom)
 	{
@@ -160,19 +170,37 @@ void ADoorConnectorActor::BeginPlay()
 	RefreshGateState();
 }
 
+void ADoorConnectorActor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	RefreshGateState();
+}
+
 void ADoorConnectorActor::RefreshGateState()
 {
+	// Reconciled AC3/AC4 rule (operator decision, 2026-08-22, PR #229 escalation -
+	// replaces the bGateEverOpened permanent latch, which satisfied AC3 by
+	// inverting AC4): the door gates LIVE on its GatingRoom's cleared state, so a
+	// wave-spawned enemy re-gates its room (AC4) - but only while the player is
+	// still on the gating-room side. Once the player is closer to the far room,
+	// the door is "behind them" and stays open (AC3): re-closing then would wall
+	// the player away from a fight they already earned their way past. With no
+	// player pawn (headless Automation worlds) the player term is false and the
+	// rule reduces to the pure cleared-state gate the gating tests pin.
 	const bool bRoomCleared = (GatingRoom == nullptr) || GatingRoom->IsRoomCleared();
-	// Latch: once the gate has ever been open, it stays open, even if a later
-	// OnRoomClearedStateChanged broadcast (e.g. a wave-spawned enemy added to an
-	// already-cleared room) would otherwise re-close it - issue #218 AC3, "doors, once
-	// opened, never re-close behind the player." A door not yet opened still correctly
-	// re-derives bIsGateOpen from GatingRoom on every call (AC4).
-	if (bRoomCleared)
+	bool bPlayerBeyondDoor = false;
+	if (GatingRoom && RoomA && RoomB)
 	{
-		bGateEverOpened = true;
+		const ARoomActor* FarRoom = (GatingRoom == RoomA) ? ToRawPtr(RoomB) : ToRawPtr(RoomA);
+		if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+		{
+			const FVector PlayerLocation = PlayerPawn->GetActorLocation();
+			bPlayerBeyondDoor =
+				FVector::DistSquared(PlayerLocation, FarRoom->GetActorLocation()) <
+				FVector::DistSquared(PlayerLocation, GatingRoom->GetActorLocation());
+		}
 	}
-	bIsGateOpen = bGateEverOpened;
+	bIsGateOpen = bRoomCleared || bPlayerBeyondDoor;
 
 	// Root-cause fix (issue #218, attempt 3): live PIE inspection of the real possessed
 	// player pawn (AFlatCamera3DPrototypePawn::MeshComponent) shows it presents

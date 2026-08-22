@@ -90,6 +90,7 @@ public:
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 private:
 	// Shared by RecomputeConnectorGeometry()'s two early-out cases (no valid rooms,
@@ -97,8 +98,8 @@ private:
 	// repeating the same three SetVisibility(false) calls at each call site.
 	void HideConnectorVisuals();
 
-	// Recomputes bIsGateOpen from GatingRoom's IsRoomCleared(), latched through
-	// bGateEverOpened so a previously-opened gate never re-closes (issue #218 AC3), and
+	// Recomputes bIsGateOpen live from GatingRoom's IsRoomCleared() and the
+	// player-beyond-door term (reconciled AC3/AC4 rule - see the .cpp comment), and
 	// applies the result to GateBlockingComponent's collision. UFUNCTION so it can bind
 	// directly to ARoomActor::OnRoomClearedStateChanged (a dynamic multicast delegate);
 	// also called directly from BeginPlay. Safe/idempotent to call repeatedly.
@@ -106,8 +107,4 @@ private:
 	void RefreshGateState();
 
 	bool bIsGateOpen = true;
-
-	// Latches true the first time RefreshGateState() finds the gate open, and never
-	// resets back to false - see IsGateOpen()'s comment (issue #218 AC3).
-	bool bGateEverOpened = false;
 };
