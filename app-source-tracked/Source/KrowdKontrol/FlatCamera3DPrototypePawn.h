@@ -204,6 +204,42 @@ public:
 	// prove the wiring is real, not test-only.
 	void ApplyCameraFraming();
 
+	// Cursor world-position API (issue #262, PRD "Cursor & Aiming Foundation"
+	// REQ-1) - the single "where on the gameplay floor is the mouse pointing"
+	// entry point every other aiming system in this PRD (robot-facing REQ-2,
+	// shared targeting-indicator REQ-3) must call instead of re-deriving
+	// deprojection math. Delegates the camera-to-ray step to
+	// APlayerController::DeprojectMousePositionToWorld() - the engine's own
+	// already-correct, already-tested path (it walks
+	// ULocalPlayer::GetProjectionData(), so it honours the project's real
+	// AspectRatioAxisConstraint instead of a hand-rolled approximation of it) -
+	// then defers to IntersectRayWithGroundPlane() below for the ray/floor math.
+	// Returns false (OutWorldPosition left unchanged) if there's no possessing
+	// PlayerController, no live viewport this frame
+	// (DeprojectMousePositionToWorld() fails), or the ray can't reach the floor
+	// plane.
+	bool GetCursorWorldPosition(FVector& OutWorldPosition) const;
+
+	// Pure ray/floor-plane intersection math (issue #262) - GetCursorWorldPosition()
+	// above is a thin wrapper feeding this pawn's own live controller-derived ray
+	// into this function; this is the only deprojection-adjacent math the project
+	// hand-rolls (the camera->ray step itself is left entirely to the engine, see
+	// GetCursorWorldPosition() above). Deliberately takes no UWorld/viewport/
+	// PlayerController/camera-view data so KrowdKontrol.Unit.
+	// CursorGroundPlaneDeprojectionMath can assert exact results for a given ray
+	// without a live viewport - this project's headless CreateNewMap() automation
+	// Worlds have no real ULocalPlayer/ViewportClient, so
+	// APlayerController::DeprojectMousePositionToWorld() itself can't be
+	// exercised there (see KrowdKontrolOvercrowdAudioVisualSyncTest.cpp's
+	// PlayerCameraManager bootstrap comment for the same class of limitation).
+	// Returns false if RayDirection is (near-)parallel to the floor plane, or
+	// the floor lies behind the ray's origin.
+	static bool IntersectRayWithGroundPlane(
+		const FVector& RayOrigin,
+		const FVector& RayDirection,
+		float GroundPlaneZ,
+		FVector& OutWorldPosition);
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
