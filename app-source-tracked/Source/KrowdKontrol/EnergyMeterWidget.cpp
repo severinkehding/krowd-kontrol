@@ -26,6 +26,12 @@ bool UEnergyMeterWidget::Initialize()
 	return bNewlyInitialized;
 }
 
+void UEnergyMeterWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	AdvanceDamageFlashTimer(InDeltaTime);
+}
+
 void UEnergyMeterWidget::EnsureWidgetTreeBuilt()
 {
 	// Whichever of NativeOnInitialized()/Initialize() fires first builds the tree; the
@@ -90,6 +96,29 @@ void UEnergyMeterWidget::BuildWidgetTree()
 			TEXT("UEnergyMeterWidget: AddChildToOverlay(ValueText) returned null slot on '%s' - value text will render unaligned."),
 			*GetNameSafe(this));
 	}
+
+	// Saturated red, deliberately outside the 5 reserved gameplay colours (Purple/
+	// Snare, Teal/Root, Orange/Fear, Blue/Sleep, White/Stun - MISSION.md Hard
+	// Invariant 3; nearest is Orange at (1.0, 0.5, 0.0), well separated by the green
+	// channel). Invariant 3 reserves these five as an ability/enemy-type-identifying
+	// channel ("no other gameplay-relevant object... may use these five colours for
+	// non-informational purposes"; "a 6th saturated information colour must never be
+	// introduced"). This flash does not identify an ability or enemy type - it is a
+	// generic, momentary "you were hit" reaction with no persistent meaning, the same
+	// category as a screen-shake or hit-stop, not a 6th entry in the ability/enemy
+	// colour channel. PRODUCT-OWNER SIGN-OFF NEEDED (flagged by PR #232 pass-1
+	// security review): this reasoning has not yet had explicit human confirmation -
+	// see app-changelog/issue-222.md's Governance note.
+	const FLinearColor DamageFlashColor(0.95f, 0.12f, 0.12f, 1.0f);
+
+	DamageFlashOverlay = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("MeterDamageFlashOverlay"));
+	DamageFlashOverlay->SetBrushColor(DamageFlashColor);
+	// Hidden by default - PlayDamageFlash() is what makes this visible. Never
+	// ESlateVisibility::Visible - HitTestInvisible (used when shown, in
+	// PlayDamageFlash()) keeps it from ever intercepting player input, matching
+	// OnScreenPromptWidget.cpp's identical choice.
+	DamageFlashOverlay->SetVisibility(ESlateVisibility::Collapsed);
+	MeterOverlay->AddChildToOverlay(DamageFlashOverlay); // added last - renders on top of fill/text
 }
 
 void UEnergyMeterWidget::SetEnergy(float CurrentEnergy, float MaxEnergy)
@@ -142,6 +171,46 @@ void UEnergyMeterWidget::BindToEnergyComponent(UPlayerEnergyComponent* EnergyCom
 void UEnergyMeterWidget::HandleEnergyChanged(float NewEnergy)
 {
 	SetEnergy(NewEnergy, BoundEnergyComponent ? BoundEnergyComponent->MaxEnergy : PlaceholderMaxEnergy);
+	PlayDamageFlash();
+}
+
+void UEnergyMeterWidget::PlayDamageFlash()
+{
+	DamageFlashRemainingSeconds = DamageFlashDurationSeconds;
+	if (DamageFlashOverlay)
+	{
+		DamageFlashOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+}
+
+void UEnergyMeterWidget::AdvanceDamageFlashTimer(float DeltaSeconds)
+{
+	if (DamageFlashRemainingSeconds > 0.0f)
+	{
+		DamageFlashRemainingSeconds = FMath::Max(0.0f, DamageFlashRemainingSeconds - DeltaSeconds);
+		if (DamageFlashRemainingSeconds <= 0.0f)
+		{
+			ClearDamageFlash();
+		}
+	}
+}
+
+void UEnergyMeterWidget::ClearDamageFlash()
+{
+	if (DamageFlashOverlay)
+	{
+		DamageFlashOverlay->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+bool UEnergyMeterWidget::IsDamageFlashActive() const
+{
+	return DamageFlashRemainingSeconds > 0.0f;
+}
+
+float UEnergyMeterWidget::GetDamageFlashRemainingSeconds() const
+{
+	return DamageFlashRemainingSeconds;
 }
 
 float UEnergyMeterWidget::GetDisplayedFraction() const
