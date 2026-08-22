@@ -41,17 +41,24 @@ colour stays a bonus) — that ruling is #212's fix scope, not this PRD's.
   fires with the arrived level's index; final level routes to run-complete and
   does not advance.
 
-### REQ-2: Room gating (P0)
+### REQ-2: Room gating (P0) — ✅ implemented, PR #229
 - A room's exit door(s) stay closed/impassable until every enemy belonging to
   that room is Banked; then they open (visibly — the existing door markers are
   the surface). Entry doors never re-close behind the player.
-- "Belonging to that room" derives from the existing `ARoomActor` /
-  `RoomEnemyBudgetController` ownership, not global enemy counts, so wave-spawned
-  enemies gate their own room.
+- "Belonging to that room" derives from `ARoomActor::OwnedEnemies`, auto-discovered
+  in `BeginPlay()` via nearest-room-by-distance over real `AEnemyBase` actors (issue
+  #218) — not global enemy counts, so wave-spawned enemies (via `AddOwnedEnemy()`)
+  gate their own room.
 - This also bounds the no-de-aggro snowball: enemies can still converge within a
   room, but a fresh room's population cannot join until the player opens it.
 - Automation tests: door blocked while any owned enemy is un-Banked; opens on
   last bank; wave-spawned additions re-gate until banked.
+
+**Implementation note**: this does *not* use `RoomEnemyBudgetController`
+(issue #82) — that component is a separate, placeholder-actor spawn/budget
+mechanism with its own `FOnRoomCleared` delegate, unwired to any real banking
+trigger. Room-cleared signal for REQ-3's prompt should bind to
+`ARoomActor::OnRoomClearedStateChanged`, not `RoomEnemyBudgetController::OnRoomCleared`.
 
 ### REQ-3: No-waffle instruction prompts (P1)
 - Short, imperative, contextual on-screen instructions in Level 1, one at a
@@ -87,10 +94,16 @@ colour stays a bonus) — that ruling is #212's fix scope, not this PRD's.
 
 ## Existing surfaces to build on (do not reinvent)
 `ULevelLifecycleSubsystem` (`OnLevelClear`, final-map/run-complete config);
+<<<<<<< HEAD
 `UAbilityUnlockComponent::NotifyLevelReached` (mapping merged; now called via
 `UAbilityUnlockLevelSubsystem`, #217 — level index is still map-name-derived,
 pending #216's sequence config);
 `ARoomActor` / `ADoorConnectorActor` (+ door markers) / `RoomEnemyBudgetController`;
+=======
+`UAbilityUnlockComponent::NotifyLevelReached` (mapping merged, uncalled);
+`ARoomActor` (`OwnedEnemies`/`OnRoomClearedStateChanged`, issue #218) /
+`ADoorConnectorActor` (+ door markers, `GatingRoom`/`RefreshGateState`);
+>>>>>>> origin/main
 the on-screen prompt widget + `AbilityMatchupNudgeComponent` pattern;
 `GizmoFirstContactComponent` / `FirstStunBeaconComponent` (first-cast hooks);
 `ABomberEnemy`'s `AttackTellLightComponent` + explosion path;

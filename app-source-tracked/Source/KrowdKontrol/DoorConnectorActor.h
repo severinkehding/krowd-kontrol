@@ -7,13 +7,16 @@
 class ARoomActor;
 class UStaticMeshComponent;
 class UPointLightComponent;
+class UBoxComponent;
 
 // Placeable, hand-authoring-era building block declaring that two rooms are connected
 // by a door (PRD 05 REQ-1/REQ-2, issue #39). "Exactly two rooms" is a structural
 // guarantee of the two named properties below, not a runtime-checked invariant on a
 // collection. No longer topology-only: it also carries a floor strip spanning the
-// connector (issue #187) and a visible doorway marker - mesh + point light (issue
-// #191) - so a bare USceneComponent root is no longer the whole picture.
+// connector (issue #187), a visible doorway marker - mesh + point light (issue #191) -
+// and, since issue #218, a real blocking collision (GateBlockingComponent) that gates
+// passage until GatingRoom's owned enemies are all Banked - so a bare USceneComponent
+// root is no longer the whole picture.
 UCLASS()
 class KROWDKONTROL_API ADoorConnectorActor : public AActor
 {
@@ -52,6 +55,28 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
 	TObjectPtr<UPointLightComponent> DoorMarkerLightComponent;
 
+	// The room whose OwnedEnemies gate this door. When unset (the common, real-level
+	// case), BeginPlay derives it as whichever of RoomA/RoomB sits closer to the level
+	// entrance (lower world X) - the room this door is the exit from - so real placed
+	// doors (which already carry RoomA/RoomB for their connector visuals) gate correctly
+	// with no additional per-instance authoring. A level author can still hand-set this
+	// to override the heuristic for a future non-linear chain.
+	// Note: RefreshGateState() applies blocking collision independent of RoomA/RoomB - a
+	// hand-set GatingRoom without valid RoomA/RoomB produces an invisible blocking wall
+	// (no connector floor/marker to show for it). Keep RoomA/RoomB set whenever GatingRoom
+	// is hand-overridden.
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<ARoomActor> GatingRoom;
+
+	// True once the gate has ever been open (GatingRoom null or cleared); latches
+	// permanently from that point on so a door already opened for the player never
+	// re-closes behind them (issue #218 AC3), even if GatingRoom->IsRoomCleared() later
+	// flips back to false. False (impassable) until the first time that happens.
+	bool IsGateOpen() const { return bIsGateOpen; }
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<UBoxComponent> GateBlockingComponent;
+
 	// Positions/rotates/scales ConnectorFloorMeshComponent and DoorMarkerMeshComponent/
 	// DoorMarkerLightComponent to span/mark the straight line between RoomA and RoomB's
 	// live GetActorLocation(), or hides both if the door doesn't yet connect two valid,
@@ -65,10 +90,21 @@ public:
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 private:
 	// Shared by RecomputeConnectorGeometry()'s two early-out cases (no valid rooms,
 	// zero-length span) so the floor/marker mesh/marker light stay in lockstep without
 	// repeating the same three SetVisibility(false) calls at each call site.
 	void HideConnectorVisuals();
+
+	// Recomputes bIsGateOpen live from GatingRoom's IsRoomCleared() and the
+	// player-beyond-door term (reconciled AC3/AC4 rule - see the .cpp comment), and
+	// applies the result to GateBlockingComponent's collision. UFUNCTION so it can bind
+	// directly to ARoomActor::OnRoomClearedStateChanged (a dynamic multicast delegate);
+	// also called directly from BeginPlay. Safe/idempotent to call repeatedly.
+	UFUNCTION()
+	void RefreshGateState();
+
+	bool bIsGateOpen = true;
 };
