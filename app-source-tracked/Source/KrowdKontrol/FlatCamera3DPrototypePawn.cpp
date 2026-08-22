@@ -9,6 +9,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "AbilityUnlockComponent.h"
+#include "AbilityUnlockPromptComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "AbilityCooldownComponent.h"
 #include "AbilityCastComponent.h"
@@ -56,6 +57,8 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	ApplyCameraFraming();
 
 	AbilityUnlockComponent = CreateDefaultSubobject<UAbilityUnlockComponent>(TEXT("AbilityUnlockComponent"));
+	AbilityUnlockPromptComponent = CreateDefaultSubobject<UAbilityUnlockPromptComponent>(TEXT("AbilityUnlockPromptComponent"));
+	AbilityUnlockComponent->OnAbilityUnlocked.AddDynamic(AbilityUnlockPromptComponent, &UAbilityUnlockPromptComponent::HandleAbilityUnlocked);
 	PlayerEnergyComponent = CreateDefaultSubobject<UPlayerEnergyComponent>(TEXT("PlayerEnergyComponent"));
 	PunishmentManagerComponent = CreateDefaultSubobject<UPunishmentManagerComponent>(TEXT("PunishmentManagerComponent"));
 	PlayerEnergyComponent->OnEnergyChanged.AddDynamic(PunishmentManagerComponent, &UPunishmentManagerComponent::HandleEnergyChanged);

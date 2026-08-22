@@ -60,7 +60,7 @@ mechanism with its own `FOnRoomCleared` delegate, unwired to any real banking
 trigger. Room-cleared signal for REQ-3's prompt should bind to
 `ARoomActor::OnRoomClearedStateChanged`, not `RoomEnemyBudgetController::OnRoomCleared`.
 
-### REQ-3: No-waffle instruction prompts (P1)
+### REQ-3: No-waffle instruction prompts (P1) — ability-unlock half ✅ implemented, issue #220
 - Short, imperative, contextual on-screen instructions in Level 1, one at a
   time, each dismissed by the player doing the thing:
   "STUN IT — PRESS 1" (first hot enemy) → "IT FOLLOWS YOU — WALK" (first
@@ -100,6 +100,7 @@ pending #216's sequence config);
 `ARoomActor` (`OwnedEnemies`/`OnRoomClearedStateChanged`, issue #218) /
 `ADoorConnectorActor` (+ door markers, `GatingRoom`/`RefreshGateState`);
 the on-screen prompt widget + `AbilityMatchupNudgeComponent` pattern;
+`AbilityUnlockPromptComponent` (issue #220, the ability-unlock half of REQ-3);
 `GizmoFirstContactComponent` / `FirstStunBeaconComponent` (first-cast hooks);
 `ABomberEnemy`'s `AttackTellLightComponent` + explosion path;
 `UEnergyMeterWidget` (`OnEnergyChanged` binding); `UPostRunSummaryWidget` (#175).

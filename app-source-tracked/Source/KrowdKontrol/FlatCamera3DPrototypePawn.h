@@ -12,6 +12,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UInputComponent;
 class UAbilityUnlockComponent;
+class UAbilityUnlockPromptComponent;
 class UPlayerEnergyComponent;
 class UAbilityCooldownComponent;
 class UAbilityCastComponent;
@@ -82,6 +83,15 @@ public:
 	// to this component's state is not part of this pawn - see issue #71.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityUnlockComponent> AbilityUnlockComponent;
+
+	// Per-level ability-unlock instruction prompt (issue #220, PRD "Level Progression
+	// & Teaching Arc" REQ-3's ability-unlock half) - shows a one-time on-screen prompt
+	// naming the ability, its key, and its colour-matched countered enemy type each
+	// time AbilityUnlockComponent's OnAbilityUnlocked fires. Bound in the constructor
+	// below, right after AbilityUnlockComponent since that's the delegate source it
+	// consumes.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UAbilityUnlockPromptComponent> AbilityUnlockPromptComponent;
 
 	// Makes real per-hit energy tracking (issue #78) reachable from this pawn, so
 	// UEnergyMeterWidget::BindToEnergyComponent() (issue #132) and
