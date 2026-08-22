@@ -6,35 +6,40 @@ namespace
 	const FAbilityData& GetStun()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Stun, 3.0f, EAbilityRange::Short,
-			EAbilityTargetType::Single, ReservedGameplayColours::GetWhite(), true };
+			EAbilityTargetType::Single, ReservedGameplayColours::GetWhite(),
+			ReservedGameplayColours::GetWhiteTag(), true };
 		return Data;
 	}
 
 	const FAbilityData& GetSleep()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Sleep, 5.0f, EAbilityRange::Long,
-			EAbilityTargetType::Single, ReservedGameplayColours::GetBlue(), false, EEnemyType::SN_1PR };
+			EAbilityTargetType::Single, ReservedGameplayColours::GetBlue(),
+			ReservedGameplayColours::GetBlueTag(), false, EEnemyType::SN_1PR };
 		return Data;
 	}
 
 	const FAbilityData& GetRoot()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Root, 5.0f, EAbilityRange::Long,
-			EAbilityTargetType::Single, ReservedGameplayColours::GetTeal(), false, EEnemyType::TR_UPR };
+			EAbilityTargetType::Single, ReservedGameplayColours::GetTeal(),
+			ReservedGameplayColours::GetTealTag(), false, EEnemyType::TR_UPR };
 		return Data;
 	}
 
 	const FAbilityData& GetFear()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Fear, 5.0f, EAbilityRange::Short,
-			EAbilityTargetType::Area, ReservedGameplayColours::GetOrange(), false, EEnemyType::B0_0MR };
+			EAbilityTargetType::Area, ReservedGameplayColours::GetOrange(),
+			ReservedGameplayColours::GetOrangeTag(), false, EEnemyType::B0_0MR };
 		return Data;
 	}
 
 	const FAbilityData& GetSnare()
 	{
 		static const FAbilityData Data = { EAbilitySlot::Snare, 4.0f, EAbilityRange::Medium,
-			EAbilityTargetType::Cone, ReservedGameplayColours::GetPurple(), false, EEnemyType::RU_NNR };
+			EAbilityTargetType::Cone, ReservedGameplayColours::GetPurple(),
+			ReservedGameplayColours::GetPurpleTag(), false, EEnemyType::RU_NNR };
 		return Data;
 	}
 }

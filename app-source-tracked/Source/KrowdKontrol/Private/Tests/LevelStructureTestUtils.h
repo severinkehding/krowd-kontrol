@@ -9,6 +9,7 @@
 #include "TrooperEnemy.h"
 #include "BomberEnemy.h"
 #include "SniperEnemy.h"
+#include "TargetZone.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
@@ -50,21 +51,12 @@ namespace KrowdKontrolLevelTestUtils
 	// room/enemy link exists for static placeholder-density enemies, so nearest-room-
 	// by-distance is how "which room is this enemy in" is determined. Rooms in a
 	// hand-authored linear chain are spaced far enough apart that closest-room
-	// assignment is unambiguous.
+	// assignment is unambiguous. Delegates to ARoomActor::FindNearestRoom (issue #218)
+	// rather than duplicating the comparison, so this test utility's expectations and
+	// ARoomActor::BeginPlay's own owned-enemy auto-discovery can never drift apart.
 	inline ARoomActor* FindNearestRoom(const AActor* Enemy, const TArray<ARoomActor*>& Rooms)
 	{
-		ARoomActor* Nearest = nullptr;
-		float NearestDistSq = TNumericLimits<float>::Max();
-		for (ARoomActor* Room : Rooms)
-		{
-			const float DistSq = FVector::DistSquared(Enemy->GetActorLocation(), Room->GetActorLocation());
-			if (DistSq < NearestDistSq)
-			{
-				NearestDistSq = DistSq;
-				Nearest = Room;
-			}
-		}
-		return Nearest;
+		return ARoomActor::FindNearestRoom(Enemy, Rooms);
 	}
 
 	// Count/individual-validity checks on rooms and doors don't rule out doors leaving
@@ -266,6 +258,51 @@ namespace KrowdKontrolLevelTestUtils
 			Test.TestTrue(TEXT("Enemy density should strictly increase room-to-room, proving a real ramp (issue #189)"),
 				CurrentCount > PreviousCount);
 			PreviousCount = CurrentCount;
+		}
+	}
+
+	// Issue #211 pass-1 review follow-up: CheckRoomTargetZonesAndDensity above only
+	// proves each real room's TargetZones marker array is non-empty - it says nothing
+	// about whether ARoomActor::EnsureBankingZonesWired() (the actual self-heal this
+	// issue adds) has anything real to act on for these shipped levels, since
+	// FAutomationEditorCommonUtils::LoadMap never fires BeginPlay. Calls
+	// EnsureBankingZonesWired() directly (public, idempotent - safe here for the same
+	// reason KrowdKontrolRoomActorBankingWiringTest.cpp calls it a second time) against
+	// every already-placed marker in the loaded level, then asserts each one now has an
+	// attached, non-default-coloured ATargetZone - proof the self-heal mechanism
+	// produces a real result against this level's actual marker data, not just against
+	// the synthetic room KrowdKontrolRoomActorBankingWiringTest.cpp builds from scratch.
+	inline void CheckRoomBankingZonesSelfHeal(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
+	{
+		for (ARoomActor* Room : Rooms)
+		{
+			Room->EnsureBankingZonesWired();
+
+			for (const FRoomTargetZone& Zone : Room->GetTargetZones())
+			{
+				if (!Zone.MarkerActor)
+				{
+					continue;
+				}
+
+				TArray<AActor*> Attached;
+				Zone.MarkerActor->GetAttachedActors(Attached);
+				ATargetZone* BankingZone = nullptr;
+				for (AActor* AttachedActor : Attached)
+				{
+					if (ATargetZone* Candidate = Cast<ATargetZone>(AttachedActor))
+					{
+						BankingZone = Candidate;
+						break;
+					}
+				}
+
+				if (Test.TestNotNull(TEXT("Every real target-zone marker should have a self-healed ATargetZone attached after EnsureBankingZonesWired() (issue #211)"), BankingZone))
+				{
+					Test.TestNotEqual(TEXT("The self-healed ATargetZone's ZoneColourTag should resolve to a real colour, not the NAME_None safe default (issue #211)"),
+						BankingZone->ZoneColourTag, NAME_None);
+				}
+			}
 		}
 	}
 }

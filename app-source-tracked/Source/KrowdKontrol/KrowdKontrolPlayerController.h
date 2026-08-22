@@ -178,6 +178,14 @@ private:
 	// level ever places more than one ABossBase actor.
 	void ApplyBossCheckpointIfRequested(APawn* InPawn);
 
+	// Forwards to UAbilityUnlockLevelSubsystem::RetryPendingUnlockForPawn(), in case
+	// this level's OnLevelBegin already fired before InPawn was possessed (same
+	// AutoPossessPlayer-timing hazard ApplyBossCheckpointIfRequested's comment above
+	// describes). Called from both BeginPlay()'s already-possessed branch and
+	// OnPossess(), mirroring the same dual-call-site shape. No-ops if no unlock is
+	// pending or no UAbilityUnlockLevelSubsystem exists.
+	void RetryPendingAbilityUnlock(APawn* InPawn);
+
 	// Never reset back to false once set - moot in the real game-world path, since a
 	// successful OpenLevel() destroys this controller along with the rest of the old
 	// World. Left true for the (Automation-World-only) lifetime of a controller that

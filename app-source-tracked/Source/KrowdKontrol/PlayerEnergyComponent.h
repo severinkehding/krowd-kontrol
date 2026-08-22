@@ -70,6 +70,9 @@ public:
 
 	// Read-only accessor for CurrentEnergy - a future HUD can either bind
 	// OnEnergyChanged or poll this. No corresponding setter exists on purpose.
+	// BlueprintPure so this is reflected for MCP/Automation-driven checks too, not
+	// just usable from C++/Blueprint HUD code.
+	UFUNCTION(BlueprintPure, Category = "Player Energy")
 	float GetCurrentEnergy() const { return CurrentEnergy; }
 
 private:

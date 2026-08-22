@@ -78,10 +78,14 @@ bool FKrowdKontrolTargetZoneRoutingTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	// Type-keyed acceptance (operator ruling 2026-08-22): colour no longer gates,
+	// so the rejection case is a typed zone vs an actor with no matching type.
+	Zone->bAcceptAnyEnemyType = false;
+	Zone->ZoneEnemyType = EEnemyType::RU_NNR;
 	MismatchedActor->SetControlled(true);
 	MismatchedActor->SetHerdColourTag(FName(TEXT("Teal")));
 	MismatchedActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
-	TestEqual(TEXT("OnActorBanked should still not fire on a colour mismatch with routing fields set"),
+	TestEqual(TEXT("A typed zone should still reject a type-less controlled actor with routing fields set"),
 		Listener->CallCount, 1);
 
 	return true;

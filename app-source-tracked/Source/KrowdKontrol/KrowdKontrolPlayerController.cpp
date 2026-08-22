@@ -5,6 +5,7 @@
 #include "EnergyMeterWidget.h"
 #include "OnScreenPromptWidget.h"
 #include "AbilityUnlockComponent.h"
+#include "AbilityUnlockLevelSubsystem.h"
 #include "AbilityLockoutComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "Blueprint/UserWidget.h"
@@ -30,6 +31,7 @@ void AKrowdKontrolPlayerController::BeginPlay()
 	{
 		WireWidgetsToPawn(CurrentPawn);
 		ApplyBossCheckpointIfRequested(CurrentPawn);
+		RetryPendingAbilityUnlock(CurrentPawn);
 	}
 }
 
@@ -38,6 +40,7 @@ void AKrowdKontrolPlayerController::OnPossess(APawn* InPawn)
 	Super::OnPossess(InPawn);
 	WireWidgetsToPawn(InPawn);
 	ApplyBossCheckpointIfRequested(InPawn);
+	RetryPendingAbilityUnlock(InPawn);
 }
 
 void AKrowdKontrolPlayerController::CreateHUDWidgets()
@@ -174,6 +177,14 @@ void AKrowdKontrolPlayerController::ApplyBossCheckpointIfRequested(APawn* InPawn
 		TEXT("AKrowdKontrolPlayerController: reload requested a BossCheckpoint teleport ")
 		TEXT("but no ABossBase actor exists in the reloaded world '%s' - pawn left at default spawn."),
 		*World->GetMapName());
+}
+
+void AKrowdKontrolPlayerController::RetryPendingAbilityUnlock(APawn* InPawn)
+{
+	if (UAbilityUnlockLevelSubsystem* UnlockSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UAbilityUnlockLevelSubsystem>() : nullptr)
+	{
+		UnlockSubsystem->RetryPendingUnlockForPawn(InPawn);
+	}
 }
 
 ULevelClearTimeSubsystem* AKrowdKontrolPlayerController::ResolveLevelClearTimeSubsystem()

@@ -63,12 +63,14 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Stun Range should be Short"), static_cast<uint8>(Stun.Range), static_cast<uint8>(EAbilityRange::Short));
 	TestEqual(TEXT("Stun TargetType should be Single"), static_cast<uint8>(Stun.TargetType), static_cast<uint8>(EAbilityTargetType::Single));
 	TestEqual(TEXT("Stun Colour should be the reserved White"), Stun.Colour, ReservedGameplayColours::GetWhite());
+	TestEqual(TEXT("Stun ColourTag should be White"), Stun.ColourTag, ReservedGameplayColours::GetWhiteTag());
 
 	const FAbilityData& Sleep = AbilityData::Get(EAbilitySlot::Sleep);
 	TestEqual(TEXT("Sleep BaseDurationSeconds should be 5.0"), Sleep.BaseDurationSeconds, 5.0f);
 	TestEqual(TEXT("Sleep Range should be Long"), static_cast<uint8>(Sleep.Range), static_cast<uint8>(EAbilityRange::Long));
 	TestEqual(TEXT("Sleep TargetType should be Single"), static_cast<uint8>(Sleep.TargetType), static_cast<uint8>(EAbilityTargetType::Single));
 	TestEqual(TEXT("Sleep Colour should be the reserved Blue"), Sleep.Colour, ReservedGameplayColours::GetBlue());
+	TestEqual(TEXT("Sleep ColourTag should be Blue"), Sleep.ColourTag, ReservedGameplayColours::GetBlueTag());
 	TestEqual(TEXT("Sleep CounteredEnemyType should be SN-1PR"), static_cast<uint8>(Sleep.CounteredEnemyType), static_cast<uint8>(EEnemyType::SN_1PR));
 
 	const FAbilityData& Root = AbilityData::Get(EAbilitySlot::Root);
@@ -76,6 +78,7 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Root Range should be Long"), static_cast<uint8>(Root.Range), static_cast<uint8>(EAbilityRange::Long));
 	TestEqual(TEXT("Root TargetType should be Single"), static_cast<uint8>(Root.TargetType), static_cast<uint8>(EAbilityTargetType::Single));
 	TestEqual(TEXT("Root Colour should be the reserved Teal"), Root.Colour, ReservedGameplayColours::GetTeal());
+	TestEqual(TEXT("Root ColourTag should be Teal"), Root.ColourTag, ReservedGameplayColours::GetTealTag());
 	TestEqual(TEXT("Root CounteredEnemyType should be TR-UPR"), static_cast<uint8>(Root.CounteredEnemyType), static_cast<uint8>(EEnemyType::TR_UPR));
 
 	const FAbilityData& Fear = AbilityData::Get(EAbilitySlot::Fear);
@@ -83,6 +86,7 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Fear Range should be Short"), static_cast<uint8>(Fear.Range), static_cast<uint8>(EAbilityRange::Short));
 	TestEqual(TEXT("Fear TargetType should be Area"), static_cast<uint8>(Fear.TargetType), static_cast<uint8>(EAbilityTargetType::Area));
 	TestEqual(TEXT("Fear Colour should be the reserved Orange"), Fear.Colour, ReservedGameplayColours::GetOrange());
+	TestEqual(TEXT("Fear ColourTag should be Orange"), Fear.ColourTag, ReservedGameplayColours::GetOrangeTag());
 	TestEqual(TEXT("Fear CounteredEnemyType should be B0-0MR"), static_cast<uint8>(Fear.CounteredEnemyType), static_cast<uint8>(EEnemyType::B0_0MR));
 
 	const FAbilityData& Snare = AbilityData::Get(EAbilitySlot::Snare);
@@ -90,6 +94,7 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Snare Range should be Medium"), static_cast<uint8>(Snare.Range), static_cast<uint8>(EAbilityRange::Medium));
 	TestEqual(TEXT("Snare TargetType should be Cone"), static_cast<uint8>(Snare.TargetType), static_cast<uint8>(EAbilityTargetType::Cone));
 	TestEqual(TEXT("Snare Colour should be the reserved Purple"), Snare.Colour, ReservedGameplayColours::GetPurple());
+	TestEqual(TEXT("Snare ColourTag should be Purple"), Snare.ColourTag, ReservedGameplayColours::GetPurpleTag());
 	TestEqual(TEXT("Snare CounteredEnemyType should be RU-NNR"), static_cast<uint8>(Snare.CounteredEnemyType), static_cast<uint8>(EEnemyType::RU_NNR));
 
 	// (4) Stun is the only colour-neutral ability - the acceptance criterion "Stun has
@@ -101,14 +106,17 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Fear should not be colour-neutral"), Fear.bIsColourNeutral);
 	TestFalse(TEXT("Snare should not be colour-neutral"), Snare.bIsColourNeutral);
 
-	// (5) The 5 colours are mutually distinct - guards against a copy-paste that
-	// accidentally reuses one colour for two abilities.
+	// (5) The 5 colours (and their FName tags) are mutually distinct - guards against a
+	// copy-paste that accidentally reuses one colour, or one colour's tag, for two
+	// abilities.
 	for (int32 i = 0; i < AllAbilities.Num(); ++i)
 	{
 		for (int32 j = i + 1; j < AllAbilities.Num(); ++j)
 		{
 			TestNotEqual(*FString::Printf(TEXT("Ability colours %d and %d should be mutually distinct"), i, j),
 				AllAbilities[i].Colour, AllAbilities[j].Colour);
+			TestNotEqual(*FString::Printf(TEXT("Ability ColourTags %d and %d should be mutually distinct"), i, j),
+				AllAbilities[i].ColourTag, AllAbilities[j].ColourTag);
 		}
 	}
 

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "EnemyType.h"
 #include "TargetZone.generated.h"
 
 class UBoxComponent;
@@ -9,7 +10,7 @@ class UPrimitiveComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActorBanked, AActor*, BankedActor);
 
-// Detects a controlled, colour-matched IHerdable (issue #79) actor physically
+// Detects a controlled, type-accepted IHerdable (issue #79) actor physically
 // arriving in this zone and broadcasts OnActorBanked - the missing spatial trigger
 // for PRD 01 loop step 5 ("Bank"). Detection and announcement only: this class never
 // destroys, pools, or otherwise mutates the overlapping actor, and never wires itself
@@ -28,10 +29,27 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
 	TObjectPtr<UBoxComponent> ZoneCollisionComponent;
 
-	// Plain FName, not a UENUM over MISSION.md's five locked colours - matches
-	// IHerdable::GetHerdColourTag()'s own deferred-scope decision (issue #79).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Target Zone")
+	// Colour METADATA only - no longer gates acceptance (operator ruling 2026-08-22,
+	// PR #212 review, MISSION `02`: colour-matching is a bonus system - control
+	// duration - never the win-condition gate; "each ability viable solo at base
+	// effectiveness"). Retained for visuals/UI. EditAnywhere (was EditDefaultsOnly)
+	// per the same review: placed instances must be designer-fixable.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target Zone")
 	FName ZoneColourTag = NAME_None;
+
+	// Type-keyed acceptance (operator ruling 2026-08-22, PR #212 review): this zone
+	// is a pen for one EEnemyType and accepts any *controlled* IHerdable of that
+	// type, regardless of which ability controls it. Default true = unconfigured
+	// zone accepts any controlled herdable - preserves issue #80's documented
+	// default-match behaviour that KrowdKontrolTargetZoneTest case (e) pins.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target Zone")
+	bool bAcceptAnyEnemyType = true;
+
+	// Only consulted when bAcceptAnyEnemyType is false. Matched against the
+	// overlapping actor's UEnemyTypeIndicatorComponent::EnemyType - the single
+	// source of truth for an enemy's type (see that component's own comment).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target Zone", meta = (EditCondition = "!bAcceptAnyEnemyType"))
+	EEnemyType ZoneEnemyType = EEnemyType::RU_NNR;
 
 	// True when this zone's approach is deliberately routed around an obstacle for
 	// moment-to-moment difficulty variation (PRD 01 REQ-5, P1). Level-authoring
@@ -50,7 +68,7 @@ public:
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Target Zone")
 	TObjectPtr<AActor> RoutingObstacleActor;
 
-	// Fires when a controlled, colour-matched IHerdable actor overlaps this zone.
+	// Fires when a controlled, type-accepted IHerdable actor overlaps this zone.
 	UPROPERTY(BlueprintAssignable, Category = "Target Zone")
 	FOnActorBanked OnActorBanked;
 

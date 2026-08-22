@@ -49,4 +49,15 @@ namespace ReservedGameplayColours
 	// REQ-2). Deliberately NOT included in GetAll() - this is the backdrop the 5
 	// reserved colours are locked against, not a 6th reserved colour.
 	KROWDKONTROL_API FLinearColor GetBackground();
+
+	// FName tag counterparts to the 5 FLinearColor accessors above, for consumers
+	// (IHerdable::GetHerdColourTag(), ATargetZone::ZoneColourTag) that match by a
+	// plain string tag rather than rendering a colour - issue #211. Tag text is the
+	// plain-English colour name, matching the literals KrowdKontrolHerdableTest.cpp
+	// and KrowdKontrolTargetZoneTest.cpp already pin (e.g. FName(TEXT("Purple"))).
+	KROWDKONTROL_API FName GetPurpleTag();
+	KROWDKONTROL_API FName GetTealTag();
+	KROWDKONTROL_API FName GetOrangeTag();
+	KROWDKONTROL_API FName GetBlueTag();
+	KROWDKONTROL_API FName GetWhiteTag();
 }
