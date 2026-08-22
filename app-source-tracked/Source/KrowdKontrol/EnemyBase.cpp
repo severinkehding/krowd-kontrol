@@ -8,6 +8,43 @@
 #include "CrowdMasterySubsystem.h"
 #include "Engine/World.h"
 #include "Components/PrimitiveComponent.h"
+#include "RoomActor.h"
+#include "CoreGlobals.h"
+
+namespace
+{
+	// Issue #274 code-review follow-up: without this cache, IsPlayerInOwningRoom
+	// below reruns a full TActorIterator<ARoomActor> world scan + TArray allocation
+	// from scratch on every call - once per Tick() for every Idle enemy with a
+	// non-null OwningRoom while the player is in range, i.e. O(enemies x rooms) scans
+	// per frame. Collapses that down to one scan per frame shared by every enemy that
+	// ticks this frame, mirroring the existing "scan TActorIterator once, reuse
+	// across N comparisons" shape at RoomActor.cpp's BeginPlay. Rooms are static,
+	// hand-placed level geometry that never changes at runtime in this codebase today
+	// (RoomActor.h's own class comment), so a lazy once-per-frame refresh - rather
+	// than invalidating on room spawn/destroy - is safe. Single-entry (not
+	// world-keyed): this codebase never ticks more than one World at a time, and a
+	// mismatched World pointer alone forces a rescan, so switching worlds (e.g.
+	// between Automation tests) can't return stale data.
+	const TArray<ARoomActor*>& GetCachedRoomList(UWorld* World)
+	{
+		static TWeakObjectPtr<UWorld> CachedWorld;
+		static uint64 CachedFrameNumber = TNumericLimits<uint64>::Max();
+		static TArray<ARoomActor*> CachedRooms;
+
+		if (CachedWorld.Get() != World || CachedFrameNumber != GFrameCounter)
+		{
+			CachedRooms.Reset();
+			for (TActorIterator<ARoomActor> It(World); It; ++It)
+			{
+				CachedRooms.Add(*It);
+			}
+			CachedWorld = World;
+			CachedFrameNumber = GFrameCounter;
+		}
+		return CachedRooms;
+	}
+}
 
 AEnemyBase::AEnemyBase()
 {
@@ -102,6 +139,21 @@ void AEnemyBase::AdvanceToAttack()
 	OnAttackEntry();
 }
 
+bool AEnemyBase::IsPlayerInOwningRoom(const FVector& PlayerLocation) const
+{
+	ARoomActor* Room = OwningRoom.Get();
+	if (!Room)
+	{
+		return true;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return true;
+	}
+	return ARoomActor::FindNearestRoom(PlayerLocation, GetCachedRoomList(World)) == Room;
+}
+
 void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)
 {
 	const float Distance = FVector::Dist(GetActorLocation(), PlayerLocation);
@@ -110,7 +162,13 @@ void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)
 	// single frame.
 	if (CurrentState == EEnemyState::Idle && Distance <= DetectionRangeUnits)
 	{
-		AdvanceToAlert();
+		// Issue #244: proximity alone is necessary but not sufficient for Idle->Alert
+		// - the player must also be resolved to this enemy's own room (or the enemy
+		// has no owning room at all, e.g. a level with zero ARoomActors).
+		if (IsPlayerInOwningRoom(PlayerLocation))
+		{
+			AdvanceToAlert();
+		}
 	}
 	else if (CurrentState == EEnemyState::Alert && Distance <= GetAttackRangeUnits())
 	{
