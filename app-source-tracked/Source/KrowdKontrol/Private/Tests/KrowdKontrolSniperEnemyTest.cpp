@@ -323,6 +323,8 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	ASniperEnemy* ExpirySniper = NewObject<ASniperEnemy>();
 	AdvanceToAttack(ExpirySniper, ZeroDistanceLocation);
 	ExpirySniper->ReceiveControl(EAbilitySlot::Sleep); // Attack -> Controlled, 7.0f override
+	TestEqual(TEXT("GetTotalControlledSeconds should reflect the 7s Sleep override, not the base duration"),
+		ExpirySniper->GetTotalControlledSeconds(), 7.0f);
 	TestNotEqual(TEXT("precondition: the Sleep override (7.0f) differs from the base Sleep duration"),
 		7.0f, AbilityData::Get(EAbilitySlot::Sleep).BaseDurationSeconds);
 	ExpirySniper->TickControlledDuration(6.9f);

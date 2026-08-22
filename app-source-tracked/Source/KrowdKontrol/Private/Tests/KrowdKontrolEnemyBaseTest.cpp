@@ -182,6 +182,30 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("GetControllingAbility should report Root after ReceiveControl from Attack"),
 		static_cast<uint8>(AttackControlled->GetControllingAbility()), static_cast<uint8>(EAbilitySlot::Root));
 
+	// (g2) issue #224: GetRemainingControlledSeconds()/GetTotalControlledSeconds()
+	// read as a 1.0 fraction immediately on entering Controlled (no override
+	// applies to AEnemyBaseTestActor - base -1.0f "no override" default), then
+	// decrease monotonically as TickControlledDuration advances simulated time.
+	AEnemyBaseTestActor* DurationEnemy = NewObject<AEnemyBaseTestActor>();
+	DurationEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	DurationEnemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	const float StunBaseDurationSeconds = AbilityData::Get(EAbilitySlot::Stun).BaseDurationSeconds;
+	TestEqual(TEXT("GetTotalControlledSeconds should equal the base Stun duration with no override"),
+		DurationEnemy->GetTotalControlledSeconds(), StunBaseDurationSeconds);
+	TestEqual(TEXT("Remaining/Total fraction should be 1.0 immediately on entering Controlled"),
+		DurationEnemy->GetRemainingControlledSeconds() / DurationEnemy->GetTotalControlledSeconds(), 1.0f);
+
+	float PreviousFraction = 1.0f;
+	const float DurationStepSeconds = StunBaseDurationSeconds / 4.0f;
+	for (int32 Step = 0; Step < 3; ++Step)
+	{
+		DurationEnemy->TickControlledDuration(DurationStepSeconds);
+		const float CurrentFraction = DurationEnemy->GetRemainingControlledSeconds() / DurationEnemy->GetTotalControlledSeconds();
+		TestTrue(TEXT("Remaining/Total fraction should decrease monotonically as the duration advances"),
+			CurrentFraction < PreviousFraction);
+		PreviousFraction = CurrentFraction;
+	}
+
 	// (h) TransitionToBanked from Controlled moves to Banked and fires OnEnemyBanked
 	// exactly once.
 	UEnemyBankedTestListener* Listener = NewObject<UEnemyBankedTestListener>();
@@ -203,6 +227,19 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(AlertControlled->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 	TestEqual(TEXT("OnEnemyBanked should still have fired exactly once"), Listener->CallCount, 1);
 
+	// (i1b) issue #224: stale-read contract on the Controlled -> Banked edge -
+	// reading the duration accessors after TransitionToBanked() does not crash and
+	// matches the same "stale read, guarded by state" contract
+	// GetControllingAbility() documents. AlertControlled was never ticked, so
+	// Remaining still equals Total in full; two consecutive reads returning the
+	// same value demonstrate the read itself does not mutate state.
+	TestEqual(TEXT("GetTotalControlledSeconds should reflect Sleep's base duration"),
+		AlertControlled->GetTotalControlledSeconds(), AbilityData::Get(EAbilitySlot::Sleep).BaseDurationSeconds);
+	TestEqual(TEXT("GetRemainingControlledSeconds should still equal the full duration after banking (no ticks elapsed)"),
+		AlertControlled->GetRemainingControlledSeconds(), AlertControlled->GetTotalControlledSeconds());
+	TestEqual(TEXT("Reading GetRemainingControlledSeconds again after banking should return the same stable value"),
+		AlertControlled->GetRemainingControlledSeconds(), AlertControlled->GetTotalControlledSeconds());
+
 	// (i2) duration-expiry reversion (issue #138): a Controlled enemy whose duration
 	// elapses before TransitionToBanked() is called reverts to Alert, not stuck, not
 	// Banked. Also fires OnEnemyControlledExpired exactly once (issue #174).
@@ -222,6 +259,21 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(ExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 	TestEqual(TEXT("OnEnemyControlledExpired should fire exactly once when the duration elapses"),
 		ExpiryListener->CallCount, 1);
+
+	// (i2b) issue #224: stale-read contract after expiry - same "stale read,
+	// guarded by state" contract GetControllingAbility() already documents.
+	// Reading the duration accessors after OnEnemyControlledExpired does not crash,
+	// Remaining reads 0.0 (TickControlledDuration clamps to zero before reverting),
+	// Total retains its last-known value, and repeated reads are stable.
+	TestEqual(TEXT("GetRemainingControlledSeconds should read 0.0 immediately after the duration expires"),
+		ExpiryEnemy->GetRemainingControlledSeconds(), 0.0f);
+	TestEqual(TEXT("GetTotalControlledSeconds should retain its last-known value after expiry"),
+		ExpiryEnemy->GetTotalControlledSeconds(), StunDurationSeconds);
+	ExpiryEnemy->TickControlledDuration(5.0f); // no-op: CurrentState is Alert, not Controlled
+	TestEqual(TEXT("GetRemainingControlledSeconds should remain stable on repeated reads after expiry"),
+		ExpiryEnemy->GetRemainingControlledSeconds(), 0.0f);
+	TestEqual(TEXT("GetTotalControlledSeconds should remain stable on repeated reads after expiry"),
+		ExpiryEnemy->GetTotalControlledSeconds(), StunDurationSeconds);
 
 	// (i3) banking before expiry prevents the reversion - TickControlledDuration is
 	// already guarded by CurrentState != Controlled, this proves it explicitly for the
