@@ -114,6 +114,13 @@ private:
 	UFUNCTION()
 	void HandleOwnedEnemyBanked();
 
+	// Bound to each owned enemy's AActor::OnDestroyed so a room whose last un-banked
+	// enemy is destroyed by something other than banking (Hard Invariant #2 forbids
+	// gameplay code from doing this today, but editor/engine-level destruction is still
+	// possible) still re-evaluates and opens its gated door, instead of soft-locking.
+	UFUNCTION()
+	void HandleOwnedEnemyDestroyed(AActor* DestroyedActor);
+
 	void BindOwnedEnemyDelegate(AEnemyBase* Enemy);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room", meta = (AllowPrivateAccess = "true"))

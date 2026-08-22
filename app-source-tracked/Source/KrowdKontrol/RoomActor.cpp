@@ -116,7 +116,12 @@ bool ARoomActor::IsRoomCleared() const
 {
 	for (const TObjectPtr<AEnemyBase>& Enemy : OwnedEnemies)
 	{
-		if (IsValid(Enemy) && Enemy->GetEnemyState() != EEnemyState::Banked)
+		// IsActorBeingDestroyed() matters here, not just IsValid(): AActor::OnDestroyed
+		// broadcasts synchronously from inside UWorld::DestroyActor() *before* the actor
+		// is marked garbage, so a HandleOwnedEnemyDestroyed()-triggered re-check would
+		// otherwise still see this un-banked enemy as IsValid() and blocking, and the
+		// door would never actually re-open.
+		if (IsValid(Enemy) && !Enemy->IsActorBeingDestroyed() && Enemy->GetEnemyState() != EEnemyState::Banked)
 		{
 			return false;
 		}
@@ -129,6 +134,7 @@ void ARoomActor::BindOwnedEnemyDelegate(AEnemyBase* Enemy)
 	if (IsValid(Enemy))
 	{
 		Enemy->OnEnemyBanked.AddUniqueDynamic(this, &ARoomActor::HandleOwnedEnemyBanked);
+		Enemy->OnDestroyed.AddUniqueDynamic(this, &ARoomActor::HandleOwnedEnemyDestroyed);
 	}
 }
 
@@ -144,6 +150,11 @@ void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
 }
 
 void ARoomActor::HandleOwnedEnemyBanked()
+{
+	OnRoomClearedStateChanged.Broadcast();
+}
+
+void ARoomActor::HandleOwnedEnemyDestroyed(AActor* DestroyedActor)
 {
 	OnRoomClearedStateChanged.Broadcast();
 }

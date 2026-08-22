@@ -3,7 +3,10 @@
 // once every owned enemy reaches Banked, and re-closes if a new enemy is added to an
 // already-cleared room (e.g. a wave spawn) - driven directly via
 // ARoomActor::AddOwnedEnemy() since UWaveSpawnerComponent isn't wired to ARoomActor
-// today (out of scope for this issue, see its own header comment).
+// today (out of scope for this issue, see its own header comment). Also covers: a door
+// with no GatingRoom stays always open (Test 4); OwnedEnemies hand-placed before
+// BeginPlay(), not added via AddOwnedEnemy() (Test 5); and an owned enemy destroyed
+// (not banked) doesn't permanently soft-lock the door (Test 6).
 //
 // Needs a real BeginPlay() pass for ARoomActor::OnRoomClearedStateChanged /
 // ADoorConnectorActor::GatingRoom's delegate binding to be live, so this mirrors
@@ -70,6 +73,10 @@ bool FKrowdKontrolRoomActorDoorGatingTest::RunTest(const FString& Parameters)
 		Door->bIsGateOpen);
 	TestEqual(TEXT("Gate blocking component should have collision enabled while closed"),
 		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+	TestNotEqual(TEXT("Gate blocking component should not unintentionally block camera traces"),
+		Door->GateBlockingComponent->GetCollisionResponseToChannel(ECC_Camera), ECR_Block);
+	TestNotEqual(TEXT("Gate blocking component should not unintentionally block WorldDynamic traces"),
+		Door->GateBlockingComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
 
 	EnemyA->TickCheckDetection(EnemyA->GetActorLocation());
 	EnemyA->ReceiveControl(EAbilitySlot::Snare);
@@ -92,12 +99,68 @@ bool FKrowdKontrolRoomActorDoorGatingTest::RunTest(const FString& Parameters)
 	RoomOne->AddOwnedEnemy(WaveEnemy);
 	TestFalse(TEXT("Door should re-close once a new owned enemy is added to an already-cleared room"),
 		Door->bIsGateOpen);
+	TestEqual(TEXT("Gate blocking component should re-enable collision on re-close"),
+		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
 
 	WaveEnemy->TickCheckDetection(WaveEnemy->GetActorLocation());
 	WaveEnemy->ReceiveControl(EAbilitySlot::Snare);
 	WaveEnemy->TransitionToBanked();
 	TestTrue(TEXT("Door should re-open once the wave-spawned enemy also reaches Banked"),
 		Door->bIsGateOpen);
+	TestEqual(TEXT("Gate blocking component should have no collision once re-opened"),
+		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+
+	// --- Test 4: a door with no GatingRoom configured stays always open ---
+	ADoorConnectorActor* UngatedDoor = World->SpawnActorDeferred<ADoorConnectorActor>(
+		ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	if (!TestNotNull(TEXT("UngatedDoor should spawn"), UngatedDoor)) { return false; }
+	UngatedDoor->RoomA = RoomOne;
+	UngatedDoor->RoomB = RoomTwo;
+	// GatingRoom left unset (nullptr) - the level's first-door default.
+	UngatedDoor->FinishSpawning(FTransform::Identity);
+
+	TestTrue(TEXT("A door with no GatingRoom should stay open even while RoomOne is uncleared"),
+		UngatedDoor->bIsGateOpen);
+	TestEqual(TEXT("An ungated door's blocking component should have no collision"),
+		UngatedDoor->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+
+	// --- Test 5: hand-placed OwnedEnemies (bound in BeginPlay(), not via AddOwnedEnemy()) ---
+	// Simulates a real level room: OwnedEnemies is populated before FinishSpawning() fires
+	// BeginPlay(), exercising the load-time binding loop instead of the runtime
+	// AddOwnedEnemy() path every other test above uses.
+	ARoomActor* PrePopulatedRoom = World->SpawnActorDeferred<ARoomActor>(
+		ARoomActor::StaticClass(), FTransform::Identity);
+	if (!TestNotNull(TEXT("PrePopulatedRoom should spawn"), PrePopulatedRoom)) { return false; }
+	ATrooperEnemy* PrePlacedEnemy = World->SpawnActor<ATrooperEnemy>(FVector(1000.f, 1000.f, 0.f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("PrePlacedEnemy should spawn"), PrePlacedEnemy)) { return false; }
+	PrePopulatedRoom->OwnedEnemies.Add(PrePlacedEnemy);
+	PrePopulatedRoom->FinishSpawning(FTransform::Identity);
+
+	TestFalse(TEXT("A hand-placed room with an un-banked owned enemy should not report cleared"),
+		PrePopulatedRoom->IsRoomCleared());
+
+	PrePlacedEnemy->TickCheckDetection(PrePlacedEnemy->GetActorLocation());
+	PrePlacedEnemy->ReceiveControl(EAbilitySlot::Snare);
+	PrePlacedEnemy->TransitionToBanked();
+	TestTrue(TEXT("Room should report cleared once its BeginPlay-bound enemy banks"),
+		PrePopulatedRoom->IsRoomCleared());
+
+	// --- Test 6: a destroyed owned enemy doesn't permanently soft-lock the room's door ---
+	ATrooperEnemy* DoomedEnemy = World->SpawnActor<ATrooperEnemy>(FVector(500.f, -1000.f, 0.f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("DoomedEnemy should spawn"), DoomedEnemy)) { return false; }
+	RoomOne->AddOwnedEnemy(DoomedEnemy);
+	TestFalse(TEXT("Room should be un-cleared while DoomedEnemy is still owned and un-banked"),
+		RoomOne->IsRoomCleared());
+	TestFalse(TEXT("Door should re-close once DoomedEnemy is added to the already-cleared room"),
+		Door->bIsGateOpen);
+
+	DoomedEnemy->Destroy();
+	TestTrue(TEXT("A destroyed owned enemy should not block IsRoomCleared()"),
+		RoomOne->IsRoomCleared());
+	TestTrue(TEXT("Door should re-open once its last un-banked owned enemy is destroyed"),
+		Door->bIsGateOpen);
+	TestEqual(TEXT("Gate blocking component should have no collision once re-opened by destruction"),
+		Door->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	return true;
 }

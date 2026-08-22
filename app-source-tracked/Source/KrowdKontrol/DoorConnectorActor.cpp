@@ -72,6 +72,9 @@ ADoorConnectorActor::ADoorConnectorActor()
 	// GatingRoom is assigned" behaviour; RecomputeConnectorGeometry()/RefreshGateState()
 	// correct this once real room/gating data is available.
 	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Unconfigured primitives default to BlockAllDynamic (see EnemyBase.cpp) - reset to
+	// Ignore-all first so the gate only ever blocks the one channel it's meant to.
+	GateBlockingComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
 	GateBlockingComponent->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 	GateBlockingComponent->SetGenerateOverlapEvents(false);
 }
