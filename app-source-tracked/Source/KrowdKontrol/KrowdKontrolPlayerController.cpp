@@ -4,6 +4,7 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "EnergyMeterWidget.h"
 #include "OnScreenPromptWidget.h"
+#include "QuestTrackerWidget.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityUnlockLevelSubsystem.h"
 #include "AbilityUnlockPromptComponent.h"
@@ -68,6 +69,14 @@ void AKrowdKontrolPlayerController::CreateHUDWidgets()
 		if (OnScreenPromptWidgetInstance)
 		{
 			OnScreenPromptWidgetInstance->AddToViewport();
+		}
+	}
+	if (!QuestTrackerWidgetInstance)
+	{
+		QuestTrackerWidgetInstance = CreateWidget<UQuestTrackerWidget>(this, UQuestTrackerWidget::StaticClass());
+		if (QuestTrackerWidgetInstance)
+		{
+			QuestTrackerWidgetInstance->AddToViewport();
 		}
 	}
 }
