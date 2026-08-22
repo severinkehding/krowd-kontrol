@@ -95,6 +95,11 @@ bool FKrowdKontrolLevel01StructureTest::RunTest(const FString& Parameters)
 	// comparison and is out of this test's reach.
 	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
 
+	// Issue #211 pass-1 review follow-up: proves EnsureBankingZonesWired() actually has
+	// something real to heal in this shipped level, not just that the marker array is
+	// non-empty (already covered above).
+	KrowdKontrolLevelTestUtils::CheckRoomBankingZonesSelfHeal(*this, Rooms);
+
 	// Issue #189: room spacing compression and enemy density ramp, both independently
 	// falsifiable rather than resting on changelog prose (D-009).
 	KrowdKontrolLevelTestUtils::CheckAdjacentRoomSpacingCompressed(*this, Rooms);

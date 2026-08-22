@@ -24,6 +24,7 @@
 #include "ReservedGameplayColours.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "Components/PrimitiveComponent.h"
 
 static ATargetZone* FindAttachedZone(AActor* Marker)
 {
@@ -134,6 +135,17 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Enemy should spawn"), Enemy))
 	{
 		return false;
+	}
+
+	// Pass-1 review follow-up (low severity, code_quality): pins down the exact
+	// collision-response value EnemyBase::BeginPlay() sets, channel-wide and
+	// actor-wide (see that method's own comment on the residual risk), as a tripwire -
+	// if this regresses or someone narrows it away without updating this test, this
+	// assertion (not just the physical-overlap assertions below) is what catches it.
+	if (UPrimitiveComponent* EnemyRootPrimitive = Cast<UPrimitiveComponent>(Enemy->GetRootComponent()))
+	{
+		TestEqual(TEXT("Enemy root's response to the WorldDynamic channel should be Overlap (EnemyBase::BeginPlay's channel-wide fix, issue #211) - re-check this assertion before scoping the fix to ATargetZone specifically"),
+			EnemyRootPrimitive->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Overlap);
 	}
 
 	// Drive Idle -> Alert via the friend-granted private TickCheckDetection (distance
