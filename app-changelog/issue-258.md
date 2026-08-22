@@ -44,6 +44,41 @@ incomplete work; it's the intended minimal-diff shape of this fix.
 
 ## Validation evidence
 
+`app/Config/DefaultInput.ini` has no `app-source-tracked/` mirror (only `.h`/`.cpp`/
+`.Build.cs` source files get mirrored per D-009), so this diff-free excerpt of the
+`[/Script/Engine.InputSettings]` `ActionMappings` block is the only way to confirm
+from the tracked repo that the legacy `One`..`Five` bindings were left untouched and
+the five new OG-GDD bindings were added alongside them.
+
+Before (legacy 1-5 bindings only):
+
+```ini
+[/Script/Engine.InputSettings]
+...
++ActionMappings=(ActionName="CastStun",Key=One)
++ActionMappings=(ActionName="CastSleep",Key=Two)
++ActionMappings=(ActionName="CastRoot",Key=Three)
++ActionMappings=(ActionName="CastFear",Key=Four)
++ActionMappings=(ActionName="CastSnare",Key=Five)
+```
+
+After (legacy entries unchanged, five OG-GDD entries appended):
+
+```ini
+[/Script/Engine.InputSettings]
+...
++ActionMappings=(ActionName="CastStun",Key=One)
++ActionMappings=(ActionName="CastSleep",Key=Two)
++ActionMappings=(ActionName="CastRoot",Key=Three)
++ActionMappings=(ActionName="CastFear",Key=Four)
++ActionMappings=(ActionName="CastSnare",Key=Five)
++ActionMappings=(ActionName="CastStun",Key=LeftMouseButton)
++ActionMappings=(ActionName="CastSleep",Key=RightMouseButton)
++ActionMappings=(ActionName="CastRoot",Key=Q)
++ActionMappings=(ActionName="CastFear",Key=MiddleMouseButton)
++ActionMappings=(ActionName="CastSnare",Key=E)
+```
+
 Quick gate (`python harness/ci.py --quick`):
 
 ```
