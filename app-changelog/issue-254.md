@@ -50,8 +50,11 @@ issue's shape.
 - [x] Automation tests cover: in-cone-affected, out-of-cone/behind-robot-unaffected,
       cone orientation follows cursor direction, range-clamp boundary, pure-math
       (`ComputeConeDirection`/`IsPointInCone`), base-slow-percentage observably correct
-      (via telegraph timing), a snared enemy still banks, a whiff still consumes the
-      cooldown.
+      on both halves of the claim - movement (`TickChaseMovement` actual distance moved,
+      `KrowdKontrolEnemyBaseTest.cpp` case `(p3)`) and attack telegraph timing, the
+      latter independently verified against all four concrete enemy types' own
+      `AdvanceAttackTelegraph` copies (`(m-snare)`/`(l-snare)` cases), not just Bomber's -
+      plus a snared enemy still banks, and a whiff still consumes the cooldown.
 - [x] `app/` and `app-source-tracked/` are byte-identical for every changed file.
 - [x] `harness/ci.py --mode=full` passes with zero regressions in the pre-existing
       automation suite.

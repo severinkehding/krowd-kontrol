@@ -264,6 +264,27 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l-root) The one-shot guard should still prevent a second drain-ray while Rooted"),
 		RootedListener->CallCount, 1);
 
+	// (l-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
+	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
+	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
+	// the way, so the drain-ray has NOT fired yet; a second identical tick brings the
+	// cumulative elapsed time up to AttackTelegraphSeconds and the ray fires exactly
+	// once. This is Runner's own independent AdvanceAttackTelegraph copy, mirroring
+	// KrowdKontrolBomberEnemyTest.cpp's (m-snare) case for the same behaviour.
+	ARunnerEnemy* SnaredRunner = NewObject<ARunnerEnemy>();
+	AdvanceToAttack(SnaredRunner, ZeroDistanceLocation);
+	SnaredRunner->ReceiveControl(EAbilitySlot::Snare);
+	TestEqual(TEXT("(l-snare) Runner should be Controlled after Snare"),
+		static_cast<uint8>(SnaredRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	UDrainRayFiredTestListener* SnaredListener = NewObject<UDrainRayFiredTestListener>();
+	SnaredRunner->OnRunnerDrainFired.AddDynamic(SnaredListener, &UDrainRayFiredTestListener::HandleDrainRayFired);
+	SnaredRunner->AdvanceAttackTelegraph(SnaredRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-snare) The drain-ray should NOT have fired after only one telegraph's worth of half-speed ticks"),
+		SnaredListener->CallCount, 0);
+	SnaredRunner->AdvanceAttackTelegraph(SnaredRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-snare) The drain-ray should fire exactly once once cumulative elapsed time (at half speed) reaches AttackTelegraphSeconds"),
+		SnaredListener->CallCount, 1);
+
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
 	// MovementSpeed (950.0f), not AEnemyBase's own base default (600.0f) - the direct
 	// proof that issue #122's "per-type speeds are actually read" holds for RU-NNR too.

@@ -532,6 +532,18 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("TickChaseMovement while Controlled should not move the actor"),
 		ControlledDistanceMoved, 0.0f);
 
+	// (p3) TickChaseMovement while Controlled by Snare: unlike Stun above (p2), Snare's
+	// bAllowsMovementWhileControlled=true lets chase continue at ControlledSpeedMultiplier
+	// (0.5) - issue #254's "partial slow" claim, proven by actual distance moved.
+	AEnemyBaseTestActor* SnaredChaser = NewObject<AEnemyBaseTestActor>();
+	SnaredChaser->TickCheckDetection(FVector(1000.0f, 0.0f, 0.0f)); // Idle -> Alert (within DetectionRangeUnits, unlike (p)'s FarPlayerLocation)
+	SnaredChaser->ReceiveControl(EAbilitySlot::Snare); // Alert -> Controlled
+	const FVector SnaredStart = SnaredChaser->GetActorLocation();
+	SnaredChaser->TickChaseMovement(FVector(1000.0f, 0.0f, 0.0f), 1.0f);
+	const float SnaredDistanceMoved = FVector::Dist(SnaredChaser->GetActorLocation(), SnaredStart);
+	TestEqual(TEXT("(p3) A Snared enemy should move at half its normal speed, not freeze"),
+		SnaredDistanceMoved, SnaredChaser->GetEffectiveMovementSpeedUnitsPerSecond() * 0.5f);
+
 	// (r2) TickChaseMovement is a no-op outside Alert: Banked.
 	AEnemyBaseTestActor* BankedChaser = NewObject<AEnemyBaseTestActor>();
 	BankedChaser->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert

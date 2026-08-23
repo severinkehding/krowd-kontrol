@@ -211,6 +211,16 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l-root) The one-shot guard should still prevent a second explosion while Rooted"),
 		RootedListener->CallCount, 1);
 
+	// (l-root) OnControlledExpired regression (pass-1 review follow-up, issue #255):
+	// the tell light must not stay lit forever once Root's Controlled window naturally
+	// expires without the enemy being banked - this is the exact bug OnControlledExpired
+	// was added to fix, proven directly rather than just proving its precondition.
+	RootedBomber->TickControlledDuration(AbilityData::Get(EAbilitySlot::Root).BaseDurationSeconds);
+	TestEqual(TEXT("(l-root) Bomber should be back to Alert once Root's Controlled window naturally expires"),
+		static_cast<uint8>(RootedBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-root) OnControlledExpired should clear the tell light once Root's window ends"),
+		RootedBomber->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
 	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
 	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
