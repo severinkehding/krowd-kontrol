@@ -211,6 +211,37 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l-root) The one-shot guard should still prevent a second explosion while Rooted"),
 		RootedListener->CallCount, 1);
 
+	// (l-root) OnControlledExpired regression (pass-1 review follow-up, issue #255):
+	// the tell light must not stay lit forever once Root's Controlled window naturally
+	// expires without the enemy being banked - this is the exact bug OnControlledExpired
+	// was added to fix, proven directly rather than just proving its precondition.
+	RootedBomber->TickControlledDuration(AbilityData::Get(EAbilitySlot::Root).BaseDurationSeconds);
+	TestEqual(TEXT("(l-root) Bomber should be back to Alert once Root's Controlled window naturally expires"),
+		static_cast<uint8>(RootedBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-root) OnControlledExpired should clear the tell light once Root's window ends"),
+		RootedBomber->AttackTellLightComponent->Intensity, 0.0f);
+
+	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
+	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
+	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
+	// the way, so the explosion has NOT fired yet; a second identical tick brings the
+	// cumulative elapsed time up to AttackTelegraphSeconds and the explosion fires
+	// exactly once. This is the concrete, observable proof the slow is real, not just a
+	// flag.
+	ABomberEnemy* SnaredBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(SnaredBomber, ZeroDistanceLocation);
+	SnaredBomber->ReceiveControl(EAbilitySlot::Snare);
+	TestEqual(TEXT("(m-snare) Bomber should be Controlled after Snare"),
+		static_cast<uint8>(SnaredBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	UBomberExplodedTestListener* SnaredListener = NewObject<UBomberExplodedTestListener>();
+	SnaredBomber->OnBomberExploded.AddDynamic(SnaredListener, &UBomberExplodedTestListener::HandleBomberExploded);
+	SnaredBomber->AdvanceAttackTelegraph(SnaredBomber->AttackTelegraphSeconds);
+	TestEqual(TEXT("(m-snare) The explosion should NOT have fired after only one telegraph's worth of half-speed ticks"),
+		SnaredListener->CallCount, 0);
+	SnaredBomber->AdvanceAttackTelegraph(SnaredBomber->AttackTelegraphSeconds);
+	TestEqual(TEXT("(m-snare) The explosion should fire exactly once once cumulative elapsed time (at half speed) reaches AttackTelegraphSeconds"),
+		SnaredListener->CallCount, 1);
+
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
 	// MovementSpeed (200.0f), not AEnemyBase's own base default (600.0f) - the
 	// direct proof that issue #122's "per-type speeds are actually read" holds.

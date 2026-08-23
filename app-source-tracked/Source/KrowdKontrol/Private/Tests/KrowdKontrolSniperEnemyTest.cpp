@@ -262,6 +262,27 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l2) The one-shot guard should still prevent a second shot while Rooted"),
 		RootedListener->CallCount, 1);
 
+	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
+	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
+	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
+	// the way, so the shot has NOT fired yet; a second identical tick brings the
+	// cumulative elapsed time up to AttackTelegraphSeconds and the shot fires exactly
+	// once. This is Sniper's own independent AdvanceAttackTelegraph copy, mirroring
+	// KrowdKontrolBomberEnemyTest.cpp's (m-snare) case for the same behaviour.
+	ASniperEnemy* SnaredSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(SnaredSniper, ZeroDistanceLocation);
+	SnaredSniper->ReceiveControl(EAbilitySlot::Snare);
+	TestEqual(TEXT("(m-snare) Sniper should be Controlled after Snare"),
+		static_cast<uint8>(SnaredSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	USniperShotFiredTestListener* SnaredListener = NewObject<USniperShotFiredTestListener>();
+	SnaredSniper->OnSniperShotFired.AddDynamic(SnaredListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+	SnaredSniper->AdvanceAttackTelegraph(SnaredSniper->AttackTelegraphSeconds);
+	TestEqual(TEXT("(m-snare) The shot should NOT have fired after only one telegraph's worth of half-speed ticks"),
+		SnaredListener->CallCount, 0);
+	SnaredSniper->AdvanceAttackTelegraph(SnaredSniper->AttackTelegraphSeconds);
+	TestEqual(TEXT("(m-snare) The shot should fire exactly once once cumulative elapsed time (at half speed) reaches AttackTelegraphSeconds"),
+		SnaredListener->CallCount, 1);
+
 	// (m) the real Tick() override, not just the friend-called AdvanceAttackTelegraph
 	// helper, must wire the telegraph into the per-frame loop - proves neither a
 	// missing Super::Tick(DeltaTime) nor a wiring mistake in the override itself,

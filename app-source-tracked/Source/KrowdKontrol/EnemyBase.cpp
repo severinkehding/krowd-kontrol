@@ -138,6 +138,20 @@ bool AEnemyBase::IsAttackBehaviorActive() const
 	return CurrentState == EEnemyState::Controlled && AbilityData::Get(ControllingAbility).bAllowsAttackWhileControlled;
 }
 
+bool AEnemyBase::IsMovementBehaviorActive() const
+{
+	if (CurrentState == EEnemyState::Alert)
+	{
+		return true;
+	}
+	return CurrentState == EEnemyState::Controlled && AbilityData::Get(ControllingAbility).bAllowsMovementWhileControlled;
+}
+
+float AEnemyBase::GetControlledSpeedMultiplier() const
+{
+	return CurrentState == EEnemyState::Controlled ? AbilityData::Get(ControllingAbility).ControlledSpeedMultiplier : 1.0f;
+}
+
 void AEnemyBase::TransitionToBanked()
 {
 	if (CurrentState != EEnemyState::Controlled)
@@ -228,7 +242,7 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 
 void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSeconds)
 {
-	if (CurrentState != EEnemyState::Alert)
+	if (!IsMovementBehaviorActive())
 	{
 		return;
 	}
@@ -238,8 +252,24 @@ void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSec
 	{
 		return;
 	}
-	const float MoveDistance = FMath::Min(DistanceRemaining, GetEffectiveMovementSpeedUnitsPerSecond() * DeltaSeconds);
+	const float MoveDistance = FMath::Min(DistanceRemaining, GetEffectiveMovementSpeedUnitsPerSecond() * GetControlledSpeedMultiplier() * DeltaSeconds);
 	SetActorLocation(GetActorLocation() + ToPlayer.GetSafeNormal() * MoveDistance);
+}
+
+void AEnemyBase::TickFleeMovement(const FVector& CasterLocation, float DeltaSeconds)
+{
+	if (CurrentState != EEnemyState::Controlled
+		|| !AbilityData::Get(ControllingAbility).bFleesFromCasterWhileControlled)
+	{
+		return;
+	}
+	const FVector AwayFromCaster = GetActorLocation() - CasterLocation;
+	if (AwayFromCaster.SizeSquared() <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	const float MoveDistance = GetEffectiveMovementSpeedUnitsPerSecond() * DeltaSeconds;
+	SetActorLocation(GetActorLocation() + AwayFromCaster.GetSafeNormal() * MoveDistance);
 }
 
 void AEnemyBase::Tick(float DeltaTime)
@@ -259,6 +289,7 @@ void AEnemyBase::Tick(float DeltaTime)
 		const FVector PlayerLocation = PlayerPawn->GetActorLocation();
 		TickCheckDetection(PlayerLocation);
 		TickChaseMovement(PlayerLocation, DeltaTime);
+		TickFleeMovement(PlayerLocation, DeltaTime);
 	}
 }
 

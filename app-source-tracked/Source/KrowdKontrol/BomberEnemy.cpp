@@ -139,7 +139,7 @@ void ABomberEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 	{
 		return;
 	}
-	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds);
+	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds * GetControlledSpeedMultiplier());
 	UpdateTelegraphEscalation();
 	if (RemainingTelegraphSeconds <= 0.0f)
 	{

@@ -92,6 +92,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Line", meta = (ClampMin = "0.0"))
 	float LineHitWidthUnits = 150.0f;
 
+	// Cone FULL angle for Cone-target abilities (Snare, issue #254) - 75° per the
+	// locked GDD table (docs/prd-ability-shapes.md). Placeholder-tunable
+	// EditDefaultsOnly, same rationale LineHitWidthUnits/ThrownCircleLandingRadiusUnits
+	// above document, even though this one value is currently GDD-locked rather than an
+	// open playtesting question - kept EditDefaultsOnly for consistency with its
+	// siblings and so a designer never needs a recompile to preview a variant.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Cone", meta = (ClampMin = "0.0", ClampMax = "360.0"))
+	float ConeFullAngleDegrees = 75.0f;
+
 	// Cursor-aimed multi-target counterpart to TryCastAbility(), for
 	// EAbilityTargetType::ThrownCircle abilities (Stun/Sleep - see AbilityData.h).
 	// Generic and reusable - built so a future Stun implementation (issue #256) can
@@ -168,6 +177,70 @@ public:
 	// cast that hit nothing); returns -1 if any gate failed and nothing was changed.
 	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
 	int32 TryCastLineAbilityTowardLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation);
+
+	// Pure direction-only math for Cone-target abilities (Snare - see AbilityData.h).
+	// Unlike ComputeLineEndLocation (which returns a fixed endpoint), a cone's shape is
+	// defined by (apex, direction, half-angle, range) - IsPointInCone below tests
+	// directly against those, so only the aim direction needs computing here. Same
+	// dead-zone/FallbackDirection guard as ComputeLineEndLocation, for the same
+	// degenerate-cursor-at-owner-location case.
+	static FVector ComputeConeDirection(const FVector& OwnerLocation, const FVector& DesiredTargetLocation, const FVector& FallbackDirection);
+
+	// True if Point is within RangeUnits of ApexLocation AND within HalfAngleDegrees of
+	// ConeDirection, tested on the X/Y plane only (matches this codebase's existing
+	// flat-top-down convention - see ComputeFacingRotation's own SizeSquared2D usage).
+	// A Point exactly coincident with ApexLocation (zero-length ToPoint, undefined
+	// angle) is treated as OUTSIDE the cone - a deliberate, documented edge case, same
+	// spirit as ComputeLineEndLocation's own degenerate-direction guard.
+	static bool IsPointInCone(const FVector& Point, const FVector& ApexLocation, const FVector& ConeDirection, float HalfAngleDegrees, float RangeUnits);
+
+	// Instance-level convenience wrapper around ComputeConeDirection, using this
+	// component's own GetOwner() location/forward vector - the exact direction the real
+	// cast will use. Exposed so UAbilityPressHoldComponent's Cone indicator preview
+	// matches the real cast exactly. Returns DesiredTargetLocation unchanged if
+	// GetOwner() is null.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	FVector GetConeDirection(const FVector& DesiredTargetLocation) const;
+
+	// Instance-level convenience wrapper around GetThrowRangeUnitsForTier (private) -
+	// exposes the resolved range for Ability's tier so UAbilityPressHoldComponent's Cone
+	// indicator preview can show the same range the real cast will use, same rationale
+	// GetLineEndLocation/GetClampedThrowLocation already document for their own callers.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	float GetConeRangeUnits(EAbilitySlot Ability) const;
+
+	// Cursor-aimed cone-cast counterpart to TryCastLineAbilityTowardLocation(), for
+	// EAbilityTargetType::Cone abilities (Snare - see AbilityData.h). Every AEnemyBase
+	// within ConeFullAngleDegrees/Range of the Owner, in the direction of
+	// DesiredTargetLocation, is affected (multi-target, same as Line/ThrownCircle).
+	// Same gate order and "always consumes the cooldown once gates pass" contract as
+	// TryCastLineAbilityTowardLocation (a fired cone commits the moment it's cast).
+	// Returns the number of enemies actually affected (0 is a valid, cooldown-consuming
+	// cast that hit nothing); returns -1 if any gate failed and nothing was changed.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	int32 TryCastConeAbilityTowardLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation);
+
+	// Self-centered AoE circle radius for EAbilityTargetType::SelfCircle abilities
+	// (Fear - see AbilityData.h). "4x robot size" per docs/prd-ability-shapes.md, same
+	// locked derivation ThrownCircleLandingRadiusUnits documents - a distinct property
+	// rather than reusing that one, since this radius is centered on the caster's own
+	// live location, not a thrown/clamped landing point, even though both currently
+	// default to the same value (mirrors LineHitWidthUnits getting its own property
+	// distinct from the throw-range tiers despite conceptual overlap).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Self Circle", meta = (ClampMin = "0.0"))
+	float SelfCircleRadiusUnits = 400.0f;
+
+	// Self-cast multi-target counterpart to TryCastThrownAbilityAtLocation(), for
+	// EAbilityTargetType::SelfCircle abilities (Fear - see AbilityData.h). Unlike the
+	// Thrown/Line/Cone entry points, there is no aim point - the circle is always
+	// exactly centered on GetOwner()->GetActorLocation() at cast time. Every AEnemyBase
+	// within SelfCircleRadiusUnits of the owner is affected (multi-target, same as
+	// Thrown/Line/Cone). Same gate order and "always consumes the cooldown once gates
+	// pass" contract as TryCastThrownAbilityAtLocation. Returns the number of enemies
+	// actually affected (0 is a valid, cooldown-consuming cast that hit nothing);
+	// returns -1 if any gate failed and nothing was changed.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	int32 TryCastSelfCircleAbility(EAbilitySlot Ability);
 
 	// Fires exactly once per successful TryCastAbility call, after ReceiveControl has
 	// already been applied to TargetEnemy.

@@ -62,11 +62,33 @@ struct FAbilityData
 	// early-wake branch.
 	bool bWakesEarlyOnOtherAbilityHit = false;
 
-	// True only for Root: a target Controlled by this ability keeps its own attack
-	// behaviour (telegraph/tell/fire) running exactly as it would in Attack, instead
-	// of having it silenced the instant Controlled begins - see
-	// AEnemyBase::IsAttackBehaviorActive().
+	// True for Root and Snare: a target Controlled by this ability keeps its own attack
+	// behaviour (telegraph/tell/fire) running instead of having it silenced the instant
+	// Controlled begins - see AEnemyBase::IsAttackBehaviorActive(). Root's attack runs
+	// exactly as it would in Attack (ControlledSpeedMultiplier below stays 1.0f); Snare's
+	// runs at the same scaled-down pace as its movement (issue #254).
 	bool bAllowsAttackWhileControlled = false;
+
+	// True only for Fear: a target Controlled by this ability actively moves away from
+	// the caster's live position for the Controlled duration, instead of standing
+	// immobile like every other ability's flavour - see AEnemyBase::TickFleeMovement().
+	bool bFleesFromCasterWhileControlled = false;
+
+	// True only for Snare: a target Controlled by this ability keeps closing distance
+	// (AEnemyBase::TickChaseMovement) instead of freezing in place, scaled by
+	// ControlledSpeedMultiplier below - see AEnemyBase::IsMovementBehaviorActive().
+	// Unlike Root above (attack-only, full speed, still stops moving), Snare sets both
+	// this flag and bAllowsAttackWhileControlled - it's a slow, not a freeze: the target
+	// keeps both moving and attacking, just at half pace.
+	bool bAllowsMovementWhileControlled = false;
+
+	// Fraction of GetEffectiveMovementSpeedUnitsPerSecond()/attack-telegraph
+	// DeltaSeconds retained while Controlled - consulted only when
+	// bAllowsMovementWhileControlled or bAllowsAttackWhileControlled is true (Snare:
+	// 0.5f, a 50% slow per issue #254; Root: 1.0f, i.e. its allowed attack runs
+	// completely unmodified). 1.0f (full speed) is the safe inert default for every
+	// ability that never reaches either flag - see AEnemyBase::GetControlledSpeedMultiplier().
+	float ControlledSpeedMultiplier = 1.0f;
 };
 
 namespace AbilityData

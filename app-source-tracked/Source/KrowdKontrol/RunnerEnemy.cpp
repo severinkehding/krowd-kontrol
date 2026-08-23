@@ -172,7 +172,7 @@ void ARunnerEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 	{
 		return;
 	}
-	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds);
+	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds * GetControlledSpeedMultiplier());
 	if (RemainingTelegraphSeconds <= 0.0f)
 	{
 		// Guards against re-firing OnRunnerDrainFired every subsequent tick once the
