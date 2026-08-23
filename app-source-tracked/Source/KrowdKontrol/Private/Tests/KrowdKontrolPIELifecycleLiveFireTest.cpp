@@ -150,6 +150,12 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 				{
 					if (ATargetZone* Candidate = Cast<ATargetZone>(AttachedActor))
 					{
+						// Level-wide by EnemyType, not scoped to CurrentRoom - if two rooms in a
+						// future level both have a same-type pen, the later room's zone silently
+						// wins for every enemy of that type across the whole level (harmless today:
+						// ATargetZone::HandleZoneOverlap gates on type only, never room identity -
+						// but this map is not "this room's zone," it's "a zone of this type
+						// somewhere in the level").
 						ZoneByType.Add(Zone.EnemyType, Candidate);
 						break;
 					}
