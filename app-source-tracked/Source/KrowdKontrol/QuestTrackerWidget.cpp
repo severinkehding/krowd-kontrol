@@ -387,24 +387,23 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 		}
 	}
 
+	FText BaseLine;
 	if (FocusIndex == INDEX_NONE)
 	{
 		// Every room in chain order is cleared - the last gate has opened.
-		const FText BaseLine = NSLOCTEXT("QuestTrackerWidget", "RoomStateDoorOpen", "DOOR OPEN");
-		RoomStateText->SetText(DirectionGlyph.IsEmpty()
-			? BaseLine
-			: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateWithDirectionFormat", "{0} {1}"), BaseLine, DirectionGlyph));
-		return;
+		BaseLine = NSLOCTEXT("QuestTrackerWidget", "RoomStateDoorOpen", "DOOR OPEN");
 	}
-
-	const int32 RemainingCount = Rooms[FocusIndex]->GetRemainingEnemyCount();
-	FNumberFormattingOptions NoGrouping;
-	NoGrouping.SetUseGrouping(false);
-	const FText BaseLine = (RemainingCount == 1)
-		? FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateSingularFormat", "Room {0} — {1} robot left"),
-			  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping))
-		: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStatePluralFormat", "Room {0} — {1} robots left"),
-			  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping));
+	else
+	{
+		const int32 RemainingCount = Rooms[FocusIndex]->GetRemainingEnemyCount();
+		FNumberFormattingOptions NoGrouping;
+		NoGrouping.SetUseGrouping(false);
+		BaseLine = (RemainingCount == 1)
+			? FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateSingularFormat", "Room {0} — {1} robot left"),
+				  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping))
+			: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStatePluralFormat", "Room {0} — {1} robots left"),
+				  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping));
+	}
 
 	RoomStateText->SetText(DirectionGlyph.IsEmpty()
 		? BaseLine
