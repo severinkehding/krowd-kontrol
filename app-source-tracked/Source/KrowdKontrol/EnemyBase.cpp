@@ -10,6 +10,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "RoomActor.h"
 #include "CoreGlobals.h"
+#include "ControlledDurationIndicatorComponent.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -18,6 +19,8 @@ AEnemyBase::AEnemyBase()
 	// ticking is required here. This divergence from the mirrored BossBase pattern is
 	// deliberate, not an oversight - see issue #12.
 	PrimaryActorTick.bCanEverTick = true;
+
+	ControlledDurationIndicatorComponent = CreateDefaultSubobject<UControlledDurationIndicatorComponent>(TEXT("ControlledDurationIndicatorComponent"));
 }
 
 void AEnemyBase::BeginPlay()
@@ -78,6 +81,7 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 			CurrentState = EEnemyState::Alert;
 			OnControlledExpired();
 			OnEnemyControlledExpired.Broadcast();
+			ControlledDurationIndicatorComponent->Hide();
 		}
 		return;
 	}
@@ -92,6 +96,7 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 	RemainingControlledSeconds = OverrideSeconds >= 0.0f ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
 	TotalControlledSeconds = RemainingControlledSeconds;
 	OnControlledEntry(Ability);
+	ControlledDurationIndicatorComponent->Show(AbilityData::Get(Ability).Colour);
 }
 
 bool AEnemyBase::IsAttackBehaviorActive() const
@@ -127,6 +132,7 @@ void AEnemyBase::TransitionToBanked()
 	// re-enters from within OnEnemyBanked sees the terminal state immediately, and
 	// this method is already a no-op for it.
 	CurrentState = EEnemyState::Banked;
+	ControlledDurationIndicatorComponent->Hide();
 	OnEnemyBanked.Broadcast();
 }
 
@@ -210,6 +216,7 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 		return;
 	}
 	RemainingControlledSeconds = FMath::Max(0.0f, RemainingControlledSeconds - DeltaSeconds);
+	ControlledDurationIndicatorComponent->RefreshFillFraction();
 	if (RemainingControlledSeconds <= 0.0f)
 	{
 		// Operator decision, issue #138, 2026-08-18: duration expiring before banking
@@ -219,6 +226,7 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 		CurrentState = EEnemyState::Alert;
 		OnControlledExpired();
 		OnEnemyControlledExpired.Broadcast();
+		ControlledDurationIndicatorComponent->Hide();
 	}
 }
 

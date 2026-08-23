@@ -10,6 +10,7 @@
 class UPlayerEnergyComponent;
 class UPointLightComponent;
 class ARoomActor;
+class UControlledDurationIndicatorComponent;
 
 // Idle -> Alert -> Attack -> Controlled -> Banked, with Banked as the only reachable
 // "defeated" state. Transition table (no other edges exist):
@@ -153,6 +154,14 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// == 0 boundary IsRoomCleared() coverage already exercises.
 	friend class FKrowdKontrolRoomActorRemainingEnemyCountTest;
 
+	// Same grant, for the Controlled-duration indicator test (issue #225), which
+	// drives a plain AEnemyBaseTestActor through Idle->Alert->Controlled and calls
+	// the private TickControlledDuration directly to prove the indicator's
+	// reflected FillFraction decreases in lockstep with the real duration tick,
+	// not just a mocked value. Non-transitive - see MusicSubsystem.h's
+	// friend-class comment.
+	friend class FKrowdKontrolControlledDurationIndicatorComponentTest;
+
 public:
 	AEnemyBase();
 
@@ -203,6 +212,14 @@ public:
 	// ReceiveControl() call - callers computing Remaining/Total must first confirm
 	// GetEnemyState() == Controlled (or has been) to avoid a 0.0f/0.0f division.
 	float GetTotalControlledSeconds() const { return TotalControlledSeconds; }
+
+	// The Controlled-duration bar (issue #225, PRD docs/prd-enemy-effect-indicator.md
+	// REQ-1) - base-class-owned since every field it reads
+	// (RemainingControlledSeconds/TotalControlledSeconds) already is. Public so the
+	// Automation test (and any future MCP-driven holdout, which per project
+	// convention can only read reflected UPROPERTY state) can assert
+	// bIsVisible/FillFraction directly without needing friendship for this alone.
+	UControlledDurationIndicatorComponent* GetControlledDurationIndicatorComponent() const { return ControlledDurationIndicatorComponent; }
 
 	// Idle->Alert proximity radius. Base-defined, not overridden per concrete type -
 	// issue #12's AC only calls out attack range as the per-type-overridable one.
@@ -402,6 +419,9 @@ private:
 	float RemainingControlledSeconds = 0.0f;
 
 	float TotalControlledSeconds = 0.0f;
+
+	UPROPERTY()
+	TObjectPtr<UControlledDurationIndicatorComponent> ControlledDurationIndicatorComponent;
 
 	// UPROPERTY so this reference doesn't leave a dangling pointer if the room is
 	// ever garbage-collected while nothing else references it - same rationale
