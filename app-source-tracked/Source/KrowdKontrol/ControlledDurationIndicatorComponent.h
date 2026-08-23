@@ -18,10 +18,11 @@ class UMaterialInterface;
 //
 // Base-class-owned (CreateDefaultSubobject'd once in AEnemyBase::AEnemyBase(), not
 // per-subclass) since every field it reads (RemainingControlledSeconds/
-// TotalControlledSeconds/ControllingAbility, via GetRemainingControlledSeconds()/
+// TotalControlledSeconds, via GetRemainingControlledSeconds()/
 // GetTotalControlledSeconds() only - never the private field directly, per this
 // issue's own instruction) is already base-class-owned with zero per-subclass
-// variation.
+// variation. (Fill colour is base-class-sourced too, but arrives as a Show()
+// parameter rather than being read directly by this component.)
 //
 // Event-driven, not Tick()-driven: AEnemyBase calls Show()/Hide()/RefreshFillFraction()
 // directly at the exact points its own state machine already changes CurrentState
@@ -69,10 +70,11 @@ public:
 	// Casts GetOwner() to AEnemyBase and recomputes FillFraction from
 	// GetRemainingControlledSeconds()/GetTotalControlledSeconds() - per the issue's
 	// explicit instruction, NEVER reads AEnemyBase's private RemainingControlledSeconds
-	// field directly, even though this module could grant a friend. No-op (leaves
-	// FillFraction unchanged) if GetOwner() is not an AEnemyBase or
-	// GetTotalControlledSeconds() is <= 0 (guards the 0/0 division
-	// GetTotalControlledSeconds()'s own doc comment warns callers about).
+	// field directly, even though this module could grant a friend. True no-op if
+	// GetOwner() is not an AEnemyBase. If GetTotalControlledSeconds() is <= 0 (guards
+	// the 0/0 division GetTotalControlledSeconds()'s own doc comment warns callers
+	// about), FillFraction is reset to 0.0f (not left at its previous value) and the
+	// visual is re-applied to match.
 	UFUNCTION(BlueprintCallable, Category = "Controlled Duration Indicator")
 	void RefreshFillFraction();
 

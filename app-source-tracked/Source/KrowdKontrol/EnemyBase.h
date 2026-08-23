@@ -215,9 +215,9 @@ public:
 
 	// The Controlled-duration bar (issue #225, PRD docs/prd-enemy-effect-indicator.md
 	// REQ-1) - base-class-owned since every field it reads
-	// (RemainingControlledSeconds/TotalControlledSeconds/ControllingAbility) already
-	// is. Public so the Automation test (and any future MCP-driven holdout, which
-	// per project convention can only read reflected UPROPERTY state) can assert
+	// (RemainingControlledSeconds/TotalControlledSeconds) already is. Public so the
+	// Automation test (and any future MCP-driven holdout, which per project
+	// convention can only read reflected UPROPERTY state) can assert
 	// bIsVisible/FillFraction directly without needing friendship for this alone.
 	UControlledDurationIndicatorComponent* GetControlledDurationIndicatorComponent() const { return ControlledDurationIndicatorComponent; }
 

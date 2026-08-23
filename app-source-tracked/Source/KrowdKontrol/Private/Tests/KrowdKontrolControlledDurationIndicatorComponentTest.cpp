@@ -167,8 +167,46 @@ bool FKrowdKontrolControlledDurationIndicatorComponentTest::RunTest(const FStrin
 				const float TypeMarkerZ = WorldBomber->EnemyTypeIndicatorComponent->MarkerTextComponent->GetRelativeLocation().Z;
 				TestNotEqual(TEXT("(g) The duration bar's world-space Z offset should differ from the type marker's (REQ-3: siblings, not stacked)"),
 					DurationBarZ, TypeMarkerZ);
+
+				// (g2) Idempotent-init guard: a second InitializeIndicatorVisual() call (the
+				// shape Show() takes on a later ReceiveControl() in the same PIE session)
+				// must not re-create FillMeshComponent.
+				UStaticMeshComponent* FillMeshBeforeReinit = WorldIndicator->FillMeshComponent.Get();
+				WorldIndicator->InitializeIndicatorVisual();
+				TestEqual(TEXT("(g2) A second InitializeIndicatorVisual() call must not replace the existing FillMeshComponent"),
+					WorldIndicator->FillMeshComponent.Get(), FillMeshBeforeReinit);
+
+				// (g3) Left-anchored drain math: as FillFraction drops below 1.0, the mesh's
+				// relative X location must move negative (left) so its left edge stays fixed
+				// rather than shrinking symmetrically about the enemy's centre.
+				const float RelativeXAtFullFraction = WorldIndicator->FillMeshComponent->GetRelativeLocation().X;
+				const float FearBaseDurationSeconds = AbilityData::Get(EAbilitySlot::Fear).BaseDurationSeconds;
+				WorldBomber->TickControlledDuration(FearBaseDurationSeconds / 2.0f);
+				TestTrue(TEXT("(g3) FillMeshComponent's relative X should move negative (left) as FillFraction drains below 1.0"),
+					WorldIndicator->FillMeshComponent->GetRelativeLocation().X < RelativeXAtFullFraction);
 			}
 		}
+	}
+
+	// (h) Early-wake path (issue #257): being hit by a different ability while
+	// Controlled by Sleep (bWakesEarlyOnOtherAbilityHit) must hide the indicator on
+	// the same call that reverts the enemy to Alert - this is a distinct call site
+	// from TickControlledDuration's natural-expiry Hide() (d) and TransitionToBanked's
+	// (e), and was previously untested.
+	AEnemyBaseTestActor* WakeEarlyEnemy = NewObject<AEnemyBaseTestActor>();
+	UControlledDurationIndicatorComponent* WakeEarlyIndicator = WakeEarlyEnemy->GetControlledDurationIndicatorComponent();
+	WakeEarlyEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	WakeEarlyEnemy->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled by Sleep
+	if (TestNotNull(TEXT("WakeEarlyEnemy should own a ControlledDurationIndicatorComponent"), WakeEarlyIndicator))
+	{
+		TestTrue(TEXT("(h) bIsVisible should be true after the initial Sleep cast"), WakeEarlyIndicator->bIsVisible);
+	}
+	WakeEarlyEnemy->ReceiveControl(EAbilitySlot::Root); // different ability while still Controlled by Sleep -> early wake
+	TestEqual(TEXT("(h) WakeEarlyEnemy should have reverted to Alert on the early wake"),
+		static_cast<uint8>(WakeEarlyEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	if (WakeEarlyIndicator)
+	{
+		TestFalse(TEXT("(h) bIsVisible should be false immediately after the early-wake Controlled -> Alert reversion"), WakeEarlyIndicator->bIsVisible);
 	}
 
 	return true;

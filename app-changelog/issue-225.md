@@ -55,11 +55,32 @@ colour, strictly-decreasing fraction under repeated ticks, hide on natural expir
 hide on banking, the full sequence repeated on an actor with explicitly no `UWorld`
 (the dominant test shape across this module — proves the `RegisterComponent()`-needs-a-World
 guard), and the REQ-3 sibling-offset guard against `UEnemyTypeIndicatorComponent` on a
-`CreateNewMap()`-spawned `ABomberEnemy`.
+`CreateNewMap()`-spawned `ABomberEnemy`. Three more cases added during review self-fix:
+(g2) a second `InitializeIndicatorVisual()` call on the same World-backed indicator must
+not replace `FillMeshComponent` (proves the idempotent-init guard, previously
+unexercised since cases (a)-(f) never reach a real `World` and (g) only initialized
+once); (g3) `FillMeshComponent`'s relative X must move negative as `FillFraction` drains
+below 1.0 (proves the left-anchored drain math actually anchors left, not just that
+some transform changes); (h) the Sleep early-wake path
+(`ReceiveControl(Sleep)` then `ReceiveControl(Root)` while still `Controlled`) must hide
+the indicator on the same call that reverts the enemy to `Alert` — this is a third,
+previously-untested `Hide()` call site distinct from natural expiry (d) and banking (e).
 
 ## Deviation from the plan
 
-None functionally — one build-time fix beyond the plan's literal code blocks: the new
+Review self-fix pass: corrected two doc comments that described behavior the code
+doesn't actually have. `RefreshFillFraction()`'s comment claimed a "No-op (leaves
+`FillFraction` unchanged)" on `GetTotalControlledSeconds() <= 0`, but the implementation
+resets `FillFraction` to `0.0f` and re-applies the visual on that branch — only the
+`GetOwner()`-not-an-`AEnemyBase` branch is a true no-op; the comment now says so. Two
+"fields it reads" comments (on the component's class doc and
+`AEnemyBase::GetControlledDurationIndicatorComponent()`) also listed `ControllingAbility`
+as a field the component reads via `GetRemainingControlledSeconds()`/
+`GetTotalControlledSeconds()` — it doesn't; fill colour arrives as a `Show()` parameter
+sourced by the caller, not read by the component itself. Both fixed; no behavior change,
+comment-only.
+
+Beyond that, no functional deviation from the plan — one build-time fix beyond the plan's literal code blocks: the new
 test's REQ-3 case needs `UTextRenderComponent`'s full type (only forward-declared in
 `EnemyTypeIndicatorComponent.h`) to call `GetRelativeLocation()` on
 `MarkerTextComponent`, so the test file also includes
