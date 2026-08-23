@@ -64,6 +64,8 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Stun TargetType should be ThrownCircle"), static_cast<uint8>(Stun.TargetType), static_cast<uint8>(EAbilityTargetType::ThrownCircle));
 	TestEqual(TEXT("Stun Colour should be the reserved White"), Stun.Colour, ReservedGameplayColours::GetWhite());
 	TestEqual(TEXT("Stun ColourTag should be White"), Stun.ColourTag, ReservedGameplayColours::GetWhiteTag());
+	TestEqual(TEXT("Stun KeyBindingLabel should be the canonical LMB binding"), Stun.KeyBindingLabel.ToString(), FString(TEXT("LMB")));
+	TestFalse(TEXT("Stun EffectDescription should not be empty"), Stun.EffectDescription.IsEmpty());
 
 	const FAbilityData& Sleep = AbilityData::Get(EAbilitySlot::Sleep);
 	TestEqual(TEXT("Sleep BaseDurationSeconds should be 5.0"), Sleep.BaseDurationSeconds, 5.0f);
@@ -72,6 +74,8 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Sleep Colour should be the reserved Blue"), Sleep.Colour, ReservedGameplayColours::GetBlue());
 	TestEqual(TEXT("Sleep ColourTag should be Blue"), Sleep.ColourTag, ReservedGameplayColours::GetBlueTag());
 	TestEqual(TEXT("Sleep CounteredEnemyType should be SN-1PR"), static_cast<uint8>(Sleep.CounteredEnemyType), static_cast<uint8>(EEnemyType::SN_1PR));
+	TestEqual(TEXT("Sleep KeyBindingLabel should be the canonical RMB binding"), Sleep.KeyBindingLabel.ToString(), FString(TEXT("RMB")));
+	TestFalse(TEXT("Sleep EffectDescription should not be empty"), Sleep.EffectDescription.IsEmpty());
 
 	const FAbilityData& Root = AbilityData::Get(EAbilitySlot::Root);
 	TestEqual(TEXT("Root BaseDurationSeconds should be 5.0"), Root.BaseDurationSeconds, 5.0f);
@@ -80,6 +84,8 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Root Colour should be the reserved Teal"), Root.Colour, ReservedGameplayColours::GetTeal());
 	TestEqual(TEXT("Root ColourTag should be Teal"), Root.ColourTag, ReservedGameplayColours::GetTealTag());
 	TestEqual(TEXT("Root CounteredEnemyType should be TR-UPR"), static_cast<uint8>(Root.CounteredEnemyType), static_cast<uint8>(EEnemyType::TR_UPR));
+	TestEqual(TEXT("Root KeyBindingLabel should be the canonical Q binding"), Root.KeyBindingLabel.ToString(), FString(TEXT("Q")));
+	TestFalse(TEXT("Root EffectDescription should not be empty"), Root.EffectDescription.IsEmpty());
 
 	const FAbilityData& Fear = AbilityData::Get(EAbilitySlot::Fear);
 	TestEqual(TEXT("Fear BaseDurationSeconds should be 5.0"), Fear.BaseDurationSeconds, 5.0f);
@@ -88,6 +94,8 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Fear Colour should be the reserved Orange"), Fear.Colour, ReservedGameplayColours::GetOrange());
 	TestEqual(TEXT("Fear ColourTag should be Orange"), Fear.ColourTag, ReservedGameplayColours::GetOrangeTag());
 	TestEqual(TEXT("Fear CounteredEnemyType should be B0-0MR"), static_cast<uint8>(Fear.CounteredEnemyType), static_cast<uint8>(EEnemyType::B0_0MR));
+	TestEqual(TEXT("Fear KeyBindingLabel should be the canonical MMB binding"), Fear.KeyBindingLabel.ToString(), FString(TEXT("MMB")));
+	TestFalse(TEXT("Fear EffectDescription should not be empty"), Fear.EffectDescription.IsEmpty());
 
 	const FAbilityData& Snare = AbilityData::Get(EAbilitySlot::Snare);
 	TestEqual(TEXT("Snare BaseDurationSeconds should be 4.0"), Snare.BaseDurationSeconds, 4.0f);
@@ -96,6 +104,8 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Snare Colour should be the reserved Purple"), Snare.Colour, ReservedGameplayColours::GetPurple());
 	TestEqual(TEXT("Snare ColourTag should be Purple"), Snare.ColourTag, ReservedGameplayColours::GetPurpleTag());
 	TestEqual(TEXT("Snare CounteredEnemyType should be RU-NNR"), static_cast<uint8>(Snare.CounteredEnemyType), static_cast<uint8>(EEnemyType::RU_NNR));
+	TestEqual(TEXT("Snare KeyBindingLabel should be the canonical E binding"), Snare.KeyBindingLabel.ToString(), FString(TEXT("E")));
+	TestFalse(TEXT("Snare EffectDescription should not be empty"), Snare.EffectDescription.IsEmpty());
 
 	// (4) Stun is the only colour-neutral ability - the acceptance criterion "Stun has
 	// no countered-enemy value set." (Stun.CounteredEnemyType is deliberately not
