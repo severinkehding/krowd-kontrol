@@ -1,7 +1,7 @@
 # The validation harness
 
 ```bash
-python harness/ci.py --quick   # static + unit. Runs anywhere, no app required.
+python harness/ci.py --quick   # static + unit + pie (KrowdKontrol.PIE.*, issue #237).
 python harness/ci.py           # the whole gate. Needs a real app - see below.
 ```
 
