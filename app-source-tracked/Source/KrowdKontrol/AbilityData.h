@@ -89,6 +89,18 @@ struct FAbilityData
 	// completely unmodified). 1.0f (full speed) is the safe inert default for every
 	// ability that never reaches either flag - see AEnemyBase::GetControlledSpeedMultiplier().
 	float ControlledSpeedMultiplier = 1.0f;
+
+	// One-line effect description (issue #260, PRD 13 REQ-2) - the tooltip widget's
+	// sole source for ability-flavour text; no other place in the codebase should
+	// hardcode a per-ability description.
+	FText EffectDescription;
+
+	// Canonical display binding (operator ruling 2026-08-23, PRD 13 REQ-2): the
+	// OG-GDD scheme - LMB=Stun, RMB=Sleep, Q=Root, E=Snare, MMB=Fear - not the live
+	// 1-5 DefaultInput.ini mappings, which remain functional legacy alternates that
+	// are deliberately never surfaced in UI. A full rebinding system is out of scope;
+	// this is a static display label, not read from live input config.
+	FText KeyBindingLabel;
 };
 
 namespace AbilityData

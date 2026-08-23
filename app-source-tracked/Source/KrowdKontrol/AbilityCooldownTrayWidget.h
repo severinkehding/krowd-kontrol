@@ -43,6 +43,10 @@ class KROWDKONTROL_API UAbilityCooldownTrayWidget : public UUserWidget
 	friend class FKrowdKontrolAbilityCooldownTrayWidgetTest;
 	friend class FKrowdKontrolReservedGameplayColoursTest;
 
+	// Issue #260's tooltip-wiring integration check reads SlotIconBorders[i]->GetToolTip()
+	// to confirm BuildWidgetTree() actually attached a UAbilityTooltipWidget per slot.
+	friend class FKrowdKontrolAbilityTooltipWidgetTest;
+
 public:
 	static constexpr int32 NumAbilitySlots = static_cast<int32>(EAbilitySlot::Count);
 

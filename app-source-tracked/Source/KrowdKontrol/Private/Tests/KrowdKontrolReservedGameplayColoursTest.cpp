@@ -27,6 +27,8 @@
 #include "PostRunSummaryWidget.h"
 #include "OnScreenPromptWidget.h"
 #include "BriefingCardWidget.h"
+#include "AbilityTooltipWidget.h"
+#include "AbilityData.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Components/Border.h"
@@ -171,7 +173,39 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			AllReserved.Contains(BriefingWidget->NewAbilityText->GetColorAndOpacity().GetSpecifiedColor()));
 	}
 
-	// (6) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
+	// (6) Ability tooltip widget audit (issue #260) - root border + all 6 text rows
+	// must not collide with a reserved gameplay colour; the swatch border is
+	// deliberately excluded (see comment below) since it is SUPPOSED to render one
+	// of the 5 reserved colours (or White, for Stun) - same exclusion rationale as
+	// AbilityCooldownTrayWidget's SlotIconLabels above.
+	UAbilityTooltipWidget* TooltipWidget =
+		CreateWidget<UAbilityTooltipWidget>(World, UAbilityTooltipWidget::StaticClass());
+	if (TestNotNull(TEXT("UAbilityTooltipWidget should construct"), TooltipWidget))
+	{
+		TooltipWidget->SetAbility(EAbilitySlot::Sleep);
+		TestFalse(TEXT("Tooltip root border colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(TooltipWidget->RootBorder->GetBrushColor()));
+		TestFalse(TEXT("Tooltip name text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(TooltipWidget->NameText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Tooltip key bind text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(TooltipWidget->KeyBindText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Tooltip description text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(TooltipWidget->DescriptionText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Tooltip duration text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(TooltipWidget->DurationText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Tooltip range/shape text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(TooltipWidget->RangeShapeText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Tooltip enemy type text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(TooltipWidget->EnemyTypeText->GetColorAndOpacity().GetSpecifiedColor()));
+
+		// (6a) The swatch DOES collide by design - proves the exclusion above isn't
+		// hiding a real bug, mirroring check (2b)'s locked-border-colour precedent of
+		// asserting the *opposite* case explicitly rather than only omitting a check.
+		TestTrue(TEXT("Tooltip swatch colour SHOULD match AbilityData's reserved colour for the bound ability"),
+			TooltipWidget->SwatchBorder->GetBrushColor() == AbilityData::Get(EAbilitySlot::Sleep).Colour);
+	}
+
+	// (7) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
 	// genuine collision, not just on the (never-colliding) real widget colours above -
 	// guards against an inverted/typo'd assertion silently passing forever.
 	UBorder* CollidingBorder = NewObject<UBorder>(GetTransientPackage());

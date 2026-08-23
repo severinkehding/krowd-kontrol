@@ -19,6 +19,8 @@ namespace
 			.bFleesFromCasterWhileControlled = false,
 			.bAllowsMovementWhileControlled = false,
 			.ControlledSpeedMultiplier = 1.0f,
+			.EffectDescription = NSLOCTEXT("AbilityData", "StunEffectDescription", "Stuns the target briefly; works on any enemy, no colour match needed."),
+			.KeyBindingLabel = NSLOCTEXT("AbilityData", "StunKeyBinding", "LMB"),
 		};
 		return Data;
 	}
@@ -39,6 +41,8 @@ namespace
 			.bFleesFromCasterWhileControlled = false,
 			.bAllowsMovementWhileControlled = false,
 			.ControlledSpeedMultiplier = 1.0f,
+			.EffectDescription = NSLOCTEXT("AbilityData", "SleepEffectDescription", "Puts the target to sleep; wakes early if hit by another ability."),
+			.KeyBindingLabel = NSLOCTEXT("AbilityData", "SleepKeyBinding", "RMB"),
 		};
 		return Data;
 	}
@@ -59,6 +63,8 @@ namespace
 			.bFleesFromCasterWhileControlled = false,
 			.bAllowsMovementWhileControlled = false,
 			.ControlledSpeedMultiplier = 1.0f,
+			.EffectDescription = NSLOCTEXT("AbilityData", "RootEffectDescription", "Roots a line of targets in place; they can still attack while rooted."),
+			.KeyBindingLabel = NSLOCTEXT("AbilityData", "RootKeyBinding", "Q"),
 		};
 		return Data;
 	}
@@ -79,6 +85,8 @@ namespace
 			.bFleesFromCasterWhileControlled = true,
 			.bAllowsMovementWhileControlled = false,
 			.ControlledSpeedMultiplier = 1.0f,
+			.EffectDescription = NSLOCTEXT("AbilityData", "FearEffectDescription", "Frightens nearby targets into fleeing from you."),
+			.KeyBindingLabel = NSLOCTEXT("AbilityData", "FearKeyBinding", "MMB"),
 		};
 		return Data;
 	}
@@ -99,6 +107,8 @@ namespace
 			.bFleesFromCasterWhileControlled = false,
 			.bAllowsMovementWhileControlled = true,
 			.ControlledSpeedMultiplier = 0.5f,
+			.EffectDescription = NSLOCTEXT("AbilityData", "SnareEffectDescription", "Slows a cone of targets to half speed; they can still move and attack."),
+			.KeyBindingLabel = NSLOCTEXT("AbilityData", "SnareKeyBinding", "E"),
 		};
 		return Data;
 	}

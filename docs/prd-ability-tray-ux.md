@@ -25,7 +25,7 @@ a human reading the logs.
   brief ready-flash is welcome, placeholder-quality).
 - Automation tests: fill/number reflect a seeded cooldown; clears on expiry.
 
-### REQ-2: Hover tooltips (P0)
+### REQ-2: Hover tooltips (P0) — ✅ implemented, issue #260
 - Hovering a tile with the (new, in-game) cursor shows a compact tooltip:
   ability name, current key binding(s), one-line effect description, duration,
   range/shape, and its colour-matched enemy type with the reserved-colour
