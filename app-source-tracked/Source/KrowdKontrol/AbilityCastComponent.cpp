@@ -89,22 +89,10 @@ int32 UAbilityCastComponent::TryCastThrownAbilityAtLocation(EAbilitySlot Ability
 	}
 
 	const float RadiusSquared = FMath::Square(ThrownCircleLandingRadiusUnits);
-	int32 AffectedCount = 0;
-	for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
+	const int32 AffectedCount = ApplyControlToEnemiesInShape(Ability, [&ClampedLocation, RadiusSquared](const FVector& EnemyLocation)
 	{
-		AEnemyBase* Enemy = *It;
-		if (FVector::DistSquared(Enemy->GetActorLocation(), ClampedLocation) > RadiusSquared)
-		{
-			continue;
-		}
-		const bool bWasFreshlyTargetable = (Enemy->GetEnemyState() == EEnemyState::Alert || Enemy->GetEnemyState() == EEnemyState::Attack);
-		Enemy->ReceiveControl(Ability);
-		if (bWasFreshlyTargetable)
-		{
-			++AffectedCount;
-			OnAbilityCastApplied.Broadcast(Ability, Enemy);
-		}
-	}
+		return FVector::DistSquared(EnemyLocation, ClampedLocation) <= RadiusSquared;
+	});
 
 	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastThrownAbilityAtLocation: exit, Ability=%s landed at clamped location, AffectedCount=%d"),
 		*UEnum::GetValueAsString(Ability), AffectedCount);
@@ -201,22 +189,10 @@ int32 UAbilityCastComponent::TryCastLineAbilityTowardLocation(EAbilitySlot Abili
 	}
 
 	const float WidthSquared = FMath::Square(LineHitWidthUnits);
-	int32 AffectedCount = 0;
-	for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
+	const int32 AffectedCount = ApplyControlToEnemiesInShape(Ability, [&OwnerLocation, &LineEnd, WidthSquared](const FVector& EnemyLocation)
 	{
-		AEnemyBase* Enemy = *It;
-		if (ComputeDistanceSquaredFromSegment(Enemy->GetActorLocation(), OwnerLocation, LineEnd) > WidthSquared)
-		{
-			continue;
-		}
-		const bool bWasFreshlyTargetable = (Enemy->GetEnemyState() == EEnemyState::Alert || Enemy->GetEnemyState() == EEnemyState::Attack);
-		Enemy->ReceiveControl(Ability);
-		if (bWasFreshlyTargetable)
-		{
-			++AffectedCount;
-			OnAbilityCastApplied.Broadcast(Ability, Enemy);
-		}
-	}
+		return ComputeDistanceSquaredFromSegment(EnemyLocation, OwnerLocation, LineEnd) <= WidthSquared;
+	});
 
 	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastLineAbilityTowardLocation: exit, Ability=%s AffectedCount=%d"),
 		*UEnum::GetValueAsString(Ability), AffectedCount);
@@ -338,4 +314,25 @@ AEnemyBase* UAbilityCastComponent::FindNearestValidTarget() const
 		NearestDistSquared = DistSquared;
 	}
 	return Nearest;
+}
+
+int32 UAbilityCastComponent::ApplyControlToEnemiesInShape(EAbilitySlot Ability, TFunctionRef<bool(const FVector& EnemyLocation)> IsEnemyInShape)
+{
+	int32 AffectedCount = 0;
+	for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
+	{
+		AEnemyBase* Enemy = *It;
+		if (!IsEnemyInShape(Enemy->GetActorLocation()))
+		{
+			continue;
+		}
+		const bool bWasFreshlyTargetable = (Enemy->GetEnemyState() == EEnemyState::Alert || Enemy->GetEnemyState() == EEnemyState::Attack);
+		Enemy->ReceiveControl(Ability);
+		if (bWasFreshlyTargetable)
+		{
+			++AffectedCount;
+			OnAbilityCastApplied.Broadcast(Ability, Enemy);
+		}
+	}
+	return AffectedCount;
 }

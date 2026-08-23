@@ -201,4 +201,12 @@ private:
 	// Maps an EAbilityRange tier to the matching ShortThrowRangeUnits /
 	// MediumThrowRangeUnits / LongThrowRangeUnits property.
 	float GetThrowRangeUnitsForTier(EAbilityRange Range) const;
+
+	// Shared AoE-sweep body for TryCastThrownAbilityAtLocation and
+	// TryCastLineAbilityTowardLocation - both call ReceiveControl(Ability) on every
+	// AEnemyBase for which IsEnemyInShape(EnemyLocation) returns true, counting and
+	// broadcasting only the ones that were Alert/Attack immediately beforehand. The two
+	// callers differ only in shape (circle-around-a-point vs strip-around-a-segment),
+	// passed in as IsEnemyInShape.
+	int32 ApplyControlToEnemiesInShape(EAbilitySlot Ability, TFunctionRef<bool(const FVector& EnemyLocation)> IsEnemyInShape);
 };
