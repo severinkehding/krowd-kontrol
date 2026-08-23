@@ -147,6 +147,10 @@ void AKrowdKontrolPlayerController::WireWidgetsToPawn(APawn* InPawn)
 		AbilityTrayWidget->BindAbilityUnlockComponent(InPawn->FindComponentByClass<UAbilityUnlockComponent>());
 		AbilityTrayWidget->BindAbilityLockoutComponent(InPawn->FindComponentByClass<UAbilityLockoutComponent>());
 	}
+	if (QuestTrackerWidgetInstance)
+	{
+		QuestTrackerWidgetInstance->BindAbilityUnlockComponent(InPawn->FindComponentByClass<UAbilityUnlockComponent>());
+	}
 	if (EnergyMeterWidgetInstance)
 	{
 		EnergyMeterWidgetInstance->BindToEnergyComponent(InPawn->FindComponentByClass<UPlayerEnergyComponent>());

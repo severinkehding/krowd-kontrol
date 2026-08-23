@@ -4,12 +4,17 @@
 #include "EnemyBase.h"
 #include "WaveSpawnerComponent.h"
 #include "LevelLifecycleSubsystem.h"
+#include "AbilityData.h"
+#include "AbilityUnlockComponent.h"
+#include "EnemyTypeIndicatorComponent.h"
 #include "EngineUtils.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
 
 void UQuestTrackerWidget::NativeOnInitialized()
@@ -40,6 +45,7 @@ void UQuestTrackerWidget::EnsureWidgetTreeBuilt()
 		}
 		BuildWidgetTree();
 		RefreshDisplay();
+		RefreshSuggestedAbilityDisplay();
 	}
 }
 
@@ -66,9 +72,15 @@ void UQuestTrackerWidget::BuildWidgetTree()
 	TrackerSlot->SetSize(FVector2D(TrackerWidthPx, TrackerHeightPx));
 	TrackerSlot->SetPosition(FVector2D(-TrackerMarginPx, TrackerMarginPx));
 
+	UVerticalBox* Rows = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("QuestTrackerRows"));
+	ChromeBorder->SetContent(Rows);
+
 	BankedCountText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuestTrackerBankedCountText"));
 	BankedCountText->SetColorAndOpacity(TextColor);
-	ChromeBorder->SetContent(BankedCountText);
+	Rows->AddChildToVerticalBox(BankedCountText);
+
+	SuggestedAbilityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuestTrackerSuggestedAbilityText"));
+	Rows->AddChildToVerticalBox(SuggestedAbilityText);
 }
 
 void UQuestTrackerWidget::BindToLevelLifecycle()
@@ -122,6 +134,7 @@ void UQuestTrackerWidget::HandleLevelBegin(FName MapName)
 	}
 
 	RefreshDisplay();
+	RefreshSuggestedAbilityDisplay();
 }
 
 void UQuestTrackerWidget::HandleActorBanked(AActor* BankedActor)
@@ -134,12 +147,14 @@ void UQuestTrackerWidget::HandleActorBanked(AActor* BankedActor)
 	BankedActors.Add(BankedActor);
 	++BankedCount;
 	RefreshDisplay();
+	RefreshSuggestedAbilityDisplay();
 }
 
 void UQuestTrackerWidget::HandleWaveSpawned(int32 WaveIndex)
 {
 	RecountTotalEnemies();
 	RefreshDisplay();
+	RefreshSuggestedAbilityDisplay();
 }
 
 void UQuestTrackerWidget::RecountTotalEnemies()
@@ -177,4 +192,108 @@ void UQuestTrackerWidget::RefreshDisplay()
 FText UQuestTrackerWidget::GetQuestTrackerDisplayText() const
 {
 	return BankedCountText ? BankedCountText->GetText() : FText::GetEmpty();
+}
+
+void UQuestTrackerWidget::BindAbilityUnlockComponent(UAbilityUnlockComponent* UnlockComponent)
+{
+	if (!UnlockComponent)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UQuestTrackerWidget::BindAbilityUnlockComponent called with null component - suggested-ability line keeps its current fallback state."));
+		return;
+	}
+	BoundUnlockComponent = UnlockComponent;
+	// AddUniqueDynamic - same "safe to call more than once" rationale as
+	// BindToLevelLifecycle()'s own identical idiom above.
+	UnlockComponent->OnAbilityUnlocked.AddUniqueDynamic(this, &UQuestTrackerWidget::HandleAbilityUnlocked);
+	RefreshSuggestedAbilityDisplay();
+}
+
+void UQuestTrackerWidget::HandleAbilityUnlocked(EAbilitySlot Ability)
+{
+	RefreshSuggestedAbilityDisplay();
+}
+
+EAbilitySlot UQuestTrackerWidget::ComputeSuggestedAbility() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return EAbilitySlot::Stun;
+	}
+
+	TSet<EEnemyType> RemainingTypes;
+	for (TActorIterator<AEnemyBase> It(World); It; ++It)
+	{
+		if (It->GetEnemyState() == EEnemyState::Banked)
+		{
+			continue;
+		}
+		if (const UEnemyTypeIndicatorComponent* Indicator = It->FindComponentByClass<UEnemyTypeIndicatorComponent>())
+		{
+			RemainingTypes.Add(Indicator->EnemyType);
+		}
+	}
+
+	const UAbilityUnlockComponent* UnlockComponent = BoundUnlockComponent.Get();
+	if (UnlockComponent)
+	{
+		// AbilityData::GetAll() order (Stun, Sleep, Root, Fear, Snare) is this
+		// function's deterministic tie-break when more than one remaining type has
+		// an unlocked counter - the issue's AC doesn't specify a priority, and no
+		// other existing code establishes one.
+		for (const FAbilityData& Data : AbilityData::GetAll())
+		{
+			if (!Data.bIsColourNeutral && RemainingTypes.Contains(Data.CounteredEnemyType)
+				&& UnlockComponent->IsAbilityUnlocked(Data.Ability))
+			{
+				return Data.Ability;
+			}
+		}
+	}
+
+	// Universal fallback - Stun is the only bIsColourNeutral ability (MISSION.md
+	// Hard Invariant 4), so this return value doubles as the fallback sentinel
+	// RefreshSuggestedAbilityDisplay() below branches on.
+	return EAbilitySlot::Stun;
+}
+
+void UQuestTrackerWidget::RefreshSuggestedAbilityDisplay()
+{
+	if (!SuggestedAbilityText)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UQuestTrackerWidget: SuggestedAbilityText is null on '%s' (tree not built?) - suggestion will render blank."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	const EAbilitySlot Suggested = ComputeSuggestedAbility();
+	const FAbilityData& Data = AbilityData::Get(Suggested);
+
+	const FText Line = Data.bIsColourNeutral
+		? FText::Format(
+			  NSLOCTEXT("QuestTrackerWidget", "SuggestedAbilityFallbackFormat", "ANY ROBOT → {0} ({1})"),
+			  FText::FromString(AbilityData::GetDisplayName(Suggested)), Data.KeyBindingLabel)
+		: FText::Format(
+			  NSLOCTEXT("QuestTrackerWidget", "SuggestedAbilityFormat", "{0} → {1} ({2})"),
+			  FText::FromString(AbilityData::GetEnemyPluralDisplayName(Data.CounteredEnemyType)),
+			  FText::FromString(AbilityData::GetDisplayName(Suggested)), Data.KeyBindingLabel);
+
+	SuggestedAbilityText->SetText(Line);
+	// Genuine information swatch (Hard Invariant 3's exception) - mirrors
+	// AbilityCooldownTrayWidget.cpp:174's identical SetColorAndOpacity(FSlateColor(
+	// AbilityData::Get(...).Colour)) idiom. Stun's Colour is White (still one of
+	// the 5 reserved colours), so the fallback line is legitimately tinted too.
+	SuggestedAbilityText->SetColorAndOpacity(FSlateColor(Data.Colour));
+}
+
+FText UQuestTrackerWidget::GetSuggestedAbilityDisplayText() const
+{
+	return SuggestedAbilityText ? SuggestedAbilityText->GetText() : FText::GetEmpty();
+}
+
+FLinearColor UQuestTrackerWidget::GetSuggestedAbilityTextColour() const
+{
+	return SuggestedAbilityText ? SuggestedAbilityText->GetColorAndOpacity().GetSpecifiedColor() : FLinearColor::Black;
 }

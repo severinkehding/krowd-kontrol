@@ -110,4 +110,11 @@ namespace AbilityData
 	// All 5 abilities' data, in EAbilitySlot declaration order (Stun, Sleep, Root,
 	// Fear, Snare).
 	KROWDKONTROL_API TArray<FAbilityData> GetAll();
+
+	// Shared ALL-CAPS display strings for HUD prompt-style text (issue #37's
+	// AbilityUnlockPromptComponent originated these; issue #249's quest-tracker
+	// suggestion line is the second consumer - single source of truth, not a second
+	// copy of either TMap).
+	KROWDKONTROL_API const FString& GetDisplayName(EAbilitySlot Ability);
+	KROWDKONTROL_API const FString& GetEnemyPluralDisplayName(EEnemyType EnemyType);
 }

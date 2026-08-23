@@ -35,6 +35,9 @@
 #include "WaveSpawnerComponent.h"
 #include "LevelLifecycleSubsystem.h"
 #include "HUDChromeColours.h"
+#include "AbilityData.h"
+#include "AbilityUnlockComponent.h"
+#include "EnemyTypeIndicatorComponent.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -320,6 +323,99 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 				TestEqual(TEXT("A late-created widget's display should not be stuck at 0/0"),
 					LateSubscribeWidget->GetQuestTrackerDisplayText().ToString(),
 					FString::Printf(TEXT("Robots penned: 0/%d"), LateSubscribeEnemies));
+			}
+		}
+	}
+
+	// (12) Suggested-ability line - colour-matched case (issue #249's AC (a)): a
+	// live Sniper (SN_1PR) enemy present, Sleep unlocked -> the colour-matched
+	// suggestion, tinted Sleep's real reserved colour.
+	UWorld* SuggestionUnlockedWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the suggestion-unlocked test"), SuggestionUnlockedWorld))
+	{
+		SuggestionUnlockedWorld->InitializeActorsForPlay(FURL());
+
+		AEnemyBaseTestActor* SniperEnemy = SuggestionUnlockedWorld->SpawnActor<AEnemyBaseTestActor>();
+		UEnemyTypeIndicatorComponent* TypeIndicator = TestNotNull(TEXT("Sniper test enemy should spawn"), SniperEnemy)
+			? NewObject<UEnemyTypeIndicatorComponent>(SniperEnemy)
+			: nullptr;
+		if (TestNotNull(TEXT("UEnemyTypeIndicatorComponent should construct"), TypeIndicator))
+		{
+			TypeIndicator->EnemyType = EEnemyType::SN_1PR;
+			TypeIndicator->RegisterComponent();
+
+			AActor* UnlockOwner = SuggestionUnlockedWorld->SpawnActor<AActor>();
+			UAbilityUnlockComponent* UnlockComponent = TestNotNull(TEXT("Unlock component owner should spawn"), UnlockOwner)
+				? NewObject<UAbilityUnlockComponent>(UnlockOwner)
+				: nullptr;
+			if (TestNotNull(TEXT("UAbilityUnlockComponent should construct"), UnlockComponent))
+			{
+				UnlockComponent->RegisterComponent();
+				UnlockComponent->NotifyLevelReached(2); // unlocks Sleep
+
+				ULevelLifecycleSubsystem* SuggestionLifecycleSubsystem = SuggestionUnlockedWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+				if (TestNotNull(TEXT("Suggestion-unlocked test World should auto-instantiate ULevelLifecycleSubsystem"), SuggestionLifecycleSubsystem))
+				{
+					SuggestionLifecycleSubsystem->OnWorldBeginPlay(*SuggestionUnlockedWorld);
+
+					UQuestTrackerWidget* SuggestionWidget = CreateWidget<UQuestTrackerWidget>(SuggestionUnlockedWorld, UQuestTrackerWidget::StaticClass());
+					if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the suggestion-unlocked test"), SuggestionWidget))
+					{
+						SuggestionWidget->BindAbilityUnlockComponent(UnlockComponent);
+
+						TestEqual(TEXT("Suggested-ability line should show the colour-matched suggestion once Sleep is unlocked"),
+							SuggestionWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("SNIPERS → SLEEP (RMB)")));
+						TestEqual(TEXT("Suggested-ability text colour should match Sleep's reserved colour"),
+							SuggestionWidget->GetSuggestedAbilityTextColour(), AbilityData::Get(EAbilitySlot::Sleep).Colour);
+					}
+				}
+			}
+		}
+	}
+
+	// (13) Suggested-ability line - universal fallback case (issue #249's AC (b)):
+	// same Sniper present, but Sleep is NOT unlocked (component's default state -
+	// only Stun) -> falls back to "ANY ROBOT" + Stun's key/colour.
+	UWorld* SuggestionFallbackWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the suggestion-fallback test"), SuggestionFallbackWorld))
+	{
+		SuggestionFallbackWorld->InitializeActorsForPlay(FURL());
+
+		AEnemyBaseTestActor* SniperEnemy = SuggestionFallbackWorld->SpawnActor<AEnemyBaseTestActor>();
+		UEnemyTypeIndicatorComponent* TypeIndicator = TestNotNull(TEXT("Sniper test enemy should spawn for the fallback test"), SniperEnemy)
+			? NewObject<UEnemyTypeIndicatorComponent>(SniperEnemy)
+			: nullptr;
+		if (TestNotNull(TEXT("UEnemyTypeIndicatorComponent should construct for the fallback test"), TypeIndicator))
+		{
+			TypeIndicator->EnemyType = EEnemyType::SN_1PR;
+			TypeIndicator->RegisterComponent();
+
+			AActor* UnlockOwner = SuggestionFallbackWorld->SpawnActor<AActor>();
+			UAbilityUnlockComponent* UnlockComponent = TestNotNull(TEXT("Unlock component owner should spawn for the fallback test"), UnlockOwner)
+				? NewObject<UAbilityUnlockComponent>(UnlockOwner)
+				: nullptr;
+			if (TestNotNull(TEXT("UAbilityUnlockComponent should construct for the fallback test"), UnlockComponent))
+			{
+				UnlockComponent->RegisterComponent();
+				// Deliberately no NotifyLevelReached() call - only Stun unlocked, the
+				// component's real construction-time default.
+
+				ULevelLifecycleSubsystem* FallbackLifecycleSubsystem = SuggestionFallbackWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+				if (TestNotNull(TEXT("Suggestion-fallback test World should auto-instantiate ULevelLifecycleSubsystem"), FallbackLifecycleSubsystem))
+				{
+					FallbackLifecycleSubsystem->OnWorldBeginPlay(*SuggestionFallbackWorld);
+
+					UQuestTrackerWidget* FallbackWidget = CreateWidget<UQuestTrackerWidget>(SuggestionFallbackWorld, UQuestTrackerWidget::StaticClass());
+					if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the suggestion-fallback test"), FallbackWidget))
+					{
+						FallbackWidget->BindAbilityUnlockComponent(UnlockComponent);
+
+						TestEqual(TEXT("Suggested-ability line should fall back to the universal Stun suggestion when Sleep isn't unlocked"),
+							FallbackWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("ANY ROBOT → STUN (LMB)")));
+						TestEqual(TEXT("Suggested-ability text colour should match Stun's reserved (white) colour"),
+							FallbackWidget->GetSuggestedAbilityTextColour(), AbilityData::Get(EAbilitySlot::Stun).Colour);
+					}
+				}
 			}
 		}
 	}

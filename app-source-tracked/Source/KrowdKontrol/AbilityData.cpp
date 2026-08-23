@@ -140,3 +140,26 @@ TArray<FAbilityData> AbilityData::GetAll()
 {
 	return { GetStun(), GetSleep(), GetRoot(), GetFear(), GetSnare() };
 }
+
+const FString& AbilityData::GetDisplayName(EAbilitySlot Ability)
+{
+	static const TMap<EAbilitySlot, FString> AbilityDisplayNames = {
+		{ EAbilitySlot::Stun, TEXT("STUN") },
+		{ EAbilitySlot::Sleep, TEXT("SLEEP") },
+		{ EAbilitySlot::Root, TEXT("ROOT") },
+		{ EAbilitySlot::Fear, TEXT("FEAR") },
+		{ EAbilitySlot::Snare, TEXT("SNARE") },
+	};
+	return AbilityDisplayNames.FindChecked(Ability);
+}
+
+const FString& AbilityData::GetEnemyPluralDisplayName(EEnemyType EnemyType)
+{
+	static const TMap<EEnemyType, FString> EnemyPluralDisplayNames = {
+		{ EEnemyType::RU_NNR, TEXT("RUNNERS") },
+		{ EEnemyType::TR_UPR, TEXT("TROOPERS") },
+		{ EEnemyType::B0_0MR, TEXT("BOMBERS") },
+		{ EEnemyType::SN_1PR, TEXT("SNIPERS") },
+	};
+	return EnemyPluralDisplayNames.FindChecked(EnemyType);
+}
