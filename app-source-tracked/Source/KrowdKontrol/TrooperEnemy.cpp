@@ -114,6 +114,15 @@ void ATrooperEnemy::OnControlledEntry(EAbilitySlot Ability)
 	GlowLightComponent->SetIntensity(GlowIntensifiedIntensity);
 }
 
+void ATrooperEnemy::OnControlledExpired()
+{
+	// Root (bAllowsAttackWhileControlled) is the only ability that leaves the tell lit
+	// through OnControlledEntry above, so this is the only case that can ever find it
+	// still on here - safe to unconditionally clear on every Controlled -> Alert edge
+	// (pass-1 review follow-up, issue #255).
+	AttackTellLightComponent->SetIntensity(0.0f);
+}
+
 void ATrooperEnemy::OnAttackEntry()
 {
 	AttackTellLightComponent->SetIntensity(AttackTellIntensity);

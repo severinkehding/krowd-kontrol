@@ -285,6 +285,16 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) {}
 	virtual void OnAttackEntry() {}
 
+	// Fires on every Controlled -> Alert edge (see the transition table above: both
+	// the natural-duration-expiry case and the issue #257 early-wake-on-other-ability
+	// case), right before OnEnemyControlledExpired broadcasts. Every other ability
+	// already clears a concrete subclass's own AttackTellLightComponent immediately on
+	// OnControlledEntry, but Root (bAllowsAttackWhileControlled) deliberately leaves it
+	// running for the Controlled window's duration - this is the matching hook a
+	// concrete subclass overrides to clear it once that window ends without banking
+	// (pass-1 review follow-up, issue #255).
+	virtual void OnControlledExpired() {}
+
 	// Issue #121's per-enemy/per-ability duration-override point. -1.0f (base default)
 	// means "no override, use AbilityData::BaseDurationSeconds unmodified"; a concrete
 	// subclass returns a non-negative value to override it (e.g. ASniperEnemy for Sleep

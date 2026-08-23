@@ -91,6 +91,7 @@ protected:
 	virtual UPointLightComponent* GetEliteTrimLightComponent() const override { return EliteTrimLightComponent; }
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
+	virtual void OnControlledExpired() override;
 	virtual void Tick(float DeltaTime) override;
 
 	// Issue #121: SN-1PR is specifically countered by Sleep with a 7s lock vs the 5s

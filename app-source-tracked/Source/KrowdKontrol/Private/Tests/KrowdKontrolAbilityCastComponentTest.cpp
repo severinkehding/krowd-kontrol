@@ -1290,6 +1290,92 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 			CooldownComponent->IsOnCooldown(EAbilitySlot::Root));
 	}
 
+	// (u-root) End-to-end banking through the line-cast path (issue #255 acceptance
+	// criterion "rooted enemy still banks once herded"): an enemy Controlled via
+	// TryCastLineAbilityTowardLocation (this PR's new entry point) still reaches
+	// Banked through a real ARoomActor/ATargetZone physical-overlap chain - mirrors
+	// case (u-stun)'s shape exactly, substituting the line-cast entry point for the
+	// thrown-AoE one. Pre-existing coverage (KrowdKontrolRoomActorBankingWiringTest.cpp)
+	// only drove this through the low-level ReceiveControl(EAbilitySlot::Root) call,
+	// never through the actual cast component path a player uses.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		// Required for a real physics overlap to fire OnComponentBeginOverlap - see
+		// KrowdKontrolTargetZoneTest.cpp's file comment for why both calls are needed.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
+		APawn* Owner = World->SpawnActor<APawn>();
+		if (!TestNotNull(TEXT("APawn should spawn into the test World"), Owner))
+		{
+			return false;
+		}
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		// Plain (non-deferred) spawn, same as (u-stun) - BeginPlay() fires immediately
+		// with an empty TargetZones array, so EnsureBankingZonesWired() below is called
+		// explicitly after AddTargetZone().
+		ARoomActor* Room = World->SpawnActor<ARoomActor>();
+		if (!TestNotNull(TEXT("Room should spawn"), Room))
+		{
+			return false;
+		}
+		// RU-NNR matches ARunnerEnemy (RoomActorBankingWiringTest.cpp's own mapping);
+		// type-keyed acceptance means the controlling ability (Root here) doesn't need
+		// to match the zone's type, same as (u-stun).
+		AActor* Marker = Room->AddTargetZone(EEnemyType::RU_NNR);
+		if (!TestNotNull(TEXT("Marker should spawn"), Marker))
+		{
+			return false;
+		}
+		Room->EnsureBankingZonesWired();
+
+		ATargetZone* Zone = nullptr;
+		TArray<AActor*> AttachedActors;
+		Marker->GetAttachedActors(AttachedActors);
+		for (AActor* Attached : AttachedActors)
+		{
+			if (ATargetZone* AttachedZone = Cast<ATargetZone>(Attached))
+			{
+				Zone = AttachedZone;
+				break;
+			}
+		}
+		if (!TestNotNull(TEXT("Marker should have a self-healed ATargetZone attached"), Zone))
+		{
+			return false;
+		}
+
+		// On the Owner (World origin) -> +X line, well within LongThrowRangeUnits, and
+		// well clear of the zone (attached at the Room's own origin location) so no
+		// accidental overlap happens before the cast.
+		ARunnerEnemy* Enemy = World->SpawnActor<ARunnerEnemy>(FVector(700.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
+		if (!TestNotNull(TEXT("(u-root) ARunnerEnemy should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(Enemy->GetActorLocation()); // Idle -> Alert
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, FVector(500.0f, 0.0f, 0.0f));
+		TestEqual(TEXT("(u-root) The Root line cast should affect exactly the one on-line enemy"), AffectedCount, 1);
+		TestEqual(TEXT("(u-root) The enemy should be Controlled after the Root line cast"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+		Enemy->SetActorLocation(Zone->GetActorLocation(), /*bSweep=*/true);
+		TestEqual(TEXT("(u-root) A Root-line-controlled enemy overlapping a target zone should reach Banked"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+	}
+
 	return true;
 }
 
