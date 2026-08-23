@@ -335,6 +335,60 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Enemy actor should not be destroyed by reaching Banked"),
 		AlertControlled->IsActorBeingDestroyed());
 
+	// (j2) Sleep-flavour early wake (issue #257): being hit by a DIFFERENT ability
+	// while still Controlled by Sleep (whose AbilityData flags
+	// bWakesEarlyOnOtherAbilityHit) ends the Controlled window immediately, before its
+	// full duration would naturally have elapsed - the same Controlled->Alert edge
+	// (i2) exercises for natural expiry, just triggered early. Placed here, after (j)'s
+	// check on the long-lived un-rooted AlertControlled actor rather than beside
+	// (i2)/(i2c), for the same "no GC roots" reason the (v)-(y) Elite cases document at
+	// the top of this file - keeping new un-rooted NewObject<>() allocations out of the
+	// stretch AlertControlled must survive avoids a repeat of that same incidental-GC
+	// risk.
+	AEnemyBaseTestActor* WakeEarlyEnemy = NewObject<AEnemyBaseTestActor>();
+	UEnemyControlledExpiredTestListener* WakeEarlyListener = NewObject<UEnemyControlledExpiredTestListener>();
+	WakeEarlyEnemy->OnEnemyControlledExpired.AddDynamic(WakeEarlyListener, &UEnemyControlledExpiredTestListener::HandleEnemyControlledExpired);
+	WakeEarlyEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	WakeEarlyEnemy->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled by Sleep
+	TestEqual(TEXT("WakeEarlyEnemy should be Controlled after the initial Sleep cast"),
+		static_cast<uint8>(WakeEarlyEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	WakeEarlyEnemy->ReceiveControl(EAbilitySlot::Root); // different ability while still Controlled by Sleep
+	TestEqual(TEXT("A Sleep-Controlled enemy hit by a different ability should wake to Alert, not stay Controlled or reach Banked"),
+		static_cast<uint8>(WakeEarlyEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("OnEnemyControlledExpired should fire exactly once on an early wake"),
+		WakeEarlyListener->CallCount, 1);
+
+	// (j3) Re-casting the SAME ability that's already controlling the enemy is still
+	// a no-op, matching the base "no-op unless Alert/Attack" contract - there is no
+	// real gameplay path today that re-casts an ability on its own already-Controlled
+	// target, and the early-wake branch must not treat Ability == ControllingAbility
+	// as a wake trigger.
+	AEnemyBaseTestActor* SameAbilityRecastEnemy = NewObject<AEnemyBaseTestActor>();
+	UEnemyControlledExpiredTestListener* SameAbilityRecastListener = NewObject<UEnemyControlledExpiredTestListener>();
+	SameAbilityRecastEnemy->OnEnemyControlledExpired.AddDynamic(SameAbilityRecastListener, &UEnemyControlledExpiredTestListener::HandleEnemyControlledExpired);
+	SameAbilityRecastEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	SameAbilityRecastEnemy->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled by Sleep
+	SameAbilityRecastEnemy->ReceiveControl(EAbilitySlot::Sleep); // same ability again while still Controlled
+	TestEqual(TEXT("Re-casting the same ability on an already-Controlled enemy should remain Controlled"),
+		static_cast<uint8>(SameAbilityRecastEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestEqual(TEXT("OnEnemyControlledExpired must not fire when the re-cast ability matches ControllingAbility"),
+		SameAbilityRecastListener->CallCount, 0);
+
+	// (j4) An enemy Controlled by a non-wake-flagged ability (e.g. Root, whose
+	// AbilityData defaults bWakesEarlyOnOtherAbilityHit to false) hit by a DIFFERENT
+	// ability is unaffected - confirms the bWakesEarlyOnOtherAbilityHit gate itself,
+	// not just "any second hit on a Controlled enemy wakes it."
+	AEnemyBaseTestActor* NonWakeFlaggedEnemy = NewObject<AEnemyBaseTestActor>();
+	UEnemyControlledExpiredTestListener* NonWakeFlaggedListener = NewObject<UEnemyControlledExpiredTestListener>();
+	NonWakeFlaggedEnemy->OnEnemyControlledExpired.AddDynamic(NonWakeFlaggedListener, &UEnemyControlledExpiredTestListener::HandleEnemyControlledExpired);
+	NonWakeFlaggedEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	NonWakeFlaggedEnemy->ReceiveControl(EAbilitySlot::Root); // Alert -> Controlled by Root (not wake-flagged)
+	NonWakeFlaggedEnemy->ReceiveControl(EAbilitySlot::Sleep); // different ability while still Controlled by Root
+	TestEqual(TEXT("A Root-Controlled enemy hit by a different ability should remain Controlled (Root is not wake-flagged)"),
+		static_cast<uint8>(NonWakeFlaggedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestEqual(TEXT("OnEnemyControlledExpired must not fire for a non-wake-flagged ControllingAbility"),
+		NonWakeFlaggedListener->CallCount, 0);
+
 	// (k) the real Tick() override, not just the friend-called TickCheckDetection
 	// helper, must not crash when GetPlayerPawn returns nullptr (a headless test map
 	// with no PlayerController spawned) - proves the null-pawn guard actually wires

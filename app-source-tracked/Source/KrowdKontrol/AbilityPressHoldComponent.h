@@ -50,8 +50,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Press Hold", meta = (ClampMin = "0.0"))
 	float HoldThresholdSeconds = 0.1f;
 
+	// bHasCursorTargetLocation/CursorTargetLocation stand in for a single optional
+	// "const FVector* OptionalCursorTargetLocation" parameter (issue #257) - a raw
+	// pointer to a non-UObject struct type is not a UFUNCTION-reflectable parameter
+	// under UHT, so the option is expressed as two plain parameters instead. When
+	// bHasCursorTargetLocation is true, this shows a CircleAtCursor indicator at
+	// CursorTargetLocation and routes the cast through
+	// UAbilityCastComponent::TryCastThrownAbilityAtLocation instead of the default
+	// auto-nearest-target TryCastAbility path.
 	UFUNCTION(BlueprintCallable, Category = "Ability Press Hold")
-	void HandleAbilityKeyPressed(EAbilitySlot Ability);
+	void HandleAbilityKeyPressed(EAbilitySlot Ability, bool bHasCursorTargetLocation = false, FVector CursorTargetLocation = FVector::ZeroVector);
 
 	UFUNCTION(BlueprintCallable, Category = "Ability Press Hold")
 	void HandleAbilityKeyReleased(EAbilitySlot Ability);
