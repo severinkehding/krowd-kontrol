@@ -29,10 +29,8 @@ public:
 	// Read-only fired-state for tick-driven systems that must freeze on level
 	// fail but live outside the input stack (PR #279 review: the cursor-facing
 	// path). Same stale-read-safe contract as other one-shot flags.
-public:
 	bool HasLevelFailed() const { return bHasFired; }
 
-private:
 	UFUNCTION()
 	void HandleEnergyChanged(float NewEnergy);
 
