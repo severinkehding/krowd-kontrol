@@ -14,8 +14,9 @@ colour stays a bonus) — that ruling is #212's fix scope, not this PRD's.
    shows the summary (#175, in progress), and… stops. No system loads the next
    level. (Unlock-call half fixed by #217: `NotifyLevelReached` now fires via
    `UAbilityUnlockLevelSubsystem` on every level start, using an interim
-   map-name-derived index. Level-advance-on-clear with a configured sequence is
-   still open — #216.)
+   map-name-derived index. Level-advance mechanism now implemented, PR #298/#216
+   — real `LevelSequenceTable` DataTable content and `L_Level03/04/05.umap` are
+   the remaining gap.)
 2. **Rooms don't gate.** The operator walked into room 2 and 3 of L_Level01
    without touching room 1; with escalate-only detection and no de-aggro, this
    snowballed every enemy in the level into one mob converging on spawn
@@ -30,7 +31,7 @@ colour stays a bonus) — that ruling is #212's fix scope, not this PRD's.
 
 ## Requirements
 
-### REQ-1: Level advance + ability unlock on clear (P0)
+### REQ-1: Level advance + ability unlock on clear (P0) — ✅ mechanism implemented, PR #298 (issue #216); real LevelSequenceTable content + L_Level03/04/05 still pending
 - After level-clear (and summary dismissal once #175 lands), load the next level
   in the run sequence (L_Level01 → L_Level02 → … per MISSION's 5-level
   decision; final level instead fires the existing run-complete path).
@@ -94,9 +95,12 @@ trigger. Room-cleared signal for REQ-3's prompt should bind to
 
 ## Existing surfaces to build on (do not reinvent)
 `ULevelLifecycleSubsystem` (`OnLevelClear`, final-map/run-complete config);
+`ULevelSequenceSubsystem` (`LevelSequenceTable` DataTable config,
+`ComputeNextLevelMapName()`, issue #216 — resolves/loads the next map on
+`OnLevelClear`, or sets `FinalMapName` at the sequence's end);
 `UAbilityUnlockComponent::NotifyLevelReached` (mapping merged; now called via
 `UAbilityUnlockLevelSubsystem`, #217 — level index is still map-name-derived,
-pending #216's sequence config);
+pending #217's reconciliation with `ULevelSequenceSubsystem`, issue #217);
 `ARoomActor` (`OwnedEnemies`/`OnRoomClearedStateChanged`, issue #218) /
 `ADoorConnectorActor` (+ door markers, `GatingRoom`/`RefreshGateState`);
 the on-screen prompt widget + `AbilityMatchupNudgeComponent` pattern;
