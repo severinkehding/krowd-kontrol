@@ -11,6 +11,29 @@ class AActor;
 class UWaveSpawnerComponent;
 class UAbilityUnlockComponent;
 class ARoomActor;
+class ADoorConnectorActor;
+
+// 8-way world-space compass bucket for REQ-3's directional cue (PRD "Mission
+// Briefing & Live Quest Tracker", issue #250) - world +X is North, +Y is East
+// (an arbitrary but fixed convention; nothing else in this codebase defines
+// "north" yet). None means no cue is currently shown - either no resolvable
+// objective location exists, or no player pawn is resolvable
+// (UGameplayStatics::GetPlayerPawn returning null, as every existing
+// Automation test in this module does today), or the target is within
+// ComputeCompassDirection()'s own dead zone of the player.
+UENUM(BlueprintType)
+enum class EQuestDirection8 : uint8
+{
+	None,
+	North,
+	NorthEast,
+	East,
+	SouthEast,
+	South,
+	SouthWest,
+	West,
+	NorthWest
+};
 
 // Persistent quest tracker HUD widget (PRD "Mission Briefing & Live Quest Tracker"
 // REQ-2, issue #247): a small, top-right-corner-anchored panel showing
@@ -66,6 +89,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Quest Tracker")
 	FText GetRoomStateDisplayText() const;
+
+	// Read-only accessor for REQ-3's computed compass bucket - lets the
+	// Automation Framework test assert the exact enum value rather than parsing
+	// the rendered glyph character out of GetRoomStateDisplayText().
+	UFUNCTION(BlueprintPure, Category = "Quest Tracker")
+	EQuestDirection8 GetObjectiveDirection() const { return CurrentObjectiveDirection; }
 
 	// Production wiring (mirrors AbilityCooldownTrayWidget::BindAbilityUnlockComponent):
 	// seeds the suggested-ability line from the pawn's current unlock state and keeps
@@ -174,6 +203,27 @@ private:
 	// call, safe to call repeatedly.
 	void RefreshRoomStateDisplay();
 
+	// Resolves the world-space location REQ-3's directional cue should point
+	// toward, given the already-chain-sorted Rooms and the FocusIndex
+	// RefreshRoomStateDisplay() just computed. Returns false (no cue) when
+	// nothing resolvable exists. See this class's Design Decisions in plan.md
+	// for the full rationale (mirrored briefly here): the focus room's own pen
+	// (nearest un-banked target zone) for the common "Room N - K left" case, or
+	// the last room's forward door marker once every room is cleared.
+	bool ResolveObjectiveDirectionTarget(const TArray<ARoomActor*>& Rooms, int32 FocusIndex, FVector& OutTargetLocation) const;
+
+	// World-space (not player-facing-relative) 8-way compass bucket from
+	// FromLocation to ToLocation, using this codebase's flat top-down X/Y
+	// convention (mirrors UAbilityCastComponent::ComputeConeDirection/
+	// IsPointInCone's own SizeSquared2D usage) - world +X is North, +Y is East.
+	// Returns None when ToLocation is within DirectionDeadZoneRadiusUnits of
+	// FromLocation (mirrors AbilityCastComponent's own dead-zone constant).
+	static EQuestDirection8 ComputeCompassDirection(const FVector& FromLocation, const FVector& ToLocation);
+
+	// Single-character Unicode arrow glyph for a computed EQuestDirection8 -
+	// empty FText for None (no cue to render).
+	static FText GetDirectionGlyph(EQuestDirection8 Direction);
+
 	UPROPERTY()
 	TObjectPtr<UBorder> ChromeBorder;
 
@@ -204,6 +254,9 @@ private:
 	// already actor-unique.
 	UPROPERTY()
 	TArray<TWeakObjectPtr<AActor>> BankedActors;
+
+	UPROPERTY()
+	EQuestDirection8 CurrentObjectiveDirection = EQuestDirection8::None;
 
 	// Fixed pixel footprint from the viewport's top-right corner. 160px + 24px margin
 	// = 184px footprint, which is ~14.4% of a 1280px-wide viewport (this project's
