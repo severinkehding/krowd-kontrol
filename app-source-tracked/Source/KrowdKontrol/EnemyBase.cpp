@@ -11,41 +11,6 @@
 #include "RoomActor.h"
 #include "CoreGlobals.h"
 
-namespace
-{
-	// Issue #274 code-review follow-up: without this cache, IsPlayerInOwningRoom
-	// below reruns a full TActorIterator<ARoomActor> world scan + TArray allocation
-	// from scratch on every call - once per Tick() for every Idle enemy with a
-	// non-null OwningRoom while the player is in range, i.e. O(enemies x rooms) scans
-	// per frame. Collapses that down to one scan per frame shared by every enemy that
-	// ticks this frame, mirroring the existing "scan TActorIterator once, reuse
-	// across N comparisons" shape at RoomActor.cpp's BeginPlay. Rooms are static,
-	// hand-placed level geometry that never changes at runtime in this codebase today
-	// (RoomActor.h's own class comment), so a lazy once-per-frame refresh - rather
-	// than invalidating on room spawn/destroy - is safe. Single-entry (not
-	// world-keyed): this codebase never ticks more than one World at a time, and a
-	// mismatched World pointer alone forces a rescan, so switching worlds (e.g.
-	// between Automation tests) can't return stale data.
-	const TArray<ARoomActor*>& GetCachedRoomList(UWorld* World)
-	{
-		static TWeakObjectPtr<UWorld> CachedWorld;
-		static uint64 CachedFrameNumber = TNumericLimits<uint64>::Max();
-		static TArray<ARoomActor*> CachedRooms;
-
-		if (CachedWorld.Get() != World || CachedFrameNumber != GFrameCounter)
-		{
-			CachedRooms.Reset();
-			for (TActorIterator<ARoomActor> It(World); It; ++It)
-			{
-				CachedRooms.Add(*It);
-			}
-			CachedWorld = World;
-			CachedFrameNumber = GFrameCounter;
-		}
-		return CachedRooms;
-	}
-}
-
 AEnemyBase::AEnemyBase()
 {
 	// Unlike ABossBase (never ticks; every transition is externally driven),
@@ -191,12 +156,20 @@ bool AEnemyBase::IsPlayerInOwningRoom(const FVector& PlayerLocation) const
 	{
 		return true;
 	}
+	// Issue #245: while Room's first-entry countdown is running (or hasn't
+	// started yet for an un-cleared room), hold the same Idle->Alert gate
+	// closed regardless of player position - the issue's own Notes section
+	// says this must extend REQ-2's existing gate, not add a second one.
+	if (Room->IsActivationPending())
+	{
+		return false;
+	}
 	UWorld* World = GetWorld();
 	if (!World)
 	{
 		return true;
 	}
-	return ARoomActor::FindNearestRoom(PlayerLocation, GetCachedRoomList(World)) == Room;
+	return ARoomActor::FindNearestRoom(PlayerLocation, ARoomActor::GetCachedRoomList(World)) == Room;
 }
 
 void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)

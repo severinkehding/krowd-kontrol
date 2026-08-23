@@ -9,6 +9,8 @@ class APlaceholderTargetZoneActor;
 class ATargetZone;
 class UStaticMeshComponent;
 class AEnemyBase;
+class UOnScreenPromptWidget;
+class AKrowdKontrolPlayerController;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomClearedStateChanged);
 
@@ -39,6 +41,13 @@ UCLASS()
 class KROWDKONTROL_API ARoomActor : public AActor
 {
 	GENERATED_BODY()
+
+	// Grants the Automation Framework test direct access to CheckFirstEntry/
+	// AdvanceCountdown/StartCountdown/ActivateRoom below (issue #245), so a headless
+	// test can drive the first-entry countdown deterministically without a real
+	// per-frame Tick() loop - same rationale AEnemyBase's own friend-class grants
+	// document for TickCheckDetection.
+	friend class FKrowdKontrolRoomActivationCountdownTest;
 
 public:
 	ARoomActor();
@@ -96,6 +105,35 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Room|Enemies")
 	void AddOwnedEnemy(AEnemyBase* Enemy);
 
+	// Issue #245 / PRD Room Encounter Flow REQ-3: seconds the first-entry
+	// countdown runs before this room activates. Configurable per placed
+	// instance; default matches the operator's locked 3.0s decision.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room|Activation")
+	float RoomActivationCountdownSeconds = 3.0f;
+
+	// True once this room's first-entry countdown has expired - a permanent
+	// one-shot latch, never reset, so re-entry can never re-trigger it.
+	UFUNCTION(BlueprintPure, Category = "Room|Activation")
+	bool IsRoomActivated() const { return bRoomActivated; }
+
+	UFUNCTION(BlueprintPure, Category = "Room|Activation")
+	bool IsCountdownActive() const { return bCountdownActive; }
+
+	UFUNCTION(BlueprintPure, Category = "Room|Activation")
+	float GetRemainingCountdownSeconds() const { return RemainingCountdownSeconds; }
+
+	// True exactly while this room's first-entry countdown is running -
+	// AEnemyBase::IsPlayerInOwningRoom()'s Idle->Alert gate (issue #244) checks
+	// this to stay closed for the full countdown duration, per this issue's own
+	// AC wording ("While counting: the room's owned enemies hold Idle") and its
+	// Notes section ("holds that gate closed... rather than building its own
+	// separate hold mechanism"). Deliberately keyed on bCountdownActive, not on
+	// "not yet activated" more broadly - a room whose countdown was never
+	// started (CheckFirstEntry never called, e.g. every pre-#245 Automation
+	// test that drives TickCheckDetection directly without a real Tick loop)
+	// must keep the unmodified #244 gate behavior, not a new permanent hold.
+	bool IsActivationPending() const { return bCountdownActive; }
+
 	// Fires whenever IsRoomCleared() may have changed - after an owned enemy banks, or
 	// after AddOwnedEnemy() adds a not-yet-banked enemy. ADoorConnectorActor::GatingRoom
 	// binds to this rather than polling.
@@ -115,6 +153,21 @@ public:
 	// player pawn itself, and changing TickCheckDetection's signature to carry the
 	// pawn would ripple through ~150 existing Automation test call sites).
 	static ARoomActor* FindNearestRoom(const FVector& Location, const TArray<ARoomActor*>& Rooms);
+
+	// Issue #274 code-review follow-up, promoted here from EnemyBase.cpp's own
+	// anonymous namespace by issue #245: without this cache, a per-frame caller
+	// (AEnemyBase::IsPlayerInOwningRoom, and now ARoomActor::CheckFirstEntry's own
+	// 0.25s poll) would rerun a full TActorIterator<ARoomActor> world scan + TArray
+	// allocation from scratch on every call. Collapses that down to one scan per
+	// frame shared by every caller that needs it this frame, mirroring the existing
+	// "scan TActorIterator once, reuse across N comparisons" shape at this class's
+	// own BeginPlay. Rooms are static, hand-placed level geometry that never changes
+	// at runtime in this codebase today (this class's own comment above), so a lazy
+	// once-per-frame refresh - rather than invalidating on room spawn/destroy - is
+	// safe. Single-entry (not world-keyed): this codebase never ticks more than one
+	// World at a time, and a mismatched World pointer alone forces a rescan, so
+	// switching worlds (e.g. between Automation tests) can't return stale data.
+	static const TArray<ARoomActor*>& GetCachedRoomList(UWorld* World);
 
 	// Half-extents (cm) of the room's greybox floor slab - full floor is 2x this.
 	// Rooms in both hand-authored levels are spaced 3000cm apart along the chain axis
@@ -149,6 +202,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 private:
 	// Routes a banked regular enemy into its own TransitionToBanked() - the "room-
@@ -170,6 +224,42 @@ private:
 	void HandleOwnedEnemyDestroyed(AActor* DestroyedActor);
 
 	void BindOwnedEnemyDelegate(AEnemyBase* Enemy);
+
+	// Checks whether PlayerLocation just resolved to this room for the first
+	// time via FindNearestRoom, and if so starts the countdown. No-op if
+	// already activated, already counting down, or the room has nothing to
+	// hold (IsRoomCleared()). Friend-testable so the Automation test can drive
+	// it without a real Tick loop or a live player pawn.
+	void CheckFirstEntry(const FVector& PlayerLocation);
+
+	// Advances the running countdown by DeltaSeconds, refreshing the
+	// on-screen prompt digit at each integer boundary, and calling
+	// ActivateRoom() once it reaches zero. No-op if no countdown is active.
+	void AdvanceCountdown(float DeltaSeconds);
+
+	void StartCountdown();
+	void ActivateRoom();
+	void UpdateCountdownPrompt();
+
+	// Lazily resolves the world's AKrowdKontrolPlayerController-owned
+	// OnScreenPromptWidgetInstance - mirrors
+	// UAbilityMatchupNudgeComponent::ResolvePromptWidget()'s exact shape.
+	UOnScreenPromptWidget* ResolvePromptWidget();
+
+	UPROPERTY()
+	TObjectPtr<UOnScreenPromptWidget> CachedPromptWidget;
+
+	bool bHasWarnedMissingPromptWidget = false;
+
+	bool bCountdownActive = false;
+	bool bRoomActivated = false;
+	float RemainingCountdownSeconds = 0.0f;
+
+	// The last integer digit shown via ShowPrompt() during the current
+	// countdown, so UpdateCountdownPrompt() only re-calls ShowPrompt() on an
+	// actual 3->2->1 boundary crossing, not every tick. Reset to -1 by
+	// StartCountdown().
+	int32 LastDisplayedCount = -1;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room", meta = (AllowPrivateAccess = "true"))
 	TArray<FRoomTargetZone> TargetZones;

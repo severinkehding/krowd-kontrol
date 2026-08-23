@@ -1,0 +1,184 @@
+// Confirms issue #245 (PRD "Room Encounter Flow" REQ-3): on first entry into an
+// un-cleared room, ARoomActor runs a visible 3-second "3"->"2"->"1" countdown via
+// UOnScreenPromptWidget, holding its owned enemies Idle for the full duration
+// (extending AEnemyBase::IsPlayerInOwningRoom()'s issue #244 gate with
+// ARoomActor::IsActivationPending()), then activates exactly once - a permanent
+// latch that never re-triggers on re-entry or on an already-cleared room.
+//
+// Each case uses its own FAutomationEditorCommonUtils::CreateNewMap() World, per
+// this module's established per-scenario isolation convention (see
+// KrowdKontrolAbilityUnlockPromptComponentTest.cpp). Drives CheckFirstEntry/
+// AdvanceCountdown/TickCheckDetection directly via friend grants, never a real
+// per-frame Tick() loop - same rationale KrowdKontrolEnemyRoomDetectionGateTest.cpp
+// documents for its own room-gate test.
+//
+// #if-guarded so this compiles out of Shipping/packaged builds, same as the other
+// KrowdKontrol.Unit.* tests.
+
+#include "Misc/AutomationTest.h"
+#include "RoomActor.h"
+#include "EnemyBaseTestActor.h"
+#include "KrowdKontrolPlayerController.h"
+#include "OnScreenPromptWidget.h"
+#include "Tests/AutomationEditorCommon.h"
+#include "Engine/World.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/Engine.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolRoomActivationCountdownTest,
+	"KrowdKontrol.Unit.RoomActivationCountdown",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+namespace KrowdKontrolRoomActivationCountdownTest
+{
+	// Spawns a controller-backed AKrowdKontrolPlayerController with a real, live
+	// OnScreenPromptWidgetInstance - duplicated verbatim from
+	// KrowdKontrolAbilityUnlockPromptComponentTest.cpp's SpawnControllerWithPromptWidget()
+	// (this codebase duplicates this helper per test file rather than sharing it).
+	AKrowdKontrolPlayerController* SpawnControllerWithPromptWidget(UWorld* World)
+	{
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!Controller)
+		{
+			return nullptr;
+		}
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		World->AddController(Controller);
+		Controller->DispatchBeginPlay();
+		return Controller;
+	}
+}
+
+bool FKrowdKontrolRoomActivationCountdownTest::RunTest(const FString& Parameters)
+{
+	using namespace KrowdKontrolRoomActivationCountdownTest;
+
+	// (1)/(2)/(3): countdown starts on first entry only, owned enemies stay Idle for
+	// the full duration regardless of proximity, and the room activates (gate opens)
+	// at expiry.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		const FVector RoomLocation(0.f, 0.f, 0.f);
+		ARoomActor* OwnRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(RoomLocation));
+		if (!TestNotNull(TEXT("OwnRoom should spawn into the test World"), OwnRoom))
+		{
+			return false;
+		}
+
+		AEnemyBaseTestActor* GatedEnemy = World->SpawnActor<AEnemyBaseTestActor>(AEnemyBaseTestActor::StaticClass(), FTransform(RoomLocation));
+		if (!TestNotNull(TEXT("GatedEnemy should spawn into the test World"), GatedEnemy))
+		{
+			return false;
+		}
+		OwnRoom->AddOwnedEnemy(GatedEnemy);
+
+		// (1) First entry starts the countdown at the configured default.
+		OwnRoom->CheckFirstEntry(RoomLocation);
+		TestTrue(TEXT("CheckFirstEntry should start the countdown on first entry"), OwnRoom->IsCountdownActive());
+		TestEqual(TEXT("Countdown should start at RoomActivationCountdownSeconds"),
+			OwnRoom->GetRemainingCountdownSeconds(), OwnRoom->RoomActivationCountdownSeconds);
+
+		// Re-entry while already counting down must not restart it.
+		OwnRoom->CheckFirstEntry(RoomLocation);
+		TestTrue(TEXT("Countdown should still be active after a second CheckFirstEntry call"), OwnRoom->IsCountdownActive());
+		TestEqual(TEXT("A second CheckFirstEntry call must not restart the countdown"),
+			OwnRoom->GetRemainingCountdownSeconds(), OwnRoom->RoomActivationCountdownSeconds);
+
+		// (2) Owned enemy stays Idle even at zero distance from the player.
+		GatedEnemy->TickCheckDetection(RoomLocation);
+		TestEqual(TEXT("Owned enemy should stay Idle while the countdown is active, even at zero distance"),
+			static_cast<uint8>(GatedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Idle));
+
+		OwnRoom->AdvanceCountdown(1.5f);
+		TestTrue(TEXT("Countdown should still be active partway through"), OwnRoom->IsCountdownActive());
+
+		GatedEnemy->TickCheckDetection(RoomLocation);
+		TestEqual(TEXT("Owned enemy should still be Idle partway through the countdown"),
+			static_cast<uint8>(GatedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Idle));
+
+		// (3) Crossing zero activates the room and opens the gate.
+		OwnRoom->AdvanceCountdown(1.6f);
+		TestFalse(TEXT("Countdown should no longer be active once it reaches zero"), OwnRoom->IsCountdownActive());
+		TestTrue(TEXT("Room should be activated once the countdown reaches zero"), OwnRoom->IsRoomActivated());
+
+		GatedEnemy->TickCheckDetection(RoomLocation);
+		TestEqual(TEXT("Owned enemy should reach Alert once the room activates"),
+			static_cast<uint8>(GatedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+		// (4a) No re-trigger after activation.
+		OwnRoom->CheckFirstEntry(RoomLocation);
+		TestFalse(TEXT("CheckFirstEntry must not restart the countdown once the room is activated"), OwnRoom->IsCountdownActive());
+		TestEqual(TEXT("Remaining countdown should stay at zero after an already-activated room's CheckFirstEntry"),
+			OwnRoom->GetRemainingCountdownSeconds(), 0.0f);
+	}
+
+	// (4b) A vacuously-cleared room (no owned enemies) never starts a countdown.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		const FVector RoomLocation(0.f, 0.f, 0.f);
+		ARoomActor* ClearedRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(RoomLocation));
+		if (!TestNotNull(TEXT("ClearedRoom should spawn into the test World"), ClearedRoom))
+		{
+			return false;
+		}
+
+		ClearedRoom->CheckFirstEntry(RoomLocation);
+		TestFalse(TEXT("A room with no owned enemies should never start a countdown"), ClearedRoom->IsCountdownActive());
+	}
+
+	// (5) Widget text assertion: "3" -> "2" -> "1" across the countdown.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		AKrowdKontrolPlayerController* Controller = SpawnControllerWithPromptWidget(World);
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller) ||
+			!TestNotNull(TEXT("Controller should own a live OnScreenPromptWidgetInstance"), ToRawPtr(Controller->OnScreenPromptWidgetInstance)))
+		{
+			return false;
+		}
+
+		const FVector RoomLocation(0.f, 0.f, 0.f);
+		ARoomActor* OwnRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(RoomLocation));
+		AEnemyBaseTestActor* GatedEnemy = World->SpawnActor<AEnemyBaseTestActor>(AEnemyBaseTestActor::StaticClass(), FTransform(RoomLocation));
+		if (!TestNotNull(TEXT("OwnRoom should spawn into the test World"), OwnRoom) ||
+			!TestNotNull(TEXT("GatedEnemy should spawn into the test World"), GatedEnemy))
+		{
+			return false;
+		}
+		OwnRoom->AddOwnedEnemy(GatedEnemy);
+
+		OwnRoom->CheckFirstEntry(RoomLocation);
+		TestEqual(TEXT("Prompt should show '3' on countdown start"),
+			Controller->OnScreenPromptWidgetInstance->GetPromptDisplayText().ToString(), FString(TEXT("3")));
+
+		OwnRoom->AdvanceCountdown(1.1f);
+		TestEqual(TEXT("Prompt should show '2' after crossing the first boundary"),
+			Controller->OnScreenPromptWidgetInstance->GetPromptDisplayText().ToString(), FString(TEXT("2")));
+
+		OwnRoom->AdvanceCountdown(1.0f);
+		TestEqual(TEXT("Prompt should show '1' after crossing the second boundary"),
+			Controller->OnScreenPromptWidgetInstance->GetPromptDisplayText().ToString(), FString(TEXT("1")));
+	}
+
+	return true;
+}
+
+#endif // WITH_DEV_AUTOMATION_TESTS
