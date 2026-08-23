@@ -520,7 +520,11 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 
 	// (m) TryCastThrownAbilityAtLocation (issue #257): an Alert enemy inside the
 	// landing circle is Controlled by Sleep; an Alert enemy outside the circle (same
-	// throw, same clamped landing point) is untouched.
+	// throw, same clamped landing point) is untouched; an Alert enemy at exactly
+	// ThrownCircleLandingRadiusUnits from the landing point is also Controlled, since
+	// the radius check (`DistSquared > RadiusSquared`) is inclusive of the boundary
+	// itself (PR #280 review, MEDIUM finding 1 - a future `>` -> `>=` slip would
+	// silently exclude edge-of-circle enemies with no other test catching it).
 	{
 		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
@@ -538,23 +542,29 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 
 		AEnemyBaseTestActor* InCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
 		AEnemyBaseTestActor* OutOfCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OnBoundaryEnemy = World->SpawnActor<AEnemyBaseTestActor>();
 		if (!TestNotNull(TEXT("In-circle AEnemyBaseTestActor should spawn"), InCircleEnemy)
-			|| !TestNotNull(TEXT("Out-of-circle AEnemyBaseTestActor should spawn"), OutOfCircleEnemy))
+			|| !TestNotNull(TEXT("Out-of-circle AEnemyBaseTestActor should spawn"), OutOfCircleEnemy)
+			|| !TestNotNull(TEXT("On-boundary AEnemyBaseTestActor should spawn"), OnBoundaryEnemy))
 		{
 			return false;
 		}
 		InCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 		OutOfCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OnBoundaryEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 		const FVector DesiredTargetLocation(500.0f, 0.0f, 0.0f);
 		InCircleEnemy->SetActorLocation(DesiredTargetLocation + FVector(100.0f, 0.0f, 0.0f)); // 100 units from landing point, inside the 400-unit radius
 		OutOfCircleEnemy->SetActorLocation(DesiredTargetLocation + FVector(700.0f, 0.0f, 0.0f)); // 700 units away, outside the 400-unit radius
+		OnBoundaryEnemy->SetActorLocation(DesiredTargetLocation + FVector(CastComponent->ThrownCircleLandingRadiusUnits, 0.0f, 0.0f)); // exactly at the radius
 
 		const int32 AffectedCount = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Sleep, DesiredTargetLocation);
-		TestEqual(TEXT("Exactly one enemy (the in-circle one) should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("The in-circle and on-boundary enemies should be affected"), AffectedCount, 2);
 		TestEqual(TEXT("The in-circle enemy should be Controlled"),
 			static_cast<uint8>(InCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 		TestEqual(TEXT("The out-of-circle enemy should be left untouched"),
 			static_cast<uint8>(OutOfCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		TestEqual(TEXT("An enemy exactly at the radius boundary should be Controlled (inclusive boundary)"),
+			static_cast<uint8>(OnBoundaryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 	}
 
 	// (n) Range-tier clamp: a desired target location beyond Sleep's Long throw range
@@ -594,6 +604,28 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("The enemy at the clamped landing point should be affected"), AffectedCount, 1);
 		TestEqual(TEXT("The enemy at the clamped landing point should be Controlled"),
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
+	// (n2) ComputeClampedThrowLocation exact-boundary case (PR #280 review, MEDIUM
+	// finding 2): a desired location exactly at MaxRangeUnits must be returned
+	// unclamped (the branch is `Delta.SizeSquared() <= FMath::Square(MaxRangeUnits)`,
+	// inclusive), and a location just beyond it must clamp to exactly MaxRangeUnits.
+	// Needs no UWorld - ComputeClampedThrowLocation is a static pure function, same
+	// no-World shape as IntersectRayWithGroundPlane
+	// (KrowdKontrolCursorWorldPositionTest.cpp Case A).
+	{
+		const FVector OwnerLocation = FVector::ZeroVector;
+		const float MaxRangeUnits = 2000.0f;
+
+		const FVector AtBoundary(2000.0f, 0.0f, 0.0f);
+		const FVector ClampedAtBoundary = UAbilityCastComponent::ComputeClampedThrowLocation(OwnerLocation, AtBoundary, MaxRangeUnits);
+		TestTrue(TEXT("A desired location exactly at MaxRangeUnits should be returned unclamped"),
+			ClampedAtBoundary.Equals(AtBoundary, 0.5f));
+
+		const FVector BeyondBoundary(3000.0f, 0.0f, 0.0f);
+		const FVector ClampedBeyondBoundary = UAbilityCastComponent::ComputeClampedThrowLocation(OwnerLocation, BeyondBoundary, MaxRangeUnits);
+		TestTrue(TEXT("A desired location beyond MaxRangeUnits should clamp to exactly MaxRangeUnits"),
+			ClampedBeyondBoundary.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
 	}
 
 	// (o) Zero enemies in the landing circle still consumes the cooldown - contrast
@@ -663,6 +695,43 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("OnAbilityCastApplied should have fired exactly twice"), Listener->CallCount, 2);
 	}
 
+	// (p2) AoE sweep over an already-Controlled (different-ability) enemy (PR #280
+	// review, MEDIUM finding 3): TryCastThrownAbilityAtLocation's loop calls
+	// ReceiveControl unconditionally on every enemy inside the landing circle, so an
+	// enemy already Controlled by a different, non-wake-flagged ability (Root) must
+	// stay Controlled by Root and must not be double-counted/re-broadcast, since it
+	// wasn't Alert/Attack immediately before this call.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(2); // unlocks Sleep
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* AlreadyControlled = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), AlreadyControlled))
+		{
+			return false;
+		}
+		AlreadyControlled->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		AlreadyControlled->ReceiveControl(EAbilitySlot::Root); // Alert -> Controlled by Root (not wake-flagged)
+		const FVector DesiredTargetLocation(500.0f, 0.0f, 0.0f);
+		AlreadyControlled->SetActorLocation(DesiredTargetLocation); // dead centre of the landing circle
+
+		const int32 AffectedCount = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Sleep, DesiredTargetLocation);
+		TestEqual(TEXT("An already-Controlled enemy inside the circle should not be counted as freshly affected"), AffectedCount, 0);
+		TestEqual(TEXT("A Root-Controlled enemy swept by Sleep's AoE should remain Controlled by Root (not wake-flagged)"),
+			static_cast<uint8>(AlreadyControlled->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
 	// (q) Gate failure (locked ability): default UAbilityUnlockComponent state only
 	// unlocks Stun, so throwing Sleep must return -1 and change nothing, mirroring
 	// case (a)'s TryCastAbility gate-failure contract.
@@ -694,6 +763,154 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("A locked-ability throw should not change the enemy's state"),
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 		TestFalse(TEXT("A gate-failed throw must not consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Sleep));
+	}
+
+	// (r) world-paused gate via TryCastThrownAbilityAtLocation (PR #280 review, HIGH
+	// finding 1): ResolvePassedCastGates was factored out of TryCastAbility so
+	// TryCastThrownAbilityAtLocation shares the identical gate chain - this mirrors
+	// case (k), but only case (q) had exercised the new entry point's gate chain
+	// before this fix, and only for the "not unlocked" gate.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(2); // unlocks Sleep
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		const FVector DesiredTargetLocation(500.0f, 0.0f, 0.0f);
+		Enemy->SetActorLocation(DesiredTargetLocation);
+		Enemy->TickCheckDetection(DesiredTargetLocation); // Idle -> Alert
+
+		// See case (k)'s comment: SetPauserPlayerState() is what actually latches
+		// World->IsPaused() in a CreateNewMap() test World.
+		APlayerState* PauserPlayerState = NewObject<APlayerState>(Owner);
+		World->GetWorldSettings()->SetPauserPlayerState(PauserPlayerState);
+		if (!TestTrue(TEXT("World should report paused after SetPauserPlayerState()"), World->IsPaused()))
+		{
+			return false;
+		}
+
+		const int32 AffectedCount = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Sleep, DesiredTargetLocation);
+		TestEqual(TEXT("TryCastThrownAbilityAtLocation should refuse while the world is paused"), AffectedCount, -1);
+		TestEqual(TEXT("A paused-world throw should not change the enemy's state"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		TestFalse(TEXT("A paused-world throw must not consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Sleep));
+	}
+
+	// (s) briefing-visible gate via TryCastThrownAbilityAtLocation (PR #280 review,
+	// HIGH finding 1), mirroring case (l).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		if (!TestNotNull(TEXT("APawn should spawn into the test World"), Owner))
+		{
+			return false;
+		}
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(2); // unlocks Sleep
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		const FVector DesiredTargetLocation(500.0f, 0.0f, 0.0f);
+		Enemy->SetActorLocation(DesiredTargetLocation);
+		Enemy->TickCheckDetection(DesiredTargetLocation); // Idle -> Alert
+
+		// See case (l)'s comment for why this bootstraps a real possessed controller
+		// rather than just setting World pause state.
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller))
+		{
+			return false;
+		}
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		Controller->Possess(Owner);
+		World->AddController(Controller);
+		Controller->DispatchBeginPlay();
+		if (!TestNotNull(TEXT("BriefingCardWidgetInstance should exist"), ToRawPtr(Controller->BriefingCardWidgetInstance)))
+		{
+			return false;
+		}
+
+		FLevelBriefingRow Row;
+		Row.LevelDisplayName = FText::FromString(TEXT("LEVEL 1"));
+		Controller->BriefingCardWidgetInstance->ShowBriefing(Row);
+
+		const int32 AffectedCountWhileVisible = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Sleep, DesiredTargetLocation);
+		TestEqual(TEXT("TryCastThrownAbilityAtLocation should refuse while the briefing card is visible"), AffectedCountWhileVisible, -1);
+		TestEqual(TEXT("A briefing-visible throw should not change the enemy's state"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+		Controller->BriefingCardWidgetInstance->DismissBriefing();
+		const int32 AffectedCountAfterDismiss = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Sleep, DesiredTargetLocation);
+		TestEqual(TEXT("TryCastThrownAbilityAtLocation should succeed again once the briefing card is dismissed"), AffectedCountAfterDismiss, 1);
+	}
+
+	// (t) lockout gate via TryCastThrownAbilityAtLocation (PR #280 review, HIGH
+	// finding 1), mirroring case (h).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(2); // unlocks Sleep
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityLockoutComponent* LockoutComponent = NewObject<UAbilityLockoutComponent>(Owner);
+		LockoutComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		const FVector DesiredTargetLocation(500.0f, 0.0f, 0.0f);
+		Enemy->SetActorLocation(DesiredTargetLocation);
+		Enemy->TickCheckDetection(DesiredTargetLocation); // Idle -> Alert
+
+		// Locks Sleep directly - this tests TryCastThrownAbilityAtLocation's gate, not
+		// the lockout component's own trigger logic (see case (h)'s equivalent note).
+		LockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Sleep, nullptr);
+		LockoutComponent->HandlePunishmentTriggered();
+
+		const int32 AffectedCount = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Sleep, DesiredTargetLocation);
+		TestEqual(TEXT("TryCastThrownAbilityAtLocation should refuse a locked-out ability"), AffectedCount, -1);
+		TestEqual(TEXT("A locked-out throw should not change the enemy's state"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		TestFalse(TEXT("A locked-out throw must not consume the cooldown"),
 			CooldownComponent->IsOnCooldown(EAbilitySlot::Sleep));
 	}
 
