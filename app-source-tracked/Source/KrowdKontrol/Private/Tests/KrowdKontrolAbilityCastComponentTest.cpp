@@ -628,6 +628,87 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 			ClampedBeyondBoundary.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
 	}
 
+	// (m-stun) TryCastThrownAbilityAtLocation via Stun (issue #256): proves the AoE
+	// circle math (ability-agnostic, already exercised via Sleep in case (m) above)
+	// also holds for Stun - an Alert enemy inside the landing circle is Controlled,
+	// one outside is untouched. The exactly-at-radius boundary case is intentionally
+	// not re-cloned here (radius math is shared and already covered by case (m)'s
+	// OnBoundaryEnemy assertion); this case exists to prove Stun routes into the
+	// same AoE sweep, not to re-prove the radius math.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent(); // Stun is unlocked by default - no NotifyLevelReached() needed
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* InCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OutOfCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("In-circle AEnemyBaseTestActor should spawn"), InCircleEnemy)
+			|| !TestNotNull(TEXT("Out-of-circle AEnemyBaseTestActor should spawn"), OutOfCircleEnemy))
+		{
+			return false;
+		}
+		InCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OutOfCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		const FVector DesiredTargetLocation(500.0f, 0.0f, 0.0f);
+		InCircleEnemy->SetActorLocation(DesiredTargetLocation + FVector(100.0f, 0.0f, 0.0f)); // 100 units from landing point, inside the 400-unit radius
+		OutOfCircleEnemy->SetActorLocation(DesiredTargetLocation + FVector(700.0f, 0.0f, 0.0f)); // 700 units away, outside the 400-unit radius
+
+		const int32 AffectedCount = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Stun, DesiredTargetLocation);
+		TestEqual(TEXT("Only the in-circle enemy should be affected by Stun's AoE"), AffectedCount, 1);
+		TestEqual(TEXT("The in-circle enemy should be Controlled by Stun"),
+			static_cast<uint8>(InCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("The out-of-circle enemy should be left untouched"),
+			static_cast<uint8>(OutOfCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (n-stun) Range-tier clamp via Stun/Short (issue #256): closes the coverage gap
+	// PR #280 deferred - GetThrowRangeUnitsForTier's EAbilityRange::Short branch was
+	// previously reachable only from production code, never exercised by a test
+	// (every existing thrown-ability test used Sleep/Long). Mirrors case (n) exactly,
+	// substituting LongThrowRangeUnits -> ShortThrowRangeUnits and Sleep -> Stun.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent(); // Stun is unlocked by default - no NotifyLevelReached() needed
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		// Owner defaults to the World origin - the clamped landing point for a desired
+		// location straight down +X beyond ShortThrowRangeUnits is exactly
+		// (ShortThrowRangeUnits, 0, 0).
+		const FVector ClampedLandingPoint(CastComponent->ShortThrowRangeUnits, 0.0f, 0.0f);
+		const FVector DesiredTargetLocation = ClampedLandingPoint * 10.0f; // well beyond the Short tier's range
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->SetActorLocation(ClampedLandingPoint);
+		Enemy->TickCheckDetection(ClampedLandingPoint); // Idle -> Alert
+
+		const int32 AffectedCount = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Stun, DesiredTargetLocation);
+		TestEqual(TEXT("The enemy at the clamped landing point should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("The enemy at the clamped landing point should be Controlled"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
 	// (o) Zero enemies in the landing circle still consumes the cooldown - contrast
 	// directly with case (c)'s "a whiff must not consume the cooldown" for
 	// TryCastAbility; this is the deliberately different, documented contract for
