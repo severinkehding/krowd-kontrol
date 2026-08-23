@@ -8,6 +8,7 @@
 #include "AbilityUnlockComponent.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "RoomActor.h"
+#include "DoorConnectorActor.h"
 #include "EngineUtils.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
@@ -17,6 +18,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameFramework/Pawn.h"
 
 void UQuestTrackerWidget::NativeOnInitialized()
 {
@@ -334,6 +337,7 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 	if (!World)
 	{
 		RoomStateText->SetText(FText::GetEmpty());
+		CurrentObjectiveDirection = EQuestDirection8::None;
 		return;
 	}
 
@@ -348,6 +352,7 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 		// No room actors in this world (e.g. widget-only unit tests that never spawn
 		// one) - stay blank rather than claiming a false "DOOR OPEN".
 		RoomStateText->SetText(FText::GetEmpty());
+		CurrentObjectiveDirection = EQuestDirection8::None;
 		return;
 	}
 
@@ -365,21 +370,168 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 		}
 	}
 
+	// REQ-3 directional cue - see ResolveObjectiveDirectionTarget()'s own
+	// comment and plan.md's Design Decisions for the full rationale. Computed
+	// at this same event-driven refresh point, not per-frame (see EVENT CADENCE
+	// in plan.md) - a stale-until-next-event cue is an accepted trade-off for an
+	// 8-bucket "cheapest useful" hint.
+	FVector TargetLocation;
+	FText DirectionGlyph = FText::GetEmpty();
+	CurrentObjectiveDirection = EQuestDirection8::None;
+	if (ResolveObjectiveDirectionTarget(Rooms, FocusIndex, TargetLocation))
+	{
+		if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(World, 0))
+		{
+			CurrentObjectiveDirection = ComputeCompassDirection(PlayerPawn->GetActorLocation(), TargetLocation);
+			DirectionGlyph = GetDirectionGlyph(CurrentObjectiveDirection);
+		}
+	}
+
+	FText BaseLine;
 	if (FocusIndex == INDEX_NONE)
 	{
 		// Every room in chain order is cleared - the last gate has opened.
-		RoomStateText->SetText(NSLOCTEXT("QuestTrackerWidget", "RoomStateDoorOpen", "DOOR OPEN"));
-		return;
+		BaseLine = NSLOCTEXT("QuestTrackerWidget", "RoomStateDoorOpen", "DOOR OPEN");
+	}
+	else
+	{
+		const int32 RemainingCount = Rooms[FocusIndex]->GetRemainingEnemyCount();
+		FNumberFormattingOptions NoGrouping;
+		NoGrouping.SetUseGrouping(false);
+		BaseLine = (RemainingCount == 1)
+			? FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateSingularFormat", "Room {0} — {1} robot left"),
+				  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping))
+			: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStatePluralFormat", "Room {0} — {1} robots left"),
+				  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping));
 	}
 
-	const int32 RemainingCount = Rooms[FocusIndex]->GetRemainingEnemyCount();
-	FNumberFormattingOptions NoGrouping;
-	NoGrouping.SetUseGrouping(false);
-	const FText Line = (RemainingCount == 1)
-		? FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateSingularFormat", "Room {0} — {1} robot left"),
-			  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping))
-		: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStatePluralFormat", "Room {0} — {1} robots left"),
-			  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping));
+	RoomStateText->SetText(DirectionGlyph.IsEmpty()
+		? BaseLine
+		: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateWithDirectionFormat", "{0} {1}"), BaseLine, DirectionGlyph));
+}
 
-	RoomStateText->SetText(Line);
+bool UQuestTrackerWidget::ResolveObjectiveDirectionTarget(const TArray<ARoomActor*>& Rooms, int32 FocusIndex, FVector& OutTargetLocation) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	if (FocusIndex == INDEX_NONE)
+	{
+		// DOOR OPEN: every room is cleared - point at the last room's forward
+		// gating door marker (the door whose clearing just opened it), if one
+		// exists. A level whose last room has no door beyond it (the common
+		// case today - no dedicated level-exit actor exists in this codebase)
+		// has no further beacon to point at; the cue stays blank rather than
+		// guessing.
+		if (Rooms.Num() == 0)
+		{
+			return false;
+		}
+		ARoomActor* LastRoom = Rooms.Last();
+		for (TActorIterator<ADoorConnectorActor> It(World); It; ++It)
+		{
+			if (It->GatingRoom == LastRoom && It->DoorMarkerMeshComponent && It->DoorMarkerMeshComponent->IsVisible())
+			{
+				OutTargetLocation = It->DoorMarkerMeshComponent->GetComponentLocation();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	ARoomActor* FocusRoom = Rooms[FocusIndex];
+
+	// Same "remaining enemy types" derivation as ComputeSuggestedAbility()
+	// above, scoped to this room's own OwnedEnemies rather than the whole
+	// level - the pen the arrow should point at is the one matching what's
+	// still alive *in this room*. Predicate mirrors
+	// ARoomActor::GetRemainingEnemyCount()'s own IsValid/
+	// IsActorBeingDestroyed/GetEnemyState check exactly (RoomActor.cpp:309-323).
+	TSet<EEnemyType> RemainingTypes;
+	for (const TObjectPtr<AEnemyBase>& Enemy : FocusRoom->GetOwnedEnemies())
+	{
+		if (!IsValid(Enemy) || Enemy->IsActorBeingDestroyed() || Enemy->GetEnemyState() == EEnemyState::Banked)
+		{
+			continue;
+		}
+		if (const UEnemyTypeIndicatorComponent* Indicator = Enemy->FindComponentByClass<UEnemyTypeIndicatorComponent>())
+		{
+			RemainingTypes.Add(Indicator->EnemyType);
+		}
+	}
+
+	for (const FRoomTargetZone& Zone : FocusRoom->GetTargetZones())
+	{
+		if (Zone.MarkerActor && RemainingTypes.Contains(Zone.EnemyType))
+		{
+			OutTargetLocation = Zone.MarkerActor->GetActorLocation();
+			return true;
+		}
+	}
+
+	// Fallback: no target zone matches a still-remaining type (e.g. a room
+	// authored without AddTargetZone() calls) - use the room's first target
+	// zone anyway, or the room's own location as a last resort, rather than
+	// showing no cue at all for a room the player is actively working through.
+	if (FocusRoom->GetTargetZones().Num() > 0 && FocusRoom->GetTargetZones()[0].MarkerActor)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UQuestTrackerWidget::ResolveObjectiveDirectionTarget: Room '%s' has no target zone matching a remaining enemy type - falling back to its first target zone; directional cue may point at the wrong pen."),
+			*GetNameSafe(FocusRoom));
+		OutTargetLocation = FocusRoom->GetTargetZones()[0].MarkerActor->GetActorLocation();
+		return true;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("UQuestTrackerWidget::ResolveObjectiveDirectionTarget: Room '%s' has no target zones at all - falling back to room location; directional cue may point at empty space."),
+		*GetNameSafe(FocusRoom));
+	OutTargetLocation = FocusRoom->GetActorLocation();
+	return true;
+}
+
+EQuestDirection8 UQuestTrackerWidget::ComputeCompassDirection(const FVector& FromLocation, const FVector& ToLocation)
+{
+	// Same real-gameplay-units dead zone shape as
+	// UAbilityCastComponent::ComputeConeDirection (AbilityCastComponent.cpp:202-212).
+	constexpr float DirectionDeadZoneRadiusUnits = 10.0f;
+	const FVector2D Delta(ToLocation.X - FromLocation.X, ToLocation.Y - FromLocation.Y);
+	if (Delta.SizeSquared() <= FMath::Square(DirectionDeadZoneRadiusUnits))
+	{
+		return EQuestDirection8::None;
+	}
+
+	// This codebase's flat top-down X/Y plane (matches
+	// UAbilityCastComponent::IsPointInCone's own SizeSquared2D usage) -
+	// world +X is North, +Y is East (see EQuestDirection8's own header
+	// comment for why this specific mapping).
+	const float AngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X));
+	const float NormalizedDegrees = FMath::Fmod(AngleDegrees + 360.0f, 360.0f);
+	const int32 SectorIndex = FMath::RoundToInt(NormalizedDegrees / 45.0f) % 8;
+
+	static const EQuestDirection8 Sectors[8] = {
+		EQuestDirection8::North, EQuestDirection8::NorthEast, EQuestDirection8::East, EQuestDirection8::SouthEast,
+		EQuestDirection8::South, EQuestDirection8::SouthWest, EQuestDirection8::West, EQuestDirection8::NorthWest
+	};
+	return Sectors[SectorIndex];
+}
+
+FText UQuestTrackerWidget::GetDirectionGlyph(EQuestDirection8 Direction)
+{
+	switch (Direction)
+	{
+	case EQuestDirection8::North:     return FText::FromString(TEXT("↑"));
+	case EQuestDirection8::NorthEast: return FText::FromString(TEXT("↗"));
+	case EQuestDirection8::East:      return FText::FromString(TEXT("→"));
+	case EQuestDirection8::SouthEast: return FText::FromString(TEXT("↘"));
+	case EQuestDirection8::South:     return FText::FromString(TEXT("↓"));
+	case EQuestDirection8::SouthWest: return FText::FromString(TEXT("↙"));
+	case EQuestDirection8::West:      return FText::FromString(TEXT("←"));
+	case EQuestDirection8::NorthWest: return FText::FromString(TEXT("↖"));
+	case EQuestDirection8::None:
+	default:
+		return FText::GetEmpty();
+	}
 }
