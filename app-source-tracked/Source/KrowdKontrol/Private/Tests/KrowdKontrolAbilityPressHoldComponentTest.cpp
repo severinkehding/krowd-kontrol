@@ -401,6 +401,56 @@ bool FKrowdKontrolAbilityPressHoldComponentTest::RunTest(const FString& Paramete
 			static_cast<uint8>(OutOfCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 	}
 
+	// (i) Cursor-aimed press via Stun (issue #256): mirrors case (h) exactly, proving
+	// AFlatCamera3DPrototypePawn::CastStunAbility()'s new cursor-forwarding call
+	// actually results in CircleAtCursor + AoE routing at this component level, not
+	// just that the pawn compiles against the API. Stun is unlocked by default
+	// (unlike Sleep), so no NotifyLevelReached() call is needed.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent(); // Stun is unlocked by default - no NotifyLevelReached() needed
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+		UAbilityTargetingIndicatorComponent* Indicator = NewObject<UAbilityTargetingIndicatorComponent>(Owner);
+		Indicator->RegisterComponent();
+		UAbilityPressHoldComponent* PressHold = NewObject<UAbilityPressHoldComponent>(Owner);
+		PressHold->RegisterComponent();
+		PressHold->CastComponent = CastComponent;
+		PressHold->IndicatorComponent = Indicator;
+
+		AEnemyBaseTestActor* InCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OutOfCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(i) In-circle AEnemyBaseTestActor should spawn"), InCircleEnemy)
+			|| !TestNotNull(TEXT("(i) Out-of-circle AEnemyBaseTestActor should spawn"), OutOfCircleEnemy))
+		{
+			return false;
+		}
+		InCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OutOfCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		const FVector SomeLocation(500.0f, 0.0f, 0.0f);
+		InCircleEnemy->SetActorLocation(SomeLocation + FVector(100.0f, 0.0f, 0.0f)); // inside the 400-unit radius
+		OutOfCircleEnemy->SetActorLocation(SomeLocation + FVector(700.0f, 0.0f, 0.0f)); // outside the 400-unit radius
+
+		PressHold->HandleAbilityKeyPressed(EAbilitySlot::Stun, true, SomeLocation);
+
+		TestEqual(TEXT("(i) Indicator shape kind should be CircleAtCursor when a target location is supplied"),
+			static_cast<uint8>(Indicator->CurrentShapeSpec.Kind), static_cast<uint8>(EAbilityIndicatorShapeKind::CircleAtCursor));
+		TestEqual(TEXT("(i) Indicator origin should be the supplied target location, not the owner's location"),
+			Indicator->CurrentShapeSpec.Origin, SomeLocation);
+		TestEqual(TEXT("(i) The in-circle enemy should be Controlled"),
+			static_cast<uint8>(InCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(i) The out-of-circle enemy should be left untouched"),
+			static_cast<uint8>(OutOfCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
 	return true;
 }
 
