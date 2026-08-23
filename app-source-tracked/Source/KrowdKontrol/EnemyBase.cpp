@@ -279,6 +279,12 @@ void AEnemyBase::TickFollowMovement(const FVector& PlayerLocation, float DeltaSe
 	{
 		return;
 	}
+	// GetControlledSpeedMultiplier() is deliberately NOT applied here, unlike
+	// TickChaseMovement's own MoveDistance line above - Snare is the only ability with
+	// a non-1.0f multiplier and it's also the one ability this function's gate above
+	// excludes, so this omission is untested-by-necessity today, not an oversight (see
+	// AbilityData.cpp's ControlledSpeedMultiplier comment on Snare, issue #214 review
+	// follow-up).
 	const float MoveDistance = FMath::Min(DistanceRemaining, GetEffectiveFollowSpeedUnitsPerSecond() * DeltaSeconds);
 	SetActorLocation(GetActorLocation() + ToPlayer.GetSafeNormal() * MoveDistance);
 }

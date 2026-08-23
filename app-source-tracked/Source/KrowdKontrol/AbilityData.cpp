@@ -63,7 +63,7 @@ namespace
 			.bFleesFromCasterWhileControlled = false,
 			.bAllowsMovementWhileControlled = false,
 			.ControlledSpeedMultiplier = 1.0f,
-			.EffectDescription = NSLOCTEXT("AbilityData", "RootEffectDescription", "Roots a line of targets in place; they can still attack while rooted."),
+			.EffectDescription = NSLOCTEXT("AbilityData", "RootEffectDescription", "Roots a line of targets, controlling them; they can still attack while rooted and will trail you like any Controlled target (issue #214)."),
 			.KeyBindingLabel = NSLOCTEXT("AbilityData", "RootKeyBinding", "Q"),
 		};
 		return Data;
@@ -106,6 +106,12 @@ namespace
 			.bAllowsAttackWhileControlled = true,
 			.bFleesFromCasterWhileControlled = false,
 			.bAllowsMovementWhileControlled = true,
+			// The only non-1.0f ControlledSpeedMultiplier today, and Snare is also the
+			// one ability TickFollowMovement's gate excludes - so no reachable ability
+			// data lets TickFollowMovement's movement branch run with a non-1.0f
+			// multiplier (issue #214 review follow-up). Untested-by-necessity, not
+			// untested-by-oversight; revisit if a future ability gets a non-1.0f
+			// multiplier while still reaching TickFollowMovement.
 			.ControlledSpeedMultiplier = 0.5f,
 			.EffectDescription = NSLOCTEXT("AbilityData", "SnareEffectDescription", "Slows a cone of targets to half speed; they can still move and attack."),
 			.KeyBindingLabel = NSLOCTEXT("AbilityData", "SnareKeyBinding", "E"),

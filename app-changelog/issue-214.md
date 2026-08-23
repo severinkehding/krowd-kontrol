@@ -116,3 +116,32 @@ GATE_OK mode=quick
 This issue adds 9 cases inside the existing `KrowdKontrol.Unit.EnemyBase` top-level
 test function - no new top-level test was added, matching the same pattern
 `(v-fear)`-`(z-fear)` themselves established when they were added.
+
+## Review findings addressed (PR #300)
+
+- **HIGH - Root-Controlled follow semantics**: code review flagged that
+  `TickFollowMovement`'s gate lets Root-Controlled enemies follow, apparently
+  contradicting Root's "in place" flavor text and a claimed `ARootSurgeBoss`
+  dependency on Root-locked adds staying stationary. Checked both premises against
+  source: `docs/prd-herd-mechanic.md`'s operator design decision (2026-08-22, locked)
+  says "Controlled enemies follow the player" with no per-ability exception, and
+  `ARootSurgeBoss::HasRootLockedAdd()` only checks `GetEnemyState()`/
+  `GetControllingAbility()`, never position - it doesn't depend on the add staying
+  put. Root following is therefore intended, not an oversight; the boss-breakage
+  premise was factually incorrect. Fixed the now-stale artifacts instead: Root's
+  `EffectDescription` no longer claims "in place," `EnemyBase.h`'s
+  `IsAttackBehaviorActive()` doc comment no longer says "Root immobilizes movement,"
+  and `TickFollowMovement`'s own declaration comment now states explicitly why Root
+  isn't excluded. Added test `(root-follow)` locking in the behavior.
+- **MEDIUM - `GetControlledSpeedMultiplier()` omission untestable**: added a comment
+  on `TickFollowMovement`'s `MoveDistance` line and near Snare's
+  `ControlledSpeedMultiplier` in `AbilityData.cpp`, cross-referencing each other, per
+  test-coverage review's recommended Option A (comment-only - a test seam would need
+  restructuring the closed `AbilityData::Get()` switch for a non-bug).
+- **MEDIUM - PRD REQ-1 not marked implemented**: annotated
+  `docs/prd-herd-mechanic.md`'s REQ-1 heading with `— ✅ implemented, issue #214`,
+  matching this repo's established per-PRD convention.
+- **LOW - no `Tick()`-wired test for Snare/Fear gate**: added `(i-follow)`, mirroring
+  `(h-follow)`'s real-`Tick()` scaffold for a Snare-Controlled actor, asserting total
+  displacement matches `TickChaseMovement`'s half-speed distance exactly (proving the
+  gate holds through the real per-frame wiring, not just in isolation).

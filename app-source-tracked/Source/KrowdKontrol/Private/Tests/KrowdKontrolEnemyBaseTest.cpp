@@ -794,6 +794,24 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("(a-follow) Following should move the enemy toward, not away from, the player"),
 		FVector::Dist(FollowingEnemy->GetActorLocation(), FarFollowPlayerLocation) < FVector::Dist(BeforeFollow, FarFollowPlayerLocation));
 
+	// (root-follow) Root-Controlled enemies DO follow (issue #214 review follow-up) -
+	// locks in docs/prd-herd-mechanic.md's operator design decision, which applies to
+	// every Controlled enemy with no per-ability carve-out. Root sets neither
+	// bAllowsMovementWhileControlled nor bFleesFromCasterWhileControlled, so it falls
+	// through TickFollowMovement's gate exactly like Stun/Sleep - mirrors (a-follow)'s
+	// shape with EAbilitySlot::Root instead of Stun.
+	AEnemyBaseTestActor* RootFollower = NewObject<AEnemyBaseTestActor>();
+	RootFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	RootFollower->ReceiveControl(EAbilitySlot::Root); // Alert -> Controlled
+	const FVector BeforeRootFollow = RootFollower->GetActorLocation();
+	const FVector FarRootFollowPlayerLocation(2000.0f, 0.0f, 0.0f);
+	RootFollower->TickFollowMovement(FarRootFollowPlayerLocation, 1.0f);
+	const float RootFollowDistanceMoved = FVector::Dist(RootFollower->GetActorLocation(), BeforeRootFollow);
+	TestEqual(TEXT("(root-follow) A Root-Controlled enemy should follow at the effective follow speed * DeltaSeconds"),
+		RootFollowDistanceMoved, RootFollower->GetEffectiveFollowSpeedUnitsPerSecond() * 1.0f);
+	TestTrue(TEXT("(root-follow) Following should move the enemy toward, not away from, the player"),
+		FVector::Dist(RootFollower->GetActorLocation(), FarRootFollowPlayerLocation) < FVector::Dist(BeforeRootFollow, FarRootFollowPlayerLocation));
+
 	// (b-follow) overshoot clamp: a player closer than FollowDistanceUnits + speed*dt
 	// is approached but the move clamps exactly to FollowDistanceUnits short, never
 	// stacking on the player - mirrors (s)'s overshoot-clamp shape, target distance is
@@ -945,6 +963,44 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 			const float FollowTickDistanceMoved = FVector::Dist(TickedFollower->GetActorLocation(), BeforeFollowTick);
 			TestEqual(TEXT("(h-follow) Tick() should move the Controlled enemy toward the player at the effective follow speed * DeltaSeconds"),
 				FollowTickDistanceMoved, TickedFollower->GetEffectiveFollowSpeedUnitsPerSecond() * 0.1f);
+		}
+	}
+
+	// (i-follow) the real Tick() wiring order (TickChaseMovement -> TickFollowMovement
+	// -> TickFleeMovement) can't double-apply for a Snare-Controlled enemy - mirrors
+	// (h-follow)'s scaffold, swapping Stun for Snare, and asserts total per-frame
+	// displacement matches TickChaseMovement's own half-speed distance exactly (i.e.
+	// TickFollowMovement's gate held through the real Tick() path, not just in
+	// isolation like (d-follow) already proves).
+	UWorld* SnareTickWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), SnareTickWorld))
+	{
+		AEnemyBaseTestActor* TickedSnaredFollower = SnareTickWorld->SpawnActor<AEnemyBaseTestActor>();
+		APawn* SnareTickPlayerPawn = SnareTickWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(i-follow) AEnemyBaseTestActor should spawn into the test World"), TickedSnaredFollower)
+			&& TestNotNull(TEXT("(i-follow) APawn should spawn into the test World"), SnareTickPlayerPawn))
+		{
+			APlayerController* SnareTickController = SnareTickWorld->SpawnActor<APlayerController>();
+			if (!TestNotNull(TEXT("(i-follow) Should be able to spawn a controller to possess the pawn"), SnareTickController))
+			{
+				return false;
+			}
+			SnareTickController->Possess(SnareTickPlayerPawn);
+			SnareTickWorld->AddController(SnareTickController);
+
+			USceneComponent* SnareTickPlayerPawnRoot = NewObject<USceneComponent>(SnareTickPlayerPawn);
+			SnareTickPlayerPawnRoot->RegisterComponent();
+			SnareTickPlayerPawn->SetRootComponent(SnareTickPlayerPawnRoot);
+			SnareTickPlayerPawn->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f)); // within DetectionRangeUnits, matches (h-follow)/(t)
+
+			TickedSnaredFollower->TickCheckDetection(SnareTickPlayerPawn->GetActorLocation()); // Idle -> Alert
+			TickedSnaredFollower->ReceiveControl(EAbilitySlot::Snare); // Alert -> Controlled
+			const FVector BeforeSnareTick = TickedSnaredFollower->GetActorLocation();
+			TickedSnaredFollower->Tick(0.1f);
+			const float SnareTickDistanceMoved = FVector::Dist(TickedSnaredFollower->GetActorLocation(), BeforeSnareTick);
+			TestEqual(TEXT("(i-follow) Tick() should move a Snare-Controlled enemy at exactly TickChaseMovement's half-speed distance, with zero additional displacement from TickFollowMovement"),
+				SnareTickDistanceMoved,
+				TickedSnaredFollower->GetEffectiveMovementSpeedUnitsPerSecond() * TickedSnaredFollower->GetControlledSpeedMultiplier() * 0.1f);
 		}
 	}
 

@@ -371,8 +371,12 @@ protected:
 	// True while this enemy's attack behaviour (per-type telegraph/tell/fire loop)
 	// should keep running: always during Attack, and also during Controlled if
 	// ControllingAbility is flagged AbilityData::bAllowsAttackWhileControlled (Root
-	// only - issue #255: Root immobilizes movement but does not silence an attack the
-	// enemy was already capable of, unlike Stun/Sleep's full-immobilize flavour).
+	// only - issue #255: Root does not silence an attack the enemy was already
+	// capable of, unlike Stun/Sleep's full-immobilize flavour. Root no longer implies
+	// immobile movement either, as of issue #214's TickFollowMovement - it still
+	// doesn't grant Snare's own independent TickChaseMovement-driven movement, so it
+	// falls through to the same pied-piper follow every other non-Snare/Fear
+	// Controlled ability gets).
 	// Concrete subclasses' own AdvanceXTelegraph functions call this instead of a raw
 	// GetEnemyState() == Attack check.
 	bool IsAttackBehaviorActive() const;
@@ -438,7 +442,12 @@ private:
 	// claims this tick's movement through a different flavour - Snare
 	// (bAllowsMovementWhileControlled, TickChaseMovement, issue #254) or Fear
 	// (bFleesFromCasterWhileControlled, TickFleeMovement, issue #253) - so a Controlled
-	// enemy is never moved twice in the same tick by competing movement rules.
+	// enemy is never moved twice in the same tick by competing movement rules. Root is
+	// deliberately NOT excluded here (review follow-up, issue #214): docs/prd-herd-
+	// mechanic.md's operator design decision applies to every Controlled enemy with no
+	// per-ability carve-out, and ARootSurgeBoss::HasRootLockedAdd() only checks
+	// GetEnemyState()/GetControllingAbility(), never position, so a Root-Controlled
+	// add trailing the player doesn't affect that boss's Vulnerable-state gate.
 	// Private/friend-testable, same shape as TickChaseMovement/TickFleeMovement above.
 	void TickFollowMovement(const FVector& PlayerLocation, float DeltaSeconds);
 

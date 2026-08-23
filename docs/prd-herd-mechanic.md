@@ -32,7 +32,7 @@ WASD+abilities).
 
 ## Requirements
 
-### REQ-1: Follow-the-player movement while Controlled (P0)
+### REQ-1: Follow-the-player movement while Controlled (P0) — ✅ implemented, issue #214
 - While `Controlled`, an enemy moves toward the player pawn each tick, clamped
   `min(remaining, speed × dt)` per the existing `TickChaseMovement` convention.
 - Stops at a small follow distance so enemies trail behind rather than stack on
