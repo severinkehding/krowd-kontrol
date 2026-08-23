@@ -38,6 +38,7 @@
 #include "AbilityData.h"
 #include "AbilityUnlockComponent.h"
 #include "EnemyTypeIndicatorComponent.h"
+#include "RoomActor.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -563,6 +564,82 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 			}
 		}
 	}
+
+	return true;
+}
+
+// Confirms the room-state line (issue #248, PRD "Mission Briefing & Live Quest
+// Tracker" REQ-2): with one owned enemy remaining it reads "Room 1 — 1 robot left"
+// (singular), with two it reads "... 2 robots left" (plural); once the last owned
+// enemy banks, ARoomActor::OnRoomClearedStateChanged fires and the line flips live
+// to "DOOR OPEN" with no re-bind/re-construction - mirroring case (14) above's
+// live-update-while-bound shape. Needs its own World with
+// World->SetBegunPlay(true) - KrowdKontrolRoomActorDoorGatingTest.cpp's file
+// comment documents this is required for AEnemyBase::OnEnemyBanked to actually
+// reach ARoomActor's bound handler; the shared World at the top of this file's
+// RunTest() never calls SetBegunPlay(true), so a fresh World is needed here, same
+// as cases (14)/(15) above already do for their own reasons.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolQuestTrackerWidgetRoomStateTest,
+	"KrowdKontrol.Unit.QuestTrackerWidgetRoomState",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolQuestTrackerWidgetRoomStateTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+	World->InitializeActorsForPlay(FURL());
+	World->SetBegunPlay(true);
+
+	ARoomActor* Room = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("ARoomActor should spawn into the test World"), Room))
+	{
+		return false;
+	}
+
+	AEnemyBaseTestActor* EnemyOne = World->SpawnActor<AEnemyBaseTestActor>();
+	AEnemyBaseTestActor* EnemyTwo = World->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("First test enemy should spawn"), EnemyOne) ||
+		!TestNotNull(TEXT("Second test enemy should spawn"), EnemyTwo))
+	{
+		return false;
+	}
+	Room->AddOwnedEnemy(EnemyOne);
+	Room->AddOwnedEnemy(EnemyTwo);
+
+	ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+	if (!TestNotNull(TEXT("World should auto-instantiate ULevelLifecycleSubsystem"), LifecycleSubsystem))
+	{
+		return false;
+	}
+	LifecycleSubsystem->OnWorldBeginPlay(*World);
+
+	UQuestTrackerWidget* Widget = CreateWidget<UQuestTrackerWidget>(World, UQuestTrackerWidget::StaticClass());
+	if (!TestNotNull(TEXT("UQuestTrackerWidget should construct"), Widget))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Room-state line should show Room 1 with 2 robots left (plural)"),
+		Widget->GetRoomStateDisplayText().ToString(), FString(TEXT("Room 1 — 2 robots left")));
+
+	const FVector ZeroDistanceLocation(0.0f, 0.0f, 0.0f);
+	EnemyOne->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	EnemyOne->ReceiveControl(EAbilitySlot::Stun);        // Alert -> Controlled
+	EnemyOne->TransitionToBanked();                      // Controlled -> Banked
+
+	TestEqual(TEXT("Room-state line should update live to singular '1 robot left'"),
+		Widget->GetRoomStateDisplayText().ToString(), FString(TEXT("Room 1 — 1 robot left")));
+
+	EnemyTwo->TickCheckDetection(ZeroDistanceLocation);
+	EnemyTwo->ReceiveControl(EAbilitySlot::Stun);
+	EnemyTwo->TransitionToBanked();
+
+	TestEqual(TEXT("Room-state line should flip live to DOOR OPEN once the last owned enemy banks"),
+		Widget->GetRoomStateDisplayText().ToString(), FString(TEXT("DOOR OPEN")));
 
 	return true;
 }

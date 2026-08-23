@@ -245,8 +245,9 @@ void ARoomActor::HandleZoneActorBanked(AActor* BankedActor)
 	}
 }
 
-bool ARoomActor::IsRoomCleared() const
+int32 ARoomActor::GetRemainingEnemyCount() const
 {
+	int32 RemainingCount = 0;
 	for (const TObjectPtr<AEnemyBase>& Enemy : OwnedEnemies)
 	{
 		// IsActorBeingDestroyed() matters here, not just IsValid(): AActor::OnDestroyed
@@ -256,10 +257,15 @@ bool ARoomActor::IsRoomCleared() const
 		// door would never actually re-open.
 		if (IsValid(Enemy) && !Enemy->IsActorBeingDestroyed() && Enemy->GetEnemyState() != EEnemyState::Banked)
 		{
-			return false;
+			++RemainingCount;
 		}
 	}
-	return true;
+	return RemainingCount;
+}
+
+bool ARoomActor::IsRoomCleared() const
+{
+	return GetRemainingEnemyCount() == 0;
 }
 
 void ARoomActor::BindOwnedEnemyDelegate(AEnemyBase* Enemy)

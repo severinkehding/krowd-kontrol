@@ -7,6 +7,7 @@
 #include "AbilityData.h"
 #include "AbilityUnlockComponent.h"
 #include "EnemyTypeIndicatorComponent.h"
+#include "RoomActor.h"
 #include "EngineUtils.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
@@ -46,6 +47,7 @@ void UQuestTrackerWidget::EnsureWidgetTreeBuilt()
 		BuildWidgetTree();
 		RefreshDisplay();
 		RefreshSuggestedAbilityDisplay();
+		RefreshRoomStateDisplay();
 	}
 }
 
@@ -81,6 +83,10 @@ void UQuestTrackerWidget::BuildWidgetTree()
 
 	SuggestedAbilityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuestTrackerSuggestedAbilityText"));
 	Rows->AddChildToVerticalBox(SuggestedAbilityText);
+
+	RoomStateText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuestTrackerRoomStateText"));
+	RoomStateText->SetColorAndOpacity(TextColor);
+	Rows->AddChildToVerticalBox(RoomStateText);
 }
 
 void UQuestTrackerWidget::BindToLevelLifecycle()
@@ -119,6 +125,11 @@ void UQuestTrackerWidget::HandleLevelBegin(FName MapName)
 		It->OnActorBanked.AddUniqueDynamic(this, &UQuestTrackerWidget::HandleActorBanked);
 	}
 
+	for (TActorIterator<ARoomActor> It(World); It; ++It)
+	{
+		It->OnRoomClearedStateChanged.AddUniqueDynamic(this, &UQuestTrackerWidget::HandleRoomClearedStateChanged);
+	}
+
 	// TActorIterator<AActor> + GetComponents(), not a bare
 	// TObjectIterator<UWaveSpawnerComponent>: same rationale as
 	// ULevelLifecycleSubsystem::RefreshLevelClearState() - avoids picking up a spawner
@@ -135,6 +146,7 @@ void UQuestTrackerWidget::HandleLevelBegin(FName MapName)
 
 	RefreshDisplay();
 	RefreshSuggestedAbilityDisplay();
+	RefreshRoomStateDisplay();
 }
 
 void UQuestTrackerWidget::HandleActorBanked(AActor* BankedActor)
@@ -296,4 +308,78 @@ FText UQuestTrackerWidget::GetSuggestedAbilityDisplayText() const
 FLinearColor UQuestTrackerWidget::GetSuggestedAbilityTextColour() const
 {
 	return SuggestedAbilityText ? SuggestedAbilityText->GetColorAndOpacity().GetSpecifiedColor() : FLinearColor::Black;
+}
+
+void UQuestTrackerWidget::HandleRoomClearedStateChanged()
+{
+	RefreshRoomStateDisplay();
+}
+
+FText UQuestTrackerWidget::GetRoomStateDisplayText() const
+{
+	return RoomStateText ? RoomStateText->GetText() : FText::GetEmpty();
+}
+
+void UQuestTrackerWidget::RefreshRoomStateDisplay()
+{
+	if (!RoomStateText)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UQuestTrackerWidget: RoomStateText is null on '%s' (tree not built?) - room-state line will render blank."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		RoomStateText->SetText(FText::GetEmpty());
+		return;
+	}
+
+	TArray<ARoomActor*> Rooms;
+	for (TActorIterator<ARoomActor> It(World); It; ++It)
+	{
+		Rooms.Add(*It);
+	}
+
+	if (Rooms.Num() == 0)
+	{
+		// No room actors in this world (e.g. widget-only unit tests that never spawn
+		// one) - stay blank rather than claiming a false "DOOR OPEN".
+		RoomStateText->SetText(FText::GetEmpty());
+		return;
+	}
+
+	// Chain order by world X - same convention ADoorConnectorActor::BeginPlay()'s
+	// GatingRoom heuristic and KrowdKontrolLevelTestUtils::SortRoomsByX both use.
+	Rooms.Sort([](const ARoomActor& A, const ARoomActor& B) { return A.GetActorLocation().X < B.GetActorLocation().X; });
+
+	int32 FocusIndex = INDEX_NONE;
+	for (int32 Index = 0; Index < Rooms.Num(); ++Index)
+	{
+		if (!Rooms[Index]->IsRoomCleared())
+		{
+			FocusIndex = Index;
+			break;
+		}
+	}
+
+	if (FocusIndex == INDEX_NONE)
+	{
+		// Every room in chain order is cleared - the last gate has opened.
+		RoomStateText->SetText(NSLOCTEXT("QuestTrackerWidget", "RoomStateDoorOpen", "DOOR OPEN"));
+		return;
+	}
+
+	const int32 RemainingCount = Rooms[FocusIndex]->GetRemainingEnemyCount();
+	FNumberFormattingOptions NoGrouping;
+	NoGrouping.SetUseGrouping(false);
+	const FText Line = (RemainingCount == 1)
+		? FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateSingularFormat", "Room {0} — {1} robot left"),
+			  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping))
+		: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStatePluralFormat", "Room {0} — {1} robots left"),
+			  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping));
+
+	RoomStateText->SetText(Line);
 }

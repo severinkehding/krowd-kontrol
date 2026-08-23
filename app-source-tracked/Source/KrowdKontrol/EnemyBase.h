@@ -135,6 +135,11 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// line, not just the banked count.
 	friend class FKrowdKontrolQuestTrackerWidgetTest;
 
+	// Same grant, for the quest-tracker room-state test (issue #248), which drives a
+	// plain AEnemyBaseTestActor through Idle->Alert->Controlled->Banked to prove
+	// ARoomActor::OnRoomClearedStateChanged reaches the widget's room-state line.
+	friend class FKrowdKontrolQuestTrackerWidgetRoomStateTest;
+
 public:
 	AEnemyBase();
 

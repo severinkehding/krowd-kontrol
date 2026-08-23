@@ -10,6 +10,7 @@ class UTextBlock;
 class AActor;
 class UWaveSpawnerComponent;
 class UAbilityUnlockComponent;
+class ARoomActor;
 
 // Persistent quest tracker HUD widget (PRD "Mission Briefing & Live Quest Tracker"
 // REQ-2, issue #247): a small, top-right-corner-anchored panel showing
@@ -60,6 +61,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Quest Tracker")
 	FLinearColor GetSuggestedAbilityTextColour() const;
+
+	UFUNCTION(BlueprintPure, Category = "Quest Tracker")
+	FText GetRoomStateDisplayText() const;
 
 	// Production wiring (mirrors AbilityCooldownTrayWidget::BindAbilityUnlockComponent):
 	// seeds the suggested-ability line from the pawn's current unlock state and keeps
@@ -142,6 +146,12 @@ private:
 	UFUNCTION()
 	void HandleAbilityUnlocked(EAbilitySlot Ability);
 
+	// Bound to each discovered ARoomActor's OnRoomClearedStateChanged via
+	// AddUniqueDynamic - must be a real UFUNCTION() for that to compile, same as every
+	// other handler in this class.
+	UFUNCTION()
+	void HandleRoomClearedStateChanged();
+
 	// Fresh TActorIterator<AEnemyBase> sweep (mirrors RecountTotalEnemies()'s own
 	// "always safe to call repeatedly" shape) filtered to non-Banked enemies, matched
 	// against AbilityData::GetAll()'s CounteredEnemyType via the same reverse-lookup
@@ -157,6 +167,11 @@ private:
 	// change either the remaining-enemy-type set or unlock state.
 	void RefreshSuggestedAbilityDisplay();
 
+	// Re-renders RoomStateText - the third line's counterpart to RefreshDisplay()/
+	// RefreshSuggestedAbilityDisplay(). Fresh TActorIterator<ARoomActor> sweep every
+	// call, safe to call repeatedly.
+	void RefreshRoomStateDisplay();
+
 	UPROPERTY()
 	TObjectPtr<UBorder> ChromeBorder;
 
@@ -165,6 +180,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> SuggestedAbilityText;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> RoomStateText;
 
 	// Weak - this widget does not own the pawn's unlock component's lifetime. Mirrors
 	// AbilityCooldownTrayWidget::BoundLockoutComponent's identical weak-ref shape.
@@ -194,5 +212,5 @@ private:
 	// if either constant below changes.
 	static constexpr float TrackerMarginPx = 24.0f;
 	static constexpr float TrackerWidthPx = 160.0f;
-	static constexpr float TrackerHeightPx = 56.0f;
+	static constexpr float TrackerHeightPx = 80.0f;
 };
