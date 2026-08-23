@@ -24,6 +24,10 @@
 #include "KrowdKontrolPlayerController.h"
 #include "BriefingCardWidget.h"
 #include "LevelBriefingData.h"
+#include "TargetZone.h"
+#include "RunnerEnemy.h"
+#include "RoomActor.h"
+#include "EnemyType.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Engine/LocalPlayer.h"
@@ -659,8 +663,12 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 		InCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 		OutOfCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 		const FVector DesiredTargetLocation(500.0f, 0.0f, 0.0f);
-		InCircleEnemy->SetActorLocation(DesiredTargetLocation + FVector(100.0f, 0.0f, 0.0f)); // 100 units from landing point, inside the 400-unit radius
-		OutOfCircleEnemy->SetActorLocation(DesiredTargetLocation + FVector(700.0f, 0.0f, 0.0f)); // 700 units away, outside the 400-unit radius
+		// Distances derived from CastComponent->ThrownCircleLandingRadiusUnits itself
+		// (radius = 4x placeholder body diameter per AbilityData - not touched by this
+		// diff) rather than a hardcoded radius literal, so this stays correct if that
+		// default ever changes.
+		InCircleEnemy->SetActorLocation(DesiredTargetLocation + FVector(CastComponent->ThrownCircleLandingRadiusUnits * 0.25f, 0.0f, 0.0f)); // inside the radius
+		OutOfCircleEnemy->SetActorLocation(DesiredTargetLocation + FVector(CastComponent->ThrownCircleLandingRadiusUnits * 1.75f, 0.0f, 0.0f)); // outside the radius
 
 		const int32 AffectedCount = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Stun, DesiredTargetLocation);
 		TestEqual(TEXT("Only the in-circle enemy should be affected by Stun's AoE"), AffectedCount, 1);
@@ -993,6 +1001,97 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 		TestFalse(TEXT("A locked-out throw must not consume the cooldown"),
 			CooldownComponent->IsOnCooldown(EAbilitySlot::Sleep));
+	}
+
+	// (u-stun) End-to-end banking (issue #256 acceptance criterion "stunned enemy
+	// still banks"): an enemy Controlled via the new cursor-aimed Stun AoE throw
+	// (TryCastThrownAbilityAtLocation, the entry point this issue wires up - not the
+	// legacy auto-nearest TryCastAbility path) still reaches Banked through a real
+	// ARoomActor/ATargetZone physical-overlap chain. Needs a real ARoomActor, not a
+	// bare ATargetZone: ATargetZone only broadcasts OnActorBanked (pinned by
+	// KrowdKontrolTargetZoneTest.cpp, which never asserts the overlapping actor's own
+	// state) - it is ARoomActor::HandleZoneActorBanked that actually calls
+	// AEnemyBase::TransitionToBanked(), per KrowdKontrolRoomActorBankingWiringTest.cpp's
+	// file comment. This case Controls the enemy through this PR's thrown-AoE entry
+	// point instead of that wiring test's direct ReceiveControl() call.
+	// AEnemyBaseTestActor (used everywhere else in this file) has no collision
+	// component, so this case needs a real production enemy (ARunnerEnemy), the same
+	// substitution that wiring test makes for the same reason.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		// Required for a real physics overlap to fire OnComponentBeginOverlap - see
+		// KrowdKontrolTargetZoneTest.cpp's file comment for why both calls are needed.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
+		APawn* Owner = World->SpawnActor<APawn>();
+		if (!TestNotNull(TEXT("APawn should spawn into the test World"), Owner))
+		{
+			return false;
+		}
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent(); // Stun is unlocked by default
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		// Plain (non-deferred) spawn, same as KrowdKontrolRoomActorTest.cpp - BeginPlay()
+		// fires immediately with an empty TargetZones array, so EnsureBankingZonesWired()
+		// below is called explicitly after AddTargetZone(), mirroring that method's own
+		// documented "safe to call more than once" / self-heal contract.
+		ARoomActor* Room = World->SpawnActor<ARoomActor>();
+		if (!TestNotNull(TEXT("Room should spawn"), Room))
+		{
+			return false;
+		}
+		// RU-NNR matches ARunnerEnemy (RoomActorBankingWiringTest.cpp's own mapping).
+		AActor* Marker = Room->AddTargetZone(EEnemyType::RU_NNR);
+		if (!TestNotNull(TEXT("Marker should spawn"), Marker))
+		{
+			return false;
+		}
+		Room->EnsureBankingZonesWired();
+
+		ATargetZone* Zone = nullptr;
+		TArray<AActor*> AttachedActors;
+		Marker->GetAttachedActors(AttachedActors);
+		for (AActor* Attached : AttachedActors)
+		{
+			if (ATargetZone* AttachedZone = Cast<ATargetZone>(Attached))
+			{
+				Zone = AttachedZone;
+				break;
+			}
+		}
+		if (!TestNotNull(TEXT("Marker should have a self-healed ATargetZone attached"), Zone))
+		{
+			return false;
+		}
+
+		// Within ShortThrowRangeUnits of Owner (at the World origin - see case (n)'s
+		// comment) so the thrown AoE below lands unclamped, directly on the enemy, and
+		// well clear of the zone (attached at the Room's own origin location - see
+		// AddTargetZone()'s own comment) so no accidental overlap happens before the cast.
+		ARunnerEnemy* Enemy = World->SpawnActor<ARunnerEnemy>(FVector(700.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
+		if (!TestNotNull(TEXT("ARunnerEnemy should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(Enemy->GetActorLocation()); // Idle -> Alert
+
+		const int32 AffectedCount = CastComponent->TryCastThrownAbilityAtLocation(EAbilitySlot::Stun, Enemy->GetActorLocation());
+		TestEqual(TEXT("The Stun AoE throw should affect exactly the one enemy at the landing point"), AffectedCount, 1);
+		TestEqual(TEXT("The enemy should be Controlled after the Stun AoE throw"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+		Enemy->SetActorLocation(Zone->GetActorLocation(), /*bSweep=*/true);
+		TestEqual(TEXT("A Stun-AoE-controlled enemy overlapping a target zone should reach Banked"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 	}
 
 	return true;
