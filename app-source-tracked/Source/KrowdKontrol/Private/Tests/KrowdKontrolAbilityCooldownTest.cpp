@@ -11,6 +11,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "AbilityCooldownComponent.h"
+#include "AbilityCooldownChangedTestListener.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -91,6 +92,46 @@ bool FKrowdKontrolAbilityCooldownTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("TryStartCooldown(Snare) should still succeed with a negative configured duration"), Started);
 	TestEqual(TEXT("A negative configured duration should clamp to 0, never negative"), Component->GetRemainingCooldownSeconds(EAbilitySlot::Snare), 0.0f);
 	TestFalse(TEXT("Snare should not read as on cooldown when its clamped duration is 0"), Component->IsOnCooldown(EAbilitySlot::Snare));
+
+	// (h) OnAbilityCooldownChanged broadcasts true on start, false on expiry, and does
+	// NOT re-broadcast on a blocked recast (still-on-cooldown TryStartCooldown) - issue
+	// #259's new event surface, added because UAbilityCooldownTrayWidget needs an
+	// event-driven start/expire signal to bind to (see AbilityLockoutComponent's
+	// identical OnAbilityLockoutChanged precedent). FOnAbilityCooldownChanged is a
+	// dynamic multicast delegate, so a UFUNCTION()-based listener object is used
+	// instead of AddLambda (not supported on dynamic delegates).
+	{
+		UAbilityCooldownChangedTestListener* Listener = NewObject<UAbilityCooldownChangedTestListener>();
+		if (!TestNotNull(TEXT("UAbilityCooldownChangedTestListener should construct"), Listener))
+		{
+			return false;
+		}
+		Component->OnAbilityCooldownChanged.AddDynamic(Listener, &UAbilityCooldownChangedTestListener::HandleAbilityCooldownChanged);
+
+		Component->TryStartCooldown(EAbilitySlot::Root);
+		TestEqual(TEXT("Starting a cooldown should broadcast true exactly once"), Listener->TrueBroadcastCount, 1);
+		TestEqual(TEXT("Broadcast should report the correct ability slot"), Listener->LastAbility, EAbilitySlot::Root);
+
+		Component->TryStartCooldown(EAbilitySlot::Root); // blocked recast - no state change
+		TestEqual(TEXT("A blocked recast should not re-broadcast true"), Listener->TrueBroadcastCount, 1);
+
+		Component->AdvanceCooldowns(UAbilityCooldownComponent::DefaultAbilityCooldownSeconds - 0.5f);
+		TestEqual(TEXT("Partial advance should not yet broadcast false"), Listener->FalseBroadcastCount, 0);
+
+		Component->AdvanceCooldowns(0.5f);
+		TestEqual(TEXT("Reaching exactly 0 should broadcast false exactly once"), Listener->FalseBroadcastCount, 1);
+
+		Component->AdvanceCooldowns(1.0f); // already expired - must not re-broadcast
+		TestEqual(TEXT("Advancing an already-expired slot should not re-broadcast false"), Listener->FalseBroadcastCount, 1);
+
+		// A clamped-to-0 duration (mirrors block (g)'s negative-duration scenario) must
+		// not broadcast true, this time with a listener actually attached to observe it.
+		Component->AbilityCooldownDurations[static_cast<int32>(EAbilitySlot::Snare)] = -1.0f;
+		Component->TryStartCooldown(EAbilitySlot::Snare);
+		TestEqual(TEXT("A clamped-to-0 duration should not broadcast true"), Listener->TrueBroadcastCount, 1); // still 1, from Root
+
+		Component->OnAbilityCooldownChanged.RemoveDynamic(Listener, &UAbilityCooldownChangedTestListener::HandleAbilityCooldownChanged);
+	}
 
 	return true;
 }

@@ -11,6 +11,7 @@
 #include "LevelBriefingSubsystem.h"
 #include "AbilityUnlockPromptComponent.h"
 #include "AbilityLockoutComponent.h"
+#include "AbilityCooldownComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "PlaceholderTargetZoneActor.h"
@@ -146,6 +147,7 @@ void AKrowdKontrolPlayerController::WireWidgetsToPawn(APawn* InPawn)
 	{
 		AbilityTrayWidget->BindAbilityUnlockComponent(InPawn->FindComponentByClass<UAbilityUnlockComponent>());
 		AbilityTrayWidget->BindAbilityLockoutComponent(InPawn->FindComponentByClass<UAbilityLockoutComponent>());
+		AbilityTrayWidget->BindAbilityCooldownComponent(InPawn->FindComponentByClass<UAbilityCooldownComponent>());
 	}
 	if (EnergyMeterWidgetInstance)
 	{

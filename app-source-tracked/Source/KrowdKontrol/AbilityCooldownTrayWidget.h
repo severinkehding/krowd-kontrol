@@ -8,8 +8,10 @@
 class UBorder;
 class UAbilityUnlockComponent;
 class UAbilityLockoutComponent;
+class UAbilityCooldownComponent;
 class UTextBlock;
 class UCanvasPanel;
+class UProgressBar;
 
 // Ability/cooldown tray HUD widget (PRD 13 REQ-2): shows all 5 crowd-control ability
 // icon slots simultaneously, corner-anchored, each with a cooldown-remaining overlay,
@@ -122,6 +124,36 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
 	void RefreshPunishmentLockoutReadouts();
 
+	// Production wiring for issue #71's real ability-cast/cooldown gating: binds a
+	// dedicated adapter (HandleAbilityCooldownChanged below) to the component's
+	// OnAbilityCooldownChanged delegate, switching the tray's per-frame update from the
+	// self-decrementing placeholder timer to polling this component's live remaining
+	// time (see RefreshCooldownReadouts()/NativeTick()). Mirrors
+	// BindAbilityLockoutComponent's weak-ref/rebind-safe/AddUniqueDynamic shape. Like
+	// that function, a freshly bound pawn's component never has an active cooldown yet,
+	// so no per-slot seeding loop is needed here either.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
+	void BindAbilityCooldownComponent(UAbilityCooldownComponent* CooldownComponent);
+
+	// Polls the bound UAbilityCooldownComponent's live remaining-time for every
+	// currently-on-cooldown slot and refreshes its fill/numeric readout - called every
+	// frame from NativeTick() when bound (mirrors RefreshPunishmentLockoutReadouts()'s
+	// own call site) and directly by the Automation test, which can't drive a live tick
+	// loop under the -nullrhi headless run.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
+	void RefreshCooldownReadouts();
+
+	// Automation-test-friendly structured accessor for a slot's current fill percent
+	// (0-1), avoiding the need for pixel/OCR inspection of the UProgressBar itself.
+	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
+	float GetSlotCooldownFillFraction(EAbilitySlot AbilitySlot) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
+	bool IsSlotReadyFlashActive(EAbilitySlot AbilitySlot) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability Cooldown Tray")
+	float GetSlotReadyFlashRemainingSeconds(EAbilitySlot AbilitySlot) const;
+
 	// Read-only accessor for what's currently displayed - used by the Automation
 	// Framework test, also generally useful to anything that wants to confirm the
 	// tray's state without re-deriving formatting.
@@ -159,6 +191,24 @@ private:
 	// RefreshPunishmentLockoutReadouts() next runs.
 	UFUNCTION()
 	void HandleAbilityLockoutChanged(EAbilitySlot Ability, bool bLocked);
+
+	// Adapter for OnAbilityCooldownChanged (issue #259) - on start, seeds the tray's
+	// cooldown state from the real component's current remaining time via
+	// StartCooldown(); on expiry, clears the readout/fill and plays the ready-flash.
+	UFUNCTION()
+	void HandleAbilityCooldownChanged(EAbilitySlot Ability, bool bOnCooldown);
+
+	// Starts (or restarts) a slot's brief brightness pulse - called on real-cooldown
+	// expiry (HandleAbilityCooldownChanged) and on the placeholder path's natural
+	// expiry (AdvanceCooldowns), so the flash is consistent regardless of bound-vs-
+	// placeholder mode.
+	void PlayReadyFlash(EAbilitySlot AbilitySlot);
+
+	// Decrements every slot's active ready-flash timer. Called every frame from
+	// NativeTick() and directly by the Automation test, which can't drive a live tick
+	// loop under the -nullrhi headless run (same reasoning as AdvanceCooldowns()).
+	UFUNCTION(BlueprintCallable, Category = "Ability Cooldown Tray")
+	void AdvanceReadyFlashTimers(float DeltaSeconds);
 
 	void BuildWidgetTree();
 
@@ -218,6 +268,34 @@ private:
 	// is called with a non-null component.
 	UPROPERTY()
 	TWeakObjectPtr<UAbilityLockoutComponent> BoundLockoutComponent;
+
+	// Per-slot vertical-drain fill bar (issue #259) reflecting remaining-cooldown
+	// fraction - built alongside the other per-slot arrays in BuildWidgetTree().
+	UPROPERTY()
+	TArray<TObjectPtr<UProgressBar>> SlotCooldownFillBars;
+
+	// Remaining ready-flash time per slot (issue #259) - >0 while a slot's brief
+	// brightness pulse is active, driven down every frame by AdvanceReadyFlashTimers().
+	UPROPERTY()
+	TArray<float> SlotReadyFlashRemaining;
+
+	// Weak - the tray widget does not own the pawn's cooldown component's lifetime.
+	// Used by RefreshCooldownReadouts() to poll GetRemainingCooldownSeconds() every
+	// frame; left unset (IsValid() == false) until BindAbilityCooldownComponent() is
+	// called with a non-null component. NativeTick() branches on whether this is valid
+	// to decide between polling the real component vs. running the placeholder timer.
+	UPROPERTY()
+	TWeakObjectPtr<UAbilityCooldownComponent> BoundCooldownComponent;
+
+	// Duration of the ready-flash brightness pulse - matches
+	// UEnergyMeterWidget::DamageFlashDurationSeconds's value for consistency across HUD
+	// widgets.
+	static constexpr float ReadyFlashDurationSeconds = 0.15f;
+
+	// Fixed square size, in pixels, for the new fill bar's USizeBox - a bare
+	// UProgressBar has no useful intrinsic size in this widget's auto-sized
+	// UHorizontalBox layout.
+	static constexpr float IconTileSizePx = 48.0f;
 
 	// Distinct placeholder durations (Stun/Sleep/Root/Fear/Snare) - not real ability
 	// balance data (issue #71 owns that) - chosen distinct so each slot's countdown and

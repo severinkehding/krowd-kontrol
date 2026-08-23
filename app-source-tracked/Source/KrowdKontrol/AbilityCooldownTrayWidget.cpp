@@ -1,6 +1,7 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityLockoutComponent.h"
+#include "AbilityCooldownComponent.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -10,6 +11,8 @@
 #include "Components/OverlaySlot.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
+#include "Components/ProgressBar.h"
+#include "Components/SizeBox.h"
 #include "AbilityData.h"
 #include "HUDChromeColours.h"
 #include "AbilityTooltipWidget.h"
@@ -36,6 +39,23 @@ namespace
 	{
 		return FLinearColor(0.35f, 0.05f, 0.05f, 0.92f);
 	}
+
+	// Neutral desaturated silver, not one of the 5 reserved gameplay-information
+	// colours (MISSION.md Hard Invariant 3) and distinct from UEnergyMeterWidget's
+	// saturated green fill, since this fill is a generic "time remaining" mask, not
+	// an ability/enemy-identifying signal.
+	FLinearColor GetCooldownFillColor()
+	{
+		return FLinearColor(0.55f, 0.55f, 0.60f, 0.85f);
+	}
+
+	// Placeholder-quality brightness pulse (issue #259) - lerps the chrome
+	// background toward (but not fully to) white, so this never exactly equals the
+	// reserved white/Stun colour while still reading as an unmistakable flash.
+	FLinearColor GetReadyFlashBorderColor()
+	{
+		return FLinearColor::LerpUsingHSV(HUDChromeColours::GetBackground(), FLinearColor::White, 0.65f);
+	}
 }
 
 void UAbilityCooldownTrayWidget::NativeOnInitialized()
@@ -57,8 +77,16 @@ bool UAbilityCooldownTrayWidget::Initialize()
 void UAbilityCooldownTrayWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	AdvanceCooldowns(InDeltaTime);
+	if (BoundCooldownComponent.IsValid())
+	{
+		RefreshCooldownReadouts();
+	}
+	else
+	{
+		AdvanceCooldowns(InDeltaTime);
+	}
 	RefreshPunishmentLockoutReadouts();
+	AdvanceReadyFlashTimers(InDeltaTime);
 }
 
 void UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()
@@ -102,6 +130,7 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 	// top-left anchor (issue #64, landed). See TrayMarginPx's doc-comment in the
 	// header for why bottom-right (not top-right) was picked before the meter existed.
 	TraySlot->SetAnchors(FAnchors(1.0f, 1.0f, 1.0f, 1.0f));
+
 	TraySlot->SetAlignment(FVector2D(1.0f, 1.0f));
 	TraySlot->SetAutoSize(true);
 	TraySlot->SetPosition(FVector2D(-TrayMarginPx, -TrayMarginPx));
@@ -114,6 +143,8 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 	SlotLocked.SetNum(NumAbilitySlots);
 	SlotPunishmentLockoutActive.SetNum(NumAbilitySlots);
 	SlotPunishmentLockoutRemaining.SetNum(NumAbilitySlots);
+	SlotCooldownFillBars.SetNum(NumAbilitySlots);
+	SlotReadyFlashRemaining.SetNum(NumAbilitySlots);
 
 	for (int32 Index = 0; Index < NumAbilitySlots; ++Index)
 	{
@@ -142,6 +173,23 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 		IconLabel->SetColorAndOpacity(FSlateColor(AbilityData::Get(CurrentSlot).Colour));
 		IconLabel->SetText(FText::FromString(SlotLabels[Index]));
 		IconBorder->SetContent(IconLabel);
+
+		// Vertical-drain cooldown fill (issue #259) - added after the icon
+		// border/label, before the cooldown text, so the overlay z-order is: icon
+		// border (bottom) -> fill bar -> cooldown text (top, stays legible). Wrapped
+		// in a USizeBox since a bare UProgressBar has no useful intrinsic size in this
+		// widget's auto-sized UHorizontalBox layout.
+		USizeBox* FillSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), *FString::Printf(TEXT("SlotFillSizeBox_%d"), Index));
+		FillSizeBox->SetWidthOverride(IconTileSizePx);
+		FillSizeBox->SetHeightOverride(IconTileSizePx);
+		UProgressBar* FillBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), *FString::Printf(TEXT("SlotCooldownFillBar_%d"), Index));
+		FillBar->SetBarFillType(EProgressBarFillType::TopToBottom);
+		FillBar->SetFillColorAndOpacity(GetCooldownFillColor());
+		FillBar->SetPercent(0.0f);
+		FillBar->SetVisibility(ESlateVisibility::Collapsed);
+		FillSizeBox->AddChild(FillBar);
+		SlotOverlay->AddChildToOverlay(FillSizeBox);
+		SlotCooldownFillBars[Index] = FillBar;
 
 		// Added after IconBorder in the same overlay, so it renders on top.
 		UTextBlock* CooldownText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), *FString::Printf(TEXT("SlotCooldownText_%d"), Index));
@@ -176,6 +224,10 @@ void UAbilityCooldownTrayWidget::StartCooldown(EAbilitySlot AbilitySlot, float D
 	}
 	SlotCooldownDuration[Index] = FMath::Max(0.0f, DurationSeconds);
 	SlotCooldownRemaining[Index] = SlotCooldownDuration[Index];
+	if (SlotReadyFlashRemaining.IsValidIndex(Index))
+	{
+		SlotReadyFlashRemaining[Index] = 0.0f;
+	}
 	UpdateSlotVisual(AbilitySlot);
 }
 
@@ -275,6 +327,94 @@ void UAbilityCooldownTrayWidget::RefreshPunishmentLockoutReadouts()
 	}
 }
 
+void UAbilityCooldownTrayWidget::BindAbilityCooldownComponent(UAbilityCooldownComponent* CooldownComponent)
+{
+	if (!CooldownComponent)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("AbilityCooldownTrayWidget::BindAbilityCooldownComponent called with null component - tray keeps its current cooldown states"));
+		return;
+	}
+	UAbilityCooldownComponent* PreviousComponent = BoundCooldownComponent.Get();
+	if (PreviousComponent && PreviousComponent != CooldownComponent)
+	{
+		// Without this, a rebind to a still-live component would leave the old
+		// component's delegate subscribed too - mirrors
+		// BindAbilityLockoutComponent's identical guard above.
+		PreviousComponent->OnAbilityCooldownChanged.RemoveDynamic(this, &UAbilityCooldownTrayWidget::HandleAbilityCooldownChanged);
+	}
+	BoundCooldownComponent = CooldownComponent;
+	// AddUniqueDynamic so a repeated bind (e.g. HUD rebuild on level transition,
+	// issue #132) can't stack duplicate subscriptions - same reasoning as
+	// BindAbilityLockoutComponent's identical guard above.
+	CooldownComponent->OnAbilityCooldownChanged.AddUniqueDynamic(this, &UAbilityCooldownTrayWidget::HandleAbilityCooldownChanged);
+}
+
+void UAbilityCooldownTrayWidget::HandleAbilityCooldownChanged(EAbilitySlot Ability, bool bOnCooldown)
+{
+	const int32 Index = static_cast<int32>(Ability);
+	if (!SlotCooldownRemaining.IsValidIndex(Index))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UAbilityCooldownTrayWidget::HandleAbilityCooldownChanged: index %d invalid on '%s' (tray not yet built?) - cooldown state dropped."),
+			Index, *GetNameSafe(this));
+		return;
+	}
+	if (bOnCooldown)
+	{
+		const float Duration = BoundCooldownComponent.IsValid() ? BoundCooldownComponent->GetRemainingCooldownSeconds(Ability) : 0.0f;
+		StartCooldown(Ability, Duration);
+	}
+	else
+	{
+		SlotCooldownRemaining[Index] = 0.0f;
+		UpdateSlotVisual(Ability);
+		PlayReadyFlash(Ability);
+	}
+}
+
+void UAbilityCooldownTrayWidget::RefreshCooldownReadouts()
+{
+	if (!BoundCooldownComponent.IsValid())
+	{
+		return;
+	}
+	for (int32 Index = 0; Index < SlotCooldownRemaining.Num(); ++Index)
+	{
+		if (SlotCooldownRemaining[Index] > 0.0f)
+		{
+			SlotCooldownRemaining[Index] = BoundCooldownComponent->GetRemainingCooldownSeconds(static_cast<EAbilitySlot>(Index));
+			UpdateSlotVisual(static_cast<EAbilitySlot>(Index));
+		}
+	}
+}
+
+void UAbilityCooldownTrayWidget::PlayReadyFlash(EAbilitySlot AbilitySlot)
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	if (!SlotReadyFlashRemaining.IsValidIndex(Index))
+	{
+		return;
+	}
+	SlotReadyFlashRemaining[Index] = ReadyFlashDurationSeconds;
+	UpdateSlotVisual(AbilitySlot);
+}
+
+void UAbilityCooldownTrayWidget::AdvanceReadyFlashTimers(float DeltaSeconds)
+{
+	for (int32 Index = 0; Index < SlotReadyFlashRemaining.Num(); ++Index)
+	{
+		if (SlotReadyFlashRemaining[Index] > 0.0f)
+		{
+			SlotReadyFlashRemaining[Index] = FMath::Max(0.0f, SlotReadyFlashRemaining[Index] - DeltaSeconds);
+			if (SlotReadyFlashRemaining[Index] <= 0.0f)
+			{
+				UpdateSlotVisual(static_cast<EAbilitySlot>(Index));
+			}
+		}
+	}
+}
+
 void UAbilityCooldownTrayWidget::AdvanceCooldowns(float DeltaSeconds)
 {
 	for (int32 Index = 0; Index < SlotCooldownRemaining.Num(); ++Index)
@@ -283,6 +423,10 @@ void UAbilityCooldownTrayWidget::AdvanceCooldowns(float DeltaSeconds)
 		{
 			SlotCooldownRemaining[Index] = FMath::Max(0.0f, SlotCooldownRemaining[Index] - DeltaSeconds);
 			UpdateSlotVisual(static_cast<EAbilitySlot>(Index));
+			if (SlotCooldownRemaining[Index] <= 0.0f)
+			{
+				PlayReadyFlash(static_cast<EAbilitySlot>(Index));
+			}
 		}
 	}
 }
@@ -308,9 +452,24 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 	const bool bPunishmentLockout = SlotPunishmentLockoutActive.IsValidIndex(Index) && SlotPunishmentLockoutActive[Index];
 	const bool bLockedStyle = bNotYetUnlocked || bPunishmentLockout;
 
+	const bool bReadyFlash = SlotReadyFlashRemaining.IsValidIndex(Index) && SlotReadyFlashRemaining[Index] > 0.0f;
+
 	if (SlotIconBorders.IsValidIndex(Index) && SlotIconBorders[Index])
 	{
-		SlotIconBorders[Index]->SetBrushColor(bLockedStyle ? GetLockedBorderColor() : HUDChromeColours::GetBackground());
+		FLinearColor BorderColor;
+		if (bReadyFlash)
+		{
+			BorderColor = GetReadyFlashBorderColor();
+		}
+		else if (bLockedStyle)
+		{
+			BorderColor = GetLockedBorderColor();
+		}
+		else
+		{
+			BorderColor = HUDChromeColours::GetBackground();
+		}
+		SlotIconBorders[Index]->SetBrushColor(BorderColor);
 	}
 	else if (SlotIconBorders.IsValidIndex(Index))
 	{
@@ -327,6 +486,21 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 		UE_LOG(LogTemp, Warning,
 			TEXT("UAbilityCooldownTrayWidget: SlotIconLabels[%d] is null on '%s' - label will not update."),
 			Index, *GetNameSafe(this));
+	}
+
+	if (SlotCooldownFillBars.IsValidIndex(Index) && SlotCooldownFillBars[Index])
+	{
+		if (bLockedStyle || SlotCooldownRemaining[Index] <= 0.0f)
+		{
+			SlotCooldownFillBars[Index]->SetPercent(0.0f);
+			SlotCooldownFillBars[Index]->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		else
+		{
+			const float Duration = SlotCooldownDuration.IsValidIndex(Index) && SlotCooldownDuration[Index] > 0.0f ? SlotCooldownDuration[Index] : 1.0f;
+			SlotCooldownFillBars[Index]->SetPercent(FMath::Clamp(SlotCooldownRemaining[Index] / Duration, 0.0f, 1.0f));
+			SlotCooldownFillBars[Index]->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
 	}
 
 	if (bPunishmentLockout)
@@ -405,6 +579,24 @@ float UAbilityCooldownTrayWidget::GetSlotPunishmentLockoutRemainingSeconds(EAbil
 {
 	const int32 Index = static_cast<int32>(AbilitySlot);
 	return SlotPunishmentLockoutRemaining.IsValidIndex(Index) ? SlotPunishmentLockoutRemaining[Index] : 0.0f;
+}
+
+float UAbilityCooldownTrayWidget::GetSlotCooldownFillFraction(EAbilitySlot AbilitySlot) const
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	return SlotCooldownFillBars.IsValidIndex(Index) && SlotCooldownFillBars[Index] ? SlotCooldownFillBars[Index]->GetPercent() : 0.0f;
+}
+
+bool UAbilityCooldownTrayWidget::IsSlotReadyFlashActive(EAbilitySlot AbilitySlot) const
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	return SlotReadyFlashRemaining.IsValidIndex(Index) && SlotReadyFlashRemaining[Index] > 0.0f;
+}
+
+float UAbilityCooldownTrayWidget::GetSlotReadyFlashRemainingSeconds(EAbilitySlot AbilitySlot) const
+{
+	const int32 Index = static_cast<int32>(AbilitySlot);
+	return SlotReadyFlashRemaining.IsValidIndex(Index) ? SlotReadyFlashRemaining[Index] : 0.0f;
 }
 
 FText UAbilityCooldownTrayWidget::GetSlotCooldownDisplayText(EAbilitySlot AbilitySlot) const
