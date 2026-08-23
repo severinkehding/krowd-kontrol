@@ -11,6 +11,7 @@
 #include "KrowdKontrolPlayerController.h"
 #include "AbilityCooldownTrayWidget.h"
 #include "EnergyMeterWidget.h"
+#include "QuestTrackerWidget.h"
 #include "FlatCamera3DPrototypePawn.h"
 #include "Paper2DPrototypePawn.h"
 #include "AbilityUnlockComponent.h"
@@ -102,6 +103,21 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 		// just that the widget was constructed.
 		TestEqual(TEXT("Energy meter fraction should move off the 0.72 placeholder once bound"),
 			Controller->EnergyMeterWidgetInstance->GetDisplayedFraction(), 1.0f);
+	}
+
+	// Production wiring for issue #249's suggested-ability line: WireWidgetsToPawn()
+	// binds QuestTrackerWidgetInstance to the pawn's real UAbilityUnlockComponent - no
+	// enemies are alive in this world yet at this point, so the universal fallback
+	// text is the observable proof the bind actually reached the widget with a
+	// non-null component (a null FindComponentByClass<UAbilityUnlockComponent>()
+	// result would leave the widget's own default-constructed fallback state
+	// unchanged, which happens to read identically - see KrowdKontrolQuestTrackerWidgetTest.cpp's
+	// case (12)/(13)/(14) for the positive live-bind coverage this can't provide alone).
+	if (TestNotNull(TEXT("Quest tracker should be bound via WireWidgetsToPawn"), ToRawPtr(Controller->QuestTrackerWidgetInstance)))
+	{
+		TestEqual(TEXT("Quest tracker suggested-ability line should reflect the real pawn's unlock component after WireWidgetsToPawn"),
+			Controller->QuestTrackerWidgetInstance->GetSuggestedAbilityDisplayText().ToString(),
+			FString(TEXT("ANY ROBOT → STUN (LMB)")));
 	}
 
 	// Production wiring for issue #178's Punishment 1 (real ability lockout on contact

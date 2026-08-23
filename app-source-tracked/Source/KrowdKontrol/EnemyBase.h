@@ -129,6 +129,12 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// private TickCheckDetection to prove the gate itself, not just the wiring.
 	friend class FKrowdKontrolEnemyRoomDetectionGateTest;
 
+	// Same grant, for the quest-tracker suggestion test (issue #249's pass-2 review
+	// coverage), which drives a plain AEnemyBaseTestActor through Idle->Alert->
+	// Controlled->Banked to prove HandleActorBanked() recomputes the suggested-ability
+	// line, not just the banked count.
+	friend class FKrowdKontrolQuestTrackerWidgetTest;
+
 public:
 	AEnemyBase();
 

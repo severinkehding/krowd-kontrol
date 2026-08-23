@@ -2,12 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "AbilitySlot.h"
 #include "QuestTrackerWidget.generated.h"
 
 class UBorder;
 class UTextBlock;
 class AActor;
 class UWaveSpawnerComponent;
+class UAbilityUnlockComponent;
 
 // Persistent quest tracker HUD widget (PRD "Mission Briefing & Live Quest Tracker"
 // REQ-2, issue #247): a small, top-right-corner-anchored panel showing
@@ -29,10 +31,10 @@ class UWaveSpawnerComponent;
 // BindToLevelLifecycle() self-invokes HandleLevelBegin() if
 // ULevelLifecycleSubsystem::HasLevelBegun() is already true at bind time, since
 // OnLevelBegin never re-fires. This widget builds its own UI tree in C++ (no Widget
-// Blueprint asset), mirroring UEnergyMeterWidget/UOnScreenPromptWidget. This issue
-// covers only the banked-count line - two further lines (current room state, suggested
-// ability) are separate follow-up issues from the same PRD that attach to this same
-// widget class.
+// Blueprint asset), mirroring UEnergyMeterWidget/UOnScreenPromptWidget. Issue #249
+// added a second line naming the ability that best counters the enemies still alive
+// in the level - a further "current room state" line remains a separate follow-up
+// issue from the same PRD that attaches to this same widget class.
 UCLASS()
 class KROWDKONTROL_API UQuestTrackerWidget : public UUserWidget
 {
@@ -52,6 +54,19 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Quest Tracker")
 	int32 GetTotalEnemyCount() const { return TotalEnemyCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Quest Tracker")
+	FText GetSuggestedAbilityDisplayText() const;
+
+	UFUNCTION(BlueprintPure, Category = "Quest Tracker")
+	FLinearColor GetSuggestedAbilityTextColour() const;
+
+	// Production wiring (mirrors AbilityCooldownTrayWidget::BindAbilityUnlockComponent):
+	// seeds the suggested-ability line from the pawn's current unlock state and keeps
+	// it live via OnAbilityUnlocked. AKrowdKontrolPlayerController::WireWidgetsToPawn()
+	// calls this once per (re)possession; the Automation test calls it directly.
+	UFUNCTION(BlueprintCallable, Category = "Quest Tracker")
+	void BindAbilityUnlockComponent(UAbilityUnlockComponent* UnlockComponent);
 
 protected:
 	// Fires synchronously from CreateWidget(), before any Slate/viewport realization -
@@ -123,11 +138,38 @@ private:
 	// Re-renders BankedCountText from the current BankedCount/TotalEnemyCount.
 	void RefreshDisplay();
 
+	// Bound to UAbilityUnlockComponent::OnAbilityUnlocked via BindAbilityUnlockComponent().
+	UFUNCTION()
+	void HandleAbilityUnlocked(EAbilitySlot Ability);
+
+	// Fresh TActorIterator<AEnemyBase> sweep (mirrors RecountTotalEnemies()'s own
+	// "always safe to call repeatedly" shape) filtered to non-Banked enemies, matched
+	// against AbilityData::GetAll()'s CounteredEnemyType via the same reverse-lookup
+	// loop ARoomActor::EnsureBankingZonesWired() already uses. Returns EAbilitySlot::
+	// Stun (bIsColourNeutral's only true case) whenever no remaining enemy's
+	// counter is unlocked yet, or no UAbilityUnlockComponent is bound - the universal
+	// fallback per this issue's AC. Level-wide, not room-scoped - see plan.md's
+	// Alternatives Rejected for why.
+	EAbilitySlot ComputeSuggestedAbility() const;
+
+	// Re-renders SuggestedAbilityText from ComputeSuggestedAbility() - the second
+	// line's counterpart to RefreshDisplay(). Called from every event that could
+	// change either the remaining-enemy-type set or unlock state.
+	void RefreshSuggestedAbilityDisplay();
+
 	UPROPERTY()
 	TObjectPtr<UBorder> ChromeBorder;
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> BankedCountText;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> SuggestedAbilityText;
+
+	// Weak - this widget does not own the pawn's unlock component's lifetime. Mirrors
+	// AbilityCooldownTrayWidget::BoundLockoutComponent's identical weak-ref shape.
+	UPROPERTY()
+	TWeakObjectPtr<UAbilityUnlockComponent> BoundUnlockComponent;
 
 	UPROPERTY()
 	int32 BankedCount = 0;
@@ -152,5 +194,5 @@ private:
 	// if either constant below changes.
 	static constexpr float TrackerMarginPx = 24.0f;
 	static constexpr float TrackerWidthPx = 160.0f;
-	static constexpr float TrackerHeightPx = 32.0f;
+	static constexpr float TrackerHeightPx = 56.0f;
 };
