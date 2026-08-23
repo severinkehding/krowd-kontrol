@@ -114,6 +114,28 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Fear should not wake early on other-ability hit"), Fear.bWakesEarlyOnOtherAbilityHit);
 	TestFalse(TEXT("Snare should not wake early on other-ability hit"), Snare.bWakesEarlyOnOtherAbilityHit);
 
+	// (4c) issue #255: only Root flags bAllowsAttackWhileControlled - being
+	// Controlled by it does not silence the target's own attack behaviour.
+	TestFalse(TEXT("Stun should not allow attack while controlled"), Stun.bAllowsAttackWhileControlled);
+	TestFalse(TEXT("Sleep should not allow attack while controlled"), Sleep.bAllowsAttackWhileControlled);
+	TestTrue(TEXT("Root should allow attack while controlled"), Root.bAllowsAttackWhileControlled);
+	TestFalse(TEXT("Fear should not allow attack while controlled"), Fear.bAllowsAttackWhileControlled);
+	TestTrue(TEXT("Snare should allow attack while controlled"), Snare.bAllowsAttackWhileControlled);
+
+	// (4d) issue #254: only Snare flags bAllowsMovementWhileControlled - it slows
+	// (ControlledSpeedMultiplier) rather than fully immobilizing.
+	TestFalse(TEXT("Stun should not allow movement while controlled"), Stun.bAllowsMovementWhileControlled);
+	TestFalse(TEXT("Sleep should not allow movement while controlled"), Sleep.bAllowsMovementWhileControlled);
+	TestFalse(TEXT("Root should not allow movement while controlled"), Root.bAllowsMovementWhileControlled);
+	TestFalse(TEXT("Fear should not allow movement while controlled"), Fear.bAllowsMovementWhileControlled);
+	TestTrue(TEXT("Snare should allow movement while controlled"), Snare.bAllowsMovementWhileControlled);
+
+	TestEqual(TEXT("Stun ControlledSpeedMultiplier should be the inert 1.0"), Stun.ControlledSpeedMultiplier, 1.0f);
+	TestEqual(TEXT("Sleep ControlledSpeedMultiplier should be the inert 1.0"), Sleep.ControlledSpeedMultiplier, 1.0f);
+	TestEqual(TEXT("Root ControlledSpeedMultiplier should be the inert 1.0 (its allowed attack is unmodified)"), Root.ControlledSpeedMultiplier, 1.0f);
+	TestEqual(TEXT("Fear ControlledSpeedMultiplier should be the inert 1.0"), Fear.ControlledSpeedMultiplier, 1.0f);
+	TestEqual(TEXT("Snare ControlledSpeedMultiplier should be 0.5 (50% slow, issue #254)"), Snare.ControlledSpeedMultiplier, 0.5f);
+
 	// (5) The 5 colours (and their FName tags) are mutually distinct - guards against a
 	// copy-paste that accidentally reuses one colour, or one colour's tag, for two
 	// abilities.

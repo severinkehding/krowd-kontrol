@@ -61,6 +61,27 @@ struct FAbilityData
 	// instead of running its full duration; see AEnemyBase::ReceiveControl's
 	// early-wake branch.
 	bool bWakesEarlyOnOtherAbilityHit = false;
+
+	// True only for Root: a target Controlled by this ability keeps its own attack
+	// behaviour (telegraph/tell/fire) running exactly as it would in Attack, instead
+	// of having it silenced the instant Controlled begins - see
+	// AEnemyBase::IsAttackBehaviorActive().
+	bool bAllowsAttackWhileControlled = false;
+
+	// True only for Snare: a target Controlled by this ability keeps closing distance
+	// (AEnemyBase::TickChaseMovement) instead of freezing in place, scaled by
+	// ControlledSpeedMultiplier below - see AEnemyBase::IsMovementBehaviorActive().
+	// Root's bAllowsAttackWhileControlled above is a distinct, narrower flag: it keeps
+	// an already-in-progress attack running, but Root's target still stops moving.
+	bool bAllowsMovementWhileControlled = false;
+
+	// Fraction of GetEffectiveMovementSpeedUnitsPerSecond()/attack-telegraph
+	// DeltaSeconds retained while Controlled - consulted only when
+	// bAllowsMovementWhileControlled or bAllowsAttackWhileControlled is true (Snare:
+	// 0.5f, a 50% slow per issue #254; Root: 1.0f, i.e. its allowed attack runs
+	// completely unmodified). 1.0f (full speed) is the safe inert default for every
+	// ability that never reaches either flag - see AEnemyBase::GetControlledSpeedMultiplier().
+	float ControlledSpeedMultiplier = 1.0f;
 };
 
 namespace AbilityData

@@ -240,6 +240,28 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	InterruptedSniper->AdvanceAttackTelegraph(InterruptedSniper->AttackTelegraphSeconds);
 	TestEqual(TEXT("The interrupted shot should never fire"), InterruptedListener->CallCount, 0);
 
+	// (l2) issue #255: unlike Sleep above, Root-triggered Controlled does NOT clear
+	// the attack tell or stop the telegraph - the shot still fires once
+	// (bShotFiredForCurrentAttack still latches), but firing itself is not silenced by
+	// entering Controlled, since AbilityData::Get(Root).bAllowsAttackWhileControlled.
+	ASniperEnemy* RootedSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(RootedSniper, ZeroDistanceLocation);
+	TestTrue(TEXT("(l2) Attack tell should be visibly on before Root interrupts"),
+		RootedSniper->AttackTellLightComponent->Intensity > 0.0f);
+	RootedSniper->ReceiveControl(EAbilitySlot::Root);
+	TestEqual(TEXT("(l2) Sniper should be Controlled after Root"),
+		static_cast<uint8>(RootedSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestTrue(TEXT("(l2) Attack tell should stay on - Root does not clear it"),
+		RootedSniper->AttackTellLightComponent->Intensity > 0.0f);
+	USniperShotFiredTestListener* RootedListener = NewObject<USniperShotFiredTestListener>();
+	RootedSniper->OnSniperShotFired.AddDynamic(RootedListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+	RootedSniper->AdvanceAttackTelegraph(RootedSniper->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l2) A shot should still fire while Controlled by Root, unlike Sleep"),
+		RootedListener->CallCount, 1);
+	RootedSniper->AdvanceAttackTelegraph(RootedSniper->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l2) The one-shot guard should still prevent a second shot while Rooted"),
+		RootedListener->CallCount, 1);
+
 	// (m) the real Tick() override, not just the friend-called AdvanceAttackTelegraph
 	// helper, must wire the telegraph into the per-frame loop - proves neither a
 	// missing Super::Tick(DeltaTime) nor a wiring mistake in the override itself,

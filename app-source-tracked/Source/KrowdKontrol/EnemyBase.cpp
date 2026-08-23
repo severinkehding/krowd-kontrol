@@ -111,6 +111,7 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 		if (Ability != ControllingAbility && AbilityData::Get(ControllingAbility).bWakesEarlyOnOtherAbilityHit)
 		{
 			CurrentState = EEnemyState::Alert;
+			OnControlledExpired();
 			OnEnemyControlledExpired.Broadcast();
 		}
 		return;
@@ -126,6 +127,29 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 	RemainingControlledSeconds = OverrideSeconds >= 0.0f ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
 	TotalControlledSeconds = RemainingControlledSeconds;
 	OnControlledEntry(Ability);
+}
+
+bool AEnemyBase::IsAttackBehaviorActive() const
+{
+	if (CurrentState == EEnemyState::Attack)
+	{
+		return true;
+	}
+	return CurrentState == EEnemyState::Controlled && AbilityData::Get(ControllingAbility).bAllowsAttackWhileControlled;
+}
+
+bool AEnemyBase::IsMovementBehaviorActive() const
+{
+	if (CurrentState == EEnemyState::Alert)
+	{
+		return true;
+	}
+	return CurrentState == EEnemyState::Controlled && AbilityData::Get(ControllingAbility).bAllowsMovementWhileControlled;
+}
+
+float AEnemyBase::GetControlledSpeedMultiplier() const
+{
+	return CurrentState == EEnemyState::Controlled ? AbilityData::Get(ControllingAbility).ControlledSpeedMultiplier : 1.0f;
 }
 
 void AEnemyBase::TransitionToBanked()
@@ -211,13 +235,14 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 		// Controlled indefinitely and never treated as a kill (MISSION.md Hard
 		// Invariant 2). Banking within the window remains the only path to Banked.
 		CurrentState = EEnemyState::Alert;
+		OnControlledExpired();
 		OnEnemyControlledExpired.Broadcast();
 	}
 }
 
 void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSeconds)
 {
-	if (CurrentState != EEnemyState::Alert)
+	if (!IsMovementBehaviorActive())
 	{
 		return;
 	}
@@ -227,7 +252,7 @@ void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSec
 	{
 		return;
 	}
-	const float MoveDistance = FMath::Min(DistanceRemaining, GetEffectiveMovementSpeedUnitsPerSecond() * DeltaSeconds);
+	const float MoveDistance = FMath::Min(DistanceRemaining, GetEffectiveMovementSpeedUnitsPerSecond() * GetControlledSpeedMultiplier() * DeltaSeconds);
 	SetActorLocation(GetActorLocation() + ToPlayer.GetSafeNormal() * MoveDistance);
 }
 

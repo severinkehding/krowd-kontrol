@@ -21,6 +21,7 @@
 #include "AbilityCooldownComponent.h"
 #include "AbilityLockoutComponent.h"
 #include "EnemyBaseTestActor.h"
+#include "Herdable.h"
 #include "KrowdKontrolPlayerController.h"
 #include "BriefingCardWidget.h"
 #include "LevelBriefingData.h"
@@ -1092,6 +1093,537 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 		Enemy->SetActorLocation(Zone->GetActorLocation(), /*bSweep=*/true);
 		TestEqual(TEXT("A Stun-AoE-controlled enemy overlapping a target zone should reach Banked"),
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+	}
+
+	// (p-root) TryCastLineAbilityTowardLocation via Root (issue #255): in-path vs
+	// off-path - an enemy on the Owner->cursor-direction line within LineHitWidthUnits
+	// is affected, one at the same along-line distance but well beyond LineHitWidthUnits
+	// perpendicular to it is not.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* OnLineEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OffLineEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(p-root) On-line AEnemyBaseTestActor should spawn"), OnLineEnemy)
+			|| !TestNotNull(TEXT("(p-root) Off-line AEnemyBaseTestActor should spawn"), OffLineEnemy))
+		{
+			return false;
+		}
+		OnLineEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OffLineEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		const FVector CursorLocation(500.0f, 0.0f, 0.0f);
+		OnLineEnemy->SetActorLocation(FVector(400.0f, 0.0f, 0.0f)); // on the line, well within LineHitWidthUnits
+		OffLineEnemy->SetActorLocation(FVector(400.0f, CastComponent->LineHitWidthUnits * 3.0f, 0.0f)); // same X, far off the line
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, CursorLocation);
+		TestEqual(TEXT("(p-root) Only the on-line enemy should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("(p-root) The on-line enemy should be Controlled"),
+			static_cast<uint8>(OnLineEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(p-root) The off-line enemy should be left untouched"),
+			static_cast<uint8>(OffLineEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (q-root) Piercing/multi-hit (issue #255): three enemies on the same line at
+	// different distances from the Owner, all within LongThrowRangeUnits, are ALL
+	// affected - this is the test that actually proves and documents the "all along
+	// the line, not just first" design decision (see the plan/PR body's rationale:
+	// consistent with every other locked shape hitting everything inside it).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* NearEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* MidEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* FarEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(q-root) Near AEnemyBaseTestActor should spawn"), NearEnemy)
+			|| !TestNotNull(TEXT("(q-root) Mid AEnemyBaseTestActor should spawn"), MidEnemy)
+			|| !TestNotNull(TEXT("(q-root) Far AEnemyBaseTestActor should spawn"), FarEnemy))
+		{
+			return false;
+		}
+		NearEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		MidEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		FarEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		NearEnemy->SetActorLocation(FVector(200.0f, 0.0f, 0.0f));
+		MidEnemy->SetActorLocation(FVector(600.0f, 0.0f, 0.0f));
+		FarEnemy->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f));
+		const FVector CursorLocation(1200.0f, 0.0f, 0.0f); // aims +X; all 3 enemies within LongThrowRangeUnits
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, CursorLocation);
+		TestEqual(TEXT("(q-root) All three enemies along the line should be affected (piercing)"), AffectedCount, 3);
+		TestEqual(TEXT("(q-root) The near enemy should be Controlled"),
+			static_cast<uint8>(NearEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(q-root) The mid enemy should be Controlled"),
+			static_cast<uint8>(MidEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(q-root) The far enemy should be Controlled"),
+			static_cast<uint8>(FarEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
+	// (r-root) Range clamp at Long tier (issue #255): Root's line always extends to
+	// exactly LongThrowRangeUnits from the Owner, never further, even if the cursor is
+	// placed well beyond it - mirrors case (n)'s clamp-boundary shape.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		// Owner defaults to the World origin; cursor placed 10x beyond LongThrowRangeUnits
+		// along +X, so the line's endpoint is exactly (LongThrowRangeUnits, 0, 0).
+		const FVector LineEndPoint(CastComponent->LongThrowRangeUnits, 0.0f, 0.0f);
+		const FVector CursorLocation = LineEndPoint * 10.0f;
+
+		AEnemyBaseTestActor* AtEndpointEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* BeyondEndpointEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(r-root) At-endpoint AEnemyBaseTestActor should spawn"), AtEndpointEnemy)
+			|| !TestNotNull(TEXT("(r-root) Beyond-endpoint AEnemyBaseTestActor should spawn"), BeyondEndpointEnemy))
+		{
+			return false;
+		}
+		AtEndpointEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		BeyondEndpointEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		AtEndpointEnemy->SetActorLocation(LineEndPoint);
+		BeyondEndpointEnemy->SetActorLocation(LineEndPoint + FVector(CastComponent->LineHitWidthUnits * 2.0f, 0.0f, 0.0f));
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, CursorLocation);
+		TestEqual(TEXT("(r-root) Only the enemy at the clamped endpoint should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("(r-root) The at-endpoint enemy should be Controlled"),
+			static_cast<uint8>(AtEndpointEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(r-root) The beyond-endpoint enemy should be left untouched"),
+			static_cast<uint8>(BeyondEndpointEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (s-root) Pure-math ComputeLineEndLocation cases (issue #255) - no UWorld needed,
+	// same shape as case (n2)'s ComputeClampedThrowLocation cases. Contrasts directly
+	// with ComputeClampedThrowLocation: a Line ability always extends the FULL
+	// LineRangeUnits, never clamped down to the cursor's own (shorter) distance.
+	{
+		const FVector OwnerLocation = FVector::ZeroVector;
+		const float LineRangeUnits = 2000.0f;
+		const FVector FallbackDirection(1.0f, 0.0f, 0.0f);
+
+		// A cursor well within range still extends the line the FULL LineRangeUnits,
+		// NOT clamped down to the cursor's own (shorter) distance.
+		const FVector NearCursor(500.0f, 0.0f, 0.0f);
+		const FVector EndForNearCursor = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, NearCursor, LineRangeUnits, FallbackDirection);
+		TestTrue(TEXT("(s-root) A near cursor should still extend the line to the full LineRangeUnits"),
+			EndForNearCursor.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+
+		// A cursor beyond range: the line still stops at exactly LineRangeUnits, not the
+		// cursor's own (longer) distance.
+		const FVector FarCursor(9000.0f, 0.0f, 0.0f);
+		const FVector EndForFarCursor = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, FarCursor, LineRangeUnits, FallbackDirection);
+		TestTrue(TEXT("(s-root) A far cursor should clamp the line's end to exactly LineRangeUnits"),
+			EndForFarCursor.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+
+		// Degenerate case: DesiredTargetLocation == OwnerLocation, direction undefined -
+		// falls back to FallbackDirection.
+		const FVector DegenerateEnd = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, OwnerLocation, LineRangeUnits, FallbackDirection);
+		TestTrue(TEXT("(s-root) A degenerate (coincident) cursor should fall back to FallbackDirection"),
+			DegenerateEnd.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+
+		// Near-degenerate case (code review, PR #282): a cursor a few units from the
+		// owner - not exactly coincident, but well inside the same real-gameplay-units
+		// dead zone ComputeFacingRotation guards against (PR #279) - must also fall
+		// back to FallbackDirection rather than normalizing floating-point noise.
+		// Cursor is offset perpendicular to FallbackDirection so a buggy
+		// implementation that just normalizes the tiny delta (instead of falling
+		// back) would produce a visibly different, wrong end location.
+		const FVector NearDegenerateCursor(0.0f, 5.0f, 0.0f);
+		const FVector NearDegenerateEnd = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, NearDegenerateCursor, LineRangeUnits, FallbackDirection);
+		TestTrue(TEXT("(s-root) A cursor inside the dead zone (but not exactly coincident) should also fall back to FallbackDirection"),
+			NearDegenerateEnd.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+	}
+
+	// (t-root) Zero enemies on the line still consumes the cooldown (issue #255) -
+	// mirrors case (o)'s identical "a whiff still commits" contract for
+	// TryCastThrownAbilityAtLocation.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, FVector(500.0f, 0.0f, 0.0f));
+		TestEqual(TEXT("(t-root) A line hitting zero enemies should return 0, not -1"), AffectedCount, 0);
+		TestTrue(TEXT("(t-root) A 0-affected line cast must still consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Root));
+	}
+
+	// (u-root) End-to-end banking through the line-cast path (issue #255 acceptance
+	// criterion "rooted enemy still banks once herded"): an enemy Controlled via
+	// TryCastLineAbilityTowardLocation (this PR's new entry point) still reaches
+	// Banked through a real ARoomActor/ATargetZone physical-overlap chain - mirrors
+	// case (u-stun)'s shape exactly, substituting the line-cast entry point for the
+	// thrown-AoE one. Pre-existing coverage (KrowdKontrolRoomActorBankingWiringTest.cpp)
+	// only drove this through the low-level ReceiveControl(EAbilitySlot::Root) call,
+	// never through the actual cast component path a player uses.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		// Required for a real physics overlap to fire OnComponentBeginOverlap - see
+		// KrowdKontrolTargetZoneTest.cpp's file comment for why both calls are needed.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
+		APawn* Owner = World->SpawnActor<APawn>();
+		if (!TestNotNull(TEXT("APawn should spawn into the test World"), Owner))
+		{
+			return false;
+		}
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		// Plain (non-deferred) spawn, same as (u-stun) - BeginPlay() fires immediately
+		// with an empty TargetZones array, so EnsureBankingZonesWired() below is called
+		// explicitly after AddTargetZone().
+		ARoomActor* Room = World->SpawnActor<ARoomActor>();
+		if (!TestNotNull(TEXT("Room should spawn"), Room))
+		{
+			return false;
+		}
+		// RU-NNR matches ARunnerEnemy (RoomActorBankingWiringTest.cpp's own mapping);
+		// type-keyed acceptance means the controlling ability (Root here) doesn't need
+		// to match the zone's type, same as (u-stun).
+		AActor* Marker = Room->AddTargetZone(EEnemyType::RU_NNR);
+		if (!TestNotNull(TEXT("Marker should spawn"), Marker))
+		{
+			return false;
+		}
+		Room->EnsureBankingZonesWired();
+
+		ATargetZone* Zone = nullptr;
+		TArray<AActor*> AttachedActors;
+		Marker->GetAttachedActors(AttachedActors);
+		for (AActor* Attached : AttachedActors)
+		{
+			if (ATargetZone* AttachedZone = Cast<ATargetZone>(Attached))
+			{
+				Zone = AttachedZone;
+				break;
+			}
+		}
+		if (!TestNotNull(TEXT("Marker should have a self-healed ATargetZone attached"), Zone))
+		{
+			return false;
+		}
+
+		// On the Owner (World origin) -> +X line, well within LongThrowRangeUnits, and
+		// well clear of the zone (attached at the Room's own origin location) so no
+		// accidental overlap happens before the cast.
+		ARunnerEnemy* Enemy = World->SpawnActor<ARunnerEnemy>(FVector(700.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
+		if (!TestNotNull(TEXT("(u-root) ARunnerEnemy should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(Enemy->GetActorLocation()); // Idle -> Alert
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, FVector(500.0f, 0.0f, 0.0f));
+		TestEqual(TEXT("(u-root) The Root line cast should affect exactly the one on-line enemy"), AffectedCount, 1);
+		TestEqual(TEXT("(u-root) The enemy should be Controlled after the Root line cast"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+		Enemy->SetActorLocation(Zone->GetActorLocation(), /*bSweep=*/true);
+		TestEqual(TEXT("(u-root) A Root-line-controlled enemy overlapping a target zone should reach Banked"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+	}
+
+	// (u-snare) TryCastConeAbilityTowardLocation via Snare (issue #254): in-cone/in-range
+	// vs behind-the-robot (outside the cone entirely) vs in-cone-direction-but-beyond-range.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(5); // unlocks Snare
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* InConeEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* BehindRobotEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* BeyondRangeEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(u-snare) In-cone AEnemyBaseTestActor should spawn"), InConeEnemy)
+			|| !TestNotNull(TEXT("(u-snare) Behind-robot AEnemyBaseTestActor should spawn"), BehindRobotEnemy)
+			|| !TestNotNull(TEXT("(u-snare) Beyond-range AEnemyBaseTestActor should spawn"), BeyondRangeEnemy))
+		{
+			return false;
+		}
+		InConeEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		BehindRobotEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		BeyondRangeEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		const FVector CursorLocation(500.0f, 0.0f, 0.0f); // cone aims +X
+		InConeEnemy->SetActorLocation(FVector(400.0f, 0.0f, 0.0f)); // on the cone centreline, well in range
+		BehindRobotEnemy->SetActorLocation(FVector(-400.0f, 0.0f, 0.0f)); // dot product -1: outside any sub-360 cone
+		BeyondRangeEnemy->SetActorLocation(FVector(CastComponent->GetConeRangeUnits(EAbilitySlot::Snare) * 10.0f, 0.0f, 0.0f)); // in-cone direction, well beyond range
+
+		const int32 AffectedCount = CastComponent->TryCastConeAbilityTowardLocation(EAbilitySlot::Snare, CursorLocation);
+		TestEqual(TEXT("(u-snare) Only the in-cone-in-range enemy should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("(u-snare) The in-cone enemy should be Controlled"),
+			static_cast<uint8>(InConeEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(u-snare) The behind-robot enemy should be left untouched"),
+			static_cast<uint8>(BehindRobotEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		TestEqual(TEXT("(u-snare) The beyond-range enemy should be left untouched"),
+			static_cast<uint8>(BeyondRangeEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (v-snare) Multi-target (issue #254): two enemies both inside the cone are both
+	// affected in a single cast, mirroring (q-root)'s piercing/multi-hit shape.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(5); // unlocks Snare
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* CentreEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OffCentreEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(v-snare) Centre AEnemyBaseTestActor should spawn"), CentreEnemy)
+			|| !TestNotNull(TEXT("(v-snare) Off-centre AEnemyBaseTestActor should spawn"), OffCentreEnemy))
+		{
+			return false;
+		}
+		CentreEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OffCentreEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		const FVector CursorLocation(500.0f, 0.0f, 0.0f); // cone aims +X
+		CentreEnemy->SetActorLocation(FVector(400.0f, 0.0f, 0.0f)); // dead-centre
+		OffCentreEnemy->SetActorLocation(FVector(346.4f, 200.0f, 0.0f)); // ~30 degrees off centre, inside the 37.5 degree half-angle
+
+		const int32 AffectedCount = CastComponent->TryCastConeAbilityTowardLocation(EAbilitySlot::Snare, CursorLocation);
+		TestEqual(TEXT("(v-snare) Both enemies in the cone should be affected"), AffectedCount, 2);
+		TestEqual(TEXT("(v-snare) The centre enemy should be Controlled"),
+			static_cast<uint8>(CentreEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(v-snare) The off-centre enemy should be Controlled"),
+			static_cast<uint8>(OffCentreEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
+	// (w-snare) Range clamp boundary at Medium tier (issue #254): an enemy exactly at
+	// MediumThrowRangeUnits (on the cone centreline) is affected, one just beyond it is
+	// not - mirrors (r-root)'s clamp-boundary shape.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(5); // unlocks Snare
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		const float RangeUnits = CastComponent->GetConeRangeUnits(EAbilitySlot::Snare);
+		const FVector CursorLocation(500.0f, 0.0f, 0.0f); // cone aims +X
+
+		AEnemyBaseTestActor* AtRangeEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* BeyondRangeEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(w-snare) At-range AEnemyBaseTestActor should spawn"), AtRangeEnemy)
+			|| !TestNotNull(TEXT("(w-snare) Beyond-range AEnemyBaseTestActor should spawn"), BeyondRangeEnemy))
+		{
+			return false;
+		}
+		AtRangeEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		BeyondRangeEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		AtRangeEnemy->SetActorLocation(FVector(RangeUnits, 0.0f, 0.0f));
+		BeyondRangeEnemy->SetActorLocation(FVector(RangeUnits + 50.0f, 0.0f, 0.0f));
+
+		const int32 AffectedCount = CastComponent->TryCastConeAbilityTowardLocation(EAbilitySlot::Snare, CursorLocation);
+		TestEqual(TEXT("(w-snare) Only the at-range enemy should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("(w-snare) The at-range enemy should be Controlled"),
+			static_cast<uint8>(AtRangeEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(w-snare) The beyond-range enemy should be left untouched"),
+			static_cast<uint8>(BeyondRangeEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (x-snare) Pure-math ComputeConeDirection and IsPointInCone cases (issue #254) - no
+	// UWorld needed, mirroring (s-root)'s ComputeLineEndLocation pure-math shape.
+	{
+		const FVector OwnerLocation = FVector::ZeroVector;
+		const FVector FallbackDirection(1.0f, 0.0f, 0.0f);
+
+		// ComputeConeDirection: near cursor still yields the normalized direction (not
+		// clamped to any range - direction-only math).
+		const FVector NearCursor(500.0f, 0.0f, 0.0f);
+		const FVector DirectionForNearCursor = UAbilityCastComponent::ComputeConeDirection(OwnerLocation, NearCursor, FallbackDirection);
+		TestTrue(TEXT("(x-snare) A near cursor should yield the normalized direction toward it"),
+			DirectionForNearCursor.Equals(FVector(1.0f, 0.0f, 0.0f), 0.01f));
+
+		// ComputeConeDirection: far cursor also yields just the normalized direction.
+		const FVector FarCursor(9000.0f, 3000.0f, 0.0f);
+		const FVector DirectionForFarCursor = UAbilityCastComponent::ComputeConeDirection(OwnerLocation, FarCursor, FallbackDirection);
+		TestTrue(TEXT("(x-snare) A far cursor should yield the normalized direction toward it"),
+			DirectionForFarCursor.Equals(FarCursor.GetSafeNormal(), 0.01f));
+
+		// ComputeConeDirection: degenerate (coincident) cursor falls back to FallbackDirection.
+		const FVector DegenerateDirection = UAbilityCastComponent::ComputeConeDirection(OwnerLocation, OwnerLocation, FallbackDirection);
+		TestTrue(TEXT("(x-snare) A degenerate (coincident) cursor should fall back to FallbackDirection"),
+			DegenerateDirection.Equals(FVector(1.0f, 0.0f, 0.0f), 0.01f));
+
+		// ComputeConeDirection: near-degenerate cursor (inside the dead zone but not
+		// exactly coincident) also falls back to FallbackDirection.
+		const FVector NearDegenerateCursor(0.0f, 5.0f, 0.0f);
+		const FVector NearDegenerateDirection = UAbilityCastComponent::ComputeConeDirection(OwnerLocation, NearDegenerateCursor, FallbackDirection);
+		TestTrue(TEXT("(x-snare) A cursor inside the dead zone (but not exactly coincident) should also fall back to FallbackDirection"),
+			NearDegenerateDirection.Equals(FVector(1.0f, 0.0f, 0.0f), 0.01f));
+
+		// IsPointInCone: dead-centre hit.
+		const FVector ConeDirection(1.0f, 0.0f, 0.0f);
+		constexpr float HalfAngleDegrees = 37.5f; // half of Snare's 75 degree ConeFullAngleDegrees
+		constexpr float RangeUnits = 1200.0f;
+		TestTrue(TEXT("(x-snare) A point dead-centre in the cone direction should be in-cone"),
+			UAbilityCastComponent::IsPointInCone(FVector(400.0f, 0.0f, 0.0f), OwnerLocation, ConeDirection, HalfAngleDegrees, RangeUnits));
+
+		// IsPointInCone: exactly at the half-angle boundary is still in-cone (inclusive >=).
+		const float HalfAngleRadians = FMath::DegreesToRadians(HalfAngleDegrees);
+		const FVector AtBoundaryPoint(FMath::Cos(HalfAngleRadians) * 400.0f, FMath::Sin(HalfAngleRadians) * 400.0f, 0.0f);
+		TestTrue(TEXT("(x-snare) A point exactly at the half-angle boundary should be in-cone"),
+			UAbilityCastComponent::IsPointInCone(AtBoundaryPoint, OwnerLocation, ConeDirection, HalfAngleDegrees, RangeUnits));
+
+		// IsPointInCone: just outside the half-angle boundary is not in-cone.
+		const float JustOutsideRadians = FMath::DegreesToRadians(HalfAngleDegrees + 5.0f);
+		const FVector JustOutsidePoint(FMath::Cos(JustOutsideRadians) * 400.0f, FMath::Sin(JustOutsideRadians) * 400.0f, 0.0f);
+		TestFalse(TEXT("(x-snare) A point just outside the half-angle boundary should not be in-cone"),
+			UAbilityCastComponent::IsPointInCone(JustOutsidePoint, OwnerLocation, ConeDirection, HalfAngleDegrees, RangeUnits));
+
+		// IsPointInCone: in-angle but beyond range.
+		TestFalse(TEXT("(x-snare) A point in-angle but beyond range should not be in-cone"),
+			UAbilityCastComponent::IsPointInCone(FVector(RangeUnits + 50.0f, 0.0f, 0.0f), OwnerLocation, ConeDirection, HalfAngleDegrees, RangeUnits));
+
+		// IsPointInCone: a point exactly coincident with ApexLocation (zero-length
+		// ToPoint, undefined angle) is treated as outside the cone - documented edge case.
+		TestFalse(TEXT("(x-snare) A point exactly at the apex should be treated as outside the cone"),
+			UAbilityCastComponent::IsPointInCone(OwnerLocation, OwnerLocation, ConeDirection, HalfAngleDegrees, RangeUnits));
+	}
+
+	// (y-snare) A snared enemy still banks (issue #254 acceptance criterion): casting
+	// Snare on an in-cone enemy leaves it IsControlled() (via IHerdable, mirroring
+	// KrowdKontrolEnemyBaseHerdableTest.cpp's own pattern), and a direct
+	// TransitionToBanked() call still reaches Banked - proving banking eligibility is
+	// untouched by the new partial-slow mechanism.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(5); // unlocks Snare
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(y-snare) AEnemyBaseTestActor should spawn"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		Enemy->SetActorLocation(FVector(400.0f, 0.0f, 0.0f)); // on the cone centreline, well in range
+
+		const int32 AffectedCount = CastComponent->TryCastConeAbilityTowardLocation(EAbilitySlot::Snare, FVector(500.0f, 0.0f, 0.0f));
+		TestEqual(TEXT("(y-snare) The Snare cone cast should affect exactly the one in-cone enemy"), AffectedCount, 1);
+
+		IHerdable* Herdable = Cast<IHerdable>(Enemy);
+		if (!TestNotNull(TEXT("(y-snare) AEnemyBaseTestActor should be castable to IHerdable"), Herdable))
+		{
+			return false;
+		}
+		TestTrue(TEXT("(y-snare) IsControlled should report true once Controlled by Snare"), Herdable->IsControlled());
+
+		Enemy->TransitionToBanked(); // Controlled -> Banked
+		TestEqual(TEXT("(y-snare) The enemy should reach Banked via a direct TransitionToBanked call"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+	}
+
+	// (z-snare) Zero enemies in the cone still consumes the cooldown (issue #254) -
+	// mirrors (t-root)'s identical "a whiff still commits" contract.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(5); // unlocks Snare
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		const int32 AffectedCount = CastComponent->TryCastConeAbilityTowardLocation(EAbilitySlot::Snare, FVector(500.0f, 0.0f, 0.0f));
+		TestEqual(TEXT("(z-snare) A cone hitting zero enemies should return 0, not -1"), AffectedCount, 0);
+		TestTrue(TEXT("(z-snare) A 0-affected cone cast must still consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Snare));
 	}
 
 	return true;

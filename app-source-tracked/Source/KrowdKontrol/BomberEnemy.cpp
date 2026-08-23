@@ -10,6 +10,7 @@
 #include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/AudioComponent.h"
+#include "AbilityData.h"
 
 ABomberEnemy::ABomberEnemy()
 {
@@ -83,8 +84,13 @@ void ABomberEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
 	// Clear the tell on any Controlled-entry interrupt (Alert/Attack -> Controlled),
 	// so a bomber mid-telegraph doesn't keep showing an explosion that
-	// AdvanceAttackTelegraph now guarantees will never fire.
-	AttackTellLightComponent->SetIntensity(0.0f);
+	// AdvanceAttackTelegraph now guarantees will never fire. Root is the one exception
+	// (bAllowsAttackWhileControlled) - see issue #255 - so the tell is deliberately
+	// left alone for it.
+	if (!AbilityData::Get(Ability).bAllowsAttackWhileControlled)
+	{
+		AttackTellLightComponent->SetIntensity(0.0f);
+	}
 
 	if (Ability != EAbilitySlot::Fear)
 	{
@@ -92,6 +98,15 @@ void ABomberEnemy::OnControlledEntry(EAbilitySlot Ability)
 	}
 	// PRD 03: glow intensifies ONLY on Fear - every other ability, no response.
 	CoreGlowLightComponent->SetIntensity(CoreGlowIntensifiedIntensity);
+}
+
+void ABomberEnemy::OnControlledExpired()
+{
+	// Root (bAllowsAttackWhileControlled) is the only ability that leaves the tell lit
+	// through OnControlledEntry above, so this is the only case that can ever find it
+	// still on here - safe to unconditionally clear on every Controlled -> Alert edge
+	// (pass-1 review follow-up, issue #255).
+	AttackTellLightComponent->SetIntensity(0.0f);
 }
 
 void ABomberEnemy::OnAttackEntry()
@@ -120,11 +135,11 @@ void ABomberEnemy::OnAttackEntry()
 
 void ABomberEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 {
-	if (bExplodedForCurrentAttack || GetEnemyState() != EEnemyState::Attack)
+	if (bExplodedForCurrentAttack || !IsAttackBehaviorActive())
 	{
 		return;
 	}
-	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds);
+	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds * GetControlledSpeedMultiplier());
 	UpdateTelegraphEscalation();
 	if (RemainingTelegraphSeconds <= 0.0f)
 	{

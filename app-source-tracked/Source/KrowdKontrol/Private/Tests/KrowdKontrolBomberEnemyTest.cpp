@@ -189,6 +189,49 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	InterruptedBomber->AdvanceAttackTelegraph(InterruptedBomber->AttackTelegraphSeconds);
 	TestEqual(TEXT("interrupted explosion never fires"), InterruptedListener->CallCount, 0);
 
+	// (l-root) issue #255: unlike Sleep above, Root-triggered Controlled does NOT
+	// clear the attack tell or stop the telegraph - the explosion still fires once
+	// (bExplodedForCurrentAttack still latches), but firing itself is not silenced by
+	// entering Controlled, since AbilityData::Get(Root).bAllowsAttackWhileControlled.
+	ABomberEnemy* RootedBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(RootedBomber, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-root) Attack tell should be visibly on before Root interrupts"),
+		RootedBomber->AttackTellLightComponent->Intensity > 0.0f);
+	RootedBomber->ReceiveControl(EAbilitySlot::Root);
+	TestEqual(TEXT("(l-root) Bomber should be Controlled after Root"),
+		static_cast<uint8>(RootedBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestTrue(TEXT("(l-root) Attack tell should stay on - Root does not clear it"),
+		RootedBomber->AttackTellLightComponent->Intensity > 0.0f);
+	UBomberExplodedTestListener* RootedListener = NewObject<UBomberExplodedTestListener>();
+	RootedBomber->OnBomberExploded.AddDynamic(RootedListener, &UBomberExplodedTestListener::HandleBomberExploded);
+	RootedBomber->AdvanceAttackTelegraph(RootedBomber->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-root) The explosion should still fire once while Controlled by Root, unlike Sleep"),
+		RootedListener->CallCount, 1);
+	RootedBomber->AdvanceAttackTelegraph(RootedBomber->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-root) The one-shot guard should still prevent a second explosion while Rooted"),
+		RootedListener->CallCount, 1);
+
+	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
+	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
+	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
+	// the way, so the explosion has NOT fired yet; a second identical tick brings the
+	// cumulative elapsed time up to AttackTelegraphSeconds and the explosion fires
+	// exactly once. This is the concrete, observable proof the slow is real, not just a
+	// flag.
+	ABomberEnemy* SnaredBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(SnaredBomber, ZeroDistanceLocation);
+	SnaredBomber->ReceiveControl(EAbilitySlot::Snare);
+	TestEqual(TEXT("(m-snare) Bomber should be Controlled after Snare"),
+		static_cast<uint8>(SnaredBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	UBomberExplodedTestListener* SnaredListener = NewObject<UBomberExplodedTestListener>();
+	SnaredBomber->OnBomberExploded.AddDynamic(SnaredListener, &UBomberExplodedTestListener::HandleBomberExploded);
+	SnaredBomber->AdvanceAttackTelegraph(SnaredBomber->AttackTelegraphSeconds);
+	TestEqual(TEXT("(m-snare) The explosion should NOT have fired after only one telegraph's worth of half-speed ticks"),
+		SnaredListener->CallCount, 0);
+	SnaredBomber->AdvanceAttackTelegraph(SnaredBomber->AttackTelegraphSeconds);
+	TestEqual(TEXT("(m-snare) The explosion should fire exactly once once cumulative elapsed time (at half speed) reaches AttackTelegraphSeconds"),
+		SnaredListener->CallCount, 1);
+
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
 	// MovementSpeed (200.0f), not AEnemyBase's own base default (600.0f) - the
 	// direct proof that issue #122's "per-type speeds are actually read" holds.

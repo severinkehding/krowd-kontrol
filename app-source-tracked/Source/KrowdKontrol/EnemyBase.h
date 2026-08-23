@@ -285,11 +285,43 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) {}
 	virtual void OnAttackEntry() {}
 
+	// Fires on every Controlled -> Alert edge (see the transition table above: both
+	// the natural-duration-expiry case and the issue #257 early-wake-on-other-ability
+	// case), right before OnEnemyControlledExpired broadcasts. Every other ability
+	// already clears a concrete subclass's own AttackTellLightComponent immediately on
+	// OnControlledEntry, but Root (bAllowsAttackWhileControlled) deliberately leaves it
+	// running for the Controlled window's duration - this is the matching hook a
+	// concrete subclass overrides to clear it once that window ends without banking
+	// (pass-1 review follow-up, issue #255).
+	virtual void OnControlledExpired() {}
+
 	// Issue #121's per-enemy/per-ability duration-override point. -1.0f (base default)
 	// means "no override, use AbilityData::BaseDurationSeconds unmodified"; a concrete
 	// subclass returns a non-negative value to override it (e.g. ASniperEnemy for Sleep
 	// - see issue #121's SN-1PR/Sleep=7s case).
 	virtual float GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const { return -1.0f; }
+
+	// True while this enemy's attack behaviour (per-type telegraph/tell/fire loop)
+	// should keep running: always during Attack, and also during Controlled if
+	// ControllingAbility is flagged AbilityData::bAllowsAttackWhileControlled (Root
+	// only - issue #255: Root immobilizes movement but does not silence an attack the
+	// enemy was already capable of, unlike Stun/Sleep's full-immobilize flavour).
+	// Concrete subclasses' own AdvanceXTelegraph functions call this instead of a raw
+	// GetEnemyState() == Attack check.
+	bool IsAttackBehaviorActive() const;
+
+	// True while this enemy's chase movement (TickChaseMovement) should keep running:
+	// always during Alert, and also during Controlled if ControllingAbility is flagged
+	// AbilityData::bAllowsMovementWhileControlled (Snare only - issue #254: Snare slows
+	// but does not freeze). Mirrors IsAttackBehaviorActive()'s shape exactly.
+	bool IsMovementBehaviorActive() const;
+
+	// AbilityData::Get(ControllingAbility).ControlledSpeedMultiplier while Controlled,
+	// 1.0f (full speed) otherwise - TickChaseMovement and every concrete subclass's own
+	// AdvanceXTelegraph consult this instead of a raw DeltaSeconds, so Snare's 50% slow
+	// (or Root's inert 1.0f "full speed while allowed to attack") applies uniformly to
+	// both movement and attack-telegraph timing with one source of truth.
+	float GetControlledSpeedMultiplier() const;
 
 private:
 	// Internal transition-guard logic, never subclass-overridable directly - keeps the

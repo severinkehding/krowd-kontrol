@@ -225,20 +225,44 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 			[TellLight](const FLinearColor& Reserved) { return Reserved.Equals(TellLight->GetLightColor(), 0.01f); }));
 
 	// (l) ReceiveControl interrupting an in-progress attack telegraph clears the tell
-	// light, so a runner put to Snare mid-telegraph doesn't keep showing a drain-ray
+	// light, so a runner put to Stun mid-telegraph doesn't keep showing a drain-ray
 	// that will never fire (the state guard in AdvanceAttackTelegraph already stops
-	// the ray itself - this proves the visual is cleared too).
+	// the ray itself - this proves the visual is cleared too). Stun (not Snare) is
+	// used here since issue #254 gives Snare its own bAllowsAttackWhileControlled=true
+	// exception, mirroring Root's - see (l-root)/(l-snare) below.
 	ARunnerEnemy* InterruptedRunner = NewObject<ARunnerEnemy>();
 	AdvanceToAttack(InterruptedRunner, ZeroDistanceLocation);
 	TestTrue(TEXT("Attack tell should be visibly on before the interrupt"),
 		InterruptedRunner->AttackTellLightComponent->Intensity > 0.0f);
-	InterruptedRunner->ReceiveControl(EAbilitySlot::Snare);
+	InterruptedRunner->ReceiveControl(EAbilitySlot::Stun);
 	TestEqual(TEXT("Attack tell should be cleared once Controlled interrupts the attack"),
 		InterruptedRunner->AttackTellLightComponent->Intensity, 0.0f);
 	UDrainRayFiredTestListener* InterruptedListener = NewObject<UDrainRayFiredTestListener>();
 	InterruptedRunner->OnRunnerDrainFired.AddDynamic(InterruptedListener, &UDrainRayFiredTestListener::HandleDrainRayFired);
 	InterruptedRunner->AdvanceAttackTelegraph(InterruptedRunner->AttackTelegraphSeconds);
 	TestEqual(TEXT("The interrupted drain-ray should never fire"), InterruptedListener->CallCount, 0);
+
+	// (l-root) issue #255: unlike Stun above, Root-triggered Controlled does NOT
+	// clear the attack tell or stop the telegraph - the drain-ray still fires once
+	// (bDrainFiredForCurrentAttack still latches), but firing itself is not silenced
+	// by entering Controlled, since AbilityData::Get(Root).bAllowsAttackWhileControlled.
+	ARunnerEnemy* RootedRunner = NewObject<ARunnerEnemy>();
+	AdvanceToAttack(RootedRunner, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-root) Attack tell should be visibly on before Root interrupts"),
+		RootedRunner->AttackTellLightComponent->Intensity > 0.0f);
+	RootedRunner->ReceiveControl(EAbilitySlot::Root);
+	TestEqual(TEXT("(l-root) Runner should be Controlled after Root"),
+		static_cast<uint8>(RootedRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestTrue(TEXT("(l-root) Attack tell should stay on - Root does not clear it"),
+		RootedRunner->AttackTellLightComponent->Intensity > 0.0f);
+	UDrainRayFiredTestListener* RootedListener = NewObject<UDrainRayFiredTestListener>();
+	RootedRunner->OnRunnerDrainFired.AddDynamic(RootedListener, &UDrainRayFiredTestListener::HandleDrainRayFired);
+	RootedRunner->AdvanceAttackTelegraph(RootedRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-root) The drain-ray should still fire once while Controlled by Root, unlike Snare"),
+		RootedListener->CallCount, 1);
+	RootedRunner->AdvanceAttackTelegraph(RootedRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-root) The one-shot guard should still prevent a second drain-ray while Rooted"),
+		RootedListener->CallCount, 1);
 
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
 	// MovementSpeed (950.0f), not AEnemyBase's own base default (600.0f) - the direct

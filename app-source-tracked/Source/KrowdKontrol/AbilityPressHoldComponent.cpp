@@ -28,7 +28,50 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 	}
 
 	FAbilityIndicatorShapeSpec ShapeSpec;
-	if (bHasCursorTargetLocation)
+	const EAbilityTargetType TargetType = AbilityData::Get(Ability).TargetType;
+	if (bHasCursorTargetLocation && TargetType == EAbilityTargetType::Line)
+	{
+		ShapeSpec.Kind = EAbilityIndicatorShapeKind::Line;
+		FVector OwnerLocation = FVector::ZeroVector;
+		if (AActor* Owner = GetOwner())
+		{
+			OwnerLocation = Owner->GetActorLocation();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - Line indicator will show at world origin."),
+				*GetNameSafe(this));
+		}
+		ShapeSpec.Origin = OwnerLocation;
+		const FVector LineEnd = (CastComponent ? CastComponent->GetLineEndLocation(Ability, CursorTargetLocation) : CursorTargetLocation);
+		// Degenerate only if LineEnd == OwnerLocation, which can only happen if
+		// ComputeLineEndLocation's FallbackDirection (the owner's forward vector) is
+		// itself zero - not expected for a spawned actor with a valid rotation.
+		ShapeSpec.FacingRotation = (LineEnd - OwnerLocation).Rotation();
+		ShapeSpec.RangeUnits = FVector::Dist(OwnerLocation, LineEnd);
+	}
+	else if (bHasCursorTargetLocation && TargetType == EAbilityTargetType::Cone)
+	{
+		ShapeSpec.Kind = EAbilityIndicatorShapeKind::Cone;
+		FVector OwnerLocation = FVector::ZeroVector;
+		if (AActor* Owner = GetOwner())
+		{
+			OwnerLocation = Owner->GetActorLocation();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - Cone indicator will show at world origin."),
+				*GetNameSafe(this));
+		}
+		ShapeSpec.Origin = OwnerLocation;
+		const FVector ConeDirection = (CastComponent ? CastComponent->GetConeDirection(CursorTargetLocation) : (CursorTargetLocation - OwnerLocation));
+		ShapeSpec.FacingRotation = ConeDirection.Rotation();
+		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->GetConeRangeUnits(Ability) : 1200.0f);
+		ShapeSpec.ConeFullAngleDegrees = (CastComponent ? CastComponent->ConeFullAngleDegrees : 75.0f);
+	}
+	else if (bHasCursorTargetLocation)
 	{
 		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtCursor;
 		// Clamped through the same GetClampedThrowLocation the actual cast below uses,
@@ -62,10 +105,20 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 
 	// Existing cast logic, called unconditionally on every press, exactly as
 	// CastStunAbility() etc. did before this component existed - now branching to the
-	// cursor-aimed thrown-ability path when a target location was supplied (issue #257).
+	// cursor-aimed thrown-ability path when a target location was supplied (issue #257),
+	// and further to the cursor-aimed line-cast path for Line-target abilities (Root,
+	// issue #255).
 	if (CastComponent)
 	{
-		if (bHasCursorTargetLocation)
+		if (bHasCursorTargetLocation && TargetType == EAbilityTargetType::Line)
+		{
+			CastComponent->TryCastLineAbilityTowardLocation(Ability, CursorTargetLocation);
+		}
+		else if (bHasCursorTargetLocation && TargetType == EAbilityTargetType::Cone)
+		{
+			CastComponent->TryCastConeAbilityTowardLocation(Ability, CursorTargetLocation);
+		}
+		else if (bHasCursorTargetLocation)
 		{
 			CastComponent->TryCastThrownAbilityAtLocation(Ability, CursorTargetLocation);
 		}
