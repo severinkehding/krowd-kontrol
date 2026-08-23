@@ -88,19 +88,23 @@ bool FKrowdKontrolPIEDefeatRestartRoundTripTest::RunTest(const FString& Paramete
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitForEngineFramesCommand(5));
 	ADD_LATENT_AUTOMATION_COMMAND(FKrowdKontrolTriggerDefeatRestartCommand(this, ExpectedFullEnergy));
 	ADD_LATENT_AUTOMATION_COMMAND(FUntilCommand(
-		[this]() -> bool
+		[this, ExpectedFullEnergy]() -> bool
 		{
-			// Only a *new* (post-reload) UPlayerEnergyComponent can read > 0 here - the
-			// old, about-to-be-destroyed world's component stays at 0 for the rest of its
-			// lifetime after Cheat_ZeroPlayerEnergy() runs, so a null-only check would
+			// Only a *new* (post-reload) UPlayerEnergyComponent can read >= ExpectedFullEnergy
+			// here - the old, about-to-be-destroyed world's component stays at 0 for the rest
+			// of its lifetime after Cheat_ZeroPlayerEnergy() runs, so a null-only check would
 			// false-positive on stale state before the real reload completes. This works
 			// because the component's constructor seeds CurrentEnergy = MaxEnergy
-			// immediately, not in BeginPlay.
+			// immediately, not in BeginPlay. Requiring the full restored value (not just > 0)
+			// also means this command's own success condition already proves what
+			// FKrowdKontrolAssertDefeatRestartCompletedCommand re-asserts a tick later,
+			// closing the one-tick window where an enemy could otherwise chip the freshly
+			// restored energy between the two commands.
 			UWorld* PIEWorld = AutomationCommon::GetAnyGameWorld();
 			AKrowdKontrolPlayerController* Controller = PIEWorld ? Cast<AKrowdKontrolPlayerController>(PIEWorld->GetFirstPlayerController()) : nullptr;
 			APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
 			UPlayerEnergyComponent* Energy = Pawn ? Pawn->FindComponentByClass<UPlayerEnergyComponent>() : nullptr;
-			return Energy && Energy->GetCurrentEnergy() > 0.0f;
+			return Energy && Energy->GetCurrentEnergy() >= *ExpectedFullEnergy;
 		},
 		[this]() -> bool
 		{
