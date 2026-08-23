@@ -38,15 +38,15 @@ Two connected pieces:
 
 ### REQ-2: Persistent compact quest tracker (P0) — ✅ implemented
 (banked-count line: issue #247/PR #271; suggested-ability line: issue #249/PR #287;
-current-room-state line: issue #248/PR #289)
+current-room-state line: issue #248/PR #289; directional cue: issue #250/PR #301)
 - A small anchored panel (a corner; think WoW quest tracker scale — must not
   take meaningful screen space away from play) listing the level's live
   objectives with progress, updating in real time off existing events:
   - "Robots penned: 3/8" (from `ATargetZone::OnActorBanked` / room-cleared
     state — the merged banking chain).
   - Current room state: "Room 2 — 1 robot left" / "DOOR OPEN" (from
-    `ARoomActor::OnRoomClearedStateChanged` + door gating, PR #229). No
-    directional cue yet — that's REQ-3, still open.
+    `ARoomActor::OnRoomClearedStateChanged` + door gating, PR #229), with a
+    trailing directional-cue glyph toward the objective (REQ-3).
   - Which ability to use: the tracker names the suggested ability per remaining
     enemy type — colour-matched suggestion when that ability is unlocked
     ("SNIPERS → SLEEP (RMB)"), otherwise the universal fallback
@@ -61,7 +61,7 @@ current-room-state line: issue #248/PR #289)
   `HUDChromeColours`; the five reserved colours appear only as genuine
   information (e.g. the suggested-ability swatch).
 
-### REQ-3: Direction hint, minimal form (P1)
+### REQ-3: Direction hint, minimal form (P1) — ✅ implemented, issue #250 / PR #301
 - "Where" at the cheapest useful level: the tracker's active line carries a
   simple directional cue toward the current objective (e.g. an arrow glyph
   toward the next un-cleared room's door or the pen area) — not a minimap, not

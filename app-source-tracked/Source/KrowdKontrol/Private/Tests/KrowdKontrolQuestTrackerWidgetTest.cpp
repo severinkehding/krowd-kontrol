@@ -745,8 +745,9 @@ bool FKrowdKontrolQuestTrackerWidgetRoomStateTest::RunTest(const FString& Parame
 	AddExpectedError(TEXT("Only Local Player Controllers can be assigned to widgets"), EAutomationExpectedErrorFlags::Contains, 0);
 
 	// (New, issue #250/PRD REQ-3) Directional cue: the room-state line's trailing
-	// compass glyph should point toward the active room's pen (nearest un-banked
-	// target-zone marker matching a remaining enemy type), computed from the
+	// compass glyph should point toward the active room's pen (first target-zone
+	// marker in array order matching a remaining enemy type - see
+	// ResolveObjectiveDirectionTarget()'s own comment), computed from the
 	// possessed player pawn's world position. Two distinct known marker
 	// positions relative to a fixed player-pawn origin must produce two
 	// distinct, correctly-bucketed EQuestDirection8 values - this issue's
@@ -864,9 +865,11 @@ bool FKrowdKontrolQuestTrackerWidgetRoomStateTest::RunTest(const FString& Parame
 					Enemy->TransitionToBanked();
 
 					// A second, unpopulated room purely so the door connector has two
-					// distinct rooms to span - GatingRoom will resolve to DoorDirectionRoom
-					// (the lower-X of the pair) via ADoorConnectorActor::BeginPlay()'s own
-					// heuristic, matching Rooms.Last() in a single-real-room chain.
+					// distinct rooms to span. GatingRoom is set explicitly below to
+					// DoorDirectionRoom (matching Rooms.Last() in a single-real-room
+					// chain) rather than left for ADoorConnectorActor::BeginPlay()'s
+					// own lower-X heuristic to resolve - both rooms sit at X=0 here, so
+					// that heuristic wouldn't disambiguate them anyway.
 					ARoomActor* BeyondRoom = DoorDirectionWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(0.0f, 1000.0f, 0.0f)));
 					if (TestNotNull(TEXT("Second room should spawn for the door-direction test"), BeyondRoom))
 					{
@@ -896,6 +899,209 @@ bool FKrowdKontrolQuestTrackerWidgetRoomStateTest::RunTest(const FString& Parame
 									DoorDirectionWidget->GetObjectiveDirection(), EQuestDirection8::East);
 								TestEqual(TEXT("DOOR OPEN line should carry the East glyph"),
 									DoorDirectionWidget->GetRoomStateDisplayText().ToString(), FString(TEXT("DOOR OPEN →")));
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// (Self-fix, PR #301 review) ResolveObjectiveDirectionTarget()'s fallback
+	// branches 2 (any target zone, wrong type) and 3 (no target zones at all)
+	// were previously unverified against an expected direction - branch 3 in
+	// particular already executes inside FKrowdKontrolQuestTrackerWidgetRoomStateTest's
+	// own earlier room-state block above, but with no possessed pawn there to
+	// turn it into an assertable direction. Both blocks mirror the possessed-pawn
+	// + AddTargetZone/AddOwnedEnemy + RefreshRoomStateDisplay() +
+	// TestEqual(GetObjectiveDirection()) shape the pen-direction block above
+	// already established.
+	{
+		using namespace KrowdKontrolQuestTrackerWidgetDirectionTest;
+
+		// Branch 2: room has a target zone, but for a type that isn't among the
+		// room's still-remaining enemies - direction should fall back to that
+		// (mismatched) zone rather than showing no cue.
+		UWorld* MismatchWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		if (TestNotNull(TEXT("CreateNewMap should return a valid World for the mismatched-zone fallback test"), MismatchWorld))
+		{
+			MismatchWorld->InitializeActorsForPlay(FURL());
+			MismatchWorld->SetBegunPlay(true);
+
+			APawn* PlayerPawn = MismatchWorld->SpawnActor<APawn>(APawn::StaticClass(), FTransform::Identity);
+			AKrowdKontrolPlayerController* Controller = TestNotNull(TEXT("Player pawn should spawn for the mismatched-zone fallback test"), PlayerPawn)
+				? SpawnPossessedController(MismatchWorld, PlayerPawn)
+				: nullptr;
+			if (TestNotNull(TEXT("Possessed controller should spawn for the mismatched-zone fallback test"), Controller))
+			{
+				ARoomActor* MismatchRoom = MismatchWorld->SpawnActor<ARoomActor>();
+				AEnemyBaseTestActor* MismatchEnemy = MismatchWorld->SpawnActor<AEnemyBaseTestActor>();
+				if (TestNotNull(TEXT("Room should spawn for the mismatched-zone fallback test"), MismatchRoom)
+					&& TestNotNull(TEXT("Enemy should spawn for the mismatched-zone fallback test"), MismatchEnemy))
+				{
+					// Remaining enemy is SN_1PR, but the room's only target zone is
+					// authored for a different type (TR_UPR) - branch 1's type-matched
+					// loop should miss, forcing the "any target zone" fallback.
+					UEnemyTypeIndicatorComponent* MismatchIndicator = NewObject<UEnemyTypeIndicatorComponent>(MismatchEnemy);
+					MismatchIndicator->EnemyType = EEnemyType::SN_1PR;
+					MismatchIndicator->RegisterComponent();
+					MismatchRoom->AddOwnedEnemy(MismatchEnemy);
+
+					AActor* MismatchMarker = MismatchRoom->AddTargetZone(EEnemyType::TR_UPR);
+					if (TestNotNull(TEXT("Mismatched-type target zone marker should spawn"), MismatchMarker))
+					{
+						// Due +Y of the player (origin) - East, same convention as the
+						// pen-direction block above.
+						MismatchMarker->SetActorLocation(FVector(0.0f, 1000.0f, 0.0f));
+
+						ULevelLifecycleSubsystem* MismatchLifecycle = MismatchWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+						if (TestNotNull(TEXT("Mismatched-zone fallback test World should auto-instantiate ULevelLifecycleSubsystem"), MismatchLifecycle))
+						{
+							MismatchLifecycle->OnWorldBeginPlay(*MismatchWorld);
+						}
+
+						UQuestTrackerWidget* MismatchWidget = CreateWidget<UQuestTrackerWidget>(MismatchWorld, UQuestTrackerWidget::StaticClass());
+						if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the mismatched-zone fallback test"), MismatchWidget))
+						{
+							MismatchWidget->RefreshRoomStateDisplay();
+							TestEqual(TEXT("Room with only a mismatched-type target zone should fall back to that zone (East, per placement)"),
+								MismatchWidget->GetObjectiveDirection(), EQuestDirection8::East);
+						}
+					}
+				}
+			}
+		}
+
+		// Branch 3: room has no target zones at all - direction should fall back
+		// to the room's own GetActorLocation(), not silently produce None or a
+		// stale value.
+		UWorld* NoZoneWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		if (TestNotNull(TEXT("CreateNewMap should return a valid World for the no-target-zone fallback test"), NoZoneWorld))
+		{
+			NoZoneWorld->InitializeActorsForPlay(FURL());
+			NoZoneWorld->SetBegunPlay(true);
+
+			APawn* PlayerPawn = NoZoneWorld->SpawnActor<APawn>(APawn::StaticClass(), FTransform::Identity);
+			AKrowdKontrolPlayerController* Controller = TestNotNull(TEXT("Player pawn should spawn for the no-target-zone fallback test"), PlayerPawn)
+				? SpawnPossessedController(NoZoneWorld, PlayerPawn)
+				: nullptr;
+			if (TestNotNull(TEXT("Possessed controller should spawn for the no-target-zone fallback test"), Controller))
+			{
+				// Room placed due +Y of the player (origin), never given a target
+				// zone via AddTargetZone() - only AddOwnedEnemy(), mirroring
+				// FKrowdKontrolQuestTrackerWidgetRoomStateTest's own room shape.
+				ARoomActor* NoZoneRoom = NoZoneWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(0.0f, 1000.0f, 0.0f)));
+				AEnemyBaseTestActor* NoZoneEnemy = NoZoneWorld->SpawnActor<AEnemyBaseTestActor>();
+				if (TestNotNull(TEXT("Room should spawn for the no-target-zone fallback test"), NoZoneRoom)
+					&& TestNotNull(TEXT("Enemy should spawn for the no-target-zone fallback test"), NoZoneEnemy))
+				{
+					NoZoneRoom->AddOwnedEnemy(NoZoneEnemy);
+
+					ULevelLifecycleSubsystem* NoZoneLifecycle = NoZoneWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+					if (TestNotNull(TEXT("No-target-zone fallback test World should auto-instantiate ULevelLifecycleSubsystem"), NoZoneLifecycle))
+					{
+						NoZoneLifecycle->OnWorldBeginPlay(*NoZoneWorld);
+					}
+
+					UQuestTrackerWidget* NoZoneWidget = CreateWidget<UQuestTrackerWidget>(NoZoneWorld, UQuestTrackerWidget::StaticClass());
+					if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the no-target-zone fallback test"), NoZoneWidget))
+					{
+						NoZoneWidget->RefreshRoomStateDisplay();
+						TestEqual(TEXT("Room with no target zones should fall back to the room's own location (East, per placement)"),
+							NoZoneWidget->GetObjectiveDirection(), EQuestDirection8::East);
+					}
+				}
+			}
+		}
+	}
+
+	// (Self-fix, PR #301 review) ComputeCompassDirection()'s full sector table -
+	// previously only East/South were exercised via the widget-level blocks
+	// above; this exercises all 8 buckets plus the dead-zone branch directly
+	// against the static function itself (no widget/World needed).
+	{
+		const FVector Origin = FVector::ZeroVector;
+		struct FDirectionCase { FVector Offset; EQuestDirection8 Expected; const TCHAR* Label; };
+		const FDirectionCase Cases[] = {
+			{ FVector(1000.0f, 0.0f, 0.0f),      EQuestDirection8::North,     TEXT("North") },
+			{ FVector(1000.0f, 1000.0f, 0.0f),   EQuestDirection8::NorthEast, TEXT("NorthEast") },
+			{ FVector(0.0f, 1000.0f, 0.0f),       EQuestDirection8::East,      TEXT("East") },
+			{ FVector(-1000.0f, 1000.0f, 0.0f),  EQuestDirection8::SouthEast, TEXT("SouthEast") },
+			{ FVector(-1000.0f, 0.0f, 0.0f),      EQuestDirection8::South,     TEXT("South") },
+			{ FVector(-1000.0f, -1000.0f, 0.0f), EQuestDirection8::SouthWest, TEXT("SouthWest") },
+			{ FVector(0.0f, -1000.0f, 0.0f),      EQuestDirection8::West,      TEXT("West") },
+			{ FVector(1000.0f, -1000.0f, 0.0f),  EQuestDirection8::NorthWest, TEXT("NorthWest") },
+		};
+		for (const FDirectionCase& Case : Cases)
+		{
+			const EQuestDirection8 Actual = UQuestTrackerWidget::ComputeCompassDirection(Origin, Origin + Case.Offset);
+			TestEqual(FString::Printf(TEXT("ComputeCompassDirection should bucket to %s"), Case.Label), Actual, Case.Expected);
+			TestFalse(FString::Printf(TEXT("%s glyph should be non-empty"), Case.Label),
+				UQuestTrackerWidget::GetDirectionGlyph(Case.Expected).IsEmpty());
+		}
+
+		// Dead zone: a target within DirectionDeadZoneRadiusUnits (10 units) of
+		// the player should produce None rather than an arbitrary bucket - the one
+		// documented None-producing case distinct from "no resolvable target".
+		const EQuestDirection8 DeadZoneActual = UQuestTrackerWidget::ComputeCompassDirection(Origin, Origin + FVector(5.0f, 0.0f, 0.0f));
+		TestEqual(TEXT("ComputeCompassDirection should return None for a target inside the dead zone"),
+			DeadZoneActual, EQuestDirection8::None);
+	}
+
+	// (Self-fix, PR #301 review) DOOR OPEN direction gating's IsVisible() false
+	// branch - a matching GatingRoom == LastRoom connector whose marker mesh
+	// isn't (yet) visible should leave the cue at None rather than pointing at
+	// a door the player can't see is open. Forces the marker hidden after
+	// FinishSpawning() (RefreshGateState() would otherwise make it visible
+	// immediately, since GatingRoom is already cleared here) so this test
+	// exercises the IsVisible() gate itself, independent of whether
+	// RefreshGateState() is correct.
+	{
+		using namespace KrowdKontrolQuestTrackerWidgetDirectionTest;
+
+		UWorld* HiddenMarkerWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		if (TestNotNull(TEXT("CreateNewMap should return a valid World for the hidden-door-marker test"), HiddenMarkerWorld))
+		{
+			HiddenMarkerWorld->InitializeActorsForPlay(FURL());
+			HiddenMarkerWorld->SetBegunPlay(true);
+
+			APawn* PlayerPawn = HiddenMarkerWorld->SpawnActor<APawn>(APawn::StaticClass(), FTransform::Identity);
+			AKrowdKontrolPlayerController* Controller = TestNotNull(TEXT("Player pawn should spawn for the hidden-door-marker test"), PlayerPawn)
+				? SpawnPossessedController(HiddenMarkerWorld, PlayerPawn)
+				: nullptr;
+			if (TestNotNull(TEXT("Possessed controller should spawn for the hidden-door-marker test"), Controller))
+			{
+				ARoomActor* HiddenMarkerRoom = HiddenMarkerWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(0.0f, 0.0f, 0.0f)));
+				AEnemyBaseTestActor* Enemy = HiddenMarkerWorld->SpawnActor<AEnemyBaseTestActor>();
+				if (TestNotNull(TEXT("Room should spawn for the hidden-door-marker test"), HiddenMarkerRoom)
+					&& TestNotNull(TEXT("Enemy should spawn for the hidden-door-marker test"), Enemy))
+				{
+					HiddenMarkerRoom->AddOwnedEnemy(Enemy);
+					const FVector HiddenMarkerZeroDistanceLocation(0.0f, 0.0f, 0.0f);
+					Enemy->TickCheckDetection(HiddenMarkerZeroDistanceLocation);
+					Enemy->ReceiveControl(EAbilitySlot::Stun);
+					Enemy->TransitionToBanked();
+
+					ARoomActor* BeyondRoom = HiddenMarkerWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(0.0f, 1000.0f, 0.0f)));
+					if (TestNotNull(TEXT("Second room should spawn for the hidden-door-marker test"), BeyondRoom))
+					{
+						ADoorConnectorActor* Door = HiddenMarkerWorld->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+						if (TestNotNull(TEXT("Door connector should spawn for the hidden-door-marker test"), Door))
+						{
+							Door->RoomA = HiddenMarkerRoom;
+							Door->RoomB = BeyondRoom;
+							Door->GatingRoom = HiddenMarkerRoom;
+							Door->FinishSpawning(FTransform::Identity);
+							Door->DoorMarkerMeshComponent->SetVisibility(false);
+
+							UQuestTrackerWidget* HiddenMarkerWidget = CreateWidget<UQuestTrackerWidget>(HiddenMarkerWorld, UQuestTrackerWidget::StaticClass());
+							if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the hidden-door-marker test"), HiddenMarkerWidget))
+							{
+								HiddenMarkerWidget->RefreshRoomStateDisplay();
+								TestEqual(TEXT("DOOR OPEN with a matching but not-yet-visible door marker should show no glyph"),
+									HiddenMarkerWidget->GetObjectiveDirection(), EQuestDirection8::None);
+								TestEqual(TEXT("Room-state line should stay plain DOOR OPEN, not point at a still-hidden marker"),
+									HiddenMarkerWidget->GetRoomStateDisplayText().ToString(), FString(TEXT("DOOR OPEN")));
 							}
 						}
 					}

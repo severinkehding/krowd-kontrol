@@ -337,7 +337,7 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 	if (!World)
 	{
 		RoomStateText->SetText(FText::GetEmpty());
-		CurrentObjectiveDirection = EQuestDirection8::None; // NEW
+		CurrentObjectiveDirection = EQuestDirection8::None;
 		return;
 	}
 
@@ -352,7 +352,7 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 		// No room actors in this world (e.g. widget-only unit tests that never spawn
 		// one) - stay blank rather than claiming a false "DOOR OPEN".
 		RoomStateText->SetText(FText::GetEmpty());
-		CurrentObjectiveDirection = EQuestDirection8::None; // NEW
+		CurrentObjectiveDirection = EQuestDirection8::None;
 		return;
 	}
 
@@ -370,7 +370,7 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 		}
 	}
 
-	// NEW: REQ-3 directional cue - see ResolveObjectiveDirectionTarget()'s own
+	// REQ-3 directional cue - see ResolveObjectiveDirectionTarget()'s own
 	// comment and plan.md's Design Decisions for the full rationale. Computed
 	// at this same event-driven refresh point, not per-frame (see EVENT CADENCE
 	// in plan.md) - a stale-until-next-event cue is an accepted trade-off for an
@@ -391,7 +391,7 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 	{
 		// Every room in chain order is cleared - the last gate has opened.
 		const FText BaseLine = NSLOCTEXT("QuestTrackerWidget", "RoomStateDoorOpen", "DOOR OPEN");
-		RoomStateText->SetText(DirectionGlyph.IsEmpty() // NEW (was: RoomStateText->SetText(BaseLine))
+		RoomStateText->SetText(DirectionGlyph.IsEmpty()
 			? BaseLine
 			: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateWithDirectionFormat", "{0} {1}"), BaseLine, DirectionGlyph));
 		return;
@@ -400,13 +400,13 @@ void UQuestTrackerWidget::RefreshRoomStateDisplay()
 	const int32 RemainingCount = Rooms[FocusIndex]->GetRemainingEnemyCount();
 	FNumberFormattingOptions NoGrouping;
 	NoGrouping.SetUseGrouping(false);
-	const FText BaseLine = (RemainingCount == 1) // NEW: was directly "const FText Line ="
+	const FText BaseLine = (RemainingCount == 1)
 		? FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateSingularFormat", "Room {0} — {1} robot left"),
 			  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping))
 		: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStatePluralFormat", "Room {0} — {1} robots left"),
 			  FText::AsNumber(FocusIndex + 1, &NoGrouping), FText::AsNumber(RemainingCount, &NoGrouping));
 
-	RoomStateText->SetText(DirectionGlyph.IsEmpty() // NEW (was: RoomStateText->SetText(Line))
+	RoomStateText->SetText(DirectionGlyph.IsEmpty()
 		? BaseLine
 		: FText::Format(NSLOCTEXT("QuestTrackerWidget", "RoomStateWithDirectionFormat", "{0} {1}"), BaseLine, DirectionGlyph));
 }
@@ -479,10 +479,16 @@ bool UQuestTrackerWidget::ResolveObjectiveDirectionTarget(const TArray<ARoomActo
 	// showing no cue at all for a room the player is actively working through.
 	if (FocusRoom->GetTargetZones().Num() > 0 && FocusRoom->GetTargetZones()[0].MarkerActor)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UQuestTrackerWidget::ResolveObjectiveDirectionTarget: Room '%s' has no target zone matching a remaining enemy type - falling back to its first target zone; directional cue may point at the wrong pen."),
+			*GetNameSafe(FocusRoom));
 		OutTargetLocation = FocusRoom->GetTargetZones()[0].MarkerActor->GetActorLocation();
 		return true;
 	}
 
+	UE_LOG(LogTemp, Warning,
+		TEXT("UQuestTrackerWidget::ResolveObjectiveDirectionTarget: Room '%s' has no target zones at all - falling back to room location; directional cue may point at empty space."),
+		*GetNameSafe(FocusRoom));
 	OutTargetLocation = FocusRoom->GetActorLocation();
 	return true;
 }
@@ -499,9 +505,9 @@ EQuestDirection8 UQuestTrackerWidget::ComputeCompassDirection(const FVector& Fro
 	}
 
 	// This codebase's flat top-down X/Y plane (matches
-	// UAbilityCastComponent::ComputeConeDirection/IsPointInCone's own
-	// SizeSquared2D usage) - world +X is North, +Y is East (see
-	// EQuestDirection8's own header comment for why this specific mapping).
+	// UAbilityCastComponent::IsPointInCone's own SizeSquared2D usage) -
+	// world +X is North, +Y is East (see EQuestDirection8's own header
+	// comment for why this specific mapping).
 	const float AngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X));
 	const float NormalizedDegrees = FMath::Fmod(AngleDegrees + 360.0f, 360.0f);
 	const int32 SectorIndex = FMath::RoundToInt(NormalizedDegrees / 45.0f) % 8;

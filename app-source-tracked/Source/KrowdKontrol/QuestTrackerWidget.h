@@ -17,10 +17,9 @@ class ADoorConnectorActor;
 // Briefing & Live Quest Tracker", issue #250) - world +X is North, +Y is East
 // (an arbitrary but fixed convention; nothing else in this codebase defines
 // "north" yet). None means no cue is currently shown - either no resolvable
-// objective location exists, or no player pawn is resolvable
-// (UGameplayStatics::GetPlayerPawn returning null, as every existing
-// Automation test in this module does today), or the target is within
-// ComputeCompassDirection()'s own dead zone of the player.
+// objective location exists, no player pawn is resolvable
+// (UGameplayStatics::GetPlayerPawn returning null), or the target is
+// within ComputeCompassDirection()'s own dead zone of the player.
 UENUM(BlueprintType)
 enum class EQuestDirection8 : uint8
 {
@@ -207,15 +206,16 @@ private:
 	// toward, given the already-chain-sorted Rooms and the FocusIndex
 	// RefreshRoomStateDisplay() just computed. Returns false (no cue) when
 	// nothing resolvable exists. See this class's Design Decisions in plan.md
-	// for the full rationale (mirrored briefly here): the focus room's own pen
-	// (nearest un-banked target zone) for the common "Room N - K left" case, or
-	// the last room's forward door marker once every room is cleared.
+	// for the full rationale (mirrored briefly here): the focus room's own pen —
+	// the first FRoomTargetZone (array order, not distance-based) whose
+	// EnemyType still has a remaining enemy — for the common "Room N - K left"
+	// case, or the last room's forward door marker once every room is cleared.
 	bool ResolveObjectiveDirectionTarget(const TArray<ARoomActor*>& Rooms, int32 FocusIndex, FVector& OutTargetLocation) const;
 
 	// World-space (not player-facing-relative) 8-way compass bucket from
 	// FromLocation to ToLocation, using this codebase's flat top-down X/Y
-	// convention (mirrors UAbilityCastComponent::ComputeConeDirection/
-	// IsPointInCone's own SizeSquared2D usage) - world +X is North, +Y is East.
+	// convention (matches UAbilityCastComponent::IsPointInCone's own
+	// SizeSquared2D usage) - world +X is North, +Y is East.
 	// Returns None when ToLocation is within DirectionDeadZoneRadiusUnits of
 	// FromLocation (mirrors AbilityCastComponent's own dead-zone constant).
 	static EQuestDirection8 ComputeCompassDirection(const FVector& FromLocation, const FVector& ToLocation);
