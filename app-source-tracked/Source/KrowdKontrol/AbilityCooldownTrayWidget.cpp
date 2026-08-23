@@ -444,7 +444,20 @@ void UAbilityCooldownTrayWidget::UpdateSlotVisual(EAbilitySlot AbilitySlot)
 
 	if (SlotIconBorders.IsValidIndex(Index) && SlotIconBorders[Index])
 	{
-		SlotIconBorders[Index]->SetBrushColor(bReadyFlash ? GetReadyFlashBorderColor() : (bLockedStyle ? GetLockedBorderColor() : HUDChromeColours::GetBackground()));
+		FLinearColor BorderColor;
+		if (bReadyFlash)
+		{
+			BorderColor = GetReadyFlashBorderColor();
+		}
+		else if (bLockedStyle)
+		{
+			BorderColor = GetLockedBorderColor();
+		}
+		else
+		{
+			BorderColor = HUDChromeColours::GetBackground();
+		}
+		SlotIconBorders[Index]->SetBrushColor(BorderColor);
 	}
 	else if (SlotIconBorders.IsValidIndex(Index))
 	{
