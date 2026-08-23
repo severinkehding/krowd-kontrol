@@ -31,7 +31,10 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 	if (bHasCursorTargetLocation)
 	{
 		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtCursor;
-		ShapeSpec.Origin = CursorTargetLocation;
+		// Clamped through the same GetClampedThrowLocation the actual cast below uses,
+		// so the preview circle never shows a landing point beyond where the throw can
+		// really reach (issue #257 pass-1 code review finding).
+		ShapeSpec.Origin = (CastComponent ? CastComponent->GetClampedThrowLocation(Ability, CursorTargetLocation) : CursorTargetLocation);
 		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->ThrownCircleLandingRadiusUnits : 400.0f);
 	}
 	else

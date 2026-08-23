@@ -79,9 +79,7 @@ int32 UAbilityCastComponent::TryCastThrownAbilityAtLocation(EAbilitySlot Ability
 		return -1;
 	}
 
-	AActor* Owner = GetOwner();
-	const FVector ClampedLocation = ComputeClampedThrowLocation(
-		Owner->GetActorLocation(), DesiredTargetLocation, GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range));
+	const FVector ClampedLocation = GetClampedThrowLocation(Ability, DesiredTargetLocation);
 
 	if (!CooldownComponent->TryStartCooldown(Ability))
 	{
@@ -121,6 +119,17 @@ FVector UAbilityCastComponent::ComputeClampedThrowLocation(const FVector& OwnerL
 		return DesiredTargetLocation;
 	}
 	return OwnerLocation + Delta.GetSafeNormal() * MaxRangeUnits;
+}
+
+FVector UAbilityCastComponent::GetClampedThrowLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation) const
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return DesiredTargetLocation;
+	}
+	return ComputeClampedThrowLocation(
+		Owner->GetActorLocation(), DesiredTargetLocation, GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range));
 }
 
 UAbilityCooldownComponent* UAbilityCastComponent::ResolvePassedCastGates(EAbilitySlot Ability, const TCHAR* CallerLogContext) const

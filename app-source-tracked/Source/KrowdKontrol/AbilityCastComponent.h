@@ -117,6 +117,16 @@ public:
 	// OwnerLocation + (direction to DesiredTargetLocation) * MaxRangeUnits.
 	static FVector ComputeClampedThrowLocation(const FVector& OwnerLocation, const FVector& DesiredTargetLocation, float MaxRangeUnits);
 
+	// Instance-level convenience wrapper around ComputeClampedThrowLocation, using
+	// this component's own GetOwner() location and GetThrowRangeUnitsForTier(Ability)
+	// - the exact clamp TryCastThrownAbilityAtLocation applies internally. Exposed so
+	// a caller previewing a thrown-ability aim before committing to the cast (e.g.
+	// UAbilityPressHoldComponent's cursor-target indicator) can render the same
+	// clamped landing point the cast will actually use, instead of the raw unclamped
+	// cursor location. Returns DesiredTargetLocation unchanged if GetOwner() is null.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	FVector GetClampedThrowLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation) const;
+
 	// Fires exactly once per successful TryCastAbility call, after ReceiveControl has
 	// already been applied to TargetEnemy.
 	UPROPERTY(BlueprintAssignable, Category = "Ability Cast")

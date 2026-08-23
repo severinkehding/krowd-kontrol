@@ -389,6 +389,31 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("OnEnemyControlledExpired must not fire for a non-wake-flagged ControllingAbility"),
 		NonWakeFlaggedListener->CallCount, 0);
 
+	// (j5) issue #257 Acceptance Criteria: an uninterrupted Sleep-Controlled enemy
+	// (no other ability cast while Controlled, so the new (j2) early-wake path never
+	// triggers) still reaches Banked normally through TransitionToBanked(), same as
+	// (h) does for a generic Controlled enemy - proving the early-wake addition did
+	// not regress the ordinary banking/herd-chain path for Sleep specifically.
+	// OnEnemyControlledExpired must never fire on this path (mirrors (i3)'s
+	// "TransitionToBanked exit path never fires OnEnemyControlledExpired" contract),
+	// confirming banking, not an early wake, is what ended the Controlled window.
+	AEnemyBaseTestActor* UninterruptedSleepEnemy = NewObject<AEnemyBaseTestActor>();
+	UEnemyBankedTestListener* UninterruptedSleepBankedListener = NewObject<UEnemyBankedTestListener>();
+	UEnemyControlledExpiredTestListener* UninterruptedSleepExpiredListener = NewObject<UEnemyControlledExpiredTestListener>();
+	UninterruptedSleepEnemy->OnEnemyBanked.AddDynamic(UninterruptedSleepBankedListener, &UEnemyBankedTestListener::HandleEnemyBanked);
+	UninterruptedSleepEnemy->OnEnemyControlledExpired.AddDynamic(UninterruptedSleepExpiredListener, &UEnemyControlledExpiredTestListener::HandleEnemyControlledExpired);
+	UninterruptedSleepEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	UninterruptedSleepEnemy->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled by Sleep, no other ability cast
+	TestEqual(TEXT("GetControllingAbility should report Sleep with no interrupting cast"),
+		static_cast<uint8>(UninterruptedSleepEnemy->GetControllingAbility()), static_cast<uint8>(EAbilitySlot::Sleep));
+	UninterruptedSleepEnemy->TransitionToBanked();
+	TestEqual(TEXT("An uninterrupted Sleep-Controlled enemy should reach Banked via TransitionToBanked"),
+		static_cast<uint8>(UninterruptedSleepEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+	TestEqual(TEXT("OnEnemyBanked should have fired exactly once for the uninterrupted Sleep enemy"),
+		UninterruptedSleepBankedListener->CallCount, 1);
+	TestEqual(TEXT("OnEnemyControlledExpired must never fire when an uninterrupted Sleep enemy is banked"),
+		UninterruptedSleepExpiredListener->CallCount, 0);
+
 	// (k) the real Tick() override, not just the friend-called TickCheckDetection
 	// helper, must not crash when GetPlayerPawn returns nullptr (a headless test map
 	// with no PlayerController spawned) - proves the null-pawn guard actually wires
