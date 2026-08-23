@@ -24,6 +24,8 @@
 #include "Engine/World.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/Engine.h"
+#include "GameFramework/Pawn.h"
+#include "Components/SceneComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -257,6 +259,87 @@ bool FKrowdKontrolRoomActivationCountdownTest::RunTest(const FString& Parameters
 		NearRoom->CheckFirstEntry(FVector(1300.f, 0.f, 0.f));
 		TestTrue(TEXT("CheckFirstEntry should start the countdown on the room the player actually resolves nearest to"),
 			NearRoom->IsCountdownActive());
+	}
+
+	// (8) End-to-end Tick() orchestration (issue #290 pass-1 E2E finding): drives
+	// the real ARoomActor::Tick()/AEnemyBase::Tick() overrides directly across
+	// several simulated frames with a real possessed player pawn, instead of
+	// calling CheckFirstEntry/AdvanceCountdown/TickCheckDetection independently
+	// like every scenario above - proves the two per-frame Tick() loops actually
+	// hold the enemy Idle together in practice, which is what a live PIE session
+	// experiences and what the isolated per-function scenarios above cannot catch
+	// (they missed both the Tick()-ordering double-consumption bug and the
+	// throttled-poll race window that let enemies engage while the on-screen
+	// countdown still read "3").
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		const FVector RoomLocation(0.f, 0.f, 0.f);
+		ARoomActor* OwnRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(RoomLocation));
+		AEnemyBaseTestActor* GatedEnemy = World->SpawnActor<AEnemyBaseTestActor>(AEnemyBaseTestActor::StaticClass(), FTransform(RoomLocation));
+		if (!TestNotNull(TEXT("OwnRoom should spawn into the test World"), OwnRoom) ||
+			!TestNotNull(TEXT("GatedEnemy should spawn into the test World"), GatedEnemy))
+		{
+			return false;
+		}
+		OwnRoom->AddOwnedEnemy(GatedEnemy);
+
+		// Same possessed-pawn setup KrowdKontrolEnemyBaseTest.cpp's own real-Tick()
+		// cases (t)/(u) use: UGameplayStatics::GetPlayerPawn (what both Tick()
+		// overrides actually call) resolves through World::PlayerControllerList,
+		// which needs an explicit AddController() here since CreateNewMap()'s
+		// editor world never runs AController::PostInitializeComponents.
+		// Placed 500 units off the enemy - within DetectionRangeUnits (1500, so
+		// the Idle->Alert gate is the one under test) but outside the base
+		// GetAttackRangeUnits() AEnemyBaseTestActor inherits unmodified (0.0f,
+		// i.e. only an exact-location overlap would advance further to Attack) -
+		// zero distance here would let the enemy race on past Alert into Attack
+		// once the gate opens, which is a real subsequent transition this test
+		// isn't about and would make the Alert assertion below flaky.
+		const FVector PlayerLocation(500.f, 0.f, 0.f);
+		APawn* PlayerPawn = World->SpawnActor<APawn>(APawn::StaticClass(), FTransform(PlayerLocation));
+		APlayerController* Controller = World->SpawnActor<APlayerController>();
+		if (!TestNotNull(TEXT("PlayerPawn should spawn into the test World"), PlayerPawn) ||
+			!TestNotNull(TEXT("Should be able to spawn a controller to possess the pawn"), Controller))
+		{
+			return false;
+		}
+		Controller->Possess(PlayerPawn);
+		World->AddController(Controller);
+		USceneComponent* PlayerPawnRoot = NewObject<USceneComponent>(PlayerPawn);
+		PlayerPawnRoot->RegisterComponent();
+		PlayerPawn->SetRootComponent(PlayerPawnRoot);
+		PlayerPawn->SetActorLocation(PlayerLocation);
+
+		// Several simulated frames, well under RoomActivationCountdownSeconds's
+		// 3.0s default, well within detection range of the player - both real
+		// Tick() overrides run every frame in-engine (ARoomActor's own
+		// first-entry poll used to be throttled to 0.25s; that mismatch against
+		// AEnemyBase's per-frame Tick() was the root cause of issue #290's
+		// live-session failure), so this drives them the same way: every
+		// simulated frame.
+		for (int32 Frame = 0; Frame < 10; ++Frame)
+		{
+			OwnRoom->Tick(0.05f);
+			GatedEnemy->Tick(0.05f);
+		}
+		TestTrue(TEXT("Countdown should already be active after a handful of early frames"), OwnRoom->IsCountdownActive());
+		TestEqual(TEXT("Owned enemy must stay Idle through the early countdown window, even well within detection range"),
+			static_cast<uint8>(GatedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Idle));
+
+		// Drive the remaining countdown to completion via the real Tick() loop.
+		for (int32 Frame = 0; Frame < 60; ++Frame)
+		{
+			OwnRoom->Tick(0.05f);
+			GatedEnemy->Tick(0.05f);
+		}
+		TestTrue(TEXT("Room should be activated once the full countdown elapses via real Tick() calls"), OwnRoom->IsRoomActivated());
+		TestEqual(TEXT("Owned enemy should reach Alert once the room activates, via the real per-frame Tick() loop"),
+			static_cast<uint8>(GatedEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 	}
 
 	return true;

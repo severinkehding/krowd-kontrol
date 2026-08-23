@@ -163,7 +163,12 @@ bool AEnemyBase::IsPlayerInOwningRoom(const FVector& PlayerLocation) const
 	// hasn't started yet (CheckFirstEntry not yet called this tick, or never - e.g.
 	// every pre-#245 test that drives TickCheckDetection directly) keeps the
 	// unmodified #244 gate. See RoomActor.h's IsActivationPending() comment for the
-	// full rationale and the accepted <0.25s race-window trade-off this implies.
+	// full rationale. This enemy's own Tick() and ARoomActor::Tick() both run every
+	// frame (issue #290 pass-1: ARoomActor's first-entry poll used to be throttled
+	// to 0.25s, which left a same-magnitude window where this check saw
+	// IsActivationPending() == false before the countdown had actually started -
+	// see RoomActor.cpp's constructor comment), so the two loops now stay in sync
+	// within the same frame rather than up to a quarter-second apart.
 	if (Room->IsActivationPending())
 	{
 		return false;

@@ -38,13 +38,21 @@ namespace
 
 ARoomActor::ARoomActor()
 {
-	// Ticks (cheap, 4Hz) to detect first entry into this room and advance
-	// its activation countdown - mirrors ADoorConnectorActor's identical
-	// 0.25s-interval polling idiom (issue #245). No event exists for "the
-	// player entered this room", same reasoning DoorConnectorActor.cpp's own
-	// constructor comment gives for its own door-crossing poll.
+	// Ticks every frame to detect first entry into this room and advance its
+	// activation countdown. Originally throttled to a 0.25s-interval poll
+	// (mirroring ADoorConnectorActor's door-crossing idiom) - reverted, issue
+	// #290 pass-1 E2E finding: that throttle left a window, up to 0.25s wide,
+	// after the player physically entered the room but before this Tick() had
+	// run for the first time. During that window AEnemyBase's own per-frame
+	// Tick()/TickCheckDetection loop already saw the player resolve nearest to
+	// this room via IsPlayerInOwningRoom(), while IsActivationPending() was
+	// still false (bCountdownActive not yet set) - so the Idle->Alert gate
+	// this issue exists to hold shut let enemies through immediately, live and
+	// reproducibly, well before the on-screen countdown ever showed anything
+	// but "3". No event exists for "the player entered this room", so this is
+	// still a per-tick poll, just no longer throttled - it now runs at the
+	// same per-frame rate as the detection loop it has to stay ahead of.
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.25f;
 
 	USceneComponent* RoomRoot = CreateDefaultSubobject<USceneComponent>(TEXT("RoomRoot"));
 	RootComponent = RoomRoot;
@@ -151,13 +159,19 @@ void ARoomActor::Tick(float DeltaSeconds)
 	{
 		return;
 	}
-	if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
-	{
-		CheckFirstEntry(PlayerPawn->GetActorLocation());
-	}
+	// else-if, not two sequential ifs: the tick that starts the countdown
+	// (CheckFirstEntry -> StartCountdown, setting bCountdownActive) must not
+	// also advance it in that same frame - that would silently consume one
+	// tick's worth of DeltaSeconds off the enforced hold before the player-
+	// facing countdown display ever reflected it (code-review follow-up,
+	// issue #290 pass-1).
 	if (bCountdownActive)
 	{
 		AdvanceCountdown(DeltaSeconds);
+	}
+	else if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+	{
+		CheckFirstEntry(PlayerPawn->GetActorLocation());
 	}
 }
 

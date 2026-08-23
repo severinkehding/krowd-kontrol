@@ -161,7 +161,7 @@ public:
 	// Issue #274 code-review follow-up, promoted here from EnemyBase.cpp's own
 	// anonymous namespace by issue #245: without this cache, a per-frame caller
 	// (AEnemyBase::IsPlayerInOwningRoom, and now ARoomActor::CheckFirstEntry's own
-	// 0.25s poll) would rerun a full TActorIterator<ARoomActor> world scan + TArray
+	// per-frame poll) would rerun a full TActorIterator<ARoomActor> world scan + TArray
 	// allocation from scratch on every call. Collapses that down to one scan per
 	// frame shared by every caller that needs it this frame, mirroring the existing
 	// "scan TActorIterator once, reuse across N comparisons" shape at this class's
