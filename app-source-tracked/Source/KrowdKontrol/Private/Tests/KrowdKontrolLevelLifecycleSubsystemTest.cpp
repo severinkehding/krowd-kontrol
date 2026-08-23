@@ -7,10 +7,12 @@
 // spawner's IsWaveTimerActive() is true even with every currently-spawned enemy
 // already Banked. Also confirms OnLevelBegin's own re-entrancy guard.
 //
-// RefreshLevelClearState()/OnWorldBeginPlay() are called directly (never via a real
-// per-frame Tick() loop or World->BeginPlay()) for the same synchronous-determinism
-// reasons KrowdKontrolMusicSubsystemTest.cpp documents - this repo's harness never
-// drives either.
+// RefreshLevelClearState()/OnWorldBeginPlay() are called directly in most cases (never
+// via World->BeginPlay()) for the same synchronous-determinism reasons
+// KrowdKontrolMusicSubsystemTest.cpp documents. Case (j) is the one exception: it
+// drives Subsystem->Tick() explicitly (a single manual call per assertion, still not a
+// real per-frame engine tick loop) to exercise the bHasLoggedFirstTick guard added by
+// issue #234, since RefreshLevelClearState() alone bypasses Tick() entirely.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -49,6 +51,15 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 		{
 			return false;
 		}
+
+		// (i): IsTickableWhenPaused() must return true - this subsystem's Tick() must not
+		// silently stall if the world is ever paused (e.g. UBriefingCardWidget's briefing
+		// card). Can't be exercised via a real paused Tick() here - CreateNewMap() worlds
+		// have no live AGameModeBase, so UGameplayStatics::SetGamePaused() is a documented
+		// no-op (see KrowdKontrolAbilityCastComponentTest.cpp) - so this is a direct
+		// tripwire on the override itself, not an end-to-end pause simulation.
+		TestTrue(TEXT("ULevelLifecycleSubsystem must tick through pause - see IsTickableWhenPaused() override"),
+			Subsystem->IsTickableWhenPaused());
 
 		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
 		Subsystem->OnLevelBegin.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelBegin);
@@ -372,6 +383,51 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 		Subsystem->RefreshLevelClearState();
 		TestEqual(TEXT("OnRunComplete must not fire with the default (NAME_None) FinalMapName"),
 			Listener->RunCompleteCallCount, 0);
+	}
+
+	// --- (j): Tick() must still drive RefreshLevelClearState()/RefreshBossCheckpointState()
+	// through the new one-shot Tick() log guard added by issue #234 - this is the actual
+	// per-frame entry point that fires in real PIE/packaged play, not just its two
+	// direct-call halves the rest of this file exercises.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* Subsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
+		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);
+
+		Subsystem->OnWorldBeginPlay(*World);
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+		Enemy->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+		Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
+		Enemy->TransitionToBanked();                      // -> Banked
+
+		// Drive through the real Tick() entry point, not RefreshLevelClearState() directly -
+		// this is what the bHasLoggedFirstTick guard sits in front of.
+		Subsystem->Tick(0.016f);
+		TestEqual(TEXT("OnLevelClear should fire via Tick() -> RefreshLevelClearState(), not just via direct RefreshLevelClearState() calls"),
+			Listener->LevelClearCallCount, 1);
+
+		// A second Tick() must not re-fire, and must not regress now that Tick() also
+		// carries the one-shot bHasLoggedFirstTick branch alongside the pre-existing calls.
+		Subsystem->Tick(0.016f);
+		TestEqual(TEXT("A second Tick() call must not re-fire OnLevelClear"),
+			Listener->LevelClearCallCount, 1);
 	}
 
 	return true;
