@@ -86,6 +86,16 @@ bool FKrowdKontrolFlatCamera3DFacingRotationMathTest::RunTest(const FString& Par
 			FVector(500.0f, 500.0f, 50.0f), FVector(600.0f, 600.0f, 50.0f), OutFacingRotation);
 
 		TestTrue(TEXT("Off-axis cursor should succeed"), bResult);
+	}
+
+	// Dead zone (PR #279 review): a cursor within the 10-unit facing dead zone
+	// must not produce a rotation - pins the gameplay-units threshold that
+	// replaced the ~0.1mm KINDA_SMALL_NUMBER guard.
+	{
+		FRotator OutFacingRotation = FRotator::ZeroRotator;
+		const bool bResult = AFlatCamera3DPrototypePawn::ComputeFacingRotation(
+			FVector(0.0f, 0.0f, 0.0f), FVector(5.0f, 5.0f, 0.0f), OutFacingRotation);
+		TestFalse(TEXT("Cursor inside the facing dead zone should not rotate"), bResult);
 		TestEqual(TEXT("Off-axis cursor should yield Yaw 45"), OutFacingRotation.Yaw, 45.0);
 	}
 

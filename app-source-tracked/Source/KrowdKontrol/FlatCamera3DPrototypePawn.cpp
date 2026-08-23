@@ -53,6 +53,13 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->bUsePawnControlRotation = false;
+	// Absolute rotation (PR #279 review, CONFIRMED finding): the facing system
+	// rotates the whole actor every tick, and a boom inheriting that yaw would
+	// orbit the camera - which the cursor deprojects through, creating a
+	// self-feeding spin (pawn turns -> camera orbits -> cursor world-point
+	// shifts -> pawn turns again). A top-down camera must never yaw with the
+	// pawn; absolute rotation pins it.
+	CameraBoom->SetUsingAbsoluteRotation(true);
 
 	TopDownCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TopDownCamera"));
 	TopDownCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
@@ -166,7 +173,12 @@ bool AFlatCamera3DPrototypePawn::ComputeFacingRotation(
 	FRotator& OutFacingRotation)
 {
 	const FVector Delta = CursorWorldPosition - ActorLocation;
-	if (Delta.SizeSquared2D() <= KINDA_SMALL_NUMBER)
+	// Real gameplay-units dead zone (PR #279 review): KINDA_SMALL_NUMBER is
+	// ~0.1mm - functionally no guard, letting sub-pixel mouse movement near the
+	// pawn's centre flip the yaw up to 180 degrees per frame. 10 units covers
+	// the actual degenerate zone under the pawn's own body.
+	constexpr float FacingDeadZoneRadiusUnits = 10.0f;
+	if (Delta.SizeSquared2D() <= FMath::Square(FacingDeadZoneRadiusUnits))
 	{
 		return false;
 	}
@@ -222,6 +234,14 @@ void AFlatCamera3DPrototypePawn::ApplyFacingTowardCursor(const FVector& CursorWo
 void AFlatCamera3DPrototypePawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// Facing must respect the level-fail freeze (PR #279 review): DisableInput
+	// only silences the input component, and this path is tick-driven - without
+	// this gate the incapacitated robot keeps swiveling to follow the mouse.
+	if (LevelFailComponent && LevelFailComponent->HasLevelFailed())
+	{
+		return;
+	}
 
 	FVector CursorWorldPosition;
 	if (GetCursorWorldPosition(CursorWorldPosition))
