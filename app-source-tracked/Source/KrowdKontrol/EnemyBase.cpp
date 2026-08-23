@@ -262,6 +262,33 @@ void AEnemyBase::TickFleeMovement(const FVector& CasterLocation, float DeltaSeco
 	SetActorLocation(GetActorLocation() + AwayFromCaster.GetSafeNormal() * MoveDistance);
 }
 
+void AEnemyBase::TickFollowMovement(const FVector& PlayerLocation, float DeltaSeconds)
+{
+	if (CurrentState != EEnemyState::Controlled)
+	{
+		return;
+	}
+	const FAbilityData& Data = AbilityData::Get(ControllingAbility);
+	if (Data.bAllowsMovementWhileControlled || Data.bFleesFromCasterWhileControlled)
+	{
+		return;
+	}
+	const FVector ToPlayer = PlayerLocation - GetActorLocation();
+	const float DistanceRemaining = ToPlayer.Size() - FollowDistanceUnits;
+	if (DistanceRemaining <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	// GetControlledSpeedMultiplier() is deliberately NOT applied here, unlike
+	// TickChaseMovement's own MoveDistance line above - Snare is the only ability with
+	// a non-1.0f multiplier and it's also the one ability this function's gate above
+	// excludes, so this omission is untested-by-necessity today, not an oversight (see
+	// AbilityData.cpp's ControlledSpeedMultiplier comment on Snare, issue #214 review
+	// follow-up).
+	const float MoveDistance = FMath::Min(DistanceRemaining, GetEffectiveFollowSpeedUnitsPerSecond() * DeltaSeconds);
+	SetActorLocation(GetActorLocation() + ToPlayer.GetSafeNormal() * MoveDistance);
+}
+
 void AEnemyBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -279,6 +306,7 @@ void AEnemyBase::Tick(float DeltaTime)
 		const FVector PlayerLocation = PlayerPawn->GetActorLocation();
 		TickCheckDetection(PlayerLocation);
 		TickChaseMovement(PlayerLocation, DeltaTime);
+		TickFollowMovement(PlayerLocation, DeltaTime);
 		TickFleeMovement(PlayerLocation, DeltaTime);
 	}
 }
@@ -332,4 +360,9 @@ void AEnemyBase::SetIsElite(bool bNewIsElite)
 float AEnemyBase::GetEffectiveMovementSpeedUnitsPerSecond() const
 {
 	return GetMovementSpeedUnitsPerSecond() * (bIsElite ? EliteMovementSpeedMultiplier : 1.0f);
+}
+
+float AEnemyBase::GetEffectiveFollowSpeedUnitsPerSecond() const
+{
+	return FollowSpeedUnitsPerSecond * (bIsElite ? EliteMovementSpeedMultiplier : 1.0f);
 }

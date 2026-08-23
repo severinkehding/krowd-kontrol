@@ -779,6 +779,231 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// (a-follow) TickFollowMovement (issue #214) moves a Stun-Controlled enemy toward
+	// PlayerLocation at GetEffectiveFollowSpeedUnitsPerSecond() * DeltaSeconds while
+	// farther than FollowDistanceUnits + speed*dt - mirrors (q)'s toward-player shape.
+	AEnemyBaseTestActor* FollowingEnemy = NewObject<AEnemyBaseTestActor>();
+	FollowingEnemy->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	FollowingEnemy->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	const FVector BeforeFollow = FollowingEnemy->GetActorLocation();
+	const FVector FarFollowPlayerLocation(2000.0f, 0.0f, 0.0f);
+	FollowingEnemy->TickFollowMovement(FarFollowPlayerLocation, 1.0f);
+	const float FollowDistanceMoved = FVector::Dist(FollowingEnemy->GetActorLocation(), BeforeFollow);
+	TestEqual(TEXT("(a-follow) A Stun-Controlled enemy should follow at the effective follow speed * DeltaSeconds"),
+		FollowDistanceMoved, FollowingEnemy->GetEffectiveFollowSpeedUnitsPerSecond() * 1.0f);
+	TestTrue(TEXT("(a-follow) Following should move the enemy toward, not away from, the player"),
+		FVector::Dist(FollowingEnemy->GetActorLocation(), FarFollowPlayerLocation) < FVector::Dist(BeforeFollow, FarFollowPlayerLocation));
+
+	// (root-follow) Root-Controlled enemies DO follow (issue #214 review follow-up) -
+	// locks in docs/prd-herd-mechanic.md's operator design decision, which applies to
+	// every Controlled enemy with no per-ability carve-out. Root sets neither
+	// bAllowsMovementWhileControlled nor bFleesFromCasterWhileControlled, so it falls
+	// through TickFollowMovement's gate exactly like Stun/Sleep - mirrors (a-follow)'s
+	// shape with EAbilitySlot::Root instead of Stun.
+	AEnemyBaseTestActor* RootFollower = NewObject<AEnemyBaseTestActor>();
+	RootFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	RootFollower->ReceiveControl(EAbilitySlot::Root); // Alert -> Controlled
+	const FVector BeforeRootFollow = RootFollower->GetActorLocation();
+	const FVector FarRootFollowPlayerLocation(2000.0f, 0.0f, 0.0f);
+	RootFollower->TickFollowMovement(FarRootFollowPlayerLocation, 1.0f);
+	const float RootFollowDistanceMoved = FVector::Dist(RootFollower->GetActorLocation(), BeforeRootFollow);
+	TestEqual(TEXT("(root-follow) A Root-Controlled enemy should follow at the effective follow speed * DeltaSeconds"),
+		RootFollowDistanceMoved, RootFollower->GetEffectiveFollowSpeedUnitsPerSecond() * 1.0f);
+	TestTrue(TEXT("(root-follow) Following should move the enemy toward, not away from, the player"),
+		FVector::Dist(RootFollower->GetActorLocation(), FarRootFollowPlayerLocation) < FVector::Dist(BeforeRootFollow, FarRootFollowPlayerLocation));
+
+	// (b-follow) overshoot clamp: a player closer than FollowDistanceUnits + speed*dt
+	// is approached but the move clamps exactly to FollowDistanceUnits short, never
+	// stacking on the player - mirrors (s)'s overshoot-clamp shape, target distance is
+	// FollowDistanceUnits, not 0.
+	AEnemyBaseTestActor* OvershootFollower = NewObject<AEnemyBaseTestActor>();
+	OvershootFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	OvershootFollower->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	const FVector OvershootPlayerLocation(OvershootFollower->FollowDistanceUnits + 50.0f, 0.0f, 0.0f);
+	OvershootFollower->TickFollowMovement(OvershootPlayerLocation, 1.0f); // would move speed*1.0 units - only 50 units of headroom exist before the stop-short gap
+	const float OvershootResidualDistance = FVector::Dist(OvershootFollower->GetActorLocation(), OvershootPlayerLocation);
+	TestEqual(TEXT("(b-follow) Follow clamps to stop exactly FollowDistanceUnits short of the player, never stacking"),
+		OvershootResidualDistance, OvershootFollower->FollowDistanceUnits);
+
+	// (b2-follow) already within FollowDistanceUnits: zero further movement.
+	AEnemyBaseTestActor* AlreadyCloseFollower = NewObject<AEnemyBaseTestActor>();
+	AlreadyCloseFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	AlreadyCloseFollower->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	const FVector AlreadyClosePlayerLocation(AlreadyCloseFollower->FollowDistanceUnits - 10.0f, 0.0f, 0.0f);
+	const FVector BeforeAlreadyClose = AlreadyCloseFollower->GetActorLocation();
+	AlreadyCloseFollower->TickFollowMovement(AlreadyClosePlayerLocation, 1.0f);
+	const float AlreadyCloseDistanceMoved = FVector::Dist(AlreadyCloseFollower->GetActorLocation(), BeforeAlreadyClose);
+	TestEqual(TEXT("(b2-follow) A follower already within FollowDistanceUnits should not move"),
+		AlreadyCloseDistanceMoved, 0.0f);
+
+	// (c-follow) TickFollowMovement is a no-op outside Controlled: Idle, Alert,
+	// Attack, Banked - mirrors (p)/(r)/(r2)/(x-fear)'s no-op-outside-the-relevant-
+	// state shape.
+	AEnemyBaseTestActor* IdleFollower = NewObject<AEnemyBaseTestActor>();
+	const FVector IdleFollowStart = IdleFollower->GetActorLocation();
+	IdleFollower->TickFollowMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float IdleFollowDistanceMoved = FVector::Dist(IdleFollower->GetActorLocation(), IdleFollowStart);
+	TestEqual(TEXT("(c-follow) TickFollowMovement while Idle should not move the actor"),
+		IdleFollowDistanceMoved, 0.0f);
+
+	AEnemyBaseTestActor* AlertFollower = NewObject<AEnemyBaseTestActor>();
+	AlertFollower->TickCheckDetection(FVector(1000.0f, 0.0f, 0.0f)); // Idle -> Alert
+	const FVector AlertFollowStart = AlertFollower->GetActorLocation();
+	AlertFollower->TickFollowMovement(FVector(1000.0f, 0.0f, 0.0f), 1.0f);
+	const float AlertFollowDistanceMoved = FVector::Dist(AlertFollower->GetActorLocation(), AlertFollowStart);
+	TestEqual(TEXT("(c-follow) TickFollowMovement while Alert should not move the actor"),
+		AlertFollowDistanceMoved, 0.0f);
+
+	AEnemyBaseTestActor* AttackFollower = NewObject<AEnemyBaseTestActor>();
+	AttackFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	AttackFollower->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	const FVector AttackFollowStart = AttackFollower->GetActorLocation();
+	AttackFollower->TickFollowMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float AttackFollowDistanceMoved = FVector::Dist(AttackFollower->GetActorLocation(), AttackFollowStart);
+	TestEqual(TEXT("(c-follow) TickFollowMovement while Attack should not move the actor"),
+		AttackFollowDistanceMoved, 0.0f);
+
+	AEnemyBaseTestActor* BankedFollower = NewObject<AEnemyBaseTestActor>();
+	BankedFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	BankedFollower->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	BankedFollower->TransitionToBanked(); // Controlled -> Banked
+	const FVector BankedFollowStart = BankedFollower->GetActorLocation();
+	BankedFollower->TickFollowMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float BankedFollowDistanceMoved = FVector::Dist(BankedFollower->GetActorLocation(), BankedFollowStart);
+	TestEqual(TEXT("(c-follow) TickFollowMovement while Banked should not move the actor"),
+		BankedFollowDistanceMoved, 0.0f);
+
+	// (d-follow) TickFollowMovement is a no-op for Snare-Controlled enemies -
+	// bAllowsMovementWhileControlled already claims this tick's movement via
+	// TickChaseMovement (see (p3)); this proves the gate on TickFollowMovement
+	// itself, not just that TickChaseMovement still works.
+	AEnemyBaseTestActor* SnaredNonFollower = NewObject<AEnemyBaseTestActor>();
+	SnaredNonFollower->TickCheckDetection(FVector(1000.0f, 0.0f, 0.0f)); // Idle -> Alert
+	SnaredNonFollower->ReceiveControl(EAbilitySlot::Snare); // Alert -> Controlled
+	const FVector BeforeSnaredFollow = SnaredNonFollower->GetActorLocation();
+	SnaredNonFollower->TickFollowMovement(FVector(1000.0f, 0.0f, 0.0f), 1.0f);
+	const float SnaredFollowDistanceMoved = FVector::Dist(SnaredNonFollower->GetActorLocation(), BeforeSnaredFollow);
+	TestEqual(TEXT("(d-follow) A Snare-Controlled enemy should not be moved by TickFollowMovement - TickChaseMovement already owns this tick"),
+		SnaredFollowDistanceMoved, 0.0f);
+
+	// (e-follow) TickFollowMovement is a no-op for Fear-Controlled enemies -
+	// bFleesFromCasterWhileControlled already claims this tick's movement via
+	// TickFleeMovement (see (v-fear)); proves the gate on TickFollowMovement itself.
+	AEnemyBaseTestActor* FearedNonFollower = NewObject<AEnemyBaseTestActor>();
+	FearedNonFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	FearedNonFollower->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled
+	const FVector BeforeFearedFollow = FearedNonFollower->GetActorLocation();
+	FearedNonFollower->TickFollowMovement(FVector(1000.0f, 0.0f, 0.0f), 1.0f);
+	const float FearedFollowDistanceMoved = FVector::Dist(FearedNonFollower->GetActorLocation(), BeforeFearedFollow);
+	TestEqual(TEXT("(e-follow) A Fear-Controlled enemy should not be moved by TickFollowMovement - TickFleeMovement already owns this tick"),
+		FearedFollowDistanceMoved, 0.0f);
+
+	// (f-follow) duration-reversion mid-follow: once the Controlled-duration expires
+	// and CurrentState reverts to Alert (mirrors (i2)'s expiry pattern), a further
+	// TickFollowMovement call is a no-op - the existing state-gate alone halts follow,
+	// with zero new transition logic.
+	AEnemyBaseTestActor* ExpiringFollower = NewObject<AEnemyBaseTestActor>();
+	ExpiringFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	ExpiringFollower->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	ExpiringFollower->TickFollowMovement(FVector(2000.0f, 0.0f, 0.0f), 1.0f); // moves partway
+	const float StunDurationSecondsForFollow = AbilityData::Get(EAbilitySlot::Stun).BaseDurationSeconds;
+	ExpiringFollower->TickControlledDuration(StunDurationSecondsForFollow + 1.0f); // forces Controlled -> Alert
+	TestEqual(TEXT("(f-follow) precondition: duration expiry reverted the enemy to Alert"),
+		static_cast<uint8>(ExpiringFollower->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	const FVector BeforeExpiredFollow = ExpiringFollower->GetActorLocation();
+	ExpiringFollower->TickFollowMovement(FVector(2000.0f, 0.0f, 0.0f), 1.0f);
+	const float ExpiredFollowDistanceMoved = FVector::Dist(ExpiringFollower->GetActorLocation(), BeforeExpiredFollow);
+	TestEqual(TEXT("(f-follow) TickFollowMovement should not move the actor once Controlled-duration expiry reverts it to Alert"),
+		ExpiredFollowDistanceMoved, 0.0f);
+
+	// (g-follow) elite interaction: SetIsElite(true) multiplies
+	// GetEffectiveFollowSpeedUnitsPerSecond() by EliteMovementSpeedMultiplier, and the
+	// actual distance moved by TickFollowMovement matches - mirrors (v)-(x)'s elite-
+	// multiplier shape.
+	AEnemyBaseTestActor* EliteFollower = NewObject<AEnemyBaseTestActor>();
+	EliteFollower->SetIsElite(true);
+	TestEqual(TEXT("(g-follow) Effective follow speed should be multiplied while Elite"),
+		EliteFollower->GetEffectiveFollowSpeedUnitsPerSecond(),
+		EliteFollower->FollowSpeedUnitsPerSecond * EliteFollower->EliteMovementSpeedMultiplier);
+	EliteFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	EliteFollower->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	const FVector BeforeEliteFollow = EliteFollower->GetActorLocation();
+	EliteFollower->TickFollowMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float EliteFollowDistanceMoved = FVector::Dist(EliteFollower->GetActorLocation(), BeforeEliteFollow);
+	TestEqual(TEXT("(g-follow) TickFollowMovement should move an Elite enemy at its multiplied effective follow speed"),
+		EliteFollowDistanceMoved, EliteFollower->GetEffectiveFollowSpeedUnitsPerSecond() * 1.0f);
+
+	// (h-follow) the real Tick() override wires TickFollowMovement into the per-frame
+	// loop, mirroring case (t)'s TickChaseMovement wiring-through-Tick() shape.
+	UWorld* FollowWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), FollowWorld))
+	{
+		AEnemyBaseTestActor* TickedFollower = FollowWorld->SpawnActor<AEnemyBaseTestActor>();
+		APawn* FollowPlayerPawn = FollowWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(h-follow) AEnemyBaseTestActor should spawn into the test World"), TickedFollower)
+			&& TestNotNull(TEXT("(h-follow) APawn should spawn into the test World"), FollowPlayerPawn))
+		{
+			APlayerController* FollowController = FollowWorld->SpawnActor<APlayerController>();
+			if (!TestNotNull(TEXT("(h-follow) Should be able to spawn a controller to possess the pawn"), FollowController))
+			{
+				return false;
+			}
+			FollowController->Possess(FollowPlayerPawn);
+			FollowWorld->AddController(FollowController);
+
+			USceneComponent* FollowPlayerPawnRoot = NewObject<USceneComponent>(FollowPlayerPawn);
+			FollowPlayerPawnRoot->RegisterComponent();
+			FollowPlayerPawn->SetRootComponent(FollowPlayerPawnRoot);
+			FollowPlayerPawn->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f)); // within DetectionRangeUnits so TickCheckDetection below actually reaches Alert
+
+			TickedFollower->TickCheckDetection(FollowPlayerPawn->GetActorLocation()); // Idle -> Alert
+			TickedFollower->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+			const FVector BeforeFollowTick = TickedFollower->GetActorLocation();
+			TickedFollower->Tick(0.1f);
+			const float FollowTickDistanceMoved = FVector::Dist(TickedFollower->GetActorLocation(), BeforeFollowTick);
+			TestEqual(TEXT("(h-follow) Tick() should move the Controlled enemy toward the player at the effective follow speed * DeltaSeconds"),
+				FollowTickDistanceMoved, TickedFollower->GetEffectiveFollowSpeedUnitsPerSecond() * 0.1f);
+		}
+	}
+
+	// (i-follow) the real Tick() wiring order (TickChaseMovement -> TickFollowMovement
+	// -> TickFleeMovement) can't double-apply for a Snare-Controlled enemy - mirrors
+	// (h-follow)'s scaffold, swapping Stun for Snare, and asserts total per-frame
+	// displacement matches TickChaseMovement's own half-speed distance exactly (i.e.
+	// TickFollowMovement's gate held through the real Tick() path, not just in
+	// isolation like (d-follow) already proves).
+	UWorld* SnareTickWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), SnareTickWorld))
+	{
+		AEnemyBaseTestActor* TickedSnaredFollower = SnareTickWorld->SpawnActor<AEnemyBaseTestActor>();
+		APawn* SnareTickPlayerPawn = SnareTickWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(i-follow) AEnemyBaseTestActor should spawn into the test World"), TickedSnaredFollower)
+			&& TestNotNull(TEXT("(i-follow) APawn should spawn into the test World"), SnareTickPlayerPawn))
+		{
+			APlayerController* SnareTickController = SnareTickWorld->SpawnActor<APlayerController>();
+			if (!TestNotNull(TEXT("(i-follow) Should be able to spawn a controller to possess the pawn"), SnareTickController))
+			{
+				return false;
+			}
+			SnareTickController->Possess(SnareTickPlayerPawn);
+			SnareTickWorld->AddController(SnareTickController);
+
+			USceneComponent* SnareTickPlayerPawnRoot = NewObject<USceneComponent>(SnareTickPlayerPawn);
+			SnareTickPlayerPawnRoot->RegisterComponent();
+			SnareTickPlayerPawn->SetRootComponent(SnareTickPlayerPawnRoot);
+			SnareTickPlayerPawn->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f)); // within DetectionRangeUnits, matches (h-follow)/(t)
+
+			TickedSnaredFollower->TickCheckDetection(SnareTickPlayerPawn->GetActorLocation()); // Idle -> Alert
+			TickedSnaredFollower->ReceiveControl(EAbilitySlot::Snare); // Alert -> Controlled
+			const FVector BeforeSnareTick = TickedSnaredFollower->GetActorLocation();
+			TickedSnaredFollower->Tick(0.1f);
+			const float SnareTickDistanceMoved = FVector::Dist(TickedSnaredFollower->GetActorLocation(), BeforeSnareTick);
+			TestEqual(TEXT("(i-follow) Tick() should move a Snare-Controlled enemy at exactly TickChaseMovement's half-speed distance, with zero additional displacement from TickFollowMovement"),
+				SnareTickDistanceMoved,
+				TickedSnaredFollower->GetEffectiveMovementSpeedUnitsPerSecond() * TickedSnaredFollower->GetControlledSpeedMultiplier() * 0.1f);
+		}
+	}
+
 	return true;
 }
 
