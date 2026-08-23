@@ -1627,8 +1627,11 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 	}
 
 	// (aa-fear) TryCastSelfCircleAbility via Fear (issue #253): an enemy inside
-	// SelfCircleRadiusUnits of the owner is affected, one outside is not - mirrors
-	// (u-snare)'s in-shape/out-of-shape split.
+	// SelfCircleRadiusUnits of the owner is affected, one outside is not, and one
+	// exactly on the boundary is affected too since the radius check is inclusive
+	// - mirrors (u-snare)'s in-shape/out-of-shape split and case (m)'s boundary
+	// convention (PR #280 review, MEDIUM finding 1: a future <= -> < slip must not
+	// silently exclude edge-of-circle enemies with nothing to catch it).
 	{
 		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
@@ -1646,22 +1649,28 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 
 		AEnemyBaseTestActor* InCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
 		AEnemyBaseTestActor* OutOfCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OnBoundaryEnemy = World->SpawnActor<AEnemyBaseTestActor>();
 		if (!TestNotNull(TEXT("(aa-fear) In-circle AEnemyBaseTestActor should spawn"), InCircleEnemy)
-			|| !TestNotNull(TEXT("(aa-fear) Out-of-circle AEnemyBaseTestActor should spawn"), OutOfCircleEnemy))
+			|| !TestNotNull(TEXT("(aa-fear) Out-of-circle AEnemyBaseTestActor should spawn"), OutOfCircleEnemy)
+			|| !TestNotNull(TEXT("(aa-fear) On-boundary AEnemyBaseTestActor should spawn"), OnBoundaryEnemy))
 		{
 			return false;
 		}
 		InCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 		OutOfCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OnBoundaryEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
 		InCircleEnemy->SetActorLocation(FVector(CastComponent->SelfCircleRadiusUnits - 50.0f, 0.0f, 0.0f));
 		OutOfCircleEnemy->SetActorLocation(FVector(CastComponent->SelfCircleRadiusUnits + 50.0f, 0.0f, 0.0f));
+		OnBoundaryEnemy->SetActorLocation(FVector(CastComponent->SelfCircleRadiusUnits, 0.0f, 0.0f));
 
 		const int32 AffectedCount = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
-		TestEqual(TEXT("(aa-fear) Only the in-circle enemy should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("(aa-fear) The in-circle and on-boundary enemies should be affected"), AffectedCount, 2);
 		TestEqual(TEXT("(aa-fear) The in-circle enemy should be Controlled"),
 			static_cast<uint8>(InCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 		TestEqual(TEXT("(aa-fear) The out-of-circle enemy should be left untouched"),
 			static_cast<uint8>(OutOfCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		TestEqual(TEXT("(aa-fear) The on-boundary enemy should be Controlled"),
+			static_cast<uint8>(OnBoundaryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 	}
 
 	// (bb-fear) Multi-target (issue #253): two enemies both inside the circle are both

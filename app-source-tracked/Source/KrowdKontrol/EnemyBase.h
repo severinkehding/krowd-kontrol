@@ -354,9 +354,12 @@ private:
 	// Controlled and ControllingAbility is flagged
 	// AbilityData::bFleesFromCasterWhileControlled (Fear only - see
 	// AbilityData.h). A CasterLocation exactly coincident with this actor's own
-	// location (degenerate away-direction) is also a no-op, mirroring
-	// TickChaseMovement's own KINDA_SMALL_NUMBER guard, inverted. Private/
-	// friend-testable, same shape as TickChaseMovement above.
+	// location (degenerate away-direction) is also a no-op, using the same
+	// KINDA_SMALL_NUMBER dead-zone style as TickChaseMovement's own guard
+	// (against SizeSquared() here rather than Size(), since this function
+	// already needs a squared distance for GetSafeNormal() below - both are
+	// negligible at game scale). Private/friend-testable, same shape as
+	// TickChaseMovement above.
 	void TickFleeMovement(const FVector& CasterLocation, float DeltaSeconds);
 
 	void AdvanceToAlert();

@@ -756,6 +756,26 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("(z-fear) Tick() should move the feared enemy away from, not toward, the player"),
 				FVector::Dist(TickedFleer->GetActorLocation(), FleePlayerPawn->GetActorLocation())
 					> FVector::Dist(BeforeFleeTick, FleePlayerPawn->GetActorLocation()));
+
+			// A second Tick() after the player moves further along the same ray the enemy
+			// is already fleeing along should flee back toward the origin, away from the
+			// player's NEW position - proves Tick() re-reads a live player location every
+			// frame (per app-changelog/issue-253.md) rather than a cast-time snapshot. This
+			// placement is deliberate, not arbitrary: moving the player to (0, 1000, 0)
+			// would pass even if TickFleeMovement kept using the stale first-tick caster
+			// location, since continuing in the original -X direction still happens to
+			// increase distance from a point off the X axis. Placing the new player
+			// position further out along the same -X ray the enemy already fled along
+			// means live tracking (fleeing back toward +X, away from the new position)
+			// and a frozen -X direction (still walking toward the new position) produce
+			// opposite distance deltas, so only correct live-tracking passes.
+			const FVector AfterFirstTick = TickedFleer->GetActorLocation();
+			FleePlayerPawn->SetActorLocation(FVector(-2000.0f, 0.0f, 0.0f));
+			TickedFleer->Tick(0.1f);
+			const FVector AfterSecondTick = TickedFleer->GetActorLocation();
+			TestTrue(TEXT("(z-fear) A second Tick() after the player moves should flee away from the player's NEW position, not a cast-time snapshot"),
+				FVector::Dist(AfterSecondTick, FleePlayerPawn->GetActorLocation())
+					> FVector::Dist(AfterFirstTick, FleePlayerPawn->GetActorLocation()));
 		}
 	}
 
