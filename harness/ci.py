@@ -201,6 +201,33 @@ def main() -> int:
             print("UNIT_PASSED tests=unknown (no unit_count_pattern set - a passing "
                   "suite and an absent one look identical here)", flush=True)
 
+    # --- 2b. pie ---------------------------------------------------------------
+    # KrowdKontrol.PIE.* (issue #236) exercises real begin-play/tick/PIE-session paths
+    # that `unit` cannot reach - see docs/prd-functional-pie-tests.md REQ-2. Runs right
+    # after `unit`, in both --quick and full mode, so a real-PIE-session regression
+    # fails the gate the same way a unit failure does today - one definition of green,
+    # not a separate opt-in check that can be skipped (issue #237).
+    pie_cmd = CONFIG.get("pie", "").strip()
+    if not pie_cmd:
+        optional_step("pie", "PIE")
+    else:
+        rc, out = run("pie", pie_cmd)
+        if rc != 0:
+            return fail("pie", out)
+        pattern = CONFIG.get("pie_count_pattern", "").strip()
+        if pattern:
+            m = re.search(pattern, out)
+            ran = int(m.group(1)) if m else 0
+            # ZERO IS NOT A PASS - same guard as `unit`, for the same reason.
+            if ran == 0:
+                return fail("pie", "PIE_ERROR: the runner reported 0 tests - a suite "
+                                    "that ran nothing is not a suite that passed. If the "
+                                    "count is real, fix pie_count_pattern")
+            print(f"PIE_PASSED tests={ran}", flush=True)
+        else:
+            print("PIE_PASSED tests=unknown (no pie_count_pattern set - a passing "
+                  "suite and an absent one look identical here)", flush=True)
+
     if QUICK:
         # The subset an implementing node runs on itself. A STRICT subset: never a check
         # the full run lacks. Nothing downstream trusts it - the full gate re-runs

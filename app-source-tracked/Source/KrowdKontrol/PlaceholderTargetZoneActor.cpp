@@ -138,12 +138,32 @@ void APlaceholderTargetZoneActor::EnsureBeaconHierarchy()
 
 	if (RootComponent != TargetZoneRootComponent)
 	{
+		// The stale serialized root (BeaconMeshComponent on pre-#190 maps) is what
+		// carries the actor's placed world transform - TargetZoneRootComponent is
+		// constructor-fresh at identity. Swapping roots without copying location/
+		// rotation teleported every legacy-placed marker (and the ATargetZone that
+		// ARoomActor::EnsureBankingZonesWired() heals onto it) to the world origin,
+		// which is exactly what KrowdKontrol.PIE.SerializedPlacedActorHealth guards.
+		// Scale is deliberately NOT copied: the old root was the 0.05-Z-flattened
+		// disc, and inheriting that scale onto the neutral root would squash the
+		// whole hierarchy (see the constructor's sibling-not-nested comment).
+		const FTransform StaleRootTransform =
+			RootComponent ? RootComponent->GetComponentTransform() : FTransform::Identity;
 		SetRootComponent(TargetZoneRootComponent);
+		TargetZoneRootComponent->SetWorldLocationAndRotation(
+			StaleRootTransform.GetLocation(), StaleRootTransform.GetRotation());
 	}
 
 	if (BeaconMeshComponent && BeaconMeshComponent->GetAttachParent() != TargetZoneRootComponent)
 	{
 		AttachTo(BeaconMeshComponent, TargetZoneRootComponent);
+		// Same rationale as the light below: when this component was itself the stale
+		// root, its "relative" transform is the actor's old world placement, which is
+		// meaningless relative to the new root (it would compose to double the
+		// placement). Re-apply the constructor's canonical disc pose.
+		BeaconMeshComponent->SetRelativeLocation(FVector::ZeroVector);
+		BeaconMeshComponent->SetRelativeRotation(FRotator::ZeroRotator);
+		BeaconMeshComponent->SetRelativeScale3D(FVector(1.5f, 1.5f, 0.05f));
 	}
 
 	if (BeaconColumnMeshComponent && BeaconColumnMeshComponent->GetAttachParent() != TargetZoneRootComponent)
