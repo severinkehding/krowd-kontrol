@@ -281,6 +281,27 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l2) The telegraph should keep re-arming and firing while Rooted, matching normal Attack behaviour"),
 		RootedListener->CallCount, 2);
 
+	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
+	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
+	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
+	// the way, so the ray has NOT fired yet; a second identical tick brings the
+	// cumulative elapsed time up to AttackTelegraphSeconds and the ray fires exactly
+	// once. This is Trooper's own independent AdvanceAttackTelegraph copy, mirroring
+	// KrowdKontrolBomberEnemyTest.cpp's (m-snare) case for the same behaviour.
+	ATrooperEnemy* SnaredTrooper = NewObject<ATrooperEnemy>();
+	AdvanceToAttack(SnaredTrooper, ZeroDistanceLocation);
+	SnaredTrooper->ReceiveControl(EAbilitySlot::Snare);
+	TestEqual(TEXT("(m-snare) Trooper should be Controlled after Snare"),
+		static_cast<uint8>(SnaredTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	UTrooperRayFiredTestListener* SnaredListener = NewObject<UTrooperRayFiredTestListener>();
+	SnaredTrooper->OnTrooperRayFired.AddDynamic(SnaredListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
+	SnaredTrooper->AdvanceAttackTelegraph(SnaredTrooper->AttackTelegraphSeconds);
+	TestEqual(TEXT("(m-snare) The ray should NOT have fired after only one telegraph's worth of half-speed ticks"),
+		SnaredListener->CallCount, 0);
+	SnaredTrooper->AdvanceAttackTelegraph(SnaredTrooper->AttackTelegraphSeconds);
+	TestEqual(TEXT("(m-snare) The ray should fire exactly once once cumulative elapsed time (at half speed) reaches AttackTelegraphSeconds"),
+		SnaredListener->CallCount, 1);
+
 	// (m) the real Tick() override, not just the friend-called AdvanceAttackTelegraph
 	// helper, must wire the telegraph into the per-frame loop, and the rapid re-arm
 	// must survive through that real path - two successive Tick() calls should each

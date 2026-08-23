@@ -225,14 +225,16 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 			[TellLight](const FLinearColor& Reserved) { return Reserved.Equals(TellLight->GetLightColor(), 0.01f); }));
 
 	// (l) ReceiveControl interrupting an in-progress attack telegraph clears the tell
-	// light, so a runner put to Snare mid-telegraph doesn't keep showing a drain-ray
+	// light, so a runner put to Stun mid-telegraph doesn't keep showing a drain-ray
 	// that will never fire (the state guard in AdvanceAttackTelegraph already stops
-	// the ray itself - this proves the visual is cleared too).
+	// the ray itself - this proves the visual is cleared too). Stun (not Snare) is
+	// used here since issue #254 gives Snare its own bAllowsAttackWhileControlled=true
+	// exception, mirroring Root's - see (l-root)/(l-snare) below.
 	ARunnerEnemy* InterruptedRunner = NewObject<ARunnerEnemy>();
 	AdvanceToAttack(InterruptedRunner, ZeroDistanceLocation);
 	TestTrue(TEXT("Attack tell should be visibly on before the interrupt"),
 		InterruptedRunner->AttackTellLightComponent->Intensity > 0.0f);
-	InterruptedRunner->ReceiveControl(EAbilitySlot::Snare);
+	InterruptedRunner->ReceiveControl(EAbilitySlot::Stun);
 	TestEqual(TEXT("Attack tell should be cleared once Controlled interrupts the attack"),
 		InterruptedRunner->AttackTellLightComponent->Intensity, 0.0f);
 	UDrainRayFiredTestListener* InterruptedListener = NewObject<UDrainRayFiredTestListener>();
@@ -240,7 +242,7 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 	InterruptedRunner->AdvanceAttackTelegraph(InterruptedRunner->AttackTelegraphSeconds);
 	TestEqual(TEXT("The interrupted drain-ray should never fire"), InterruptedListener->CallCount, 0);
 
-	// (l-root) issue #255: unlike Snare above, Root-triggered Controlled does NOT
+	// (l-root) issue #255: unlike Stun above, Root-triggered Controlled does NOT
 	// clear the attack tell or stop the telegraph - the drain-ray still fires once
 	// (bDrainFiredForCurrentAttack still latches), but firing itself is not silenced
 	// by entering Controlled, since AbilityData::Get(Root).bAllowsAttackWhileControlled.
@@ -261,6 +263,27 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 	RootedRunner->AdvanceAttackTelegraph(RootedRunner->AttackTelegraphSeconds);
 	TestEqual(TEXT("(l-root) The one-shot guard should still prevent a second drain-ray while Rooted"),
 		RootedListener->CallCount, 1);
+
+	// (l-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
+	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
+	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
+	// the way, so the drain-ray has NOT fired yet; a second identical tick brings the
+	// cumulative elapsed time up to AttackTelegraphSeconds and the ray fires exactly
+	// once. This is Runner's own independent AdvanceAttackTelegraph copy, mirroring
+	// KrowdKontrolBomberEnemyTest.cpp's (m-snare) case for the same behaviour.
+	ARunnerEnemy* SnaredRunner = NewObject<ARunnerEnemy>();
+	AdvanceToAttack(SnaredRunner, ZeroDistanceLocation);
+	SnaredRunner->ReceiveControl(EAbilitySlot::Snare);
+	TestEqual(TEXT("(l-snare) Runner should be Controlled after Snare"),
+		static_cast<uint8>(SnaredRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	UDrainRayFiredTestListener* SnaredListener = NewObject<UDrainRayFiredTestListener>();
+	SnaredRunner->OnRunnerDrainFired.AddDynamic(SnaredListener, &UDrainRayFiredTestListener::HandleDrainRayFired);
+	SnaredRunner->AdvanceAttackTelegraph(SnaredRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-snare) The drain-ray should NOT have fired after only one telegraph's worth of half-speed ticks"),
+		SnaredListener->CallCount, 0);
+	SnaredRunner->AdvanceAttackTelegraph(SnaredRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-snare) The drain-ray should fire exactly once once cumulative elapsed time (at half speed) reaches AttackTelegraphSeconds"),
+		SnaredListener->CallCount, 1);
 
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
 	// MovementSpeed (950.0f), not AEnemyBase's own base default (600.0f) - the direct

@@ -155,7 +155,7 @@ void ATrooperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 	{
 		return;
 	}
-	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds);
+	RemainingTelegraphSeconds = FMath::Max(0.0f, RemainingTelegraphSeconds - DeltaSeconds * GetControlledSpeedMultiplier());
 	if (RemainingTelegraphSeconds <= 0.0f)
 	{
 		OnTrooperRayFired.Broadcast();

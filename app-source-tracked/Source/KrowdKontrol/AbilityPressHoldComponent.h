@@ -74,6 +74,11 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	// Shared by the Line/Cone indicator branches in HandleAbilityKeyPressed: returns
+	// GetOwner()'s location, or FVector::ZeroVector with a warning log (naming
+	// ShapeName, e.g. "Line"/"Cone") if there is no Owner this frame.
+	FVector GetOwnerLocationOrWarn(const TCHAR* ShapeName) const;
+
 	// Timer callback, fires PressFlashDurationSeconds after a press.
 	void HandlePressFlashComplete(EAbilitySlot Ability);
 

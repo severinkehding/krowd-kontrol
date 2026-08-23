@@ -51,6 +51,12 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->GetConeRangeUnits(Ability) : 1200.0f);
 		ShapeSpec.ConeFullAngleDegrees = (CastComponent ? CastComponent->ConeFullAngleDegrees : 75.0f);
 	}
+	else if (TargetType == EAbilityTargetType::SelfCircle)
+	{
+		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
+		ShapeSpec.Origin = GetOwnerLocationOrWarn(TEXT("SelfCircle"));
+		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->SelfCircleRadiusUnits : 400.0f);
+	}
 	else if (bHasCursorTargetLocation)
 	{
 		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtCursor;
@@ -59,12 +65,6 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 		// really reach (issue #257 pass-1 code review finding).
 		ShapeSpec.Origin = (CastComponent ? CastComponent->GetClampedThrowLocation(Ability, CursorTargetLocation) : CursorTargetLocation);
 		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->ThrownCircleLandingRadiusUnits : 400.0f);
-	}
-	else if (TargetType == EAbilityTargetType::SelfCircle)
-	{
-		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
-		ShapeSpec.Origin = GetOwnerLocationOrWarn(TEXT("SelfCircle"));
-		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->SelfCircleRadiusUnits : 400.0f);
 	}
 	else
 	{
@@ -95,13 +95,13 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 		{
 			CastComponent->TryCastConeAbilityTowardLocation(Ability, CursorTargetLocation);
 		}
-		else if (bHasCursorTargetLocation)
-		{
-			CastComponent->TryCastThrownAbilityAtLocation(Ability, CursorTargetLocation);
-		}
 		else if (TargetType == EAbilityTargetType::SelfCircle)
 		{
 			CastComponent->TryCastSelfCircleAbility(Ability);
+		}
+		else if (bHasCursorTargetLocation)
+		{
+			CastComponent->TryCastThrownAbilityAtLocation(Ability, CursorTargetLocation);
 		}
 		else
 		{
