@@ -38,6 +38,7 @@
 #include "AbilityData.h"
 #include "AbilityUnlockComponent.h"
 #include "EnemyTypeIndicatorComponent.h"
+#include "RoomActor.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -91,6 +92,11 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 	// (1) Honest zero display before OnLevelBegin - no fabricated placeholder.
 	TestEqual(TEXT("Display before OnLevelBegin should read 0/0"),
 		Widget->GetQuestTrackerDisplayText().ToString(), FString(TEXT("Robots penned: 0/0")));
+
+	// (1b) No ARoomActor exists in this World (only enemies/a zone are spawned below) -
+	// the room-state line should stay blank rather than fabricate "DOOR OPEN".
+	TestTrue(TEXT("Room-state line should stay blank, not fabricate DOOR OPEN, when no ARoomActor exists"),
+		Widget->GetRoomStateDisplayText().IsEmpty());
 
 	ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
 	if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), LifecycleSubsystem))
@@ -559,6 +565,138 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 
 					TestEqual(TEXT("With both Sleep and Root unlocked, declaration order (Stun, Sleep, Root, ...) should pick Sleep first"),
 						TieBreakWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("SNIPERS → SLEEP (RMB)")));
+				}
+			}
+		}
+	}
+
+	return true;
+}
+
+// Confirms the room-state line (issue #248, PRD "Mission Briefing & Live Quest
+// Tracker" REQ-2): with one owned enemy remaining it reads "Room 1 — 1 robot left"
+// (singular), with two it reads "... 2 robots left" (plural); once the last owned
+// enemy banks, ARoomActor::OnRoomClearedStateChanged fires and the line flips live
+// to "DOOR OPEN" with no re-bind/re-construction - mirroring case (14) above's
+// live-update-while-bound shape. Needs its own World with
+// World->SetBegunPlay(true) - KrowdKontrolRoomActorDoorGatingTest.cpp's file
+// comment documents this is required for AEnemyBase::OnEnemyBanked to actually
+// reach ARoomActor's bound handler; the shared World at the top of this file's
+// RunTest() never calls SetBegunPlay(true), so a fresh World is needed here, same
+// as cases (14)/(15) above already do for their own reasons.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolQuestTrackerWidgetRoomStateTest,
+	"KrowdKontrol.Unit.QuestTrackerWidgetRoomState",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolQuestTrackerWidgetRoomStateTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+	World->InitializeActorsForPlay(FURL());
+	World->SetBegunPlay(true);
+
+	ARoomActor* Room = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("ARoomActor should spawn into the test World"), Room))
+	{
+		return false;
+	}
+
+	AEnemyBaseTestActor* EnemyOne = World->SpawnActor<AEnemyBaseTestActor>();
+	AEnemyBaseTestActor* EnemyTwo = World->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("First test enemy should spawn"), EnemyOne) ||
+		!TestNotNull(TEXT("Second test enemy should spawn"), EnemyTwo))
+	{
+		return false;
+	}
+	Room->AddOwnedEnemy(EnemyOne);
+	Room->AddOwnedEnemy(EnemyTwo);
+
+	ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+	if (!TestNotNull(TEXT("World should auto-instantiate ULevelLifecycleSubsystem"), LifecycleSubsystem))
+	{
+		return false;
+	}
+	LifecycleSubsystem->OnWorldBeginPlay(*World);
+
+	UQuestTrackerWidget* Widget = CreateWidget<UQuestTrackerWidget>(World, UQuestTrackerWidget::StaticClass());
+	if (!TestNotNull(TEXT("UQuestTrackerWidget should construct"), Widget))
+	{
+		return false;
+	}
+
+	// Chrome-colour compliance (Hard Invariant 3) - mirrors the main test's case (6),
+	// which only checks ChromeBorder/BankedCountText, not this third line.
+	TestEqual(TEXT("Room-state text colour should come from HUDChromeColours::GetText()"),
+		Widget->RoomStateText->GetColorAndOpacity().GetSpecifiedColor(), HUDChromeColours::GetText());
+
+	TestEqual(TEXT("Room-state line should show Room 1 with 2 robots left (plural)"),
+		Widget->GetRoomStateDisplayText().ToString(), FString(TEXT("Room 1 — 2 robots left")));
+
+	const FVector ZeroDistanceLocation(0.0f, 0.0f, 0.0f);
+	EnemyOne->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	EnemyOne->ReceiveControl(EAbilitySlot::Stun);        // Alert -> Controlled
+	EnemyOne->TransitionToBanked();                      // Controlled -> Banked
+
+	TestEqual(TEXT("Room-state line should update live to singular '1 robot left'"),
+		Widget->GetRoomStateDisplayText().ToString(), FString(TEXT("Room 1 — 1 robot left")));
+
+	EnemyTwo->TickCheckDetection(ZeroDistanceLocation);
+	EnemyTwo->ReceiveControl(EAbilitySlot::Stun);
+	EnemyTwo->TransitionToBanked();
+
+	TestEqual(TEXT("Room-state line should flip live to DOOR OPEN once the last owned enemy banks"),
+		Widget->GetRoomStateDisplayText().ToString(), FString(TEXT("DOOR OPEN")));
+
+	// Multi-room chain order: with a single room above, Rooms.Sort() is a no-op and
+	// the "first uncleared" scan trivially lands on index 0 regardless of whether the
+	// sort/scan logic is correct. Proves it's a real ascending-X sort, not spawn
+	// order, by spawning the higher-X room FIRST - mirrors case (15)'s "real scan, not
+	// incidentally correct" shape (KrowdKontrolQuestTrackerWidgetTest.cpp:506-566).
+	UWorld* MultiRoomWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the multi-room test"), MultiRoomWorld))
+	{
+		MultiRoomWorld->InitializeActorsForPlay(FURL());
+		MultiRoomWorld->SetBegunPlay(true);
+
+		ARoomActor* SecondRoom = MultiRoomWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(),
+			FTransform(FVector(500.0f, 0.0f, 0.0f)));
+		ARoomActor* FirstRoom = MultiRoomWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(),
+			FTransform(FVector(0.0f, 0.0f, 0.0f)));
+		if (TestNotNull(TEXT("Higher-X ARoomActor should spawn into the multi-room test World"), SecondRoom)
+			&& TestNotNull(TEXT("Lower-X ARoomActor should spawn into the multi-room test World"), FirstRoom))
+		{
+			AEnemyBaseTestActor* FirstRoomEnemy = MultiRoomWorld->SpawnActor<AEnemyBaseTestActor>();
+			AEnemyBaseTestActor* SecondRoomEnemy = MultiRoomWorld->SpawnActor<AEnemyBaseTestActor>();
+			if (TestNotNull(TEXT("First room's test enemy should spawn"), FirstRoomEnemy)
+				&& TestNotNull(TEXT("Second room's test enemy should spawn"), SecondRoomEnemy))
+			{
+				FirstRoom->AddOwnedEnemy(FirstRoomEnemy);
+				SecondRoom->AddOwnedEnemy(SecondRoomEnemy);
+
+				ULevelLifecycleSubsystem* MultiRoomLifecycle = MultiRoomWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+				if (TestNotNull(TEXT("Multi-room test World should auto-instantiate ULevelLifecycleSubsystem"), MultiRoomLifecycle))
+				{
+					MultiRoomLifecycle->OnWorldBeginPlay(*MultiRoomWorld);
+
+					UQuestTrackerWidget* MultiRoomWidget = CreateWidget<UQuestTrackerWidget>(MultiRoomWorld, UQuestTrackerWidget::StaticClass());
+					if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the multi-room test"), MultiRoomWidget))
+					{
+						TestEqual(TEXT("Lower-X room should be Room 1 regardless of spawn order"),
+							MultiRoomWidget->GetRoomStateDisplayText().ToString(), FString(TEXT("Room 1 — 1 robot left")));
+
+						// Clear Room 1 - focus must advance to Room 2 (by ascending X), not
+						// stay stuck on Room 1 or jump straight to DOOR OPEN.
+						FirstRoomEnemy->TickCheckDetection(ZeroDistanceLocation);
+						FirstRoomEnemy->ReceiveControl(EAbilitySlot::Stun);
+						FirstRoomEnemy->TransitionToBanked();
+
+						TestEqual(TEXT("Clearing Room 1 should advance focus to Room 2 (by ascending X), not DOOR OPEN"),
+							MultiRoomWidget->GetRoomStateDisplayText().ToString(), FString(TEXT("Room 2 — 1 robot left")));
+					}
 				}
 			}
 		}

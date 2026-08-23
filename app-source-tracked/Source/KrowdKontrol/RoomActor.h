@@ -72,6 +72,14 @@ public:
 	// runtime for enemies added later (e.g. a future wave spawn).
 	const TArray<TObjectPtr<AEnemyBase>>& GetOwnedEnemies() const { return OwnedEnemies; }
 
+	// Count of OwnedEnemies still blocking IsRoomCleared() - same predicate (valid, not
+	// being destroyed, not yet Banked). Exposed separately so callers that need "how many
+	// are left" (not just "is it done") - e.g. the quest tracker's room-state HUD line,
+	// issue #248 - don't have to re-walk OwnedEnemies themselves. IsRoomCleared() is
+	// implemented in terms of this so the two can never drift.
+	UFUNCTION(BlueprintCallable, Category = "Room|Enemies")
+	int32 GetRemainingEnemyCount() const;
+
 	// True once every currently-owned enemy has reached Banked, or is already being
 	// destroyed (see HandleOwnedEnemyDestroyed) - vacuously true for an empty list, so a
 	// room with nothing to clear never gates its own doors.
