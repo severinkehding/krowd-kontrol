@@ -353,6 +353,12 @@ void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
 	}
 	OwnedEnemies.Add(Enemy);
 	Enemy->SetOwningRoom(this);
+	// This room's Tick() (CheckFirstEntry -> StartCountdown) must run before the
+	// enemy's Tick() -> TickCheckDetection() within any given frame, or an enemy
+	// ticking first on the exact first-entry frame sees IsActivationPending() ==
+	// false before the countdown has started and can alert one frame early
+	// (pass-2 behavioral-validation finding on issue #245).
+	Enemy->AddTickPrerequisiteActor(this);
 	BindOwnedEnemyDelegate(Enemy);
 	OnRoomClearedStateChanged.Broadcast();
 }
