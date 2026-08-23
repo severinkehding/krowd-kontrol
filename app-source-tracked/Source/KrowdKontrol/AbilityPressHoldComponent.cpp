@@ -69,16 +69,7 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 	else
 	{
 		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
-		if (AActor* Owner = GetOwner())
-		{
-			ShapeSpec.Origin = Owner->GetActorLocation();
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - indicator will show at world origin."),
-				*GetNameSafe(this));
-		}
+		ShapeSpec.Origin = GetOwnerLocationOrWarn(TEXT("CircleAtActor"));
 		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->CastRangeUnits : 300.0f);
 	}
 
