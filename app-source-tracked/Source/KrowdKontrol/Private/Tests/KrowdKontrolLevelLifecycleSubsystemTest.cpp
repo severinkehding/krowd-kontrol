@@ -50,6 +50,15 @@ bool FKrowdKontrolLevelLifecycleSubsystemTest::RunTest(const FString& Parameters
 			return false;
 		}
 
+		// (i): IsTickableWhenPaused() must return true - this subsystem's Tick() must not
+		// silently stall if the world is ever paused (e.g. UBriefingCardWidget's briefing
+		// card). Can't be exercised via a real paused Tick() here - CreateNewMap() worlds
+		// have no live AGameModeBase, so UGameplayStatics::SetGamePaused() is a documented
+		// no-op (see KrowdKontrolAbilityCastComponentTest.cpp) - so this is a direct
+		// tripwire on the override itself, not an end-to-end pause simulation.
+		TestTrue(TEXT("ULevelLifecycleSubsystem must tick through pause - see IsTickableWhenPaused() override"),
+			Subsystem->IsTickableWhenPaused());
+
 		ULevelLifecycleTestListener* Listener = NewObject<ULevelLifecycleTestListener>();
 		Subsystem->OnLevelBegin.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelBegin);
 		Subsystem->OnLevelClear.AddDynamic(Listener, &ULevelLifecycleTestListener::HandleLevelClear);

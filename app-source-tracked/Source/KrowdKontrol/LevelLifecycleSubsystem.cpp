@@ -15,6 +15,9 @@ void ULevelLifecycleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void ULevelLifecycleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
+	UE_LOG(LogTemp, Warning,
+		TEXT("ULevelLifecycleSubsystem::OnWorldBeginPlay: ENTERED for world '%s' (WorldType=%d)"),
+		*InWorld.GetMapName(), static_cast<int32>(InWorld.WorldType));
 	Super::OnWorldBeginPlay(InWorld);
 	if (bHasFiredLevelBegin)
 	{
@@ -25,6 +28,9 @@ void ULevelLifecycleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	}
 	bHasFiredLevelBegin = true;
 	EnsureLevelClearTimeSubscription();
+	UE_LOG(LogTemp, Warning,
+		TEXT("ULevelLifecycleSubsystem::OnWorldBeginPlay: broadcasting OnLevelBegin for '%s'"),
+		*InWorld.GetMapName());
 	OnLevelBegin.Broadcast(FName(*InWorld.GetMapName()));
 }
 
@@ -51,6 +57,13 @@ void ULevelLifecycleSubsystem::EnsureLevelClearTimeSubscription()
 void ULevelLifecycleSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (!bHasLoggedFirstTick)
+	{
+		bHasLoggedFirstTick = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ULevelLifecycleSubsystem::Tick: first Tick() observed for world '%s'"),
+			GetWorld() ? *GetWorld()->GetMapName() : TEXT("<no world>"));
+	}
 	RefreshLevelClearState();
 	RefreshBossCheckpointState();
 }
@@ -105,6 +118,9 @@ void ULevelLifecycleSubsystem::RefreshLevelClearState()
 		}
 	}
 
+	UE_LOG(LogTemp, Warning,
+		TEXT("ULevelLifecycleSubsystem::RefreshLevelClearState: all clear conditions met (TotalEnemies=%d, BankedEnemies=%d) - broadcasting OnLevelClear"),
+		TotalEnemies, BankedEnemies);
 	bHasFiredLevelClear = true;
 	OnLevelClear.Broadcast();
 

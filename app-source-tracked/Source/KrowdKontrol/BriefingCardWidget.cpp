@@ -115,6 +115,9 @@ void UBriefingCardWidget::ShowBriefing(const FLevelBriefingRow& Row)
 	// blocking clicks.
 	RootBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
 
+	UE_LOG(LogTemp, Warning,
+		TEXT("UBriefingCardWidget::ShowBriefing: pausing world for %.1fs (level '%s')"),
+		BriefingAutoDismissSeconds, *Row.LevelDisplayName.ToString());
 	UGameplayStatics::SetGamePaused(GetWorld(), true);
 }
 
@@ -141,6 +144,7 @@ void UBriefingCardWidget::DismissBriefing()
 		NewAbilityText->SetText(FText::GetEmpty());
 		NewAbilityText->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	UE_LOG(LogTemp, Warning, TEXT("UBriefingCardWidget::DismissBriefing: unpausing world"));
 	UGameplayStatics::SetGamePaused(GetWorld(), false);
 }
 

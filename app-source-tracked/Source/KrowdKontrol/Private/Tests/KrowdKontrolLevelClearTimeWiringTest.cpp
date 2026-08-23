@@ -113,6 +113,13 @@ bool FKrowdKontrolLevelClearTimeWiringTest::RunTest(const FString& Parameters)
 	// is what actually fails this test on that regression - relying on the warning
 	// being merely "unexpected" does not, since this harness treats a test that only
 	// logs a warning as a pass (see comment at the double-subscribe call above).
+	//
+	// Baseline is 2, not 0 (issue #234): RefreshLevelClearState() and HandleLevelClear()
+	// each now emit one intentional UE_LOG(..., Warning, ...) diagnostic line on every
+	// successful single-bind clear, so a clean single-bind run always produces exactly
+	// 2 new warnings. A double-bind still fails this check - it would add a 3rd
+	// HandleLevelClear warning line plus StopLevelTimerAndRecordClear's own "no active
+	// timer" warning on the second invocation, landing on 4, not 2.
 	FAutomationTestExecutionInfo PreClearExecutionInfo;
 	GetExecutionInfo(PreClearExecutionInfo);
 	const int32 WarningTotalBeforeClear = PreClearExecutionInfo.GetWarningTotal();
@@ -123,8 +130,9 @@ bool FKrowdKontrolLevelClearTimeWiringTest::RunTest(const FString& Parameters)
 
 	FAutomationTestExecutionInfo PostClearExecutionInfo;
 	GetExecutionInfo(PostClearExecutionInfo);
-	TestEqual(TEXT("RefreshLevelClearState() should not log any warnings - a double-bind would trigger StopLevelTimerAndRecordClear's 'no active timer' warning on the second HandleLevelClear invocation"),
-		PostClearExecutionInfo.GetWarningTotal(), WarningTotalBeforeClear);
+	const int32 ExpectedNewWarningsFromIntentionalLogging = 2;
+	TestEqual(TEXT("RefreshLevelClearState() should log exactly its own + HandleLevelClear()'s intentional diagnostic warnings (2) - a double-bind would trigger StopLevelTimerAndRecordClear's 'no active timer' warning plus a second HandleLevelClear log on top of that"),
+		PostClearExecutionInfo.GetWarningTotal(), WarningTotalBeforeClear + ExpectedNewWarningsFromIntentionalLogging);
 
 	// This assertion pair can only be true if HandleLevelBegin actually called
 	// StartLevelTimer - otherwise StopLevelTimerAndRecordClear inside HandleLevelClear

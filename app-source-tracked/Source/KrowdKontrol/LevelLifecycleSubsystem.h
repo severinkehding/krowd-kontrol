@@ -31,6 +31,17 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 
+	// This subsystem only performs read-only polling and one-shot event broadcasts -
+	// it has no gameplay-simulation reason to respect UGameplayStatics::SetGamePaused
+	// (unlike player movement/abilities, none of which opt into
+	// PrimaryActorTick.bTickEvenWhenPaused in this codebase - grep confirms zero hits).
+	// UBriefingCardWidget::ShowBriefing() is this project's only pause source; ticking
+	// through it removes one identified, previously-untested way the real clear-fire
+	// path could silently stall that no CreateNewMap()-based Automation test can catch
+	// (SetGamePaused() is a documented no-op there - see
+	// KrowdKontrolAbilityCastComponentTest.cpp).
+	virtual bool IsTickableWhenPaused() const override { return true; }
+
 	// Fires exactly once, at this world's begin-play, carrying the map name
 	// (FName(*World->GetMapName()), same conversion AKrowdKontrolPlayerController
 	// already uses for DiscardLevelTimer's LevelID).
@@ -121,4 +132,8 @@ private:
 	// One-shot guard so a still-missing ULevelClearTimeSubsystem only logs once per
 	// instance, not once per Initialize()/OnWorldBeginPlay() call.
 	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
+
+	// One-shot guard so Tick()'s diagnostic log only fires once per instance, not once
+	// per frame - same idiom as bHasWarnedMissingLevelClearTimeSubsystem above.
+	bool bHasLoggedFirstTick = false;
 };
