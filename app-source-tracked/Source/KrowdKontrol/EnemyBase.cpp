@@ -95,6 +95,27 @@ void AEnemyBase::BeginPlay()
 
 void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 {
+	if (CurrentState == EEnemyState::Controlled)
+	{
+		// Sleep-flavour early wake (issue #257, PRD "Ability Targeting Shapes &
+		// Effect Semantics" REQ-2): being hit by any OTHER ability's application
+		// while still Controlled by an ability flagged
+		// bWakesEarlyOnOtherAbilityHit ends that Controlled window immediately -
+		// reuses the exact Controlled->Alert edge + OnEnemyControlledExpired
+		// broadcast TickControlledDuration's own natural-expiry path already
+		// uses below, rather than inventing a second "how Controlled ends" path.
+		// Re-casting the SAME ability that's already controlling this enemy
+		// still no-ops here (Ability == ControllingAbility), matching the base
+		// "no-op unless Alert/Attack" contract - there is no real gameplay path
+		// that re-casts an ability on its own already-Controlled target today.
+		if (Ability != ControllingAbility && AbilityData::Get(ControllingAbility).bWakesEarlyOnOtherAbilityHit)
+		{
+			CurrentState = EEnemyState::Alert;
+			OnEnemyControlledExpired.Broadcast();
+		}
+		return;
+	}
+
 	if (CurrentState != EEnemyState::Alert && CurrentState != EEnemyState::Attack)
 	{
 		return;

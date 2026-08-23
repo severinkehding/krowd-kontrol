@@ -55,6 +55,12 @@ struct FAbilityData
 	// !bIsColourNeutral - Stun's value is unused/arbitrary, since MISSION.md Hard
 	// Invariant 4 forbids giving Stun a real counter.
 	EEnemyType CounteredEnemyType = EEnemyType::RU_NNR;
+
+	// True only for Sleep: being hit by any other ability's application while this
+	// ability's Controlled window is active ends it immediately (Controlled -> Alert)
+	// instead of running its full duration; see AEnemyBase::ReceiveControl's
+	// early-wake branch.
+	bool bWakesEarlyOnOtherAbilityHit = false;
 };
 
 namespace AbilityData

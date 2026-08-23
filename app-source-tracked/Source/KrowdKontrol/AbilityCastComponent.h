@@ -3,9 +3,11 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "AbilitySlot.h"
+#include "AbilityData.h"
 #include "AbilityCastComponent.generated.h"
 
 class AEnemyBase;
+class UAbilityCooldownComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAbilityCastApplied, EAbilitySlot, Ability, AEnemyBase*, TargetEnemy);
 
@@ -58,6 +60,73 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
 	bool TryCastAbility(EAbilitySlot Ability);
 
+	// Concrete throw distances per EAbilityRange tier, consulted only by
+	// TryCastThrownAbilityAtLocation (ThrownCircle abilities' cursor-clamp) - unlike
+	// AbilityData's Colour/Duration/TargetType, the OG GDD's ability table only locks
+	// the tier LABEL per ability (Short/Medium/Long), not concrete world units, so
+	// these are placeholder-tunable EditDefaultsOnly values (same "open playtesting
+	// question" rationale CastRangeUnits above already documents), not a second
+	// AbilityData-owned locked constant.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Thrown Range", meta = (ClampMin = "0.0"))
+	float ShortThrowRangeUnits = 800.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Thrown Range", meta = (ClampMin = "0.0"))
+	float MediumThrowRangeUnits = 1200.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Thrown Range", meta = (ClampMin = "0.0"))
+	float LongThrowRangeUnits = 2000.0f;
+
+	// Landing-circle AoE radius shared by every ThrownCircle ability (Stun/Sleep) -
+	// "4x robot size" per docs/prd-ability-shapes.md, where "robot size" is locked as
+	// the placeholder pawn's body diameter (AFlatCamera3DPrototypePawn's unscaled
+	// /Engine/BasicShapes/Cube.Cube, ~100 units edge-to-edge) - 400 = 4x100.
+	// EditDefaultsOnly for the same placeholder-tunable reason as the ranges above.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Thrown Range", meta = (ClampMin = "0.0"))
+	float ThrownCircleLandingRadiusUnits = 400.0f;
+
+	// Cursor-aimed multi-target counterpart to TryCastAbility(), for
+	// EAbilityTargetType::ThrownCircle abilities (Stun/Sleep - see AbilityData.h).
+	// Generic and reusable - built so a future Stun implementation (issue #256) can
+	// call this directly with zero duplication - but only wired into the real input
+	// path for Sleep by this issue; see FlatCamera3DPrototypePawn::CastSleepAbility().
+	// DesiredTargetLocation is clamped (see ComputeClampedThrowLocation) to this
+	// actor's location + the tier distance matching AbilityData::Get(Ability).Range.
+	// On landing, ReceiveControl(Ability) is called on every AEnemyBase within
+	// ThrownCircleLandingRadiusUnits of the clamped point; OnAbilityCastApplied
+	// broadcasts once per enemy that was actually Alert/Attack immediately before the
+	// call (i.e. once per enemy that transitioned into Controlled - NOT once per
+	// enemy merely visited, so an already-Controlled enemy woken early by this call
+	// does not also broadcast as if freshly targeted).
+	// Same gate order as TryCastAbility (paused -> briefing -> Owner exists ->
+	// unlocked -> on-cooldown -> lockout), but unlike TryCastAbility the cooldown is
+	// ALWAYS consumed once every gate passes, whether or not any enemy ends up inside
+	// the landing circle - a thrown bomb commits the moment it's thrown, unlike
+	// TryCastAbility's auto-nearest-target search (which only commits once a target
+	// is actually found - see that method's own "a whiff never consumes the cooldown"
+	// contract, deliberately NOT reused here).
+	// Returns the number of enemies actually affected (0 is a valid, cooldown-
+	// consuming throw that hit nothing); returns -1 if any gate failed and nothing
+	// was changed.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	int32 TryCastThrownAbilityAtLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation);
+
+	// Pure range-tier clamp math (mirrors AFlatCamera3DPrototypePawn::
+	// IntersectRayWithGroundPlane's "public static, no live-state dependency" shape,
+	// for the same direct-Automation-testability reason). Returns DesiredTargetLocation
+	// unchanged if it's already within MaxRangeUnits of OwnerLocation, otherwise
+	// OwnerLocation + (direction to DesiredTargetLocation) * MaxRangeUnits.
+	static FVector ComputeClampedThrowLocation(const FVector& OwnerLocation, const FVector& DesiredTargetLocation, float MaxRangeUnits);
+
+	// Instance-level convenience wrapper around ComputeClampedThrowLocation, using
+	// this component's own GetOwner() location and GetThrowRangeUnitsForTier(Ability)
+	// - the exact clamp TryCastThrownAbilityAtLocation applies internally. Exposed so
+	// a caller previewing a thrown-ability aim before committing to the cast (e.g.
+	// UAbilityPressHoldComponent's cursor-target indicator) can render the same
+	// clamped landing point the cast will actually use, instead of the raw unclamped
+	// cursor location. Returns DesiredTargetLocation unchanged if GetOwner() is null.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	FVector GetClampedThrowLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation) const;
+
 	// Fires exactly once per successful TryCastAbility call, after ReceiveControl has
 	// already been applied to TargetEnemy.
 	UPROPERTY(BlueprintAssignable, Category = "Ability Cast")
@@ -78,4 +147,16 @@ private:
 	// TActorIterator<AEnemyBase> + Alert/Attack filter + DistSquared shape. Returns
 	// nullptr if no such enemy exists.
 	AEnemyBase* FindNearestValidTarget() const;
+
+	// Shared pre-target gate chain (paused -> briefing -> Owner exists -> unlocked ->
+	// on-cooldown -> lockout) both TryCastAbility and TryCastThrownAbilityAtLocation
+	// run before doing their own targeting work. Returns the resolved
+	// UAbilityCooldownComponent* on success (both callers need it for
+	// TryStartCooldown) or nullptr on any gate failure. CallerLogContext tags the
+	// UE_LOG lines so a live-PIE log pull can tell which entry point they came from.
+	UAbilityCooldownComponent* ResolvePassedCastGates(EAbilitySlot Ability, const TCHAR* CallerLogContext) const;
+
+	// Maps an EAbilityRange tier to the matching ShortThrowRangeUnits /
+	// MediumThrowRangeUnits / LongThrowRangeUnits property.
+	float GetThrowRangeUnitsForTier(EAbilityRange Range) const;
 };

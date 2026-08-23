@@ -106,6 +106,14 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Fear should not be colour-neutral"), Fear.bIsColourNeutral);
 	TestFalse(TEXT("Snare should not be colour-neutral"), Snare.bIsColourNeutral);
 
+	// (4b) Issue #257: only Sleep flags bWakesEarlyOnOtherAbilityHit - being hit by a
+	// different ability while Controlled ends that Controlled window immediately.
+	TestFalse(TEXT("Stun should not wake early on other-ability hit"), Stun.bWakesEarlyOnOtherAbilityHit);
+	TestTrue(TEXT("Sleep should wake early on other-ability hit"), Sleep.bWakesEarlyOnOtherAbilityHit);
+	TestFalse(TEXT("Root should not wake early on other-ability hit"), Root.bWakesEarlyOnOtherAbilityHit);
+	TestFalse(TEXT("Fear should not wake early on other-ability hit"), Fear.bWakesEarlyOnOtherAbilityHit);
+	TestFalse(TEXT("Snare should not wake early on other-ability hit"), Snare.bWakesEarlyOnOtherAbilityHit);
+
 	// (5) The 5 colours (and their FName tags) are mutually distinct - guards against a
 	// copy-paste that accidentally reuses one colour, or one colour's tag, for two
 	// abilities.

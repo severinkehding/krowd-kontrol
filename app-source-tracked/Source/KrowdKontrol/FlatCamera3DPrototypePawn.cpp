@@ -273,8 +273,26 @@ void AFlatCamera3DPrototypePawn::CastStunAbility()
 
 void AFlatCamera3DPrototypePawn::CastSleepAbility()
 {
-	if (AbilityPressHoldComponent)
+	if (!AbilityPressHoldComponent)
 	{
+		return;
+	}
+
+	FVector CursorWorldPosition;
+	if (GetCursorWorldPosition(CursorWorldPosition))
+	{
+		AbilityPressHoldComponent->HandleAbilityKeyPressed(EAbilitySlot::Sleep, true, CursorWorldPosition);
+	}
+	else
+	{
+		// No live viewport / possessing controller this frame (see
+		// GetCursorWorldPosition()'s own doc comment) - fall back to the
+		// pre-cursor auto-nearest-target path rather than silently dropping the
+		// press. Matches this codebase's existing "never leave an ability press
+		// completely unhandled" precedent. Logged (PR #280 review, LOW finding 1)
+		// since this silently downgrades Sleep from AoE to single-target for the
+		// press, which would otherwise be undiagnosable from a log pull alone.
+		UE_LOG(LogTemp, Warning, TEXT("AFlatCamera3DPrototypePawn::CastSleepAbility: no cursor world position this frame, falling back to single-target auto-nearest cast"));
 		AbilityPressHoldComponent->HandleAbilityKeyPressed(EAbilitySlot::Sleep);
 	}
 }

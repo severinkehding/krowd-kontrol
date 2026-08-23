@@ -16,7 +16,7 @@ UAbilityPressHoldComponent::UAbilityPressHoldComponent()
 	HoldThresholdTimerHandles.SetNum(NumAbilitySlots);
 }
 
-void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability)
+void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, bool bHasCursorTargetLocation, FVector CursorTargetLocation)
 {
 	const int32 Index = static_cast<int32>(Ability);
 	if (!bAbilityKeyHeld.IsValidIndex(Index))
@@ -28,18 +28,30 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability)
 	}
 
 	FAbilityIndicatorShapeSpec ShapeSpec;
-	ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
-	if (AActor* Owner = GetOwner())
+	if (bHasCursorTargetLocation)
 	{
-		ShapeSpec.Origin = Owner->GetActorLocation();
+		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtCursor;
+		// Clamped through the same GetClampedThrowLocation the actual cast below uses,
+		// so the preview circle never shows a landing point beyond where the throw can
+		// really reach (issue #257 pass-1 code review finding).
+		ShapeSpec.Origin = (CastComponent ? CastComponent->GetClampedThrowLocation(Ability, CursorTargetLocation) : CursorTargetLocation);
+		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->ThrownCircleLandingRadiusUnits : 400.0f);
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - indicator will show at world origin."),
-			*GetNameSafe(this));
+		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
+		if (AActor* Owner = GetOwner())
+		{
+			ShapeSpec.Origin = Owner->GetActorLocation();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - indicator will show at world origin."),
+				*GetNameSafe(this));
+		}
+		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->CastRangeUnits : 300.0f);
 	}
-	ShapeSpec.RangeUnits = (CastComponent ? CastComponent->CastRangeUnits : 300.0f);
 
 	// Show(), not Flash() - see the class-level GOTCHA in AbilityPressHoldComponent.h /
 	// this function's own comment below for why.
@@ -49,10 +61,18 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability)
 	}
 
 	// Existing cast logic, called unconditionally on every press, exactly as
-	// CastStunAbility() etc. did before this component existed.
+	// CastStunAbility() etc. did before this component existed - now branching to the
+	// cursor-aimed thrown-ability path when a target location was supplied (issue #257).
 	if (CastComponent)
 	{
-		CastComponent->TryCastAbility(Ability);
+		if (bHasCursorTargetLocation)
+		{
+			CastComponent->TryCastThrownAbilityAtLocation(Ability, CursorTargetLocation);
+		}
+		else
+		{
+			CastComponent->TryCastAbility(Ability);
+		}
 	}
 
 	bAbilityKeyHeld[Index] = true;

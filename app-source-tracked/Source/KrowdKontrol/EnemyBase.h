@@ -21,6 +21,10 @@ class ARoomActor;
 //   Controlled -> Banked: TransitionToBanked() is called.
 //   Controlled -> Alert: the Controlled-state duration elapses before
 //     TransitionToBanked() is called (operator decision, issue #138, 2026-08-18).
+//   Controlled -> Alert: ReceiveControl(Ability) is called with an Ability different
+//     from ControllingAbility while ControllingAbility's AbilityData flags
+//     bWakesEarlyOnOtherAbilityHit (issue #257) - reuses the same edge/broadcast as
+//     the duration-expiry case above, just triggered early.
 // See issue #12, PRD 03, MISSION.md Hard Invariant 2.
 UENUM(BlueprintType)
 enum class EEnemyState : uint8
