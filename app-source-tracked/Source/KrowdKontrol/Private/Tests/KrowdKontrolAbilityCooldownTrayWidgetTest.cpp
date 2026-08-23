@@ -26,6 +26,7 @@
 #include "Misc/AutomationTest.h"
 #include "AbilityCooldownTrayWidget.h"
 #include "AbilityLockoutComponent.h"
+#include "AbilityCooldownComponent.h"
 #include "AbilityData.h"
 #include "ReservedGameplayColours.h"
 #include "HUDChromeColours.h"
@@ -505,6 +506,70 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 			TestEqual(TEXT("Fear should still read PunishmentLockout after rebinding - the old component's expiry broadcast must not reach the widget"),
 				Widget->GetSlotState(EAbilitySlot::Fear), EAbilityTileState::PunishmentLockout);
 		}
+	}
+
+	// (o) BindAbilityCooldownComponent (issue #259) drives the tray's fill/numeric
+	// readout through real cooldown activation and expiry, sourced from the actual
+	// UAbilityCooldownComponent - not the placeholder self-timer. Mirrors block (k)'s
+	// BindAbilityLockoutComponent shape. Sleep is Ready here - block (k) locked and
+	// then fully cleared it, block (l)/(m)/(n) never touch it again.
+	{
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>();
+		if (!TestNotNull(TEXT("UAbilityCooldownComponent should construct"), CooldownComponent))
+		{
+			return false;
+		}
+		Widget->BindAbilityCooldownComponent(CooldownComponent);
+
+		TestEqual(TEXT("Sleep should read Ready before any real cast"),
+			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::Ready);
+
+		CooldownComponent->TryStartCooldown(EAbilitySlot::Sleep);
+		TestTrue(TEXT("Sleep should be on cooldown on the tray immediately after the real component starts it"),
+			Widget->IsSlotOnCooldown(EAbilitySlot::Sleep));
+		TestEqual(TEXT("Sleep's tray remaining should seed from the real component's full duration"),
+			Widget->GetSlotRemainingSeconds(EAbilitySlot::Sleep), UAbilityCooldownComponent::DefaultAbilityCooldownSeconds);
+		TestEqual(TEXT("Sleep's fill fraction should be full (1.0) right after starting"),
+			Widget->GetSlotCooldownFillFraction(EAbilitySlot::Sleep), 1.0f);
+		TestEqual(TEXT("Sleep's numeric readout should show the real component's ceil'd duration"),
+			Widget->GetSlotCooldownDisplayText(EAbilitySlot::Sleep).ToString(),
+			FString::FromInt(FMath::CeilToInt(UAbilityCooldownComponent::DefaultAbilityCooldownSeconds)));
+
+		// Partial advance - drive the real component directly (friend access, no live
+		// tick under -nullrhi), then pull the tray's readout via the same poll path
+		// NativeTick uses when bound.
+		CooldownComponent->AdvanceCooldowns(1.0f);
+		Widget->RefreshCooldownReadouts();
+		TestEqual(TEXT("Sleep's tray remaining should reflect the partial advance"),
+			Widget->GetSlotRemainingSeconds(EAbilitySlot::Sleep), UAbilityCooldownComponent::DefaultAbilityCooldownSeconds - 1.0f);
+		const float ExpectedPartialFraction = (UAbilityCooldownComponent::DefaultAbilityCooldownSeconds - 1.0f) / UAbilityCooldownComponent::DefaultAbilityCooldownSeconds;
+		TestEqual(TEXT("Sleep's fill fraction should reflect the partial advance"),
+			Widget->GetSlotCooldownFillFraction(EAbilitySlot::Sleep), ExpectedPartialFraction);
+
+		// Expiry - the real component's own AdvanceCooldowns broadcasts false, which the
+		// tray is subscribed to directly (no RefreshCooldownReadouts call needed here).
+		CooldownComponent->AdvanceCooldowns(UAbilityCooldownComponent::DefaultAbilityCooldownSeconds - 1.0f);
+		TestEqual(TEXT("Sleep should read Ready on the tray again after the real cooldown expires"),
+			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::Ready);
+		TestEqual(TEXT("Sleep's fill fraction should clear to 0 on expiry"),
+			Widget->GetSlotCooldownFillFraction(EAbilitySlot::Sleep), 0.0f);
+		TestTrue(TEXT("Sleep's display text should be empty once the real cooldown clears"),
+			Widget->GetSlotCooldownDisplayText(EAbilitySlot::Sleep).IsEmpty());
+		TestTrue(TEXT("Sleep should show an active ready-flash immediately after real-cooldown expiry"),
+			Widget->IsSlotReadyFlashActive(EAbilitySlot::Sleep));
+		TestEqual(TEXT("Sleep's ready-flash remaining should equal the full flash duration right after expiry"),
+			Widget->GetSlotReadyFlashRemainingSeconds(EAbilitySlot::Sleep), 0.15f);
+
+		Widget->AdvanceReadyFlashTimers(0.2f); // exceeds the flash duration
+		TestFalse(TEXT("Ready-flash should clear after its duration elapses"),
+			Widget->IsSlotReadyFlashActive(EAbilitySlot::Sleep));
+	}
+
+	// (p) Null-guard on BindAbilityCooldownComponent must degrade safely, matching the
+	// existing (l) block's coverage of the other two Bind* null-guards.
+	{
+		Widget->BindAbilityCooldownComponent(nullptr);
+		TestTrue(TEXT("BindAbilityCooldownComponent(nullptr) should not crash"), true);
 	}
 
 	return true;

@@ -26,6 +26,10 @@ bool UAbilityCooldownComponent::TryStartCooldown(EAbilitySlot AbilitySlot)
 
 	const float ConfiguredDuration = AbilityCooldownDurations.IsValidIndex(Index) ? AbilityCooldownDurations[Index] : DefaultAbilityCooldownSeconds;
 	RemainingCooldownSeconds[Index] = FMath::Max(0.0f, ConfiguredDuration);
+	if (RemainingCooldownSeconds[Index] > 0.0f)
+	{
+		OnAbilityCooldownChanged.Broadcast(AbilitySlot, true);
+	}
 	return true;
 }
 
@@ -36,6 +40,10 @@ void UAbilityCooldownComponent::AdvanceCooldowns(float DeltaSeconds)
 		if (RemainingCooldownSeconds[Index] > 0.0f)
 		{
 			RemainingCooldownSeconds[Index] = FMath::Max(0.0f, RemainingCooldownSeconds[Index] - DeltaSeconds);
+			if (RemainingCooldownSeconds[Index] <= 0.0f)
+			{
+				OnAbilityCooldownChanged.Broadcast(static_cast<EAbilitySlot>(Index), false);
+			}
 		}
 	}
 }
