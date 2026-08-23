@@ -30,7 +30,8 @@
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Issue #263: per-tick facing update needs Tick() to actually run each frame.
+	PrimaryActorTick.bCanEverTick = true;
 
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	RootComponent = MeshComponent;
@@ -159,6 +160,21 @@ bool AFlatCamera3DPrototypePawn::IntersectRayWithGroundPlane(
 	return true;
 }
 
+bool AFlatCamera3DPrototypePawn::ComputeFacingRotation(
+	const FVector& ActorLocation,
+	const FVector& CursorWorldPosition,
+	FRotator& OutFacingRotation)
+{
+	const FVector Delta = CursorWorldPosition - ActorLocation;
+	if (Delta.SizeSquared2D() <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	OutFacingRotation = FRotator(0.0f, Delta.Rotation().Yaw, 0.0f);
+	return true;
+}
+
 #if WITH_EDITOR
 void AFlatCamera3DPrototypePawn::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
@@ -192,6 +208,21 @@ void AFlatCamera3DPrototypePawn::SetupPlayerInputComponent(UInputComponent* Play
 	PlayerInputComponent->BindAction(TEXT("CastRoot"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseRootAbility);
 	PlayerInputComponent->BindAction(TEXT("CastFear"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseFearAbility);
 	PlayerInputComponent->BindAction(TEXT("CastSnare"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseSnareAbility);
+}
+
+void AFlatCamera3DPrototypePawn::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	FVector CursorWorldPosition;
+	if (GetCursorWorldPosition(CursorWorldPosition))
+	{
+		FRotator FacingRotation;
+		if (ComputeFacingRotation(GetActorLocation(), CursorWorldPosition, FacingRotation))
+		{
+			SetActorRotation(FacingRotation);
+		}
+	}
 }
 
 void AFlatCamera3DPrototypePawn::MoveForward(float Value)
