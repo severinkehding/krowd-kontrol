@@ -81,7 +81,7 @@ void ULevelClearTimeSubsystem::SubscribeToLevelLifecycle(ULevelLifecycleSubsyste
 
 void ULevelClearTimeSubsystem::HandleLevelBegin(FName MapName)
 {
-	UE_LOG(LogTemp, Warning,
+	UE_LOG(LogTemp, Log,
 		TEXT("ULevelClearTimeSubsystem::HandleLevelBegin: starting timer for '%s'"),
 		*MapName.ToString());
 	CurrentLevelID = MapName;
@@ -90,7 +90,7 @@ void ULevelClearTimeSubsystem::HandleLevelBegin(FName MapName)
 
 void ULevelClearTimeSubsystem::HandleLevelClear()
 {
-	UE_LOG(LogTemp, Warning,
+	UE_LOG(LogTemp, Log,
 		TEXT("ULevelClearTimeSubsystem::HandleLevelClear: stopping timer and recording clear for '%s'"),
 		*CurrentLevelID.ToString());
 	StopLevelTimerAndRecordClear(CurrentLevelID);
