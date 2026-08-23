@@ -81,6 +81,14 @@ bool FKrowdKontrolRoomActivationCountdownTest::RunTest(const FString& Parameters
 		}
 		OwnRoom->AddOwnedEnemy(GatedEnemy);
 
+		// (0) Before any CheckFirstEntry call, an un-cleared room's countdown has never
+		// started - IsActivationPending() must be false (the PR's own documented deviation
+		// from the plan: keyed on bCountdownActive, not "not yet activated" more broadly) so
+		// TickCheckDetection's proximity-only gate still opens normally for callers that never
+		// drive a real Tick() loop (every pre-#245 Automation test).
+		TestFalse(TEXT("IsActivationPending should be false before CheckFirstEntry has ever run"),
+			OwnRoom->IsActivationPending());
+
 		// (1) First entry starts the countdown at the configured default.
 		OwnRoom->CheckFirstEntry(RoomLocation);
 		TestTrue(TEXT("CheckFirstEntry should start the countdown on first entry"), OwnRoom->IsCountdownActive());
@@ -176,6 +184,79 @@ bool FKrowdKontrolRoomActivationCountdownTest::RunTest(const FString& Parameters
 		OwnRoom->AdvanceCountdown(1.0f);
 		TestEqual(TEXT("Prompt should show '1' after crossing the second boundary"),
 			Controller->OnScreenPromptWidgetInstance->GetPromptDisplayText().ToString(), FString(TEXT("1")));
+	}
+
+	// (6) RoomActivationCountdownSeconds is configurable per-instance - a non-default
+	// value must drive both the starting countdown and the activation timing, not a
+	// hardcoded 3.0s.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		const FVector RoomLocation(0.f, 0.f, 0.f);
+		ARoomActor* OwnRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(RoomLocation));
+		if (!TestNotNull(TEXT("OwnRoom should spawn into the test World"), OwnRoom))
+		{
+			return false;
+		}
+
+		AEnemyBaseTestActor* GatedEnemy = World->SpawnActor<AEnemyBaseTestActor>(AEnemyBaseTestActor::StaticClass(), FTransform(RoomLocation));
+		if (!TestNotNull(TEXT("GatedEnemy should spawn into the test World"), GatedEnemy))
+		{
+			return false;
+		}
+		OwnRoom->AddOwnedEnemy(GatedEnemy);
+
+		OwnRoom->RoomActivationCountdownSeconds = 2.0f;
+		OwnRoom->CheckFirstEntry(RoomLocation);
+		TestEqual(TEXT("Countdown should start at the configured (non-default) RoomActivationCountdownSeconds"),
+			OwnRoom->GetRemainingCountdownSeconds(), 2.0f);
+
+		OwnRoom->AdvanceCountdown(2.0f);
+		TestTrue(TEXT("Room should activate after the configured (non-default) countdown duration elapses"),
+			OwnRoom->IsRoomActivated());
+	}
+
+	// (7) CheckFirstEntry only starts the countdown for the room the player actually
+	// resolves nearest to - proves the FindNearestRoom guard discriminates, not just exists.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		// Same 3000cm spacing as KrowdKontrolEnemyRoomDetectionGateTest.cpp.
+		ARoomActor* NearRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(0.f, 0.f, 0.f)));
+		ARoomActor* FarRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(3000.f, 0.f, 0.f)));
+		if (!TestNotNull(TEXT("NearRoom should spawn into the test World"), NearRoom) ||
+			!TestNotNull(TEXT("FarRoom should spawn into the test World"), FarRoom))
+		{
+			return false;
+		}
+
+		AEnemyBaseTestActor* NearEnemy = World->SpawnActor<AEnemyBaseTestActor>(AEnemyBaseTestActor::StaticClass(), FTransform(FVector(0.f, 0.f, 0.f)));
+		AEnemyBaseTestActor* FarEnemy = World->SpawnActor<AEnemyBaseTestActor>(AEnemyBaseTestActor::StaticClass(), FTransform(FVector(3000.f, 0.f, 0.f)));
+		if (!TestNotNull(TEXT("NearEnemy should spawn into the test World"), NearEnemy) ||
+			!TestNotNull(TEXT("FarEnemy should spawn into the test World"), FarEnemy))
+		{
+			return false;
+		}
+		NearRoom->AddOwnedEnemy(NearEnemy);
+		FarRoom->AddOwnedEnemy(FarEnemy);
+
+		// Player at (1300,0,0) resolves nearest to NearRoom (|1300-0|=1300 < |1300-3000|=1700).
+		// Calling CheckFirstEntry on FarRoom with this same location must not start its countdown.
+		FarRoom->CheckFirstEntry(FVector(1300.f, 0.f, 0.f));
+		TestFalse(TEXT("CheckFirstEntry must not start the countdown on a room the player isn't nearest to"),
+			FarRoom->IsCountdownActive());
+
+		NearRoom->CheckFirstEntry(FVector(1300.f, 0.f, 0.f));
+		TestTrue(TEXT("CheckFirstEntry should start the countdown on the room the player actually resolves nearest to"),
+			NearRoom->IsCountdownActive());
 	}
 
 	return true;

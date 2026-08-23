@@ -116,6 +116,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Room|Activation")
 	bool IsRoomActivated() const { return bRoomActivated; }
 
+	// Raw countdown-running flag, for callers (tests, HUD/debug) that want the literal
+	// state rather than the gate-specific framing IsActivationPending() below uses -
+	// same underlying field, kept in sync by construction (both just read
+	// bCountdownActive directly).
 	UFUNCTION(BlueprintPure, Category = "Room|Activation")
 	bool IsCountdownActive() const { return bCountdownActive; }
 

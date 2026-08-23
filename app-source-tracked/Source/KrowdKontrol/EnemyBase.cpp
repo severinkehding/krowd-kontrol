@@ -156,10 +156,14 @@ bool AEnemyBase::IsPlayerInOwningRoom(const FVector& PlayerLocation) const
 	{
 		return true;
 	}
-	// Issue #245: while Room's first-entry countdown is running (or hasn't
-	// started yet for an un-cleared room), hold the same Idle->Alert gate
-	// closed regardless of player position - the issue's own Notes section
-	// says this must extend REQ-2's existing gate, not add a second one.
+	// Issue #245: while Room's first-entry countdown is actively running, hold the
+	// same Idle->Alert gate closed regardless of player position - the issue's own
+	// Notes section says this must extend REQ-2's existing gate, not add a second
+	// one. Deliberately narrower than "not yet activated": a room whose countdown
+	// hasn't started yet (CheckFirstEntry not yet called this tick, or never - e.g.
+	// every pre-#245 test that drives TickCheckDetection directly) keeps the
+	// unmodified #244 gate. See RoomActor.h's IsActivationPending() comment for the
+	// full rationale and the accepted <0.25s race-window trade-off this implies.
 	if (Room->IsActivationPending())
 	{
 		return false;
