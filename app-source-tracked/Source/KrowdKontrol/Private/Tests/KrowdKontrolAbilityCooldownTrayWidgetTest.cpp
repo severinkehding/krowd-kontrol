@@ -205,6 +205,8 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		Widget->GetSlotRemainingSeconds(EAbilitySlot::Root), 5.0f);
 	TestEqual(TEXT("Root icon tint colour should be unaffected by locking"),
 		Widget->GetSlotIconTintColour(EAbilitySlot::Root), AbilityData::Get(EAbilitySlot::Root).Colour);
+	TestEqual(TEXT("Root fill fraction should be hidden (0) while locked, even with an active cooldown underneath"),
+		Widget->GetSlotCooldownFillFraction(EAbilitySlot::Root), 0.0f);
 
 	// (f5) Locked border colour is reserved-colour-safe (MISSION.md Hard Invariant 3 /
 	// PRD 13 REQ-4).
@@ -546,9 +548,18 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		TestEqual(TEXT("Sleep's fill fraction should reflect the partial advance"),
 			Widget->GetSlotCooldownFillFraction(EAbilitySlot::Sleep), ExpectedPartialFraction);
 
+		// NativeTick() dispatch (issue #259 code-review test-coverage Finding 4) -
+		// proves the real per-frame call site actually reaches RefreshCooldownReadouts()
+		// when bound, rather than only the direct RefreshCooldownReadouts()/
+		// AdvanceReadyFlashTimers() proxy calls used elsewhere in this block.
+		CooldownComponent->AdvanceCooldowns(1.0f);
+		Widget->NativeTick(FGeometry(), 0.0f);
+		TestEqual(TEXT("NativeTick should poll the bound component's remaining time when bound"),
+			Widget->GetSlotRemainingSeconds(EAbilitySlot::Sleep), UAbilityCooldownComponent::DefaultAbilityCooldownSeconds - 2.0f);
+
 		// Expiry - the real component's own AdvanceCooldowns broadcasts false, which the
 		// tray is subscribed to directly (no RefreshCooldownReadouts call needed here).
-		CooldownComponent->AdvanceCooldowns(UAbilityCooldownComponent::DefaultAbilityCooldownSeconds - 1.0f);
+		CooldownComponent->AdvanceCooldowns(UAbilityCooldownComponent::DefaultAbilityCooldownSeconds - 2.0f);
 		TestEqual(TEXT("Sleep should read Ready on the tray again after the real cooldown expires"),
 			Widget->GetSlotState(EAbilitySlot::Sleep), EAbilityTileState::Ready);
 		TestEqual(TEXT("Sleep's fill fraction should clear to 0 on expiry"),
@@ -563,6 +574,31 @@ bool FKrowdKontrolAbilityCooldownTrayWidgetTest::RunTest(const FString& Paramete
 		Widget->AdvanceReadyFlashTimers(0.2f); // exceeds the flash duration
 		TestFalse(TEXT("Ready-flash should clear after its duration elapses"),
 			Widget->IsSlotReadyFlashActive(EAbilitySlot::Sleep));
+
+		// Recast-during-flash (issue #259 code-review test-coverage Finding 3) -
+		// starting a new cooldown while a ready-flash from the previous expiry is still
+		// playing must clear that stale flash immediately, not let it bleed into the
+		// freshly-started cooldown's icon.
+		CooldownComponent->TryStartCooldown(EAbilitySlot::Sleep);
+		CooldownComponent->AdvanceCooldowns(UAbilityCooldownComponent::DefaultAbilityCooldownSeconds);
+		TestTrue(TEXT("Sleep should show an active ready-flash after this second real-cooldown expiry"),
+			Widget->IsSlotReadyFlashActive(EAbilitySlot::Sleep));
+		Widget->StartCooldown(EAbilitySlot::Sleep, 5.0f); // recast while the ready-flash is still active
+		TestFalse(TEXT("Recasting during an active ready-flash should clear the stale flash"),
+			Widget->IsSlotReadyFlashActive(EAbilitySlot::Sleep));
+	}
+
+	// (o2) Placeholder-mode ready-flash fires on natural expiry too (issue #259) -
+	// proves the flash is consistent regardless of bound-vs-placeholder mode, not just
+	// when bound to a real UAbilityCooldownComponent (block (o) above only covers the
+	// bound path). StartCooldown() unconditionally reseeds Root to a known 1s cooldown
+	// regardless of whatever state it was left in by earlier blocks.
+	{
+		Widget->StartCooldown(EAbilitySlot::Root, 1.0f);
+		TestFalse(TEXT("Root should not show a ready-flash mid-cooldown"), Widget->IsSlotReadyFlashActive(EAbilitySlot::Root));
+		Widget->AdvanceCooldowns(1.0f);
+		TestTrue(TEXT("Root should show an active ready-flash immediately after placeholder-mode natural expiry"),
+			Widget->IsSlotReadyFlashActive(EAbilitySlot::Root));
 	}
 
 	// (p) Null-guard on BindAbilityCooldownComponent must degrade safely, matching the

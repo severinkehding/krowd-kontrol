@@ -24,6 +24,7 @@
 #include "Misc/AutomationTest.h"
 #include "ReservedGameplayColours.h"
 #include "AbilityCooldownTrayWidget.h"
+#include "AbilityCooldownComponent.h"
 #include "PostRunSummaryWidget.h"
 #include "OnScreenPromptWidget.h"
 #include "BriefingCardWidget.h"
@@ -31,6 +32,7 @@
 #include "Engine/World.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
+#include "Components/ProgressBar.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -126,6 +128,35 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 					AllReserved.Contains(TrayWidget->SlotIconBorders[Index]->GetBrushColor()));
 			}
 			TrayWidget->SetSlotLocked(static_cast<EAbilitySlot>(Index), false);
+		}
+
+		// (2c) Cooldown-fill and ready-flash colours (issue #259) - the two colour-
+		// producing paths this widget's real UAbilityCooldownComponent binding drives,
+		// audited the same way as the normal/locked chrome above rather than trusting
+		// the changelog's prose claim that the flash never reaches reserved White.
+		UAbilityCooldownComponent* AuditCooldownComponent = NewObject<UAbilityCooldownComponent>();
+		if (TestNotNull(TEXT("UAbilityCooldownComponent should construct for the fill/flash audit"), AuditCooldownComponent))
+		{
+			TrayWidget->BindAbilityCooldownComponent(AuditCooldownComponent);
+			for (int32 Index = 0; Index < UAbilityCooldownTrayWidget::NumAbilitySlots; ++Index)
+			{
+				const EAbilitySlot Slot = static_cast<EAbilitySlot>(Index);
+				AuditCooldownComponent->TryStartCooldown(Slot);
+				if (TestNotNull(*FString::Printf(TEXT("TrayWidget->SlotCooldownFillBars[%d] should be non-null"), Index),
+					ToRawPtr(TrayWidget->SlotCooldownFillBars[Index])))
+				{
+					TestFalse(*FString::Printf(TEXT("TrayWidget slot %d fill colour should not collide with a reserved gameplay colour"), Index),
+						AllReserved.Contains(TrayWidget->SlotCooldownFillBars[Index]->GetFillColorAndOpacity()));
+				}
+
+				AuditCooldownComponent->AdvanceCooldowns(UAbilityCooldownComponent::DefaultAbilityCooldownSeconds);
+				if (TestNotNull(*FString::Printf(TEXT("TrayWidget->SlotIconBorders[%d] should be non-null during the ready-flash"), Index),
+					ToRawPtr(TrayWidget->SlotIconBorders[Index])))
+				{
+					TestFalse(*FString::Printf(TEXT("TrayWidget slot %d ready-flash border colour should not collide with a reserved gameplay colour"), Index),
+						AllReserved.Contains(TrayWidget->SlotIconBorders[Index]->GetBrushColor()));
+				}
+			}
 		}
 	}
 

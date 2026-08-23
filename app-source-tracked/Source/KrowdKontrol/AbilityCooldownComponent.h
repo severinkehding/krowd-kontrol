@@ -35,6 +35,12 @@ class KROWDKONTROL_API UAbilityCooldownComponent : public UActorComponent
 	// mirrors the real component's state through activation and expiry (issue #259).
 	friend class FKrowdKontrolAbilityCooldownTrayWidgetTest;
 
+	// Grants the reserved-colour audit direct access to AdvanceCooldowns so it can drive
+	// a real cooldown to expiry and check the tray's fill/ready-flash colours it
+	// produces along the way (issue #259 code-review Finding: fill/flash colours were
+	// never run through this audit).
+	friend class FKrowdKontrolReservedGameplayColoursTest;
+
 public:
 	UAbilityCooldownComponent();
 

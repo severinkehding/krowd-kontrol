@@ -124,6 +124,12 @@ bool FKrowdKontrolAbilityCooldownTest::RunTest(const FString& Parameters)
 		Component->AdvanceCooldowns(1.0f); // already expired - must not re-broadcast
 		TestEqual(TEXT("Advancing an already-expired slot should not re-broadcast false"), Listener->FalseBroadcastCount, 1);
 
+		// A clamped-to-0 duration (mirrors block (g)'s negative-duration scenario) must
+		// not broadcast true, this time with a listener actually attached to observe it.
+		Component->AbilityCooldownDurations[static_cast<int32>(EAbilitySlot::Snare)] = -1.0f;
+		Component->TryStartCooldown(EAbilitySlot::Snare);
+		TestEqual(TEXT("A clamped-to-0 duration should not broadcast true"), Listener->TrueBroadcastCount, 1); // still 1, from Root
+
 		Component->OnAbilityCooldownChanged.RemoveDynamic(Listener, &UAbilityCooldownChangedTestListener::HandleAbilityCooldownChanged);
 	}
 

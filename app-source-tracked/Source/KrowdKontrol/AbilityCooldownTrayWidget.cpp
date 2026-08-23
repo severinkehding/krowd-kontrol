@@ -15,7 +15,6 @@
 #include "Components/SizeBox.h"
 #include "AbilityData.h"
 #include "HUDChromeColours.h"
-#include "AbilityTooltipWidget.h"
 
 namespace
 {
@@ -157,16 +156,6 @@ void UAbilityCooldownTrayWidget::BuildWidgetTree()
 		SlotOverlay->AddChildToOverlay(IconBorder);
 
 		const EAbilitySlot CurrentSlot = static_cast<EAbilitySlot>(Index);
-
-		// Hover tooltip (issue #260, PRD 13 REQ-2) - standard UMG hover detection via
-		// SetToolTip() does the showing/hiding; constructed via WidgetTree (not
-		// NewObject/CreateWidget) so its Outer matches every other child in this tree
-		// and it has no owning-player dependency, since this widget's own tests
-		// construct via CreateWidget<T>(World, ...) with no PlayerController at all.
-		UAbilityTooltipWidget* SlotTooltip = WidgetTree->ConstructWidget<UAbilityTooltipWidget>(
-			UAbilityTooltipWidget::StaticClass(), *FString::Printf(TEXT("SlotTooltip_%d"), Index));
-		SlotTooltip->SetAbility(CurrentSlot);
-		IconBorder->SetToolTip(SlotTooltip);
 
 		UTextBlock* IconLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), *FString::Printf(TEXT("SlotIconLabel_%d"), Index));
 		IconLabel->SetColorAndOpacity(FSlateColor(AbilityData::Get(CurrentSlot).Colour));
