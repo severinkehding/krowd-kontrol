@@ -648,6 +648,137 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// (v-fear) TickFleeMovement (issue #253) moves a Fear-Controlled enemy away
+	// from CasterLocation at the base default speed, advancing exactly
+	// speed*DeltaSeconds in one tick - mirrors (q)'s toward-player shape, inverted.
+	AEnemyBaseTestActor* FearedFleer = NewObject<AEnemyBaseTestActor>();
+	FearedFleer->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	FearedFleer->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled
+	const FVector BeforeFlee = FearedFleer->GetActorLocation();
+	const FVector CasterLocation(1000.0f, 0.0f, 0.0f);
+	FearedFleer->TickFleeMovement(CasterLocation, 0.5f);
+	const float FleeDistanceMoved = FVector::Dist(FearedFleer->GetActorLocation(), BeforeFlee);
+	TestEqual(TEXT("(v-fear) A Feared enemy should flee at base default speed * DeltaSeconds"),
+		FleeDistanceMoved, 600.0f * 0.5f);
+	TestTrue(TEXT("(v-fear) A Feared enemy should move away from, not toward, the caster"),
+		FVector::Dist(FearedFleer->GetActorLocation(), CasterLocation) > FVector::Dist(BeforeFlee, CasterLocation));
+
+	// (w-fear) TickFleeMovement is a no-op for a Controlled enemy whose
+	// ControllingAbility does NOT flag bFleesFromCasterWhileControlled (Stun) -
+	// proves the flag-gate, not just the state-gate, mirrors (p2)'s shape.
+	AEnemyBaseTestActor* StunnedNonFleer = NewObject<AEnemyBaseTestActor>();
+	StunnedNonFleer->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	StunnedNonFleer->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+	const FVector BeforeStunnedFlee = StunnedNonFleer->GetActorLocation();
+	StunnedNonFleer->TickFleeMovement(FVector(1000.0f, 0.0f, 0.0f), 1.0f);
+	const float StunnedFleeDistanceMoved = FVector::Dist(StunnedNonFleer->GetActorLocation(), BeforeStunnedFlee);
+	TestEqual(TEXT("(w-fear) A Stun-Controlled enemy should not flee - flag-gated, not state-gated"),
+		StunnedFleeDistanceMoved, 0.0f);
+
+	// (x-fear) TickFleeMovement is a no-op outside Controlled: Idle, Alert, Attack,
+	// Banked - mirrors (p)/(r)/(r2)'s no-op-outside-the-relevant-state shape.
+	AEnemyBaseTestActor* IdleFleer = NewObject<AEnemyBaseTestActor>();
+	const FVector IdleFleeStart = IdleFleer->GetActorLocation();
+	IdleFleer->TickFleeMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float IdleFleeDistanceMoved = FVector::Dist(IdleFleer->GetActorLocation(), IdleFleeStart);
+	TestEqual(TEXT("(x-fear) TickFleeMovement while Idle should not move the actor"),
+		IdleFleeDistanceMoved, 0.0f);
+
+	AEnemyBaseTestActor* AlertFleer = NewObject<AEnemyBaseTestActor>();
+	AlertFleer->TickCheckDetection(FVector(1000.0f, 0.0f, 0.0f)); // Idle -> Alert
+	const FVector AlertFleeStart = AlertFleer->GetActorLocation();
+	AlertFleer->TickFleeMovement(FVector(1000.0f, 0.0f, 0.0f), 1.0f);
+	const float AlertFleeDistanceMoved = FVector::Dist(AlertFleer->GetActorLocation(), AlertFleeStart);
+	TestEqual(TEXT("(x-fear) TickFleeMovement while Alert should not move the actor"),
+		AlertFleeDistanceMoved, 0.0f);
+
+	AEnemyBaseTestActor* AttackFleer = NewObject<AEnemyBaseTestActor>();
+	AttackFleer->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	AttackFleer->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	const FVector AttackFleeStart = AttackFleer->GetActorLocation();
+	AttackFleer->TickFleeMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float AttackFleeDistanceMoved = FVector::Dist(AttackFleer->GetActorLocation(), AttackFleeStart);
+	TestEqual(TEXT("(x-fear) TickFleeMovement while Attack should not move the actor"),
+		AttackFleeDistanceMoved, 0.0f);
+
+	AEnemyBaseTestActor* BankedFleer = NewObject<AEnemyBaseTestActor>();
+	BankedFleer->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	BankedFleer->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled
+	BankedFleer->TransitionToBanked(); // Controlled -> Banked
+	const FVector BankedFleeStart = BankedFleer->GetActorLocation();
+	BankedFleer->TickFleeMovement(FVector(5000.0f, 0.0f, 0.0f), 1.0f);
+	const float BankedFleeDistanceMoved = FVector::Dist(BankedFleer->GetActorLocation(), BankedFleeStart);
+	TestEqual(TEXT("(x-fear) TickFleeMovement while Banked should not move the actor"),
+		BankedFleeDistanceMoved, 0.0f);
+
+	// (y-fear) degenerate direction: a Feared enemy exactly coincident with
+	// CasterLocation does not move - mirrors TickChaseMovement's own
+	// KINDA_SMALL_NUMBER dead-zone guard, inverted.
+	AEnemyBaseTestActor* CoincidentFleer = NewObject<AEnemyBaseTestActor>();
+	CoincidentFleer->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	CoincidentFleer->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled
+	const FVector CoincidentLocation = CoincidentFleer->GetActorLocation();
+	CoincidentFleer->TickFleeMovement(CoincidentLocation, 1.0f);
+	const float CoincidentFleeDistanceMoved = FVector::Dist(CoincidentFleer->GetActorLocation(), CoincidentLocation);
+	TestEqual(TEXT("(y-fear) A Feared enemy exactly coincident with the caster should not move"),
+		CoincidentFleeDistanceMoved, 0.0f);
+
+	// (z-fear) the real Tick() override wires TickFleeMovement into the per-frame
+	// loop, mirroring case (t)'s TickChaseMovement wiring-through-Tick() shape.
+	UWorld* FleeWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), FleeWorld))
+	{
+		AEnemyBaseTestActor* TickedFleer = FleeWorld->SpawnActor<AEnemyBaseTestActor>();
+		APawn* FleePlayerPawn = FleeWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(z-fear) AEnemyBaseTestActor should spawn into the test World"), TickedFleer)
+			&& TestNotNull(TEXT("(z-fear) APawn should spawn into the test World"), FleePlayerPawn))
+		{
+			APlayerController* FleeController = FleeWorld->SpawnActor<APlayerController>();
+			if (!TestNotNull(TEXT("(z-fear) Should be able to spawn a controller to possess the pawn"), FleeController))
+			{
+				return false;
+			}
+			FleeController->Possess(FleePlayerPawn);
+			FleeWorld->AddController(FleeController);
+
+			USceneComponent* FleePlayerPawnRoot = NewObject<USceneComponent>(FleePlayerPawn);
+			FleePlayerPawnRoot->RegisterComponent();
+			FleePlayerPawn->SetRootComponent(FleePlayerPawnRoot);
+			FleePlayerPawn->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f));
+
+			TickedFleer->TickCheckDetection(FleePlayerPawn->GetActorLocation()); // Idle -> Alert
+			TickedFleer->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled
+			const FVector BeforeFleeTick = TickedFleer->GetActorLocation();
+			TickedFleer->Tick(0.1f);
+			const float FleeTickDistanceMoved = FVector::Dist(TickedFleer->GetActorLocation(), BeforeFleeTick);
+			TestEqual(TEXT("(z-fear) Tick() should move the feared enemy away from the player at base default speed * DeltaSeconds"),
+				FleeTickDistanceMoved, 600.0f * 0.1f);
+			TestTrue(TEXT("(z-fear) Tick() should move the feared enemy away from, not toward, the player"),
+				FVector::Dist(TickedFleer->GetActorLocation(), FleePlayerPawn->GetActorLocation())
+					> FVector::Dist(BeforeFleeTick, FleePlayerPawn->GetActorLocation()));
+
+			// A second Tick() after the player moves further along the same ray the enemy
+			// is already fleeing along should flee back toward the origin, away from the
+			// player's NEW position - proves Tick() re-reads a live player location every
+			// frame (per app-changelog/issue-253.md) rather than a cast-time snapshot. This
+			// placement is deliberate, not arbitrary: moving the player to (0, 1000, 0)
+			// would pass even if TickFleeMovement kept using the stale first-tick caster
+			// location, since continuing in the original -X direction still happens to
+			// increase distance from a point off the X axis. Placing the new player
+			// position further out along the same -X ray the enemy already fled along
+			// means live tracking (fleeing back toward +X, away from the new position)
+			// and a frozen -X direction (still walking toward the new position) produce
+			// opposite distance deltas, so only correct live-tracking passes.
+			const FVector AfterFirstTick = TickedFleer->GetActorLocation();
+			FleePlayerPawn->SetActorLocation(FVector(-2000.0f, 0.0f, 0.0f));
+			TickedFleer->Tick(0.1f);
+			const FVector AfterSecondTick = TickedFleer->GetActorLocation();
+			TestTrue(TEXT("(z-fear) A second Tick() after the player moves should flee away from the player's NEW position, not a cast-time snapshot"),
+				FVector::Dist(AfterSecondTick, FleePlayerPawn->GetActorLocation())
+					> FVector::Dist(AfterFirstTick, FleePlayerPawn->GetActorLocation()));
+		}
+	}
+
 	return true;
 }
 
