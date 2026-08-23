@@ -494,6 +494,10 @@ bool FKrowdKontrolAbilityPressHoldComponentTest::RunTest(const FString& Paramete
 			static_cast<uint8>(Indicator->CurrentShapeSpec.Kind), static_cast<uint8>(EAbilityIndicatorShapeKind::Line));
 		TestEqual(TEXT("(j) Indicator origin should be the Owner's location, not the cursor point"),
 			Indicator->CurrentShapeSpec.Origin, Owner->GetActorLocation());
+		TestEqual(TEXT("(j) Indicator facing rotation should point toward the cursor"),
+			Indicator->CurrentShapeSpec.FacingRotation, (CursorLocation - Owner->GetActorLocation()).Rotation());
+		TestEqual(TEXT("(j) Indicator range should be the full Long tier, not clamped to the cursor's own distance"),
+			Indicator->CurrentShapeSpec.RangeUnits, CastComponent->LongThrowRangeUnits);
 		TestEqual(TEXT("(j) The on-line enemy should be Controlled"),
 			static_cast<uint8>(OnLineEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 		TestEqual(TEXT("(j) The off-line enemy should be left untouched"),

@@ -134,11 +134,14 @@ FVector UAbilityCastComponent::GetClampedThrowLocation(EAbilitySlot Ability, con
 
 FVector UAbilityCastComponent::ComputeLineEndLocation(const FVector& OwnerLocation, const FVector& DesiredTargetLocation, float LineRangeUnits, const FVector& FallbackDirection)
 {
-	FVector Direction = (DesiredTargetLocation - OwnerLocation).GetSafeNormal();
-	if (Direction.IsNearlyZero())
-	{
-		Direction = FallbackDirection.GetSafeNormal();
-	}
+	const FVector Delta = DesiredTargetLocation - OwnerLocation;
+	// Same real-gameplay-units dead zone as ComputeFacingRotation (PR #279 review) -
+	// KINDA_SMALL_NUMBER/GetSafeNormal's default tolerance is ~0.1mm, functionally no
+	// guard against sub-pixel cursor noise near the owner's own location.
+	constexpr float DirectionDeadZoneRadiusUnits = 10.0f;
+	const FVector Direction = Delta.SizeSquared() > FMath::Square(DirectionDeadZoneRadiusUnits)
+		? Delta.GetSafeNormal()
+		: FallbackDirection.GetSafeNormal();
 	return OwnerLocation + Direction * LineRangeUnits;
 }
 

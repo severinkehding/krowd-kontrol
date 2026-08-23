@@ -1252,6 +1252,42 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 		const FVector DegenerateEnd = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, OwnerLocation, LineRangeUnits, FallbackDirection);
 		TestTrue(TEXT("(s-root) A degenerate (coincident) cursor should fall back to FallbackDirection"),
 			DegenerateEnd.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+
+		// Near-degenerate case (code review, PR #282): a cursor a few units from the
+		// owner - not exactly coincident, but well inside the same real-gameplay-units
+		// dead zone ComputeFacingRotation guards against (PR #279) - must also fall
+		// back to FallbackDirection rather than normalizing floating-point noise.
+		// Cursor is offset perpendicular to FallbackDirection so a buggy
+		// implementation that just normalizes the tiny delta (instead of falling
+		// back) would produce a visibly different, wrong end location.
+		const FVector NearDegenerateCursor(0.0f, 5.0f, 0.0f);
+		const FVector NearDegenerateEnd = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, NearDegenerateCursor, LineRangeUnits, FallbackDirection);
+		TestTrue(TEXT("(s-root) A cursor inside the dead zone (but not exactly coincident) should also fall back to FallbackDirection"),
+			NearDegenerateEnd.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+	}
+
+	// (t-root) Zero enemies on the line still consumes the cooldown (issue #255) -
+	// mirrors case (o)'s identical "a whiff still commits" contract for
+	// TryCastThrownAbilityAtLocation.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, FVector(500.0f, 0.0f, 0.0f));
+		TestEqual(TEXT("(t-root) A line hitting zero enemies should return 0, not -1"), AffectedCount, 0);
+		TestTrue(TEXT("(t-root) A 0-affected line cast must still consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Root));
 	}
 
 	return true;
