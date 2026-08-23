@@ -92,6 +92,53 @@ No kill-rule, ability-roster, enemy-roster, engine/dimensionality, networking, o
 
 ---
 
+## Pass-2: review self-fix (test coverage + docs)
+
+Addressed all 3 HIGH and 2 MEDIUM findings from the PR review (`consolidated-review.md`
+— code-review itself found zero defects; all findings were coverage/docs gaps):
+
+- **`KrowdKontrolHUDWiringTest.cpp`**: added an assertion after the first
+  controller/pawn's `AbilityTrayWidget`/`EnergyMeterWidgetInstance` checks confirming
+  `Controller->QuestTrackerWidgetInstance->GetSuggestedAbilityDisplayText()` reads the
+  universal fallback once `WireWidgetsToPawn()` has run — the file's only change to
+  `KrowdKontrolPlayerController.cpp` (the `QuestTrackerWidgetInstance` bind) previously
+  had zero test coverage through the real pawn/controller path. Needed a new
+  `#include "QuestTrackerWidget.h"` (the header was only forward-declared before).
+- **`KrowdKontrolQuestTrackerWidgetTest.cpp`** case (14): new case proving the live
+  `OnAbilityUnlocked`-while-bound path — binds while only Stun is unlocked, then
+  `NotifyLevelReached(2)` broadcasts live, asserting the suggestion flips without any
+  re-bind. Cases (12)/(13) only ever proved the bind-time seed path.
+- Case (12) extended (12b): after the colour-matched assertion, drives the Sniper
+  through a real `TickCheckDetection`→`ReceiveControl`→`TransitionToBanked`
+  progression (mirroring `ARoomActor::HandleZoneActorBanked`'s real sequence) plus
+  the zone's `OnActorBanked` broadcast, asserting the suggestion recomputes back to
+  the Stun fallback — proves `HandleActorBanked()` actually calls
+  `RefreshSuggestedAbilityDisplay()`, not just increments the banked count. Required
+  adding `FKrowdKontrolQuestTrackerWidgetTest` to `EnemyBase.h`'s existing
+  test-friendship list (same established pattern as `FKrowdKontrolHUDWiringTest` etc.)
+  to reach the private `TickCheckDetection`.
+- New case (15): multi-remaining-enemy-type tie-break — Sniper + Trooper both alive,
+  first with only Root unlocked (asserts Root wins, proving a real per-candidate
+  `IsAbilityUnlocked()` scan rather than a fixed enum-value pick), then Sleep also
+  unlocked live (asserts declaration order picks Sleep instead). Pins down the
+  behaviour `ComputeSuggestedAbility()`'s own comment flags as arbitrary-but-untested.
+- `docs/prd-mission-briefing-tracker.md` REQ-2: swapped stale numeric key examples
+  (`(2)`/`(1)`) for the ratified `(RMB)`/`(LMB)` labels, added the
+  `🟡 partially implemented` status line and a `**Ratified (operator, 2026-08-23)**`
+  annotation matching `docs/prd-ability-tray-ux.md`'s established shape; also fixed
+  REQ-1's same-file drive-by stale `"PRESS 2"` example to `"RMB"`.
+
+All 4 test-file/header edits applied to both `app/` and `app-source-tracked/`
+identically (`diff` clean, verified after each edit). Full `harness/ci.py` gate
+(build + all 99 `KrowdKontrol.Unit.*` tests + the 1-step E2E smoke) reported
+`GATE_OK mode=full` after these changes; an initial `UE_AUTOMATION_FAILED` on
+`FlatCamera3DPrototypePawnCursorWorldPosition` was the known
+`LogModelContextProtocol: Error: Call to unknown method "server/discover"` flake
+(fails whichever test happens to be running when it fires) — a clean rerun confirmed
+it was not a regression from this change.
+
+---
+
 The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
 its matching `app-source-tracked/` copy are the tracked-repo record of that change,
 per D-009. Not a substitute for reading `app-source-tracked/` directly.

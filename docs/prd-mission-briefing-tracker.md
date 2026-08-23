@@ -29,14 +29,16 @@ Two connected pieces:
 - On level-begin (the merged `ULevelLifecycleSubsystem::OnLevelBegin`), show a
   briefing overlay: level name, the objective in imperative one-liners (e.g.
   "PACIFY ALL 8 ROBOTS — STUN THEM, HERD THEM TO THEIR PENS"), and any newly
-  unlocked ability for this level ("NEW: SLEEP — PRESS 2 — STRONG VS SNIPERS").
+  unlocked ability for this level ("NEW: SLEEP — RMB — STRONG VS SNIPERS").
 - Dismissed by any input or a short auto-timeout; play is paused or safe while
   it shows (coordinate with the room-encounter countdown PRD's prep flow —
   briefing first, countdown on room entry).
 - Briefing content is data-driven per level (config/data asset), not
   hardcoded C++ strings per map.
 
-### REQ-2: Persistent compact quest tracker (P0)
+### REQ-2: Persistent compact quest tracker (P0) — 🟡 partially implemented
+(banked-count line: issue #247/PR #271; suggested-ability line: issue #249/PR #287;
+current-room-state line still open)
 - A small anchored panel (a corner; think WoW quest tracker scale — must not
   take meaningful screen space away from play) listing the level's live
   objectives with progress, updating in real time off existing events:
@@ -46,8 +48,12 @@ Two connected pieces:
     (from `ARoomActor::OnRoomClearedStateChanged` + door gating, PR #229).
   - Which ability to use: the tracker names the suggested ability per remaining
     enemy type — colour-matched suggestion when that ability is unlocked
-    ("SNIPERS → SLEEP (2)"), otherwise the universal fallback
-    ("ANY ROBOT → STUN (1)").
+    ("SNIPERS → SLEEP (RMB)"), otherwise the universal fallback
+    ("ANY ROBOT → STUN (LMB)").
+  - **Ratified (operator, 2026-08-23)**: key-binding display always uses the
+    canonical OG-GDD bindings (LMB=Stun, RMB=Sleep, Q=Root, E=Snare, MMB=Fear)
+    via `AbilityData::KeyBindingLabel`, never the legacy 1-5 numbers — same
+    ruling recorded in `docs/prd-ability-tray-ux.md` REQ-2.
 - Event-driven updates only (no per-frame polling) — matches the HUD's
   existing event-binding convention (`UEnergyMeterWidget` lineage).
 - HUD chrome obeys Hard Invariant 3: panel chrome uses the existing neutral

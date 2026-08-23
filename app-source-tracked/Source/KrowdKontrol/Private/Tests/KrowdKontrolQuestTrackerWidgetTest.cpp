@@ -329,11 +329,22 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 
 	// (12) Suggested-ability line - colour-matched case (issue #249's AC (a)): a
 	// live Sniper (SN_1PR) enemy present, Sleep unlocked -> the colour-matched
-	// suggestion, tinted Sleep's real reserved colour.
+	// suggestion, tinted Sleep's real reserved colour. Also covers (12b): banking
+	// the only remaining Sniper recomputes the suggestion back to the universal
+	// fallback via HandleActorBanked() -> RefreshSuggestedAbilityDisplay(), proving
+	// that handler does more than just increment the banked count (pass-2 review
+	// coverage).
 	UWorld* SuggestionUnlockedWorld = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the suggestion-unlocked test"), SuggestionUnlockedWorld))
 	{
 		SuggestionUnlockedWorld->InitializeActorsForPlay(FURL());
+
+		// Zone must exist before the widget is created (matching real gameplay
+		// ordering - see this file's header comment) so HandleLevelBegin()'s zone
+		// discovery (or BindToLevelLifecycle()'s late-subscribe catch-up, whichever
+		// applies) binds HandleActorBanked to it in time for (12b) below.
+		ATargetZone* SuggestionZone = SuggestionUnlockedWorld->SpawnActor<ATargetZone>();
+		TestNotNull(TEXT("ATargetZone should spawn into the suggestion-unlocked test World"), SuggestionZone);
 
 		AEnemyBaseTestActor* SniperEnemy = SuggestionUnlockedWorld->SpawnActor<AEnemyBaseTestActor>();
 		UEnemyTypeIndicatorComponent* TypeIndicator = TestNotNull(TEXT("Sniper test enemy should spawn"), SniperEnemy)
@@ -367,6 +378,23 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 							SuggestionWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("SNIPERS → SLEEP (RMB)")));
 						TestEqual(TEXT("Suggested-ability text colour should match Sleep's reserved colour"),
 							SuggestionWidget->GetSuggestedAbilityTextColour(), AbilityData::Get(EAbilitySlot::Sleep).Colour);
+
+						// (12b) Banking the only remaining Sniper - real Idle->Alert->
+						// Controlled->Banked progression (same sequence
+						// KrowdKontrolEnemyBaseTest.cpp's (g) uses), then the zone's real
+						// OnActorBanked broadcast, matching ARoomActor::HandleZoneActorBanked's
+						// production sequence (TransitionToBanked() + the zone's own
+						// broadcast) rather than only firing the delegate in isolation.
+						if (SniperEnemy && SuggestionZone)
+						{
+							SniperEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+							SniperEnemy->ReceiveControl(EAbilitySlot::Sleep); // Alert -> Controlled
+							SniperEnemy->TransitionToBanked(); // Controlled -> Banked
+							SuggestionZone->OnActorBanked.Broadcast(SniperEnemy);
+
+							TestEqual(TEXT("Suggested-ability line should fall back to Stun once the only Sniper is banked"),
+								SuggestionWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("ANY ROBOT → STUN (LMB)")));
+						}
 					}
 				}
 			}
@@ -415,6 +443,122 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 						TestEqual(TEXT("Suggested-ability text colour should match Stun's reserved (white) colour"),
 							FallbackWidget->GetSuggestedAbilityTextColour(), AbilityData::Get(EAbilitySlot::Stun).Colour);
 					}
+				}
+			}
+		}
+	}
+
+	// (14) Suggested-ability line - live update via OnAbilityUnlocked while already
+	// bound (issue #249's "event-driven, no polling" claim): Sniper present, widget
+	// bound while only Stun is unlocked (fallback showing), then NotifyLevelReached(2)
+	// broadcasts OnAbilityUnlocked -> suggestion must flip live to the colour-matched
+	// text without any re-bind or re-construction. Cases (12)/(13) above only prove
+	// the "seed from current state at bind time" path (BindAbilityUnlockComponent()'s
+	// own RefreshSuggestedAbilityDisplay() call) - this case is the only one that
+	// exercises HandleAbilityUnlocked() via a real post-bind broadcast.
+	UWorld* LiveUpdateWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the live-update test"), LiveUpdateWorld))
+	{
+		LiveUpdateWorld->InitializeActorsForPlay(FURL());
+
+		AEnemyBaseTestActor* LiveUpdateSniper = LiveUpdateWorld->SpawnActor<AEnemyBaseTestActor>();
+		UEnemyTypeIndicatorComponent* LiveUpdateIndicator = TestNotNull(TEXT("Sniper test enemy should spawn for the live-update test"), LiveUpdateSniper)
+			? NewObject<UEnemyTypeIndicatorComponent>(LiveUpdateSniper)
+			: nullptr;
+		if (TestNotNull(TEXT("UEnemyTypeIndicatorComponent should construct for the live-update test"), LiveUpdateIndicator))
+		{
+			LiveUpdateIndicator->EnemyType = EEnemyType::SN_1PR;
+			LiveUpdateIndicator->RegisterComponent();
+
+			AActor* LiveUpdateUnlockOwner = LiveUpdateWorld->SpawnActor<AActor>();
+			UAbilityUnlockComponent* LiveUpdateUnlockComponent = TestNotNull(TEXT("Unlock component owner should spawn for the live-update test"), LiveUpdateUnlockOwner)
+				? NewObject<UAbilityUnlockComponent>(LiveUpdateUnlockOwner)
+				: nullptr;
+			if (TestNotNull(TEXT("UAbilityUnlockComponent should construct for the live-update test"), LiveUpdateUnlockComponent))
+			{
+				LiveUpdateUnlockComponent->RegisterComponent();
+				// Deliberately not unlocked yet - bind happens first this time.
+
+				ULevelLifecycleSubsystem* LiveUpdateLifecycleSubsystem = LiveUpdateWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+				if (TestNotNull(TEXT("Live-update test World should auto-instantiate ULevelLifecycleSubsystem"), LiveUpdateLifecycleSubsystem))
+				{
+					LiveUpdateLifecycleSubsystem->OnWorldBeginPlay(*LiveUpdateWorld);
+
+					UQuestTrackerWidget* LiveUpdateWidget = CreateWidget<UQuestTrackerWidget>(LiveUpdateWorld, UQuestTrackerWidget::StaticClass());
+					if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the live-update test"), LiveUpdateWidget))
+					{
+						LiveUpdateWidget->BindAbilityUnlockComponent(LiveUpdateUnlockComponent);
+
+						TestEqual(TEXT("Suggestion should show the fallback before Sleep unlocks"),
+							LiveUpdateWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("ANY ROBOT → STUN (LMB)")));
+
+						LiveUpdateUnlockComponent->NotifyLevelReached(2); // broadcasts OnAbilityUnlocked live
+
+						TestEqual(TEXT("Suggestion should flip live to the colour-matched text on OnAbilityUnlocked"),
+							LiveUpdateWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("SNIPERS → SLEEP (RMB)")));
+					}
+				}
+			}
+		}
+	}
+
+	// (15) Suggested-ability line - multi-type tie-break (documented-but-untested
+	// behaviour in ComputeSuggestedAbility()'s own comment): Sniper (Sleep-countered)
+	// and Trooper (Root-countered) both alive. With only Root unlocked, the scan
+	// picks Root (proving it's a real per-candidate IsAbilityUnlocked() scan, not a
+	// fixed lowest-enum-value pick); once Sleep is also unlocked, declaration order
+	// (Stun, Sleep, Root, Fear, Snare) picks Sleep instead.
+	UWorld* TieBreakWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World for the tie-break test"), TieBreakWorld))
+	{
+		TieBreakWorld->InitializeActorsForPlay(FURL());
+
+		AEnemyBaseTestActor* TieBreakSniper = TieBreakWorld->SpawnActor<AEnemyBaseTestActor>();
+		UEnemyTypeIndicatorComponent* TieBreakSniperIndicator = TestNotNull(TEXT("Sniper test enemy should spawn for the tie-break test"), TieBreakSniper)
+			? NewObject<UEnemyTypeIndicatorComponent>(TieBreakSniper)
+			: nullptr;
+		if (TestNotNull(TEXT("Sniper UEnemyTypeIndicatorComponent should construct for the tie-break test"), TieBreakSniperIndicator))
+		{
+			TieBreakSniperIndicator->EnemyType = EEnemyType::SN_1PR;
+			TieBreakSniperIndicator->RegisterComponent();
+		}
+
+		AEnemyBaseTestActor* TieBreakTrooper = TieBreakWorld->SpawnActor<AEnemyBaseTestActor>();
+		UEnemyTypeIndicatorComponent* TieBreakTrooperIndicator = TestNotNull(TEXT("Trooper test enemy should spawn for the tie-break test"), TieBreakTrooper)
+			? NewObject<UEnemyTypeIndicatorComponent>(TieBreakTrooper)
+			: nullptr;
+		if (TestNotNull(TEXT("Trooper UEnemyTypeIndicatorComponent should construct for the tie-break test"), TieBreakTrooperIndicator))
+		{
+			TieBreakTrooperIndicator->EnemyType = EEnemyType::TR_UPR;
+			TieBreakTrooperIndicator->RegisterComponent();
+		}
+
+		AActor* TieBreakUnlockOwner = TieBreakWorld->SpawnActor<AActor>();
+		UAbilityUnlockComponent* TieBreakUnlockComponent = TestNotNull(TEXT("Unlock component owner should spawn for the tie-break test"), TieBreakUnlockOwner)
+			? NewObject<UAbilityUnlockComponent>(TieBreakUnlockOwner)
+			: nullptr;
+		if (TestNotNull(TEXT("UAbilityUnlockComponent should construct for the tie-break test"), TieBreakUnlockComponent))
+		{
+			TieBreakUnlockComponent->RegisterComponent();
+			TieBreakUnlockComponent->NotifyLevelReached(3); // unlocks Root only, Sleep still locked
+
+			ULevelLifecycleSubsystem* TieBreakLifecycleSubsystem = TieBreakWorld->GetSubsystem<ULevelLifecycleSubsystem>();
+			if (TestNotNull(TEXT("Tie-break test World should auto-instantiate ULevelLifecycleSubsystem"), TieBreakLifecycleSubsystem))
+			{
+				TieBreakLifecycleSubsystem->OnWorldBeginPlay(*TieBreakWorld);
+
+				UQuestTrackerWidget* TieBreakWidget = CreateWidget<UQuestTrackerWidget>(TieBreakWorld, UQuestTrackerWidget::StaticClass());
+				if (TestNotNull(TEXT("UQuestTrackerWidget should construct for the tie-break test"), TieBreakWidget))
+				{
+					TieBreakWidget->BindAbilityUnlockComponent(TieBreakUnlockComponent);
+
+					TestEqual(TEXT("With only Root unlocked, the scan should pick Root over the Sniper's still-locked Sleep"),
+						TieBreakWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("TROOPERS → ROOT (Q)")));
+
+					TieBreakUnlockComponent->NotifyLevelReached(2); // also unlocks Sleep, live via OnAbilityUnlocked
+
+					TestEqual(TEXT("With both Sleep and Root unlocked, declaration order (Stun, Sleep, Root, ...) should pick Sleep first"),
+						TieBreakWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("SNIPERS → SLEEP (RMB)")));
 				}
 			}
 		}
