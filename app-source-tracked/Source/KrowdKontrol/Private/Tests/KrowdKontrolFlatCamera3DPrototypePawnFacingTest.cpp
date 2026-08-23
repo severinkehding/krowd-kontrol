@@ -11,11 +11,20 @@
 // Tick() is wired to GetCursorWorldPosition() and no-ops gracefully (no crash, no
 // rotation) when there's no possessing controller/viewport - the same negative-path
 // limitation FKrowdKontrolFlatCamera3DPrototypePawnCursorWorldPositionTest already
-// documents for GetCursorWorldPosition() itself. The true-positive Tick() path (a
-// real, live cursor position) is structurally impossible to exercise here for the
-// same reason - see that file's header comment.
+// documents for GetCursorWorldPosition() itself. Tick()'s own call to
+// GetCursorWorldPosition() stays untestable here for the same reason (no live
+// viewport in a headless CreateNewMap() world) - but the rest of the per-frame
+// wiring (ComputeFacingRotation() -> SetActorRotation()) is split into
+// ApplyFacingTowardCursor() and exercised directly with a fixed cursor position by
+// Test 3 below, so a broken "apply" step is still caught even though the
+// "acquire a cursor position" step can't be.
 //
-// Test 3 reuses the AxisDelegate.Execute() trick from
+// Test 3 calls ApplyFacingTowardCursor() directly with a known cursor position and
+// asserts the resulting rotation, proving the wiring Tick() dispatches to
+// (ComputeFacingRotation() -> SetActorRotation()) end-to-end rather than only its
+// two halves in isolation.
+//
+// Test 4 reuses the AxisDelegate.Execute() trick from
 // KrowdKontrolFlatCamera3DPipelineSmokeTest.cpp to invoke the private
 // MoveForward/MoveRight without a friend declaration, after rotating the pawn away
 // from its spawn default, proving WASD input/velocity is identical regardless of
@@ -80,6 +89,16 @@ bool FKrowdKontrolFlatCamera3DFacingRotationMathTest::RunTest(const FString& Par
 		TestEqual(TEXT("Off-axis cursor should yield Yaw 45"), OutFacingRotation.Yaw, 45.0);
 	}
 
+	// Cursor on -Y.
+	{
+		FRotator OutFacingRotation;
+		const bool bResult = AFlatCamera3DPrototypePawn::ComputeFacingRotation(
+			FVector(0.0f, 0.0f, 0.0f), FVector(0.0f, -100.0f, 0.0f), OutFacingRotation);
+
+		TestTrue(TEXT("Cursor on -Y should succeed"), bResult);
+		TestEqual(TEXT("Cursor on -Y should yield Yaw -90"), OutFacingRotation.Yaw, -90.0);
+	}
+
 	// Degenerate: same X/Y, different Z - yaw undefined, must fail cleanly.
 	{
 		FRotator OutFacingRotation;
@@ -117,6 +136,36 @@ bool FKrowdKontrolFlatCamera3DFacingTickNoCursorTest::RunTest(const FString& Par
 
 	TestEqual(TEXT("Tick() with no cursor should leave rotation at default"),
 		Pawn->GetActorRotation(), FRotator::ZeroRotator);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolFlatCamera3DFacingTickAppliesRotationTest,
+	"KrowdKontrol.Unit.FlatCamera3DPrototypePawnFacingTickAppliesRotation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolFlatCamera3DFacingTickAppliesRotationTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+
+	AFlatCamera3DPrototypePawn* Pawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+	if (!TestNotNull(TEXT("Pawn should spawn"), Pawn))
+	{
+		return false;
+	}
+
+	// Cursor directly on +Y relative to the pawn's spawn location - expect Yaw 90.
+	// Exercises the same ComputeFacingRotation() -> SetActorRotation() wiring Tick()
+	// dispatches to each frame, without needing a live viewport to reach it.
+	Pawn->ApplyFacingTowardCursor(Pawn->GetActorLocation() + FVector(0.0f, 100.0f, 0.0f));
+
+	TestEqual(TEXT("ApplyFacingTowardCursor should rotate the pawn to face the given cursor position"),
+		Pawn->GetActorRotation().Yaw, 90.0);
 
 	return true;
 }

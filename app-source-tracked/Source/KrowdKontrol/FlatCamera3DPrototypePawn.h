@@ -275,6 +275,15 @@ public:
 		const FVector& CursorWorldPosition,
 		FRotator& OutFacingRotation);
 
+	// Applies a known cursor world position as this pawn's new facing (issue #263) -
+	// Tick() below is a thin per-frame dispatcher over this method, split out so
+	// KrowdKontrol.Unit.FlatCamera3DPrototypePawnFacingTickAppliesRotation can exercise
+	// the real ComputeFacingRotation() -> SetActorRotation() wiring with a fixed cursor
+	// position, without needing a live viewport to reach it through Tick()'s own
+	// GetCursorWorldPosition() call. No-ops (rotation left unchanged) when
+	// ComputeFacingRotation() fails - same degenerate-guard case documented there.
+	void ApplyFacingTowardCursor(const FVector& CursorWorldPosition);
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif

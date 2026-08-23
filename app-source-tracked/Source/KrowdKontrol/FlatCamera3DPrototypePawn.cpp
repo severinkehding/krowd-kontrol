@@ -210,6 +210,15 @@ void AFlatCamera3DPrototypePawn::SetupPlayerInputComponent(UInputComponent* Play
 	PlayerInputComponent->BindAction(TEXT("CastSnare"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseSnareAbility);
 }
 
+void AFlatCamera3DPrototypePawn::ApplyFacingTowardCursor(const FVector& CursorWorldPosition)
+{
+	FRotator FacingRotation;
+	if (ComputeFacingRotation(GetActorLocation(), CursorWorldPosition, FacingRotation))
+	{
+		SetActorRotation(FacingRotation);
+	}
+}
+
 void AFlatCamera3DPrototypePawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -217,11 +226,7 @@ void AFlatCamera3DPrototypePawn::Tick(float DeltaTime)
 	FVector CursorWorldPosition;
 	if (GetCursorWorldPosition(CursorWorldPosition))
 	{
-		FRotator FacingRotation;
-		if (ComputeFacingRotation(GetActorLocation(), CursorWorldPosition, FacingRotation))
-		{
-			SetActorRotation(FacingRotation);
-		}
+		ApplyFacingTowardCursor(CursorWorldPosition);
 	}
 }
 
