@@ -47,6 +47,14 @@ bool FKrowdKontrolAbilityTooltipWidgetTest::RunTest(const FString& Parameters)
 	const TArray<EAbilitySlot> AllSlots = { EAbilitySlot::Stun, EAbilitySlot::Sleep,
 		EAbilitySlot::Root, EAbilitySlot::Fear, EAbilitySlot::Snare };
 
+	static const TMap<EAbilityRange, FString> RangeLabels = {
+		{ EAbilityRange::Short, TEXT("Short") }, { EAbilityRange::Medium, TEXT("Medium") }, { EAbilityRange::Long, TEXT("Long") }
+	};
+	static const TMap<EAbilityTargetType, FString> ShapeLabels = {
+		{ EAbilityTargetType::SelfCircle, TEXT("self-centered circle") }, { EAbilityTargetType::Cone, TEXT("cone") },
+		{ EAbilityTargetType::Line, TEXT("line") }, { EAbilityTargetType::ThrownCircle, TEXT("thrown circle") }
+	};
+
 	for (EAbilitySlot Slot : AllSlots)
 	{
 		Widget->SetAbility(Slot);
@@ -68,6 +76,11 @@ bool FKrowdKontrolAbilityTooltipWidgetTest::RunTest(const FString& Parameters)
 		const FString ExpectedDuration = FString::Printf(TEXT("%d"), FMath::RoundToInt(Data.BaseDurationSeconds));
 		TestTrue(*FString::Printf(TEXT("Slot %d duration text should contain the formatted duration"), static_cast<int32>(Slot)),
 			Widget->GetDurationText().ToString().Contains(ExpectedDuration));
+
+		TestTrue(*FString::Printf(TEXT("Slot %d range/shape text should contain the mapped range label"), static_cast<int32>(Slot)),
+			Widget->GetRangeShapeText().ToString().Contains(RangeLabels[Data.Range]));
+		TestTrue(*FString::Printf(TEXT("Slot %d range/shape text should contain the mapped shape label"), static_cast<int32>(Slot)),
+			Widget->GetRangeShapeText().ToString().Contains(ShapeLabels[Data.TargetType]));
 	}
 
 	// (2) Dedicated ground-truth pin of the 5 canonical bindings (operator ruling
@@ -105,6 +118,16 @@ bool FKrowdKontrolAbilityTooltipWidgetTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("Fresh UAbilityTooltipWidget should construct"), FreshWidget))
 	{
 		TestTrue(TEXT("Fresh widget's name text should be empty before SetAbility()"), FreshWidget->GetAbilityNameText().IsEmpty());
+		TestTrue(TEXT("Fresh widget's key binding text should be empty before SetAbility()"), FreshWidget->GetKeyBindingText().IsEmpty());
+		TestTrue(TEXT("Fresh widget's description text should be empty before SetAbility()"), FreshWidget->GetDescriptionText().IsEmpty());
+		TestTrue(TEXT("Fresh widget's duration text should be empty before SetAbility()"), FreshWidget->GetDurationText().IsEmpty());
+		TestTrue(TEXT("Fresh widget's range/shape text should be empty before SetAbility()"), FreshWidget->GetRangeShapeText().IsEmpty());
+		TestTrue(TEXT("Fresh widget's enemy type text should be empty before SetAbility()"), FreshWidget->GetEnemyTypeText().IsEmpty());
+		// SwatchBorder is already constructed by EnsureWidgetTreeBuilt() before this
+		// point (CreateWidget() -> Initialize() runs it), so this exercises UBorder's
+		// default BrushColor (White), not the accessor's null-guard fallback - that
+		// fallback is unreachable under this widget's current construction guarantees.
+		TestEqual(TEXT("Fresh widget's swatch colour should be UBorder's default White before SetAbility()"), FreshWidget->GetSwatchColour(), FLinearColor::White);
 	}
 
 	// (6) Integration check - UAbilityCooldownTrayWidget::BuildWidgetTree() actually
@@ -114,15 +137,21 @@ bool FKrowdKontrolAbilityTooltipWidgetTest::RunTest(const FString& Parameters)
 		CreateWidget<UAbilityCooldownTrayWidget>(World, UAbilityCooldownTrayWidget::StaticClass());
 	if (TestNotNull(TEXT("UAbilityCooldownTrayWidget should construct"), TrayWidget))
 	{
-		const int32 RootIndex = static_cast<int32>(EAbilitySlot::Root);
-		if (TestNotNull(TEXT("Root slot's icon border should be non-null"), ToRawPtr(TrayWidget->SlotIconBorders[RootIndex])))
+		for (int32 Index = 0; Index < UAbilityCooldownTrayWidget::NumAbilitySlots; ++Index)
 		{
-			UAbilityTooltipWidget* WiredTooltip = Cast<UAbilityTooltipWidget>(TrayWidget->SlotIconBorders[RootIndex]->GetToolTip());
-			if (TestNotNull(TEXT("Root slot's icon border should have a UAbilityTooltipWidget attached"), WiredTooltip))
+			const EAbilitySlot Slot = static_cast<EAbilitySlot>(Index);
+			if (!TestNotNull(*FString::Printf(TEXT("Slot %d icon border should be non-null"), Index),
+				ToRawPtr(TrayWidget->SlotIconBorders[Index])))
 			{
-				TestEqual(TEXT("Wired tooltip's ability name should match Root's"),
+				continue;
+			}
+
+			UAbilityTooltipWidget* WiredTooltip = Cast<UAbilityTooltipWidget>(TrayWidget->SlotIconBorders[Index]->GetToolTip());
+			if (TestNotNull(*FString::Printf(TEXT("Slot %d should have a UAbilityTooltipWidget attached"), Index), WiredTooltip))
+			{
+				TestEqual(*FString::Printf(TEXT("Slot %d wired tooltip's ability name should match"), Index),
 					WiredTooltip->GetAbilityNameText().ToString(),
-					StaticEnum<EAbilitySlot>()->GetDisplayNameTextByValue(static_cast<int64>(EAbilitySlot::Root)).ToString());
+					StaticEnum<EAbilitySlot>()->GetDisplayNameTextByValue(static_cast<int64>(Slot)).ToString());
 			}
 		}
 	}
