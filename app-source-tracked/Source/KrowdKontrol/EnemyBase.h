@@ -346,6 +346,22 @@ private:
 	// closing distance once attack range is reached (REQ-2: no pathfinding, straight-
 	// line only). Private/friend-testable, same shape as TickCheckDetection above.
 	void TickChaseMovement(const FVector& PlayerLocation, float DeltaSeconds);
+
+	// Moves the actor in a straight line away from CasterLocation at
+	// GetEffectiveMovementSpeedUnitsPerSecond() units/second, with no
+	// remaining-distance clamp - fleeing has no destination to overshoot, unlike
+	// TickChaseMovement's toward-player movement. No-op unless CurrentState ==
+	// Controlled and ControllingAbility is flagged
+	// AbilityData::bFleesFromCasterWhileControlled (Fear only - see
+	// AbilityData.h). A CasterLocation exactly coincident with this actor's own
+	// location (degenerate away-direction) is also a no-op, using the same
+	// KINDA_SMALL_NUMBER dead-zone style as TickChaseMovement's own guard
+	// (against SizeSquared() here rather than Size(), since this function
+	// already needs a squared distance for GetSafeNormal() below - both are
+	// negligible at game scale). Private/friend-testable, same shape as
+	// TickChaseMovement above.
+	void TickFleeMovement(const FVector& CasterLocation, float DeltaSeconds);
+
 	void AdvanceToAlert();
 	void AdvanceToAttack();
 

@@ -1626,6 +1626,277 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 			CooldownComponent->IsOnCooldown(EAbilitySlot::Snare));
 	}
 
+	// (aa-fear) TryCastSelfCircleAbility via Fear (issue #253): an enemy inside
+	// SelfCircleRadiusUnits of the owner is affected, one outside is not, and one
+	// exactly on the boundary is affected too since the radius check is inclusive
+	// - mirrors (u-snare)'s in-shape/out-of-shape split and case (m)'s boundary
+	// convention (PR #280 review, MEDIUM finding 1: a future <= -> < slip must not
+	// silently exclude edge-of-circle enemies with nothing to catch it).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(4); // unlocks Fear
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* InCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OutOfCircleEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OnBoundaryEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(aa-fear) In-circle AEnemyBaseTestActor should spawn"), InCircleEnemy)
+			|| !TestNotNull(TEXT("(aa-fear) Out-of-circle AEnemyBaseTestActor should spawn"), OutOfCircleEnemy)
+			|| !TestNotNull(TEXT("(aa-fear) On-boundary AEnemyBaseTestActor should spawn"), OnBoundaryEnemy))
+		{
+			return false;
+		}
+		InCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OutOfCircleEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OnBoundaryEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		InCircleEnemy->SetActorLocation(FVector(CastComponent->SelfCircleRadiusUnits - 50.0f, 0.0f, 0.0f));
+		OutOfCircleEnemy->SetActorLocation(FVector(CastComponent->SelfCircleRadiusUnits + 50.0f, 0.0f, 0.0f));
+		OnBoundaryEnemy->SetActorLocation(FVector(CastComponent->SelfCircleRadiusUnits, 0.0f, 0.0f));
+
+		const int32 AffectedCount = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
+		TestEqual(TEXT("(aa-fear) The in-circle and on-boundary enemies should be affected"), AffectedCount, 2);
+		TestEqual(TEXT("(aa-fear) The in-circle enemy should be Controlled"),
+			static_cast<uint8>(InCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(aa-fear) The out-of-circle enemy should be left untouched"),
+			static_cast<uint8>(OutOfCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		TestEqual(TEXT("(aa-fear) The on-boundary enemy should be Controlled"),
+			static_cast<uint8>(OnBoundaryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
+	// (bb-fear) Multi-target (issue #253): two enemies both inside the circle are both
+	// affected in a single cast, mirroring (v-snare)'s multi-target shape.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(4); // unlocks Fear
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		UAbilityCastAppliedTestListener* Listener = NewObject<UAbilityCastAppliedTestListener>();
+		CastComponent->OnAbilityCastApplied.AddDynamic(Listener, &UAbilityCastAppliedTestListener::HandleAbilityCastApplied);
+
+		AEnemyBaseTestActor* FirstEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* SecondEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(bb-fear) First AEnemyBaseTestActor should spawn"), FirstEnemy)
+			|| !TestNotNull(TEXT("(bb-fear) Second AEnemyBaseTestActor should spawn"), SecondEnemy))
+		{
+			return false;
+		}
+		FirstEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		SecondEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		FirstEnemy->SetActorLocation(FVector(100.0f, 0.0f, 0.0f));
+		SecondEnemy->SetActorLocation(FVector(-100.0f, 0.0f, 0.0f));
+
+		const int32 AffectedCount = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
+		TestEqual(TEXT("(bb-fear) Both enemies in the circle should be affected"), AffectedCount, 2);
+		TestEqual(TEXT("(bb-fear) The first enemy should be Controlled"),
+			static_cast<uint8>(FirstEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(bb-fear) The second enemy should be Controlled"),
+			static_cast<uint8>(SecondEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(bb-fear) OnAbilityCastApplied should have fired exactly twice"), Listener->CallCount, 2);
+	}
+
+	// (cc-fear) Zero enemies in the circle still consumes the cooldown (issue #253) -
+	// mirrors (z-snare)'s identical "a whiff still commits" contract.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(4); // unlocks Fear
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		const int32 AffectedCount = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
+		TestEqual(TEXT("(cc-fear) A self-circle hitting zero enemies should return 0, not -1"), AffectedCount, 0);
+		TestTrue(TEXT("(cc-fear) A 0-affected self-circle cast must still consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Fear));
+	}
+
+	// (dd-fear) Gate failure (locked ability) via TryCastSelfCircleAbility (issue
+	// #253): default UAbilityUnlockComponent state only unlocks Stun, so casting Fear
+	// must return -1 and change nothing, mirroring case (q).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(dd-fear) AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		const int32 AffectedCount = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
+		TestEqual(TEXT("(dd-fear) TryCastSelfCircleAbility for a locked ability should return -1"), AffectedCount, -1);
+		TestEqual(TEXT("(dd-fear) A locked-ability self-circle cast should not change the enemy's state"),
+			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		TestFalse(TEXT("(dd-fear) A gate-failed self-circle cast must not consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Fear));
+	}
+
+	// (ee-fear) world-paused gate via TryCastSelfCircleAbility (issue #253), mirroring
+	// case (r)'s TryCastThrownAbilityAtLocation coverage.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(4); // unlocks Fear
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(ee-fear) AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		APlayerState* PauserPlayerState = NewObject<APlayerState>(Owner);
+		World->GetWorldSettings()->SetPauserPlayerState(PauserPlayerState);
+		if (!TestTrue(TEXT("(ee-fear) World should report paused after SetPauserPlayerState()"), World->IsPaused()))
+		{
+			return false;
+		}
+
+		const int32 AffectedCount = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
+		TestEqual(TEXT("(ee-fear) TryCastSelfCircleAbility should refuse while the world is paused"), AffectedCount, -1);
+		TestFalse(TEXT("(ee-fear) A paused-world self-circle cast must not consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Fear));
+	}
+
+	// (ff-fear) briefing-visible gate via TryCastSelfCircleAbility (issue #253),
+	// mirroring case (s).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		if (!TestNotNull(TEXT("(ff-fear) APawn should spawn into the test World"), Owner))
+		{
+			return false;
+		}
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(4); // unlocks Fear
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(ff-fear) AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!TestNotNull(TEXT("(ff-fear) Controller should spawn"), Controller))
+		{
+			return false;
+		}
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		Controller->Possess(Owner);
+		World->AddController(Controller);
+		Controller->DispatchBeginPlay();
+		if (!TestNotNull(TEXT("(ff-fear) BriefingCardWidgetInstance should exist"), ToRawPtr(Controller->BriefingCardWidgetInstance)))
+		{
+			return false;
+		}
+
+		FLevelBriefingRow Row;
+		Row.LevelDisplayName = FText::FromString(TEXT("LEVEL 1"));
+		Controller->BriefingCardWidgetInstance->ShowBriefing(Row);
+
+		const int32 AffectedCountWhileVisible = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
+		TestEqual(TEXT("(ff-fear) TryCastSelfCircleAbility should refuse while the briefing card is visible"), AffectedCountWhileVisible, -1);
+
+		Controller->BriefingCardWidgetInstance->DismissBriefing();
+		const int32 AffectedCountAfterDismiss = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
+		TestEqual(TEXT("(ff-fear) TryCastSelfCircleAbility should succeed again once the briefing card is dismissed"), AffectedCountAfterDismiss, 1);
+	}
+
+	// (gg-fear) lockout gate via TryCastSelfCircleAbility (issue #253), mirroring case (t).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(4); // unlocks Fear
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityLockoutComponent* LockoutComponent = NewObject<UAbilityLockoutComponent>(Owner);
+		LockoutComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* Enemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(gg-fear) AEnemyBaseTestActor should spawn into the test World"), Enemy))
+		{
+			return false;
+		}
+		Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+
+		// Locks Fear directly - this tests TryCastSelfCircleAbility's gate, not the
+		// lockout component's own trigger logic (see case (h)'s equivalent note).
+		LockoutComponent->HandleAbilityCastApplied(EAbilitySlot::Fear, nullptr);
+		LockoutComponent->HandlePunishmentTriggered();
+
+		const int32 AffectedCount = CastComponent->TryCastSelfCircleAbility(EAbilitySlot::Fear);
+		TestEqual(TEXT("(gg-fear) TryCastSelfCircleAbility should refuse a locked-out ability"), AffectedCount, -1);
+		TestFalse(TEXT("(gg-fear) A locked-out self-circle cast must not consume the cooldown"),
+			CooldownComponent->IsOnCooldown(EAbilitySlot::Fear));
+	}
+
 	return true;
 }
 

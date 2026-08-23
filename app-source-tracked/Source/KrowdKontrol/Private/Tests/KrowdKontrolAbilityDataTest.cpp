@@ -122,6 +122,14 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Fear should not allow attack while controlled"), Fear.bAllowsAttackWhileControlled);
 	TestTrue(TEXT("Snare should allow attack while controlled"), Snare.bAllowsAttackWhileControlled);
 
+	// (4c2) issue #253: only Fear flags bFleesFromCasterWhileControlled - a target
+	// Controlled by it actively moves away from the caster instead of standing still.
+	TestFalse(TEXT("Stun should not flee from caster while controlled"), Stun.bFleesFromCasterWhileControlled);
+	TestFalse(TEXT("Sleep should not flee from caster while controlled"), Sleep.bFleesFromCasterWhileControlled);
+	TestFalse(TEXT("Root should not flee from caster while controlled"), Root.bFleesFromCasterWhileControlled);
+	TestTrue(TEXT("Fear bFleesFromCasterWhileControlled should be true"), Fear.bFleesFromCasterWhileControlled);
+	TestFalse(TEXT("Snare should not flee from caster while controlled"), Snare.bFleesFromCasterWhileControlled);
+
 	// (4d) issue #254: only Snare flags bAllowsMovementWhileControlled - it slows
 	// (ControlledSpeedMultiplier) rather than fully immobilizing.
 	TestFalse(TEXT("Stun should not allow movement while controlled"), Stun.bAllowsMovementWhileControlled);

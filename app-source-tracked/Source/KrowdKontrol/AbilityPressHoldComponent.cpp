@@ -60,19 +60,16 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 		ShapeSpec.Origin = (CastComponent ? CastComponent->GetClampedThrowLocation(Ability, CursorTargetLocation) : CursorTargetLocation);
 		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->ThrownCircleLandingRadiusUnits : 400.0f);
 	}
+	else if (TargetType == EAbilityTargetType::SelfCircle)
+	{
+		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
+		ShapeSpec.Origin = GetOwnerLocationOrWarn(TEXT("SelfCircle"));
+		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->SelfCircleRadiusUnits : 400.0f);
+	}
 	else
 	{
 		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
-		if (AActor* Owner = GetOwner())
-		{
-			ShapeSpec.Origin = Owner->GetActorLocation();
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - indicator will show at world origin."),
-				*GetNameSafe(this));
-		}
+		ShapeSpec.Origin = GetOwnerLocationOrWarn(TEXT("CircleAtActor"));
 		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->CastRangeUnits : 300.0f);
 	}
 
@@ -101,6 +98,10 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 		else if (bHasCursorTargetLocation)
 		{
 			CastComponent->TryCastThrownAbilityAtLocation(Ability, CursorTargetLocation);
+		}
+		else if (TargetType == EAbilityTargetType::SelfCircle)
+		{
+			CastComponent->TryCastSelfCircleAbility(Ability);
 		}
 		else
 		{

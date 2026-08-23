@@ -560,6 +560,58 @@ bool FKrowdKontrolAbilityPressHoldComponentTest::RunTest(const FString& Paramete
 			static_cast<uint8>(BehindOwnerEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 	}
 
+	// (l) No-cursor press via Fear (issue #253): proves the SelfCircle-target branch -
+	// Indicator gets EAbilityIndicatorShapeKind::CircleAtActor (not the generic
+	// CastRangeUnits fallback), Origin is the Owner's location, RangeUnits matches
+	// CastComponent->SelfCircleRadiusUnits (not CastRangeUnits), and the cast actually
+	// routes through TryCastSelfCircleAbility - TWO enemies both inside the circle both
+	// end up Controlled from the single press, proving multi-target dispatch (unlike
+	// the old single-target TryCastAbility case (d) exercised before this branch existed).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World)) { return false; }
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(4); // unlocks Fear
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+		UAbilityTargetingIndicatorComponent* Indicator = NewObject<UAbilityTargetingIndicatorComponent>(Owner);
+		Indicator->RegisterComponent();
+		UAbilityPressHoldComponent* PressHold = NewObject<UAbilityPressHoldComponent>(Owner);
+		PressHold->RegisterComponent();
+		PressHold->CastComponent = CastComponent;
+		PressHold->IndicatorComponent = Indicator;
+
+		AEnemyBaseTestActor* FirstEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* SecondEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(l) First AEnemyBaseTestActor should spawn"), FirstEnemy)
+			|| !TestNotNull(TEXT("(l) Second AEnemyBaseTestActor should spawn"), SecondEnemy))
+		{
+			return false;
+		}
+		FirstEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		SecondEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		// Owner defaults to World origin; both enemies well inside SelfCircleRadiusUnits.
+		FirstEnemy->SetActorLocation(FVector(100.0f, 0.0f, 0.0f));
+		SecondEnemy->SetActorLocation(FVector(-100.0f, 0.0f, 0.0f));
+
+		PressHold->HandleAbilityKeyPressed(EAbilitySlot::Fear); // no cursor location, as CastFearAbility() always calls it
+
+		TestEqual(TEXT("(l) Indicator shape kind should be CircleAtActor for a SelfCircle-target ability"),
+			static_cast<uint8>(Indicator->CurrentShapeSpec.Kind), static_cast<uint8>(EAbilityIndicatorShapeKind::CircleAtActor));
+		TestEqual(TEXT("(l) Indicator origin should be the Owner's location"),
+			Indicator->CurrentShapeSpec.Origin, Owner->GetActorLocation());
+		TestEqual(TEXT("(l) Indicator range should be SelfCircleRadiusUnits, not CastRangeUnits"),
+			Indicator->CurrentShapeSpec.RangeUnits, CastComponent->SelfCircleRadiusUnits);
+		TestEqual(TEXT("(l) The first enemy should be Controlled"),
+			static_cast<uint8>(FirstEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(l) The second enemy should be Controlled"),
+			static_cast<uint8>(SecondEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
 	return true;
 }
 

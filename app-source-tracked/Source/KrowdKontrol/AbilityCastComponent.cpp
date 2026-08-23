@@ -278,6 +278,38 @@ int32 UAbilityCastComponent::TryCastConeAbilityTowardLocation(EAbilitySlot Abili
 	return AffectedCount;
 }
 
+int32 UAbilityCastComponent::TryCastSelfCircleAbility(EAbilitySlot Ability)
+{
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastSelfCircleAbility: entry, Ability=%s"),
+		*UEnum::GetValueAsString(Ability));
+
+	UAbilityCooldownComponent* CooldownComponent = ResolvePassedCastGates(Ability, TEXT("TryCastSelfCircleAbility"));
+	if (!CooldownComponent)
+	{
+		return -1;
+	}
+
+	const AActor* Owner = GetOwner(); // non-null - ResolvePassedCastGates already checked
+	const FVector OwnerLocation = Owner->GetActorLocation();
+
+	if (!CooldownComponent->TryStartCooldown(Ability))
+	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastSelfCircleAbility: exit, Ability=%s TryStartCooldown failed unexpectedly"),
+			*UEnum::GetValueAsString(Ability));
+		return -1;
+	}
+
+	const float RadiusSquared = FMath::Square(SelfCircleRadiusUnits);
+	const int32 AffectedCount = ApplyControlToEnemiesInShape(Ability, [&OwnerLocation, RadiusSquared](const FVector& EnemyLocation)
+	{
+		return FVector::DistSquared(EnemyLocation, OwnerLocation) <= RadiusSquared;
+	});
+
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastSelfCircleAbility: exit, Ability=%s AffectedCount=%d"),
+		*UEnum::GetValueAsString(Ability), AffectedCount);
+	return AffectedCount;
+}
+
 UAbilityCooldownComponent* UAbilityCastComponent::ResolvePassedCastGates(EAbilitySlot Ability, const TCHAR* CallerLogContext) const
 {
 	// Issue #246: the pre-level briefing card pauses the world while shown, but

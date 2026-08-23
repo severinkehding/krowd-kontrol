@@ -256,6 +256,22 @@ void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSec
 	SetActorLocation(GetActorLocation() + ToPlayer.GetSafeNormal() * MoveDistance);
 }
 
+void AEnemyBase::TickFleeMovement(const FVector& CasterLocation, float DeltaSeconds)
+{
+	if (CurrentState != EEnemyState::Controlled
+		|| !AbilityData::Get(ControllingAbility).bFleesFromCasterWhileControlled)
+	{
+		return;
+	}
+	const FVector AwayFromCaster = GetActorLocation() - CasterLocation;
+	if (AwayFromCaster.SizeSquared() <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	const float MoveDistance = GetEffectiveMovementSpeedUnitsPerSecond() * DeltaSeconds;
+	SetActorLocation(GetActorLocation() + AwayFromCaster.GetSafeNormal() * MoveDistance);
+}
+
 void AEnemyBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -273,6 +289,7 @@ void AEnemyBase::Tick(float DeltaTime)
 		const FVector PlayerLocation = PlayerPawn->GetActorLocation();
 		TickCheckDetection(PlayerLocation);
 		TickChaseMovement(PlayerLocation, DeltaTime);
+		TickFleeMovement(PlayerLocation, DeltaTime);
 	}
 }
 

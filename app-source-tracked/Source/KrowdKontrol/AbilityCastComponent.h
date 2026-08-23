@@ -220,6 +220,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
 	int32 TryCastConeAbilityTowardLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation);
 
+	// Self-centered AoE circle radius for EAbilityTargetType::SelfCircle abilities
+	// (Fear - see AbilityData.h). "4x robot size" per docs/prd-ability-shapes.md, same
+	// locked derivation ThrownCircleLandingRadiusUnits documents - a distinct property
+	// rather than reusing that one, since this radius is centered on the caster's own
+	// live location, not a thrown/clamped landing point, even though both currently
+	// default to the same value (mirrors LineHitWidthUnits getting its own property
+	// distinct from the throw-range tiers despite conceptual overlap).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Self Circle", meta = (ClampMin = "0.0"))
+	float SelfCircleRadiusUnits = 400.0f;
+
+	// Self-cast multi-target counterpart to TryCastThrownAbilityAtLocation(), for
+	// EAbilityTargetType::SelfCircle abilities (Fear - see AbilityData.h). Unlike the
+	// Thrown/Line/Cone entry points, there is no aim point - the circle is always
+	// exactly centered on GetOwner()->GetActorLocation() at cast time. Every AEnemyBase
+	// within SelfCircleRadiusUnits of the owner is affected (multi-target, same as
+	// Thrown/Line/Cone). Same gate order and "always consumes the cooldown once gates
+	// pass" contract as TryCastThrownAbilityAtLocation. Returns the number of enemies
+	// actually affected (0 is a valid, cooldown-consuming cast that hit nothing);
+	// returns -1 if any gate failed and nothing was changed.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	int32 TryCastSelfCircleAbility(EAbilitySlot Ability);
+
 	// Fires exactly once per successful TryCastAbility call, after ReceiveControl has
 	// already been applied to TargetEnemy.
 	UPROPERTY(BlueprintAssignable, Category = "Ability Cast")
