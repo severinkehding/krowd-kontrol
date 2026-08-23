@@ -100,6 +100,7 @@ protected:
 	virtual UPointLightComponent* GetEliteTrimLightComponent() const override { return EliteTrimLightComponent; }
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
+	virtual void OnControlledExpired() override;
 	virtual void Tick(float DeltaTime) override;
 
 private:

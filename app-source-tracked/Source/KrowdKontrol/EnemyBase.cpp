@@ -111,6 +111,7 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 		if (Ability != ControllingAbility && AbilityData::Get(ControllingAbility).bWakesEarlyOnOtherAbilityHit)
 		{
 			CurrentState = EEnemyState::Alert;
+			OnControlledExpired();
 			OnEnemyControlledExpired.Broadcast();
 		}
 		return;
@@ -126,6 +127,15 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 	RemainingControlledSeconds = OverrideSeconds >= 0.0f ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
 	TotalControlledSeconds = RemainingControlledSeconds;
 	OnControlledEntry(Ability);
+}
+
+bool AEnemyBase::IsAttackBehaviorActive() const
+{
+	if (CurrentState == EEnemyState::Attack)
+	{
+		return true;
+	}
+	return CurrentState == EEnemyState::Controlled && AbilityData::Get(ControllingAbility).bAllowsAttackWhileControlled;
 }
 
 void AEnemyBase::TransitionToBanked()
@@ -211,6 +221,7 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 		// Controlled indefinitely and never treated as a kill (MISSION.md Hard
 		// Invariant 2). Banking within the window remains the only path to Banked.
 		CurrentState = EEnemyState::Alert;
+		OnControlledExpired();
 		OnEnemyControlledExpired.Broadcast();
 	}
 }

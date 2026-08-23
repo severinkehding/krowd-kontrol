@@ -89,22 +89,10 @@ int32 UAbilityCastComponent::TryCastThrownAbilityAtLocation(EAbilitySlot Ability
 	}
 
 	const float RadiusSquared = FMath::Square(ThrownCircleLandingRadiusUnits);
-	int32 AffectedCount = 0;
-	for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
+	const int32 AffectedCount = ApplyControlToEnemiesInShape(Ability, [&ClampedLocation, RadiusSquared](const FVector& EnemyLocation)
 	{
-		AEnemyBase* Enemy = *It;
-		if (FVector::DistSquared(Enemy->GetActorLocation(), ClampedLocation) > RadiusSquared)
-		{
-			continue;
-		}
-		const bool bWasFreshlyTargetable = (Enemy->GetEnemyState() == EEnemyState::Alert || Enemy->GetEnemyState() == EEnemyState::Attack);
-		Enemy->ReceiveControl(Ability);
-		if (bWasFreshlyTargetable)
-		{
-			++AffectedCount;
-			OnAbilityCastApplied.Broadcast(Ability, Enemy);
-		}
-	}
+		return FVector::DistSquared(EnemyLocation, ClampedLocation) <= RadiusSquared;
+	});
 
 	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastThrownAbilityAtLocation: exit, Ability=%s landed at clamped location, AffectedCount=%d"),
 		*UEnum::GetValueAsString(Ability), AffectedCount);
@@ -130,6 +118,85 @@ FVector UAbilityCastComponent::GetClampedThrowLocation(EAbilitySlot Ability, con
 	}
 	return ComputeClampedThrowLocation(
 		Owner->GetActorLocation(), DesiredTargetLocation, GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range));
+}
+
+FVector UAbilityCastComponent::ComputeLineEndLocation(const FVector& OwnerLocation, const FVector& DesiredTargetLocation, float LineRangeUnits, const FVector& FallbackDirection)
+{
+	const FVector Delta = DesiredTargetLocation - OwnerLocation;
+	// Same real-gameplay-units dead zone as ComputeFacingRotation (PR #279 review) -
+	// KINDA_SMALL_NUMBER/GetSafeNormal's default tolerance is ~0.1mm, functionally no
+	// guard against sub-pixel cursor noise near the owner's own location.
+	constexpr float DirectionDeadZoneRadiusUnits = 10.0f;
+	const FVector Direction = Delta.SizeSquared() > FMath::Square(DirectionDeadZoneRadiusUnits)
+		? Delta.GetSafeNormal()
+		: FallbackDirection.GetSafeNormal();
+	return OwnerLocation + Direction * LineRangeUnits;
+}
+
+FVector UAbilityCastComponent::GetLineEndLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation) const
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return DesiredTargetLocation;
+	}
+	return ComputeLineEndLocation(
+		Owner->GetActorLocation(), DesiredTargetLocation,
+		GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range), Owner->GetActorForwardVector());
+}
+
+namespace
+{
+	// Pure point-to-segment distance-squared math - hand-rolled rather than a call
+	// to an engine math utility this module has never depended on before, matching
+	// this codebase's existing "small, directly-testable, hand-rolled vector math"
+	// precedent (IntersectRayWithGroundPlane, ComputeFacingRotation).
+	float ComputeDistanceSquaredFromSegment(const FVector& Point, const FVector& SegmentStart, const FVector& SegmentEnd)
+	{
+		const FVector SegmentVector = SegmentEnd - SegmentStart;
+		const float SegmentLengthSquared = SegmentVector.SizeSquared();
+		if (SegmentLengthSquared <= KINDA_SMALL_NUMBER)
+		{
+			return FVector::DistSquared(Point, SegmentStart);
+		}
+		const float T = FMath::Clamp(FVector::DotProduct(Point - SegmentStart, SegmentVector) / SegmentLengthSquared, 0.0f, 1.0f);
+		const FVector ClosestPoint = SegmentStart + T * SegmentVector;
+		return FVector::DistSquared(Point, ClosestPoint);
+	}
+}
+
+int32 UAbilityCastComponent::TryCastLineAbilityTowardLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation)
+{
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastLineAbilityTowardLocation: entry, Ability=%s"),
+		*UEnum::GetValueAsString(Ability));
+
+	UAbilityCooldownComponent* CooldownComponent = ResolvePassedCastGates(Ability, TEXT("TryCastLineAbilityTowardLocation"));
+	if (!CooldownComponent)
+	{
+		return -1;
+	}
+
+	const AActor* Owner = GetOwner(); // non-null - ResolvePassedCastGates already checked
+	const FVector OwnerLocation = Owner->GetActorLocation();
+	const FVector LineEnd = ComputeLineEndLocation(
+		OwnerLocation, DesiredTargetLocation, GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range), Owner->GetActorForwardVector());
+
+	if (!CooldownComponent->TryStartCooldown(Ability))
+	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastLineAbilityTowardLocation: exit, Ability=%s TryStartCooldown failed unexpectedly"),
+			*UEnum::GetValueAsString(Ability));
+		return -1;
+	}
+
+	const float WidthSquared = FMath::Square(LineHitWidthUnits);
+	const int32 AffectedCount = ApplyControlToEnemiesInShape(Ability, [&OwnerLocation, &LineEnd, WidthSquared](const FVector& EnemyLocation)
+	{
+		return ComputeDistanceSquaredFromSegment(EnemyLocation, OwnerLocation, LineEnd) <= WidthSquared;
+	});
+
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastLineAbilityTowardLocation: exit, Ability=%s AffectedCount=%d"),
+		*UEnum::GetValueAsString(Ability), AffectedCount);
+	return AffectedCount;
 }
 
 UAbilityCooldownComponent* UAbilityCastComponent::ResolvePassedCastGates(EAbilitySlot Ability, const TCHAR* CallerLogContext) const
@@ -247,4 +314,25 @@ AEnemyBase* UAbilityCastComponent::FindNearestValidTarget() const
 		NearestDistSquared = DistSquared;
 	}
 	return Nearest;
+}
+
+int32 UAbilityCastComponent::ApplyControlToEnemiesInShape(EAbilitySlot Ability, TFunctionRef<bool(const FVector& EnemyLocation)> IsEnemyInShape)
+{
+	int32 AffectedCount = 0;
+	for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
+	{
+		AEnemyBase* Enemy = *It;
+		if (!IsEnemyInShape(Enemy->GetActorLocation()))
+		{
+			continue;
+		}
+		const bool bWasFreshlyTargetable = (Enemy->GetEnemyState() == EEnemyState::Alert || Enemy->GetEnemyState() == EEnemyState::Attack);
+		Enemy->ReceiveControl(Ability);
+		if (bWasFreshlyTargetable)
+		{
+			++AffectedCount;
+			OnAbilityCastApplied.Broadcast(Ability, Enemy);
+		}
+	}
+	return AffectedCount;
 }

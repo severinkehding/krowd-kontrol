@@ -61,6 +61,12 @@ struct FAbilityData
 	// instead of running its full duration; see AEnemyBase::ReceiveControl's
 	// early-wake branch.
 	bool bWakesEarlyOnOtherAbilityHit = false;
+
+	// True only for Root: a target Controlled by this ability keeps its own attack
+	// behaviour (telegraph/tell/fire) running exactly as it would in Attack, instead
+	// of having it silenced the instant Controlled begins - see
+	// AEnemyBase::IsAttackBehaviorActive().
+	bool bAllowsAttackWhileControlled = false;
 };
 
 namespace AbilityData

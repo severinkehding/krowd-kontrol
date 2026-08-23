@@ -60,8 +60,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
 	bool TryCastAbility(EAbilitySlot Ability);
 
-	// Concrete throw distances per EAbilityRange tier, consulted only by
-	// TryCastThrownAbilityAtLocation (ThrownCircle abilities' cursor-clamp) - unlike
+	// Concrete throw distances per EAbilityRange tier, consulted by both
+	// TryCastThrownAbilityAtLocation (ThrownCircle abilities' cursor-clamp) and
+	// TryCastLineAbilityTowardLocation (Line abilities' fixed-length cast) - unlike
 	// AbilityData's Colour/Duration/TargetType, the OG GDD's ability table only locks
 	// the tier LABEL per ability (Short/Medium/Long), not concrete world units, so
 	// these are placeholder-tunable EditDefaultsOnly values (same "open playtesting
@@ -83,6 +84,13 @@ public:
 	// EditDefaultsOnly for the same placeholder-tunable reason as the ranges above.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Thrown Range", meta = (ClampMin = "0.0"))
 	float ThrownCircleLandingRadiusUnits = 400.0f;
+
+	// Perpendicular hit-width for Line-target abilities (Root, issue #255) - an enemy
+	// within this distance of the Owner->line-end segment is considered "in the line's
+	// path". Placeholder-tunable EditDefaultsOnly, same "open playtesting question"
+	// rationale CastRangeUnits/ThrownCircleLandingRadiusUnits above already document.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability Cast|Line", meta = (ClampMin = "0.0"))
+	float LineHitWidthUnits = 150.0f;
 
 	// Cursor-aimed multi-target counterpart to TryCastAbility(), for
 	// EAbilityTargetType::ThrownCircle abilities (Stun/Sleep - see AbilityData.h).
@@ -127,6 +135,40 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
 	FVector GetClampedThrowLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation) const;
 
+	// Pure line-endpoint math for Line-target abilities (Root, issue #255). Unlike
+	// ComputeClampedThrowLocation's "clamp to at most MaxRangeUnits" semantics (used
+	// for ThrownCircle's click-to-land targeting), a Line ability's shot always
+	// extends the full LineRangeUnits in the aimed direction - the AC says "extending
+	// to the Long range tier", not "up to". FallbackDirection is used when
+	// DesiredTargetLocation is coincident with OwnerLocation (direction otherwise
+	// undefined) - callers pass the owner's current forward vector, mirroring
+	// ComputeFacingRotation's own degenerate-cursor guard for the same edge case.
+	static FVector ComputeLineEndLocation(const FVector& OwnerLocation, const FVector& DesiredTargetLocation, float LineRangeUnits, const FVector& FallbackDirection);
+
+	// Instance-level convenience wrapper around ComputeLineEndLocation, using this
+	// component's own GetOwner() location/forward vector and
+	// GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range) - the exact endpoint
+	// TryCastLineAbilityTowardLocation will use. Exposed so UAbilityPressHoldComponent's
+	// Line indicator preview matches the real cast exactly. Returns DesiredTargetLocation
+	// unchanged if GetOwner() is null.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	FVector GetLineEndLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation) const;
+
+	// Cursor-aimed line-cast counterpart to TryCastThrownAbilityAtLocation(), for
+	// EAbilityTargetType::Line abilities (Root - see AbilityData.h). DesiredTargetLocation
+	// sets the aim direction only; the line always extends the full tier distance
+	// (GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range)) from this actor's
+	// location - see ComputeLineEndLocation's own doc comment for why this differs from
+	// the ThrownCircle clamp. Every AEnemyBase within LineHitWidthUnits of the
+	// Owner->line-end segment is affected (issue #255: Root pierces, it does not stop at
+	// the first hit - see the plan/PR body for the design rationale). Same gate order and
+	// "always consumes the cooldown once gates pass" contract as
+	// TryCastThrownAbilityAtLocation (a fired line commits the moment it's fired).
+	// Returns the number of enemies actually affected (0 is a valid, cooldown-consuming
+	// cast that hit nothing); returns -1 if any gate failed and nothing was changed.
+	UFUNCTION(BlueprintCallable, Category = "Ability Cast")
+	int32 TryCastLineAbilityTowardLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation);
+
 	// Fires exactly once per successful TryCastAbility call, after ReceiveControl has
 	// already been applied to TargetEnemy.
 	UPROPERTY(BlueprintAssignable, Category = "Ability Cast")
@@ -159,4 +201,12 @@ private:
 	// Maps an EAbilityRange tier to the matching ShortThrowRangeUnits /
 	// MediumThrowRangeUnits / LongThrowRangeUnits property.
 	float GetThrowRangeUnitsForTier(EAbilityRange Range) const;
+
+	// Shared AoE-sweep body for TryCastThrownAbilityAtLocation and
+	// TryCastLineAbilityTowardLocation - both call ReceiveControl(Ability) on every
+	// AEnemyBase for which IsEnemyInShape(EnemyLocation) returns true, counting and
+	// broadcasting only the ones that were Alert/Attack immediately beforehand. The two
+	// callers differ only in shape (circle-around-a-point vs strip-around-a-segment),
+	// passed in as IsEnemyInShape.
+	int32 ApplyControlToEnemiesInShape(EAbilitySlot Ability, TFunctionRef<bool(const FVector& EnemyLocation)> IsEnemyInShape);
 };

@@ -240,6 +240,28 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 	InterruptedRunner->AdvanceAttackTelegraph(InterruptedRunner->AttackTelegraphSeconds);
 	TestEqual(TEXT("The interrupted drain-ray should never fire"), InterruptedListener->CallCount, 0);
 
+	// (l-root) issue #255: unlike Snare above, Root-triggered Controlled does NOT
+	// clear the attack tell or stop the telegraph - the drain-ray still fires once
+	// (bDrainFiredForCurrentAttack still latches), but firing itself is not silenced
+	// by entering Controlled, since AbilityData::Get(Root).bAllowsAttackWhileControlled.
+	ARunnerEnemy* RootedRunner = NewObject<ARunnerEnemy>();
+	AdvanceToAttack(RootedRunner, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-root) Attack tell should be visibly on before Root interrupts"),
+		RootedRunner->AttackTellLightComponent->Intensity > 0.0f);
+	RootedRunner->ReceiveControl(EAbilitySlot::Root);
+	TestEqual(TEXT("(l-root) Runner should be Controlled after Root"),
+		static_cast<uint8>(RootedRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestTrue(TEXT("(l-root) Attack tell should stay on - Root does not clear it"),
+		RootedRunner->AttackTellLightComponent->Intensity > 0.0f);
+	UDrainRayFiredTestListener* RootedListener = NewObject<UDrainRayFiredTestListener>();
+	RootedRunner->OnRunnerDrainFired.AddDynamic(RootedListener, &UDrainRayFiredTestListener::HandleDrainRayFired);
+	RootedRunner->AdvanceAttackTelegraph(RootedRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-root) The drain-ray should still fire once while Controlled by Root, unlike Snare"),
+		RootedListener->CallCount, 1);
+	RootedRunner->AdvanceAttackTelegraph(RootedRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-root) The one-shot guard should still prevent a second drain-ray while Rooted"),
+		RootedListener->CallCount, 1);
+
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
 	// MovementSpeed (950.0f), not AEnemyBase's own base default (600.0f) - the direct
 	// proof that issue #122's "per-type speeds are actually read" holds for RU-NNR too.
