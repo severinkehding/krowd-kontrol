@@ -36,16 +36,17 @@ Two connected pieces:
 - Briefing content is data-driven per level (config/data asset), not
   hardcoded C++ strings per map.
 
-### REQ-2: Persistent compact quest tracker (P0) — 🟡 partially implemented
+### REQ-2: Persistent compact quest tracker (P0) — ✅ implemented
 (banked-count line: issue #247/PR #271; suggested-ability line: issue #249/PR #287;
-current-room-state line still open)
+current-room-state line: issue #248/PR #289)
 - A small anchored panel (a corner; think WoW quest tracker scale — must not
   take meaningful screen space away from play) listing the level's live
   objectives with progress, updating in real time off existing events:
   - "Robots penned: 3/8" (from `ATargetZone::OnActorBanked` / room-cleared
     state — the merged banking chain).
-  - Current room state: "Room 2 — 1 robot left" / "DOOR OPEN — move east"
-    (from `ARoomActor::OnRoomClearedStateChanged` + door gating, PR #229).
+  - Current room state: "Room 2 — 1 robot left" / "DOOR OPEN" (from
+    `ARoomActor::OnRoomClearedStateChanged` + door gating, PR #229). No
+    directional cue yet — that's REQ-3, still open.
   - Which ability to use: the tracker names the suggested ability per remaining
     enemy type — colour-matched suggestion when that ability is unlocked
     ("SNIPERS → SLEEP (RMB)"), otherwise the universal fallback

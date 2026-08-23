@@ -15,6 +15,8 @@
 #include "RoomActor.h"
 #include "EnemyType.h"
 #include "PlaceholderCubeActor.h"
+#include "EnemyBaseTestActor.h"
+#include "AbilitySlot.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Tests/LevelStructureTestUtils.h"
 #include "Engine/World.h"
@@ -156,6 +158,77 @@ bool FKrowdKontrolRoomActorFindNearestRoomTest::RunTest(const FString& Parameter
 	// the expected result is unambiguous.
 	TestEqual(TEXT("The AActor overload should delegate to the FVector overload with the same result"),
 		ARoomActor::FindNearestRoom(static_cast<const AActor*>(RoomB), AllRooms), RoomB);
+
+	return true;
+}
+
+// Direct coverage for ARoomActor::GetRemainingEnemyCount() (issue #248 test-coverage
+// follow-up): existing IsRoomCleared() coverage only ever needed to prove the == 0
+// boundary, and its only other exercise anywhere in the suite is incidental - through
+// the quest-tracker widget test, and only ever for a room with exactly two owned
+// enemies counting 2->1->0. This proves the count itself for 3+ enemies, banking one
+// at a time, and the IsActorBeingDestroyed() filter (an owned enemy destroyed rather
+// than banked must still drop out of the count) - the same filter IsRoomCleared()
+// relies on and KrowdKontrolRoomActorDoorGatingTest.cpp's case (5) already proves at
+// the boolean level.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FKrowdKontrolRoomActorRemainingEnemyCountTest,
+	"KrowdKontrol.Unit.RoomActorRemainingEnemyCount",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKrowdKontrolRoomActorRemainingEnemyCountTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+	{
+		return false;
+	}
+
+	ARoomActor* Room = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("ARoomActor should spawn into the test World"), Room))
+	{
+		return false;
+	}
+
+	AEnemyBaseTestActor* EnemyOne = World->SpawnActor<AEnemyBaseTestActor>();
+	AEnemyBaseTestActor* EnemyTwo = World->SpawnActor<AEnemyBaseTestActor>();
+	AEnemyBaseTestActor* EnemyThree = World->SpawnActor<AEnemyBaseTestActor>();
+	if (!TestNotNull(TEXT("First test enemy should spawn"), EnemyOne) ||
+		!TestNotNull(TEXT("Second test enemy should spawn"), EnemyTwo) ||
+		!TestNotNull(TEXT("Third test enemy should spawn"), EnemyThree))
+	{
+		return false;
+	}
+	Room->AddOwnedEnemy(EnemyOne);
+	Room->AddOwnedEnemy(EnemyTwo);
+	Room->AddOwnedEnemy(EnemyThree);
+
+	TestEqual(TEXT("Remaining count should start at 3 with three owned, un-Banked enemies"),
+		Room->GetRemainingEnemyCount(), 3);
+
+	const FVector ZeroDistanceLocation(0.0f, 0.0f, 0.0f);
+	EnemyOne->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	EnemyOne->ReceiveControl(EAbilitySlot::Stun);        // Alert -> Controlled
+	EnemyOne->TransitionToBanked();                      // Controlled -> Banked
+
+	TestEqual(TEXT("Remaining count should drop to 2 after one owned enemy banks"),
+		Room->GetRemainingEnemyCount(), 2);
+
+	// An owned enemy destroyed (not banked) must also drop out of the count - the same
+	// IsActorBeingDestroyed() filter IsRoomCleared() relies on.
+	World->DestroyActor(EnemyTwo);
+
+	TestEqual(TEXT("Remaining count should drop to 1 after a second owned enemy is destroyed rather than banked"),
+		Room->GetRemainingEnemyCount(), 1);
+
+	EnemyThree->TickCheckDetection(ZeroDistanceLocation);
+	EnemyThree->ReceiveControl(EAbilitySlot::Stun);
+	EnemyThree->TransitionToBanked();
+
+	TestEqual(TEXT("Remaining count should reach 0 once the last owned enemy banks"),
+		Room->GetRemainingEnemyCount(), 0);
+	TestTrue(TEXT("IsRoomCleared() should agree with GetRemainingEnemyCount() reaching 0"),
+		Room->IsRoomCleared());
 
 	return true;
 }

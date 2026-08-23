@@ -140,6 +140,12 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// ARoomActor::OnRoomClearedStateChanged reaches the widget's room-state line.
 	friend class FKrowdKontrolQuestTrackerWidgetRoomStateTest;
 
+	// Same grant, for the RoomActor-level GetRemainingEnemyCount() test (issue #248
+	// test-coverage follow-up), which drives plain AEnemyBaseTestActors through
+	// Idle->Alert->Controlled->Banked to prove the count itself, not just the
+	// == 0 boundary IsRoomCleared() coverage already exercises.
+	friend class FKrowdKontrolRoomActorRemainingEnemyCountTest;
+
 public:
 	AEnemyBase();
 

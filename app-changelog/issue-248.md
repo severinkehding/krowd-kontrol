@@ -90,6 +90,48 @@ engine/dimensionality, networking, or `app`-tracking invariant is touched.
 
 ---
 
+## Review follow-up (self-fix pass, 2026-08-23)
+
+Addressed every finding from the code-review/test-coverage/docs-impact review of PR
+#289:
+
+- **CRITICAL** — `FKrowdKontrolQuestTrackerWidgetRoomStateTest` only ever spawned one
+  `ARoomActor`, so `Rooms.Sort()`'s ascending-X chain order was never actually
+  exercised (a 1-element sort is a no-op). Added a second, independent `World` with
+  two rooms spawned in reversed X order, proving focus advances "Room 1" → "Room 2" by
+  X position (not spawn order) once Room 1 clears.
+- **HIGH** — the zero-`ARoomActor` blank-text branch had no assertion. Added one to
+  the main test's pre-existing case (1), whose `World` already has zero rooms.
+- **HIGH** — `RoomStateText`'s chrome-colour compliance (Hard Invariant 3) was
+  untestable: the room-state test class wasn't a friend of `UQuestTrackerWidget` and
+  no accessor existed for this line. Added `friend class
+  FKrowdKontrolQuestTrackerWidgetRoomStateTest;` to `QuestTrackerWidget.h` (mirroring
+  the existing `FKrowdKontrolQuestTrackerWidgetTest` grant) and asserted directly
+  against `HUDChromeColours::GetText()`, matching the main test's case (6) pattern.
+- **HIGH** (docs) — `docs/prd-mission-briefing-tracker.md` REQ-2 still read "🟡
+  partially implemented ... current-room-state line still open" and its example
+  showed a `"DOOR OPEN — move east"` directional cue that's actually REQ-3, still
+  open. Flipped to "✅ implemented", added the issue #248/PR #289 citation, and
+  stripped the direction-cue text with a one-line pointer to REQ-3.
+- **MEDIUM** — `ARoomActor::GetRemainingEnemyCount()` had no direct `ARoomActor`-level
+  test (only incidental 2→1→0 coverage via the widget test). Added
+  `FKrowdKontrolRoomActorRemainingEnemyCountTest` to `KrowdKontrolRoomActorTest.cpp`:
+  3 owned enemies, one banked, one destroyed (not banked, proving the
+  `IsActorBeingDestroyed()` filter), one banked to reach 0. Required its own
+  `friend class FKrowdKontrolRoomActorRemainingEnemyCountTest;` grant on
+  `EnemyBase.h` (same per-test-class pattern this issue's own pass-1 deviation
+  already used) since `KrowdKontrolRoomActorTest.cpp` had never previously needed
+  private `AEnemyBase` access.
+- **LOW** — `QuestTrackerWidget.h`'s class-level doc comment still described the
+  room-state line as unbuilt future work. Updated the trailing sentence to describe
+  issue #248 as delivered, matching the file's existing per-issue narrative style.
+
+Validation: full rebuild (`UnrealBuildTool KrowdKontrolEditor Win64 Development`) —
+`Result: Succeeded`. `harness/run_ue_automation.sh "KrowdKontrol.Unit."` —
+`UE_AUTOMATION_RESULT passed=101 total=101`.
+
+---
+
 The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
 its matching `app-source-tracked/` copy are the tracked-repo record of that change,
 per D-009. Not a substitute for reading `app-source-tracked/` directly.

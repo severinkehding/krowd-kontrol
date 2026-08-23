@@ -34,14 +34,16 @@ class ARoomActor;
 // OnLevelBegin never re-fires. This widget builds its own UI tree in C++ (no Widget
 // Blueprint asset), mirroring UEnergyMeterWidget/UOnScreenPromptWidget. Issue #249
 // added a second line naming the ability that best counters the enemies still alive
-// in the level - a further "current room state" line remains a separate follow-up
-// issue from the same PRD that attaches to this same widget class.
+// in the level, and issue #248 added a third line showing the state of the room the
+// player is currently working through (chain order by X, "DOOR OPEN" once every room
+// clears) - see RefreshRoomStateDisplay()'s own comment for the full contract.
 UCLASS()
 class KROWDKONTROL_API UQuestTrackerWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
 	friend class FKrowdKontrolQuestTrackerWidgetTest;
+	friend class FKrowdKontrolQuestTrackerWidgetRoomStateTest;
 
 public:
 	// Read-only accessors for what's currently displayed/tracked - used by the
