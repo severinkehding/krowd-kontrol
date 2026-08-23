@@ -164,40 +164,6 @@ def optional_step(name: str, marker: str) -> bool:
     return True
 
 
-def run_counted_rung(name: str, marker: str) -> int | None:
-    """A rung whose command's output is checked against a `{name}_count_pattern`.
-
-    `unit` and `pie` are the same shape: run the configured command, fail the gate on a
-    non-zero exit, then require a non-zero test count if a count pattern is configured
-    (ZERO IS NOT A PASS - a suite that discovered nothing exits 0 and looks perfect; both
-    independent builds of this file added this guard unprompted). Returns a return code
-    for `main()` to return early on failure, or None to continue past this rung.
-    """
-    cmd = CONFIG.get(name, "").strip()
-    if not cmd:
-        optional_step(name, marker)
-        return None
-
-    rc, out = run(name, cmd)
-    if rc != 0:
-        return fail(name, out)
-
-    pattern = CONFIG.get(f"{name}_count_pattern", "").strip()
-    if not pattern:
-        print(f"{marker}_PASSED tests=unknown (no {name}_count_pattern set - a passing "
-              f"suite and an absent one look identical here)", flush=True)
-        return None
-
-    m = re.search(pattern, out)
-    ran = int(m.group(1)) if m else 0
-    if ran == 0:
-        return fail(name, f"{marker}_ERROR: the runner reported 0 tests - a suite that "
-                           f"ran nothing is not a suite that passed. If the count is "
-                           f"real, fix {name}_count_pattern")
-    print(f"{marker}_PASSED tests={ran}", flush=True)
-    return None
-
-
 def main() -> int:
     print(f"HARNESS_START mode={'quick' if QUICK else 'full'} driver={CONFIG.get('driver')}",
           flush=True)
@@ -213,9 +179,27 @@ def main() -> int:
         print("STATIC_OK", flush=True)
 
     # --- 2. unit -------------------------------------------------------------
-    rc = run_counted_rung("unit", "UNIT")
-    if rc is not None:
-        return rc
+    unit_cmd = CONFIG.get("unit", "").strip()
+    if not unit_cmd:
+        optional_step("unit", "UNIT")
+    else:
+        rc, out = run("unit", unit_cmd)
+        if rc != 0:
+            return fail("unit", out)
+        pattern = CONFIG.get("unit_count_pattern", "").strip()
+        if pattern:
+            m = re.search(pattern, out)
+            ran = int(m.group(1)) if m else 0
+            # ZERO IS NOT A PASS. A suite that discovered nothing exits 0 and looks
+            # perfect; both independent builds of this file added this guard unprompted.
+            if ran == 0:
+                return fail("unit", "UNIT_ERROR: the runner reported 0 tests - a suite "
+                                    "that ran nothing is not a suite that passed. If the "
+                                    "count is real, fix unit_count_pattern")
+            print(f"UNIT_PASSED tests={ran}", flush=True)
+        else:
+            print("UNIT_PASSED tests=unknown (no unit_count_pattern set - a passing "
+                  "suite and an absent one look identical here)", flush=True)
 
     # --- 2b. pie ---------------------------------------------------------------
     # KrowdKontrol.PIE.* (issue #236) exercises real begin-play/tick/PIE-session paths
@@ -223,9 +207,26 @@ def main() -> int:
     # after `unit`, in both --quick and full mode, so a real-PIE-session regression
     # fails the gate the same way a unit failure does today - one definition of green,
     # not a separate opt-in check that can be skipped (issue #237).
-    rc = run_counted_rung("pie", "PIE")
-    if rc is not None:
-        return rc
+    pie_cmd = CONFIG.get("pie", "").strip()
+    if not pie_cmd:
+        optional_step("pie", "PIE")
+    else:
+        rc, out = run("pie", pie_cmd)
+        if rc != 0:
+            return fail("pie", out)
+        pattern = CONFIG.get("pie_count_pattern", "").strip()
+        if pattern:
+            m = re.search(pattern, out)
+            ran = int(m.group(1)) if m else 0
+            # ZERO IS NOT A PASS - same guard as `unit`, for the same reason.
+            if ran == 0:
+                return fail("pie", "PIE_ERROR: the runner reported 0 tests - a suite "
+                                    "that ran nothing is not a suite that passed. If the "
+                                    "count is real, fix pie_count_pattern")
+            print(f"PIE_PASSED tests={ran}", flush=True)
+        else:
+            print("PIE_PASSED tests=unknown (no pie_count_pattern set - a passing "
+                  "suite and an absent one look identical here)", flush=True)
 
     if QUICK:
         # The subset an implementing node runs on itself. A STRICT subset: never a check
