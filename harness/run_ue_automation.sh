@@ -83,9 +83,20 @@ REPORT_DIR_WIN="$(wslpath -w "$REPORT_DIR")"
 # -nullrhi: no rendering, fine for Smoke/Unit tests (pure logic, no world). A future
 # Screenshot.* test group needs real rendering and must NOT pass -nullrhi — branch on
 # $FILTER here once that group exists rather than editing this unconditionally.
+#
+# -DisablePlugins=ModelContextProtocol: this headless process never needs a live MCP
+# server, and the project enables the plugin unconditionally (KrowdKontrol.uproject),
+# so without this flag any MCP client's routine probe (e.g. a "server/discover" call
+# to a method this server has never supported) gets logged at Error severity
+# (ModelContextProtocolServer.cpp's CompleteWithError) and the Automation Framework
+# attributes any Error-severity log line to whichever test is currently running
+# (AutomationTest.cpp's GLog output device), failing an unrelated test. See issue
+# #297. Leaves interactive Editor sessions (and their real MCP connections) untouched
+# — this only affects the one-off process this script launches.
 "$UE_CMD" "$UPROJECT_WIN" \
   -ExecCmds="Automation RunTests $FILTER; Quit" \
   -unattended -nopause -nosplash -nullrhi \
+  -DisablePlugins=ModelContextProtocol \
   -testexit="Automation Test Queue Empty" \
   -ReportOutputPath="$REPORT_DIR_WIN" \
   -log >/dev/null 2>&1
