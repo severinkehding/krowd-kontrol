@@ -258,10 +258,37 @@ public:
 		float GroundPlaneZ,
 		FVector& OutWorldPosition);
 
+	// Yaw-only facing math (issue #263, PRD "Cursor & Aiming Foundation" REQ-2) -
+	// Tick() below feeds this pawn's own GetActorLocation() and a live
+	// GetCursorWorldPosition() result into this function each frame.
+	// OutFacingRotation.Pitch/.Roll are always 0.0f, matching this pawn's flat
+	// top-down layout - only yaw ever changes. Returns false (OutFacingRotation
+	// left unchanged) when ActorLocation and CursorWorldPosition are coincident on
+	// the X/Y plane (the cursor deprojects to directly under/over the pawn) - yaw
+	// is undefined there. Takes plain FVector data rather than reading
+	// GetActorLocation()/calling GetCursorWorldPosition() itself, so
+	// KrowdKontrol.Unit.FlatCamera3DPrototypePawnFacingRotationMath can assert
+	// exact yaw results without a live viewport - same rationale
+	// IntersectRayWithGroundPlane()'s own comment gives above.
+	static bool ComputeFacingRotation(
+		const FVector& ActorLocation,
+		const FVector& CursorWorldPosition,
+		FRotator& OutFacingRotation);
+
+	// Applies a known cursor world position as this pawn's new facing (issue #263) -
+	// Tick() below is a thin per-frame dispatcher over this method, split out so
+	// KrowdKontrol.Unit.FlatCamera3DPrototypePawnFacingTickAppliesRotation can exercise
+	// the real ComputeFacingRotation() -> SetActorRotation() wiring with a fixed cursor
+	// position, without needing a live viewport to reach it through Tick()'s own
+	// GetCursorWorldPosition() call. No-ops (rotation left unchanged) when
+	// ComputeFacingRotation() fails - same degenerate-guard case documented there.
+	void ApplyFacingTowardCursor(const FVector& CursorWorldPosition);
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
+	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 private:

@@ -30,7 +30,8 @@
 
 AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Issue #263: per-tick facing update needs Tick() to actually run each frame.
+	PrimaryActorTick.bCanEverTick = true;
 
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	RootComponent = MeshComponent;
@@ -52,6 +53,13 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->bUsePawnControlRotation = false;
+	// Absolute rotation (PR #279 review, CONFIRMED finding): the facing system
+	// rotates the whole actor every tick, and a boom inheriting that yaw would
+	// orbit the camera - which the cursor deprojects through, creating a
+	// self-feeding spin (pawn turns -> camera orbits -> cursor world-point
+	// shifts -> pawn turns again). A top-down camera must never yaw with the
+	// pawn; absolute rotation pins it.
+	CameraBoom->SetUsingAbsoluteRotation(true);
 
 	TopDownCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TopDownCamera"));
 	TopDownCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
@@ -159,6 +167,26 @@ bool AFlatCamera3DPrototypePawn::IntersectRayWithGroundPlane(
 	return true;
 }
 
+bool AFlatCamera3DPrototypePawn::ComputeFacingRotation(
+	const FVector& ActorLocation,
+	const FVector& CursorWorldPosition,
+	FRotator& OutFacingRotation)
+{
+	const FVector Delta = CursorWorldPosition - ActorLocation;
+	// Real gameplay-units dead zone (PR #279 review): KINDA_SMALL_NUMBER is
+	// ~0.1mm - functionally no guard, letting sub-pixel mouse movement near the
+	// pawn's centre flip the yaw up to 180 degrees per frame. 10 units covers
+	// the actual degenerate zone under the pawn's own body.
+	constexpr float FacingDeadZoneRadiusUnits = 10.0f;
+	if (Delta.SizeSquared2D() <= FMath::Square(FacingDeadZoneRadiusUnits))
+	{
+		return false;
+	}
+
+	OutFacingRotation = FRotator(0.0f, Delta.Rotation().Yaw, 0.0f);
+	return true;
+}
+
 #if WITH_EDITOR
 void AFlatCamera3DPrototypePawn::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
@@ -192,6 +220,34 @@ void AFlatCamera3DPrototypePawn::SetupPlayerInputComponent(UInputComponent* Play
 	PlayerInputComponent->BindAction(TEXT("CastRoot"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseRootAbility);
 	PlayerInputComponent->BindAction(TEXT("CastFear"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseFearAbility);
 	PlayerInputComponent->BindAction(TEXT("CastSnare"), IE_Released, this, &AFlatCamera3DPrototypePawn::ReleaseSnareAbility);
+}
+
+void AFlatCamera3DPrototypePawn::ApplyFacingTowardCursor(const FVector& CursorWorldPosition)
+{
+	FRotator FacingRotation;
+	if (ComputeFacingRotation(GetActorLocation(), CursorWorldPosition, FacingRotation))
+	{
+		SetActorRotation(FacingRotation);
+	}
+}
+
+void AFlatCamera3DPrototypePawn::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	// Facing must respect the level-fail freeze (PR #279 review): DisableInput
+	// only silences the input component, and this path is tick-driven - without
+	// this gate the incapacitated robot keeps swiveling to follow the mouse.
+	if (LevelFailComponent && LevelFailComponent->HasLevelFailed())
+	{
+		return;
+	}
+
+	FVector CursorWorldPosition;
+	if (GetCursorWorldPosition(CursorWorldPosition))
+	{
+		ApplyFacingTowardCursor(CursorWorldPosition);
+	}
 }
 
 void AFlatCamera3DPrototypePawn::MoveForward(float Value)
