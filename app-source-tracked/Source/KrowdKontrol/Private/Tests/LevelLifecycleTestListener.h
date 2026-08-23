@@ -5,8 +5,8 @@
 // Test-only listener for ULevelLifecycleSubsystem::OnLevelBegin/OnLevelClear/
 // OnRunComplete (issues #169, #176). Dynamic multicast delegates only bind
 // UFUNCTIONs via AddDynamic, not a capturing lambda - mirrors UWaveSpawnerTestListener
-// (also one listener class serving multiple delegates off the same source). Used only
-// by KrowdKontrolLevelLifecycleSubsystemTest.cpp.
+// (also one listener class serving multiple delegates off the same source). Shared
+// across every KrowdKontrol.Unit.* test that needs to observe these three delegates.
 UCLASS()
 class ULevelLifecycleTestListener : public UObject
 {
