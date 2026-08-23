@@ -20,6 +20,7 @@
 #include "TargetZone.h"
 #include "TrooperEnemy.h"
 #include "RunnerEnemy.h"
+#include "BomberEnemy.h"
 #include "EnemyType.h"
 #include "AbilitySlot.h"
 #include "ReservedGameplayColours.h"
@@ -122,6 +123,19 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	// independent.
 	TrooperMarker->SetActorLocation(FVector(5000.f, 5000.f, 0.f));
 
+	// Fourth marker (B0_0MR, countered by Fear/Orange) - issue #253's acceptance
+	// criterion: a Fear-controlled enemy (the new flee-flavour Controlled state) still
+	// banks when delivered to its own type-matched zone, proving the new movement
+	// flavour doesn't disturb the herd/bank chain. Moved clear of every other marker
+	// (default-location Marker/SecondMarker and TrooperMarker at (5000,5000,0)) for
+	// the same co-location reason TrooperMarker's own comment documents above.
+	AActor* FearMarker = Room->AddTargetZone(EEnemyType::B0_0MR);
+	if (!TestNotNull(TEXT("Fear marker should spawn"), FearMarker))
+	{
+		return false;
+	}
+	FearMarker->SetActorLocation(FVector(5000.f, -5000.f, 0.f));
+
 	Room->FinishSpawning(FTransform::Identity);
 
 	ATargetZone* BankingZone = FindAttachedZone(Marker);
@@ -147,6 +161,14 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Trooper banking zone should be colour-tagged Teal for a TR_UPR marker"),
 		TrooperBankingZone->ZoneColourTag, ReservedGameplayColours::GetTealTag());
+
+	ATargetZone* FearBankingZone = FindAttachedZone(FearMarker);
+	if (!TestNotNull(TEXT("Fear marker should have a self-healed ATargetZone attached via BeginPlay()"), FearBankingZone))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Fear banking zone should be colour-tagged Orange for a B0_0MR marker"),
+		FearBankingZone->ZoneColourTag, ReservedGameplayColours::GetOrangeTag());
 
 	// Calling EnsureBankingZonesWired() a second time must not double-spawn, for
 	// either marker.
@@ -243,6 +265,28 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("A controlled Trooper overlapping its own TR_UPR zone should reach Banked (issue #242)"),
 		static_cast<uint8>(BankableTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
+
+	// Issue #253 acceptance criterion: a Fear-controlled enemy (the new flee-flavour
+	// Controlled state, AEnemyBase::TickFleeMovement) still banks when physically
+	// delivered onto its own B0_0MR-typed zone, proving the new movement flavour
+	// doesn't disturb the herd/bank chain - same "physically deliver, don't simulate
+	// herding" shape every other case in this file already uses (no herding primitive
+	// exists yet).
+	ABomberEnemy* BankableBomber = World->SpawnActor<ABomberEnemy>(
+		FearBankingZone->GetActorLocation() + FVector(1000.f, 0.f, 0.f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Bankable bomber should spawn"), BankableBomber))
+	{
+		return false;
+	}
+	BankableBomber->TickCheckDetection(BankableBomber->GetActorLocation());
+	BankableBomber->ReceiveControl(EAbilitySlot::Fear);
+	TestEqual(TEXT("Bomber should be Controlled before overlapping its zone"),
+		static_cast<uint8>(BankableBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	BankableBomber->SetActorLocation(FearBankingZone->GetActorLocation(), /*bSweep=*/true);
+
+	TestEqual(TEXT("A Fear-controlled Bomber overlapping its own B0_0MR zone should reach Banked (issue #253)"),
+		static_cast<uint8>(BankableBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 
 	return true;
 }

@@ -199,6 +199,117 @@ int32 UAbilityCastComponent::TryCastLineAbilityTowardLocation(EAbilitySlot Abili
 	return AffectedCount;
 }
 
+FVector UAbilityCastComponent::ComputeConeDirection(const FVector& OwnerLocation, const FVector& DesiredTargetLocation, const FVector& FallbackDirection)
+{
+	const FVector Delta = DesiredTargetLocation - OwnerLocation;
+	// Same real-gameplay-units dead zone as ComputeLineEndLocation/ComputeFacingRotation
+	// (PR #279 review) - KINDA_SMALL_NUMBER/GetSafeNormal's default tolerance is
+	// ~0.1mm, functionally no guard against sub-pixel cursor noise near the owner.
+	constexpr float DirectionDeadZoneRadiusUnits = 10.0f;
+	return Delta.SizeSquared() > FMath::Square(DirectionDeadZoneRadiusUnits)
+		? Delta.GetSafeNormal()
+		: FallbackDirection.GetSafeNormal();
+}
+
+bool UAbilityCastComponent::IsPointInCone(const FVector& Point, const FVector& ApexLocation, const FVector& ConeDirection, float HalfAngleDegrees, float RangeUnits)
+{
+	const FVector ToPoint = Point - ApexLocation;
+	if (ToPoint.SizeSquared2D() > FMath::Square(RangeUnits))
+	{
+		return false;
+	}
+	// 2D (X/Y) angle test, matching this codebase's flat-top-down convention (see
+	// ComputeFacingRotation's own SizeSquared2D usage) - a Point exactly at ApexLocation
+	// normalizes to a zero vector, whose dot product with anything is 0, which is < any
+	// realistic CosHalfAngle (cos of half of a sub-360 angle is > 0) - so it's excluded,
+	// a deliberate degenerate-case decision, not an oversight.
+	const FVector ToPointDirection2D = FVector(ToPoint.X, ToPoint.Y, 0.0f).GetSafeNormal();
+	const FVector ConeDirection2D = FVector(ConeDirection.X, ConeDirection.Y, 0.0f).GetSafeNormal();
+	const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(HalfAngleDegrees));
+	return FVector::DotProduct(ToPointDirection2D, ConeDirection2D) >= CosHalfAngle;
+}
+
+FVector UAbilityCastComponent::GetConeDirection(const FVector& DesiredTargetLocation) const
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return DesiredTargetLocation;
+	}
+	return ComputeConeDirection(Owner->GetActorLocation(), DesiredTargetLocation, Owner->GetActorForwardVector());
+}
+
+float UAbilityCastComponent::GetConeRangeUnits(EAbilitySlot Ability) const
+{
+	return GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range);
+}
+
+int32 UAbilityCastComponent::TryCastConeAbilityTowardLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation)
+{
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastConeAbilityTowardLocation: entry, Ability=%s"),
+		*UEnum::GetValueAsString(Ability));
+
+	UAbilityCooldownComponent* CooldownComponent = ResolvePassedCastGates(Ability, TEXT("TryCastConeAbilityTowardLocation"));
+	if (!CooldownComponent)
+	{
+		return -1;
+	}
+
+	const AActor* Owner = GetOwner(); // non-null - ResolvePassedCastGates already checked
+	const FVector OwnerLocation = Owner->GetActorLocation();
+	const FVector ConeDirection = ComputeConeDirection(OwnerLocation, DesiredTargetLocation, Owner->GetActorForwardVector());
+	const float RangeUnits = GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range);
+	const float HalfAngleDegrees = ConeFullAngleDegrees / 2.0f;
+
+	if (!CooldownComponent->TryStartCooldown(Ability))
+	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastConeAbilityTowardLocation: exit, Ability=%s TryStartCooldown failed unexpectedly"),
+			*UEnum::GetValueAsString(Ability));
+		return -1;
+	}
+
+	const int32 AffectedCount = ApplyControlToEnemiesInShape(Ability, [&OwnerLocation, &ConeDirection, HalfAngleDegrees, RangeUnits](const FVector& EnemyLocation)
+	{
+		return IsPointInCone(EnemyLocation, OwnerLocation, ConeDirection, HalfAngleDegrees, RangeUnits);
+	});
+
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastConeAbilityTowardLocation: exit, Ability=%s AffectedCount=%d"),
+		*UEnum::GetValueAsString(Ability), AffectedCount);
+	return AffectedCount;
+}
+
+int32 UAbilityCastComponent::TryCastSelfCircleAbility(EAbilitySlot Ability)
+{
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastSelfCircleAbility: entry, Ability=%s"),
+		*UEnum::GetValueAsString(Ability));
+
+	UAbilityCooldownComponent* CooldownComponent = ResolvePassedCastGates(Ability, TEXT("TryCastSelfCircleAbility"));
+	if (!CooldownComponent)
+	{
+		return -1;
+	}
+
+	const AActor* Owner = GetOwner(); // non-null - ResolvePassedCastGates already checked
+	const FVector OwnerLocation = Owner->GetActorLocation();
+
+	if (!CooldownComponent->TryStartCooldown(Ability))
+	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastSelfCircleAbility: exit, Ability=%s TryStartCooldown failed unexpectedly"),
+			*UEnum::GetValueAsString(Ability));
+		return -1;
+	}
+
+	const float RadiusSquared = FMath::Square(SelfCircleRadiusUnits);
+	const int32 AffectedCount = ApplyControlToEnemiesInShape(Ability, [&OwnerLocation, RadiusSquared](const FVector& EnemyLocation)
+	{
+		return FVector::DistSquared(EnemyLocation, OwnerLocation) <= RadiusSquared;
+	});
+
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastSelfCircleAbility: exit, Ability=%s AffectedCount=%d"),
+		*UEnum::GetValueAsString(Ability), AffectedCount);
+	return AffectedCount;
+}
+
 UAbilityCooldownComponent* UAbilityCastComponent::ResolvePassedCastGates(EAbilitySlot Ability, const TCHAR* CallerLogContext) const
 {
 	// Issue #246: the pre-level briefing card pauses the world while shown, but

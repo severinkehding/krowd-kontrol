@@ -32,17 +32,7 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 	if (bHasCursorTargetLocation && TargetType == EAbilityTargetType::Line)
 	{
 		ShapeSpec.Kind = EAbilityIndicatorShapeKind::Line;
-		FVector OwnerLocation = FVector::ZeroVector;
-		if (AActor* Owner = GetOwner())
-		{
-			OwnerLocation = Owner->GetActorLocation();
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - Line indicator will show at world origin."),
-				*GetNameSafe(this));
-		}
+		const FVector OwnerLocation = GetOwnerLocationOrWarn(TEXT("Line"));
 		ShapeSpec.Origin = OwnerLocation;
 		const FVector LineEnd = (CastComponent ? CastComponent->GetLineEndLocation(Ability, CursorTargetLocation) : CursorTargetLocation);
 		// Degenerate only if LineEnd == OwnerLocation, which can only happen if
@@ -50,6 +40,16 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 		// itself zero - not expected for a spawned actor with a valid rotation.
 		ShapeSpec.FacingRotation = (LineEnd - OwnerLocation).Rotation();
 		ShapeSpec.RangeUnits = FVector::Dist(OwnerLocation, LineEnd);
+	}
+	else if (bHasCursorTargetLocation && TargetType == EAbilityTargetType::Cone)
+	{
+		ShapeSpec.Kind = EAbilityIndicatorShapeKind::Cone;
+		const FVector OwnerLocation = GetOwnerLocationOrWarn(TEXT("Cone"));
+		ShapeSpec.Origin = OwnerLocation;
+		const FVector ConeDirection = (CastComponent ? CastComponent->GetConeDirection(CursorTargetLocation) : (CursorTargetLocation - OwnerLocation));
+		ShapeSpec.FacingRotation = ConeDirection.Rotation();
+		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->GetConeRangeUnits(Ability) : 1200.0f);
+		ShapeSpec.ConeFullAngleDegrees = (CastComponent ? CastComponent->ConeFullAngleDegrees : 75.0f);
 	}
 	else if (bHasCursorTargetLocation)
 	{
@@ -59,6 +59,21 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 		// really reach (issue #257 pass-1 code review finding).
 		ShapeSpec.Origin = (CastComponent ? CastComponent->GetClampedThrowLocation(Ability, CursorTargetLocation) : CursorTargetLocation);
 		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->ThrownCircleLandingRadiusUnits : 400.0f);
+	}
+	else if (TargetType == EAbilityTargetType::SelfCircle)
+	{
+		ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
+		if (AActor* Owner = GetOwner())
+		{
+			ShapeSpec.Origin = Owner->GetActorLocation();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - indicator will show at world origin."),
+				*GetNameSafe(this));
+		}
+		ShapeSpec.RangeUnits = (CastComponent ? CastComponent->SelfCircleRadiusUnits : 400.0f);
 	}
 	else
 	{
@@ -94,9 +109,17 @@ void UAbilityPressHoldComponent::HandleAbilityKeyPressed(EAbilitySlot Ability, b
 		{
 			CastComponent->TryCastLineAbilityTowardLocation(Ability, CursorTargetLocation);
 		}
+		else if (bHasCursorTargetLocation && TargetType == EAbilityTargetType::Cone)
+		{
+			CastComponent->TryCastConeAbilityTowardLocation(Ability, CursorTargetLocation);
+		}
 		else if (bHasCursorTargetLocation)
 		{
 			CastComponent->TryCastThrownAbilityAtLocation(Ability, CursorTargetLocation);
+		}
+		else if (TargetType == EAbilityTargetType::SelfCircle)
+		{
+			CastComponent->TryCastSelfCircleAbility(Ability);
 		}
 		else
 		{
@@ -210,6 +233,18 @@ void UAbilityPressHoldComponent::BeginHoldPreview(EAbilitySlot Ability)
 	{
 		bAbilityHoldPreviewActive[Index] = true;
 	}
+}
+
+FVector UAbilityPressHoldComponent::GetOwnerLocationOrWarn(const TCHAR* ShapeName) const
+{
+	if (const AActor* Owner = GetOwner())
+	{
+		return Owner->GetActorLocation();
+	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("UAbilityPressHoldComponent::HandleAbilityKeyPressed: no Owner on '%s' - %s indicator will show at world origin."),
+		*GetNameSafe(this), ShapeName);
+	return FVector::ZeroVector;
 }
 
 void UAbilityPressHoldComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

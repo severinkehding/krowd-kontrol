@@ -310,6 +310,19 @@ protected:
 	// GetEnemyState() == Attack check.
 	bool IsAttackBehaviorActive() const;
 
+	// True while this enemy's chase movement (TickChaseMovement) should keep running:
+	// always during Alert, and also during Controlled if ControllingAbility is flagged
+	// AbilityData::bAllowsMovementWhileControlled (Snare only - issue #254: Snare slows
+	// but does not freeze). Mirrors IsAttackBehaviorActive()'s shape exactly.
+	bool IsMovementBehaviorActive() const;
+
+	// AbilityData::Get(ControllingAbility).ControlledSpeedMultiplier while Controlled,
+	// 1.0f (full speed) otherwise - TickChaseMovement and every concrete subclass's own
+	// AdvanceXTelegraph consult this instead of a raw DeltaSeconds, so Snare's 50% slow
+	// (or Root's inert 1.0f "full speed while allowed to attack") applies uniformly to
+	// both movement and attack-telegraph timing with one source of truth.
+	float GetControlledSpeedMultiplier() const;
+
 private:
 	// Internal transition-guard logic, never subclass-overridable directly - keeps the
 	// state machine's own invariants (proximity in, no direct state writes) enforced
@@ -333,6 +346,19 @@ private:
 	// closing distance once attack range is reached (REQ-2: no pathfinding, straight-
 	// line only). Private/friend-testable, same shape as TickCheckDetection above.
 	void TickChaseMovement(const FVector& PlayerLocation, float DeltaSeconds);
+
+	// Moves the actor in a straight line away from CasterLocation at
+	// GetEffectiveMovementSpeedUnitsPerSecond() units/second, with no
+	// remaining-distance clamp - fleeing has no destination to overshoot, unlike
+	// TickChaseMovement's toward-player movement. No-op unless CurrentState ==
+	// Controlled and ControllingAbility is flagged
+	// AbilityData::bFleesFromCasterWhileControlled (Fear only - see
+	// AbilityData.h). A CasterLocation exactly coincident with this actor's own
+	// location (degenerate away-direction) is also a no-op, mirroring
+	// TickChaseMovement's own KINDA_SMALL_NUMBER guard, inverted. Private/
+	// friend-testable, same shape as TickChaseMovement above.
+	void TickFleeMovement(const FVector& CasterLocation, float DeltaSeconds);
+
 	void AdvanceToAlert();
 	void AdvanceToAttack();
 

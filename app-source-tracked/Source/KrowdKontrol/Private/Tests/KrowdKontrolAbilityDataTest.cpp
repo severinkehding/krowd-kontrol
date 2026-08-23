@@ -120,7 +120,29 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Sleep should not allow attack while controlled"), Sleep.bAllowsAttackWhileControlled);
 	TestTrue(TEXT("Root should allow attack while controlled"), Root.bAllowsAttackWhileControlled);
 	TestFalse(TEXT("Fear should not allow attack while controlled"), Fear.bAllowsAttackWhileControlled);
-	TestFalse(TEXT("Snare should not allow attack while controlled"), Snare.bAllowsAttackWhileControlled);
+	TestTrue(TEXT("Snare should allow attack while controlled"), Snare.bAllowsAttackWhileControlled);
+
+	// (4c2) issue #253: only Fear flags bFleesFromCasterWhileControlled - a target
+	// Controlled by it actively moves away from the caster instead of standing still.
+	TestFalse(TEXT("Stun should not flee from caster while controlled"), Stun.bFleesFromCasterWhileControlled);
+	TestFalse(TEXT("Sleep should not flee from caster while controlled"), Sleep.bFleesFromCasterWhileControlled);
+	TestFalse(TEXT("Root should not flee from caster while controlled"), Root.bFleesFromCasterWhileControlled);
+	TestTrue(TEXT("Fear bFleesFromCasterWhileControlled should be true"), Fear.bFleesFromCasterWhileControlled);
+	TestFalse(TEXT("Snare should not flee from caster while controlled"), Snare.bFleesFromCasterWhileControlled);
+
+	// (4d) issue #254: only Snare flags bAllowsMovementWhileControlled - it slows
+	// (ControlledSpeedMultiplier) rather than fully immobilizing.
+	TestFalse(TEXT("Stun should not allow movement while controlled"), Stun.bAllowsMovementWhileControlled);
+	TestFalse(TEXT("Sleep should not allow movement while controlled"), Sleep.bAllowsMovementWhileControlled);
+	TestFalse(TEXT("Root should not allow movement while controlled"), Root.bAllowsMovementWhileControlled);
+	TestFalse(TEXT("Fear should not allow movement while controlled"), Fear.bAllowsMovementWhileControlled);
+	TestTrue(TEXT("Snare should allow movement while controlled"), Snare.bAllowsMovementWhileControlled);
+
+	TestEqual(TEXT("Stun ControlledSpeedMultiplier should be the inert 1.0"), Stun.ControlledSpeedMultiplier, 1.0f);
+	TestEqual(TEXT("Sleep ControlledSpeedMultiplier should be the inert 1.0"), Sleep.ControlledSpeedMultiplier, 1.0f);
+	TestEqual(TEXT("Root ControlledSpeedMultiplier should be the inert 1.0 (its allowed attack is unmodified)"), Root.ControlledSpeedMultiplier, 1.0f);
+	TestEqual(TEXT("Fear ControlledSpeedMultiplier should be the inert 1.0"), Fear.ControlledSpeedMultiplier, 1.0f);
+	TestEqual(TEXT("Snare ControlledSpeedMultiplier should be 0.5 (50% slow, issue #254)"), Snare.ControlledSpeedMultiplier, 0.5f);
 
 	// (5) The 5 colours (and their FName tags) are mutually distinct - guards against a
 	// copy-paste that accidentally reuses one colour, or one colour's tag, for two
