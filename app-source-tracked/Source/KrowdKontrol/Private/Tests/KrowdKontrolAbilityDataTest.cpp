@@ -114,6 +114,14 @@ bool FKrowdKontrolAbilityDataTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Fear should not wake early on other-ability hit"), Fear.bWakesEarlyOnOtherAbilityHit);
 	TestFalse(TEXT("Snare should not wake early on other-ability hit"), Snare.bWakesEarlyOnOtherAbilityHit);
 
+	// (4c) issue #255: only Root flags bAllowsAttackWhileControlled - being
+	// Controlled by it does not silence the target's own attack behaviour.
+	TestFalse(TEXT("Stun should not allow attack while controlled"), Stun.bAllowsAttackWhileControlled);
+	TestFalse(TEXT("Sleep should not allow attack while controlled"), Sleep.bAllowsAttackWhileControlled);
+	TestTrue(TEXT("Root should allow attack while controlled"), Root.bAllowsAttackWhileControlled);
+	TestFalse(TEXT("Fear should not allow attack while controlled"), Fear.bAllowsAttackWhileControlled);
+	TestFalse(TEXT("Snare should not allow attack while controlled"), Snare.bAllowsAttackWhileControlled);
+
 	// (5) The 5 colours (and their FName tags) are mutually distinct - guards against a
 	// copy-paste that accidentally reuses one colour, or one colour's tag, for two
 	// abilities.

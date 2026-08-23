@@ -10,6 +10,7 @@
 #include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/AudioComponent.h"
+#include "AbilityData.h"
 
 ABomberEnemy::ABomberEnemy()
 {
@@ -83,8 +84,13 @@ void ABomberEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
 	// Clear the tell on any Controlled-entry interrupt (Alert/Attack -> Controlled),
 	// so a bomber mid-telegraph doesn't keep showing an explosion that
-	// AdvanceAttackTelegraph now guarantees will never fire.
-	AttackTellLightComponent->SetIntensity(0.0f);
+	// AdvanceAttackTelegraph now guarantees will never fire. Root is the one exception
+	// (bAllowsAttackWhileControlled) - see issue #255 - so the tell is deliberately
+	// left alone for it.
+	if (!AbilityData::Get(Ability).bAllowsAttackWhileControlled)
+	{
+		AttackTellLightComponent->SetIntensity(0.0f);
+	}
 
 	if (Ability != EAbilitySlot::Fear)
 	{
@@ -120,7 +126,7 @@ void ABomberEnemy::OnAttackEntry()
 
 void ABomberEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 {
-	if (bExplodedForCurrentAttack || GetEnemyState() != EEnemyState::Attack)
+	if (bExplodedForCurrentAttack || !IsAttackBehaviorActive())
 	{
 		return;
 	}

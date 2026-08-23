@@ -128,6 +128,15 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 	OnControlledEntry(Ability);
 }
 
+bool AEnemyBase::IsAttackBehaviorActive() const
+{
+	if (CurrentState == EEnemyState::Attack)
+	{
+		return true;
+	}
+	return CurrentState == EEnemyState::Controlled && AbilityData::Get(ControllingAbility).bAllowsAttackWhileControlled;
+}
+
 void AEnemyBase::TransitionToBanked()
 {
 	if (CurrentState != EEnemyState::Controlled)

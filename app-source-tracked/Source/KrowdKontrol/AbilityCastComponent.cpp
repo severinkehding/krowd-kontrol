@@ -132,6 +132,94 @@ FVector UAbilityCastComponent::GetClampedThrowLocation(EAbilitySlot Ability, con
 		Owner->GetActorLocation(), DesiredTargetLocation, GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range));
 }
 
+FVector UAbilityCastComponent::ComputeLineEndLocation(const FVector& OwnerLocation, const FVector& DesiredTargetLocation, float LineRangeUnits, const FVector& FallbackDirection)
+{
+	FVector Direction = (DesiredTargetLocation - OwnerLocation).GetSafeNormal();
+	if (Direction.IsNearlyZero())
+	{
+		Direction = FallbackDirection.GetSafeNormal();
+	}
+	return OwnerLocation + Direction * LineRangeUnits;
+}
+
+FVector UAbilityCastComponent::GetLineEndLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation) const
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return DesiredTargetLocation;
+	}
+	return ComputeLineEndLocation(
+		Owner->GetActorLocation(), DesiredTargetLocation,
+		GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range), Owner->GetActorForwardVector());
+}
+
+namespace
+{
+	// Pure point-to-segment distance-squared math - hand-rolled rather than a call
+	// to an engine math utility this module has never depended on before, matching
+	// this codebase's existing "small, directly-testable, hand-rolled vector math"
+	// precedent (IntersectRayWithGroundPlane, ComputeFacingRotation).
+	float ComputeDistanceSquaredFromSegment(const FVector& Point, const FVector& SegmentStart, const FVector& SegmentEnd)
+	{
+		const FVector SegmentVector = SegmentEnd - SegmentStart;
+		const float SegmentLengthSquared = SegmentVector.SizeSquared();
+		if (SegmentLengthSquared <= KINDA_SMALL_NUMBER)
+		{
+			return FVector::DistSquared(Point, SegmentStart);
+		}
+		const float T = FMath::Clamp(FVector::DotProduct(Point - SegmentStart, SegmentVector) / SegmentLengthSquared, 0.0f, 1.0f);
+		const FVector ClosestPoint = SegmentStart + T * SegmentVector;
+		return FVector::DistSquared(Point, ClosestPoint);
+	}
+}
+
+int32 UAbilityCastComponent::TryCastLineAbilityTowardLocation(EAbilitySlot Ability, const FVector& DesiredTargetLocation)
+{
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastLineAbilityTowardLocation: entry, Ability=%s"),
+		*UEnum::GetValueAsString(Ability));
+
+	UAbilityCooldownComponent* CooldownComponent = ResolvePassedCastGates(Ability, TEXT("TryCastLineAbilityTowardLocation"));
+	if (!CooldownComponent)
+	{
+		return -1;
+	}
+
+	const AActor* Owner = GetOwner(); // non-null - ResolvePassedCastGates already checked
+	const FVector OwnerLocation = Owner->GetActorLocation();
+	const FVector LineEnd = ComputeLineEndLocation(
+		OwnerLocation, DesiredTargetLocation, GetThrowRangeUnitsForTier(AbilityData::Get(Ability).Range), Owner->GetActorForwardVector());
+
+	if (!CooldownComponent->TryStartCooldown(Ability))
+	{
+		UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastLineAbilityTowardLocation: exit, Ability=%s TryStartCooldown failed unexpectedly"),
+			*UEnum::GetValueAsString(Ability));
+		return -1;
+	}
+
+	const float WidthSquared = FMath::Square(LineHitWidthUnits);
+	int32 AffectedCount = 0;
+	for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
+	{
+		AEnemyBase* Enemy = *It;
+		if (ComputeDistanceSquaredFromSegment(Enemy->GetActorLocation(), OwnerLocation, LineEnd) > WidthSquared)
+		{
+			continue;
+		}
+		const bool bWasFreshlyTargetable = (Enemy->GetEnemyState() == EEnemyState::Alert || Enemy->GetEnemyState() == EEnemyState::Attack);
+		Enemy->ReceiveControl(Ability);
+		if (bWasFreshlyTargetable)
+		{
+			++AffectedCount;
+			OnAbilityCastApplied.Broadcast(Ability, Enemy);
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("UAbilityCastComponent::TryCastLineAbilityTowardLocation: exit, Ability=%s AffectedCount=%d"),
+		*UEnum::GetValueAsString(Ability), AffectedCount);
+	return AffectedCount;
+}
+
 UAbilityCooldownComponent* UAbilityCastComponent::ResolvePassedCastGates(EAbilitySlot Ability, const TCHAR* CallerLogContext) const
 {
 	// Issue #246: the pre-level briefing card pauses the world while shown, but

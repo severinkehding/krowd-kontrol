@@ -9,6 +9,7 @@
 #include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/AudioComponent.h"
+#include "AbilityData.h"
 
 ASniperEnemy::ASniperEnemy()
 {
@@ -89,11 +90,15 @@ float ASniperEnemy::GetAttackRangeUnits() const
 void ASniperEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
 	// ReceiveControl only calls this from Alert/Attack, so any in-progress attack
-	// telegraph is aborted the moment Controlled is entered - clear the tell
-	// regardless of which ability triggered this, so a sniper put to sleep/rooted/
-	// etc. mid-telegraph doesn't keep showing a shot that AdvanceAttackTelegraph now
-	// guarantees will never fire.
-	AttackTellLightComponent->SetIntensity(0.0f);
+	// telegraph is normally aborted the moment Controlled is entered - clear the tell
+	// regardless of which ability triggered this, so a sniper put to sleep/etc.
+	// mid-telegraph doesn't keep showing a shot that AdvanceAttackTelegraph now
+	// guarantees will never fire. Root is the one exception (bAllowsAttackWhileControlled)
+	// - see issue #255 - so the tell is deliberately left alone for it.
+	if (!AbilityData::Get(Ability).bAllowsAttackWhileControlled)
+	{
+		AttackTellLightComponent->SetIntensity(0.0f);
+	}
 
 	if (Ability != EAbilitySlot::Sleep)
 	{
@@ -128,7 +133,7 @@ void ASniperEnemy::OnAttackEntry()
 
 void ASniperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 {
-	if (bShotFiredForCurrentAttack || GetEnemyState() != EEnemyState::Attack)
+	if (bShotFiredForCurrentAttack || !IsAttackBehaviorActive())
 	{
 		return;
 	}

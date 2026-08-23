@@ -245,18 +245,41 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	// (l) ReceiveControl interrupting an in-progress attack telegraph clears the tell
 	// light and stops further rays - the state guard in AdvanceAttackTelegraph already
 	// stops the ray itself once Controlled is entered; this proves the visual is
-	// cleared too and that no further ray fires afterward.
+	// cleared too and that no further ray fires afterward. Uses Stun (a full-immobilize
+	// ability, bAllowsAttackWhileControlled == false) - issue #255 makes this no longer
+	// true for Root specifically, see case (l2) below.
 	ATrooperEnemy* InterruptedTrooper = NewObject<ATrooperEnemy>();
 	AdvanceToAttack(InterruptedTrooper, ZeroDistanceLocation);
 	TestTrue(TEXT("Attack tell should be visibly on before the interrupt"),
 		InterruptedTrooper->AttackTellLightComponent->Intensity > 0.0f);
-	InterruptedTrooper->ReceiveControl(EAbilitySlot::Root);
+	InterruptedTrooper->ReceiveControl(EAbilitySlot::Stun);
 	TestEqual(TEXT("Attack tell should be cleared once Controlled interrupts the attack"),
 		InterruptedTrooper->AttackTellLightComponent->Intensity, 0.0f);
 	UTrooperRayFiredTestListener* InterruptedListener = NewObject<UTrooperRayFiredTestListener>();
 	InterruptedTrooper->OnTrooperRayFired.AddDynamic(InterruptedListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
 	InterruptedTrooper->AdvanceAttackTelegraph(InterruptedTrooper->AttackTelegraphSeconds);
 	TestEqual(TEXT("No further ray should fire once interrupted"), InterruptedListener->CallCount, 0);
+
+	// (l2) issue #255: unlike Stun above, Root-triggered Controlled does NOT clear
+	// the attack tell or stop the telegraph - the ray keeps firing exactly as it
+	// would in Attack, since AbilityData::Get(Root).bAllowsAttackWhileControlled.
+	ATrooperEnemy* RootedTrooper = NewObject<ATrooperEnemy>();
+	AdvanceToAttack(RootedTrooper, ZeroDistanceLocation);
+	TestTrue(TEXT("(l2) Attack tell should be visibly on before Root interrupts"),
+		RootedTrooper->AttackTellLightComponent->Intensity > 0.0f);
+	RootedTrooper->ReceiveControl(EAbilitySlot::Root);
+	TestEqual(TEXT("(l2) Trooper should be Controlled after Root"),
+		static_cast<uint8>(RootedTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestTrue(TEXT("(l2) Attack tell should stay on - Root does not clear it"),
+		RootedTrooper->AttackTellLightComponent->Intensity > 0.0f);
+	UTrooperRayFiredTestListener* RootedListener = NewObject<UTrooperRayFiredTestListener>();
+	RootedTrooper->OnTrooperRayFired.AddDynamic(RootedListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
+	RootedTrooper->AdvanceAttackTelegraph(RootedTrooper->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l2) A ray should still fire while Controlled by Root, unlike Stun"),
+		RootedListener->CallCount, 1);
+	RootedTrooper->AdvanceAttackTelegraph(RootedTrooper->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l2) The telegraph should keep re-arming and firing while Rooted, matching normal Attack behaviour"),
+		RootedListener->CallCount, 2);
 
 	// (m) the real Tick() override, not just the friend-called AdvanceAttackTelegraph
 	// helper, must wire the telegraph into the per-frame loop, and the rapid re-arm
@@ -345,7 +368,9 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 		// regression backstop, mirroring KrowdKontrolBomberEnemyTest.cpp case (s).
 		// Also proves TR-UPR's rapid-refire trait (AdvanceAttackTelegraph re-arming)
 		// doesn't somehow trigger a second audio spawn either, by asserting
-		// OnTrooperRayFired's listener count stays 0 after the interrupt.
+		// OnTrooperRayFired's listener count stays 0 after the interrupt. Uses Stun
+		// (full-immobilize, bAllowsAttackWhileControlled == false) - Root no longer
+		// stops the ray/telegraph as of issue #255, see case (l2) above.
 		ATrooperEnemy* ReplayGuardTrooper = AudioWorld->SpawnActor<ATrooperEnemy>();
 		if (TestNotNull(TEXT("ATrooperEnemy should spawn into the replay-guard test World"), ReplayGuardTrooper))
 		{
@@ -356,7 +381,7 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 				UTrooperRayFiredTestListener* ReplayGuardListener = NewObject<UTrooperRayFiredTestListener>();
 				ReplayGuardTrooper->OnTrooperRayFired.AddDynamic(ReplayGuardListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
 
-				ReplayGuardTrooper->ReceiveControl(EAbilitySlot::Root); // interrupts mid-telegraph
+				ReplayGuardTrooper->ReceiveControl(EAbilitySlot::Stun); // interrupts mid-telegraph
 				TestEqual(TEXT("interrupted enemy is Controlled"),
 					static_cast<uint8>(ReplayGuardTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 

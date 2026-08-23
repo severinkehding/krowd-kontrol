@@ -9,6 +9,7 @@
 #include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/AudioComponent.h"
+#include "AbilityData.h"
 
 ATrooperEnemy::ATrooperEnemy()
 {
@@ -93,10 +94,16 @@ float ATrooperEnemy::GetAttackRangeUnits() const
 void ATrooperEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
 	// ReceiveControl only calls this from Alert/Attack, so any in-progress attack
-	// telegraph is aborted the moment Controlled is entered - clear the tell
+	// telegraph is normally aborted the moment Controlled is entered - clear the tell
 	// regardless of which ability triggered this, same rationale ASniperEnemy/
-	// ABomberEnemy's own OnControlledEntry documents.
-	AttackTellLightComponent->SetIntensity(0.0f);
+	// ABomberEnemy's own OnControlledEntry documents. Root (bAllowsAttackWhileControlled)
+	// keeps the in-progress attack tell/telegraph running exactly as Attack would, so it
+	// is deliberately NOT cleared here - see issue #255. Every other ability still
+	// aborts it, same as before.
+	if (!AbilityData::Get(Ability).bAllowsAttackWhileControlled)
+	{
+		AttackTellLightComponent->SetIntensity(0.0f);
+	}
 
 	if (Ability != EAbilitySlot::Root)
 	{
@@ -135,7 +142,7 @@ void ATrooperEnemy::OnAttackEntry()
 
 void ATrooperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 {
-	if (GetEnemyState() != EEnemyState::Attack)
+	if (!IsAttackBehaviorActive())
 	{
 		return;
 	}
@@ -145,8 +152,10 @@ void ATrooperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 		OnTrooperRayFired.Broadcast();
 		// Rapid re-fire (PRD 03: "rapid single-ray attacks") - re-arm immediately for
 		// the next ray instead of latching a fire-once guard like ASniperEnemy/
-		// ABomberEnemy do. GetEnemyState() != Attack above is what actually stops the
-		// loop, once ReceiveControl moves this enemy to Controlled.
+		// ABomberEnemy do. IsAttackBehaviorActive() above is what actually stops the
+		// loop, once ReceiveControl moves this enemy to Controlled - unless the
+		// controlling ability flags bAllowsAttackWhileControlled (Root), in which case
+		// this keeps looping exactly as it would during Attack.
 		RemainingTelegraphSeconds = AttackTelegraphSeconds;
 	}
 }

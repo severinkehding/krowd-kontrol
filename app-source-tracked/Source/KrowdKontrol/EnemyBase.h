@@ -291,6 +291,15 @@ protected:
 	// - see issue #121's SN-1PR/Sleep=7s case).
 	virtual float GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const { return -1.0f; }
 
+	// True while this enemy's attack behaviour (per-type telegraph/tell/fire loop)
+	// should keep running: always during Attack, and also during Controlled if
+	// ControllingAbility is flagged AbilityData::bAllowsAttackWhileControlled (Root
+	// only - issue #255: Root immobilizes movement but does not silence an attack the
+	// enemy was already capable of, unlike Stun/Sleep's full-immobilize flavour).
+	// Concrete subclasses' own AdvanceXTelegraph functions call this instead of a raw
+	// GetEnemyState() == Attack check.
+	bool IsAttackBehaviorActive() const;
+
 private:
 	// Internal transition-guard logic, never subclass-overridable directly - keeps the
 	// state machine's own invariants (proximity in, no direct state writes) enforced

@@ -9,6 +9,7 @@
 #include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/AudioComponent.h"
+#include "AbilityData.h"
 
 ARunnerEnemy::ARunnerEnemy()
 {
@@ -115,10 +116,14 @@ float ARunnerEnemy::GetMovementSpeedUnitsPerSecond() const
 void ARunnerEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
 	// ReceiveControl only calls this from Alert/Attack, so any in-progress attack
-	// telegraph is aborted the moment Controlled is entered - clear the tell
+	// telegraph is normally aborted the moment Controlled is entered - clear the tell
 	// regardless of which ability triggered this, same rationale every sibling's own
-	// OnControlledEntry documents.
-	AttackTellLightComponent->SetIntensity(0.0f);
+	// OnControlledEntry documents. Root is the one exception (bAllowsAttackWhileControlled)
+	// - see issue #255 - so the tell is deliberately left alone for it.
+	if (!AbilityData::Get(Ability).bAllowsAttackWhileControlled)
+	{
+		AttackTellLightComponent->SetIntensity(0.0f);
+	}
 
 	if (Ability != EAbilitySlot::Snare)
 	{
@@ -154,7 +159,7 @@ void ARunnerEnemy::OnAttackEntry()
 
 void ARunnerEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 {
-	if (bDrainFiredForCurrentAttack || GetEnemyState() != EEnemyState::Attack)
+	if (bDrainFiredForCurrentAttack || !IsAttackBehaviorActive())
 	{
 		return;
 	}

@@ -451,6 +451,55 @@ bool FKrowdKontrolAbilityPressHoldComponentTest::RunTest(const FString& Paramete
 			static_cast<uint8>(OutOfCircleEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 	}
 
+	// (j) Cursor-aimed press via Root (issue #255): proves the Line-target branch -
+	// Indicator gets EAbilityIndicatorShapeKind::Line (not CircleAtCursor), Origin is the
+	// Owner's location (not the cursor point - a line starts at the robot), and the cast
+	// actually routes through TryCastLineAbilityTowardLocation (an enemy directly on the
+	// line is Controlled; an equidistant enemy off the line is not).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World)) { return false; }
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+		UAbilityTargetingIndicatorComponent* Indicator = NewObject<UAbilityTargetingIndicatorComponent>(Owner);
+		Indicator->RegisterComponent();
+		UAbilityPressHoldComponent* PressHold = NewObject<UAbilityPressHoldComponent>(Owner);
+		PressHold->RegisterComponent();
+		PressHold->CastComponent = CastComponent;
+		PressHold->IndicatorComponent = Indicator;
+
+		AEnemyBaseTestActor* OnLineEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OffLineEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(j) On-line AEnemyBaseTestActor should spawn"), OnLineEnemy)
+			|| !TestNotNull(TEXT("(j) Off-line AEnemyBaseTestActor should spawn"), OffLineEnemy))
+		{
+			return false;
+		}
+		OnLineEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OffLineEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		// Owner defaults to World origin; cursor straight down +X puts the line along +X.
+		const FVector CursorLocation(500.0f, 0.0f, 0.0f);
+		OnLineEnemy->SetActorLocation(FVector(400.0f, 0.0f, 0.0f)); // on the line, well within LineHitWidthUnits
+		OffLineEnemy->SetActorLocation(FVector(400.0f, CastComponent->LineHitWidthUnits * 3.0f, 0.0f)); // same X, far off the line
+
+		PressHold->HandleAbilityKeyPressed(EAbilitySlot::Root, true, CursorLocation);
+
+		TestEqual(TEXT("(j) Indicator shape kind should be Line when a target location is supplied for a Line-target ability"),
+			static_cast<uint8>(Indicator->CurrentShapeSpec.Kind), static_cast<uint8>(EAbilityIndicatorShapeKind::Line));
+		TestEqual(TEXT("(j) Indicator origin should be the Owner's location, not the cursor point"),
+			Indicator->CurrentShapeSpec.Origin, Owner->GetActorLocation());
+		TestEqual(TEXT("(j) The on-line enemy should be Controlled"),
+			static_cast<uint8>(OnLineEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(j) The off-line enemy should be left untouched"),
+			static_cast<uint8>(OffLineEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
 	return true;
 }
 

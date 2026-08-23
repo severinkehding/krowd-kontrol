@@ -1094,6 +1094,166 @@ bool FKrowdKontrolAbilityCastComponentTest::RunTest(const FString& Parameters)
 			static_cast<uint8>(Enemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 	}
 
+	// (p-root) TryCastLineAbilityTowardLocation via Root (issue #255): in-path vs
+	// off-path - an enemy on the Owner->cursor-direction line within LineHitWidthUnits
+	// is affected, one at the same along-line distance but well beyond LineHitWidthUnits
+	// perpendicular to it is not.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* OnLineEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* OffLineEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(p-root) On-line AEnemyBaseTestActor should spawn"), OnLineEnemy)
+			|| !TestNotNull(TEXT("(p-root) Off-line AEnemyBaseTestActor should spawn"), OffLineEnemy))
+		{
+			return false;
+		}
+		OnLineEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		OffLineEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		const FVector CursorLocation(500.0f, 0.0f, 0.0f);
+		OnLineEnemy->SetActorLocation(FVector(400.0f, 0.0f, 0.0f)); // on the line, well within LineHitWidthUnits
+		OffLineEnemy->SetActorLocation(FVector(400.0f, CastComponent->LineHitWidthUnits * 3.0f, 0.0f)); // same X, far off the line
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, CursorLocation);
+		TestEqual(TEXT("(p-root) Only the on-line enemy should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("(p-root) The on-line enemy should be Controlled"),
+			static_cast<uint8>(OnLineEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(p-root) The off-line enemy should be left untouched"),
+			static_cast<uint8>(OffLineEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (q-root) Piercing/multi-hit (issue #255): three enemies on the same line at
+	// different distances from the Owner, all within LongThrowRangeUnits, are ALL
+	// affected - this is the test that actually proves and documents the "all along
+	// the line, not just first" design decision (see the plan/PR body's rationale:
+	// consistent with every other locked shape hitting everything inside it).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		AEnemyBaseTestActor* NearEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* MidEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* FarEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(q-root) Near AEnemyBaseTestActor should spawn"), NearEnemy)
+			|| !TestNotNull(TEXT("(q-root) Mid AEnemyBaseTestActor should spawn"), MidEnemy)
+			|| !TestNotNull(TEXT("(q-root) Far AEnemyBaseTestActor should spawn"), FarEnemy))
+		{
+			return false;
+		}
+		NearEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		MidEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		FarEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		NearEnemy->SetActorLocation(FVector(200.0f, 0.0f, 0.0f));
+		MidEnemy->SetActorLocation(FVector(600.0f, 0.0f, 0.0f));
+		FarEnemy->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f));
+		const FVector CursorLocation(1200.0f, 0.0f, 0.0f); // aims +X; all 3 enemies within LongThrowRangeUnits
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, CursorLocation);
+		TestEqual(TEXT("(q-root) All three enemies along the line should be affected (piercing)"), AffectedCount, 3);
+		TestEqual(TEXT("(q-root) The near enemy should be Controlled"),
+			static_cast<uint8>(NearEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(q-root) The mid enemy should be Controlled"),
+			static_cast<uint8>(MidEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(q-root) The far enemy should be Controlled"),
+			static_cast<uint8>(FarEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	}
+
+	// (r-root) Range clamp at Long tier (issue #255): Root's line always extends to
+	// exactly LongThrowRangeUnits from the Owner, never further, even if the cursor is
+	// placed well beyond it - mirrors case (n)'s clamp-boundary shape.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		APawn* Owner = World->SpawnActor<APawn>();
+		UAbilityUnlockComponent* UnlockComponent = NewObject<UAbilityUnlockComponent>(Owner);
+		UnlockComponent->RegisterComponent();
+		UnlockComponent->NotifyLevelReached(3); // unlocks Root
+		UAbilityCooldownComponent* CooldownComponent = NewObject<UAbilityCooldownComponent>(Owner);
+		CooldownComponent->RegisterComponent();
+		UAbilityCastComponent* CastComponent = NewObject<UAbilityCastComponent>(Owner);
+		CastComponent->RegisterComponent();
+
+		// Owner defaults to the World origin; cursor placed 10x beyond LongThrowRangeUnits
+		// along +X, so the line's endpoint is exactly (LongThrowRangeUnits, 0, 0).
+		const FVector LineEndPoint(CastComponent->LongThrowRangeUnits, 0.0f, 0.0f);
+		const FVector CursorLocation = LineEndPoint * 10.0f;
+
+		AEnemyBaseTestActor* AtEndpointEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* BeyondEndpointEnemy = World->SpawnActor<AEnemyBaseTestActor>();
+		if (!TestNotNull(TEXT("(r-root) At-endpoint AEnemyBaseTestActor should spawn"), AtEndpointEnemy)
+			|| !TestNotNull(TEXT("(r-root) Beyond-endpoint AEnemyBaseTestActor should spawn"), BeyondEndpointEnemy))
+		{
+			return false;
+		}
+		AtEndpointEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		BeyondEndpointEnemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		AtEndpointEnemy->SetActorLocation(LineEndPoint);
+		BeyondEndpointEnemy->SetActorLocation(LineEndPoint + FVector(CastComponent->LineHitWidthUnits * 2.0f, 0.0f, 0.0f));
+
+		const int32 AffectedCount = CastComponent->TryCastLineAbilityTowardLocation(EAbilitySlot::Root, CursorLocation);
+		TestEqual(TEXT("(r-root) Only the enemy at the clamped endpoint should be affected"), AffectedCount, 1);
+		TestEqual(TEXT("(r-root) The at-endpoint enemy should be Controlled"),
+			static_cast<uint8>(AtEndpointEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+		TestEqual(TEXT("(r-root) The beyond-endpoint enemy should be left untouched"),
+			static_cast<uint8>(BeyondEndpointEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	}
+
+	// (s-root) Pure-math ComputeLineEndLocation cases (issue #255) - no UWorld needed,
+	// same shape as case (n2)'s ComputeClampedThrowLocation cases. Contrasts directly
+	// with ComputeClampedThrowLocation: a Line ability always extends the FULL
+	// LineRangeUnits, never clamped down to the cursor's own (shorter) distance.
+	{
+		const FVector OwnerLocation = FVector::ZeroVector;
+		const float LineRangeUnits = 2000.0f;
+		const FVector FallbackDirection(1.0f, 0.0f, 0.0f);
+
+		// A cursor well within range still extends the line the FULL LineRangeUnits,
+		// NOT clamped down to the cursor's own (shorter) distance.
+		const FVector NearCursor(500.0f, 0.0f, 0.0f);
+		const FVector EndForNearCursor = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, NearCursor, LineRangeUnits, FallbackDirection);
+		TestTrue(TEXT("(s-root) A near cursor should still extend the line to the full LineRangeUnits"),
+			EndForNearCursor.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+
+		// A cursor beyond range: the line still stops at exactly LineRangeUnits, not the
+		// cursor's own (longer) distance.
+		const FVector FarCursor(9000.0f, 0.0f, 0.0f);
+		const FVector EndForFarCursor = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, FarCursor, LineRangeUnits, FallbackDirection);
+		TestTrue(TEXT("(s-root) A far cursor should clamp the line's end to exactly LineRangeUnits"),
+			EndForFarCursor.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+
+		// Degenerate case: DesiredTargetLocation == OwnerLocation, direction undefined -
+		// falls back to FallbackDirection.
+		const FVector DegenerateEnd = UAbilityCastComponent::ComputeLineEndLocation(OwnerLocation, OwnerLocation, LineRangeUnits, FallbackDirection);
+		TestTrue(TEXT("(s-root) A degenerate (coincident) cursor should fall back to FallbackDirection"),
+			DegenerateEnd.Equals(FVector(2000.0f, 0.0f, 0.0f), 0.5f));
+	}
+
 	return true;
 }
 
