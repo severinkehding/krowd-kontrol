@@ -29,6 +29,34 @@ false certainty. If the pause-stall theory is the actual cause, this PR closes t
 issue outright; if not, the logging makes the real cause visible in the very next
 live PIE session instead of requiring a fifth investigation cycle.
 
+**Update (pass-1 validation, E2E holdout):** the workflow's E2E holdout node ran a
+real `StartPIE` session against this PR's diff and directly observed both
+`OnWorldBeginPlay` and `Tick` firing in live PIE — this is independent, first-party
+confirmation (not this PR's own automation, which cannot exercise a real engine tick
+loop or a real `SetGamePaused()` path from `CreateNewMap()` worlds) that named
+suspect #2 (`OnWorldBeginPlay` never reached, so `bHasFiredLevelBegin` stays false)
+is **not** what's blocking the live-fire gap in this session. Combined with
+`IsTickableWhenPaused() = true` addressing named suspect #1 directly, the two
+suspects named in the issue's elimination table are now both accounted for: #1 by a
+code fix, #2 by live-PIE observation ruling it out for the session the holdout ran.
+
+The one piece still outstanding is the issue's literal acceptance criterion: banking
+all six `L_Level01` enemies through a live PIE session and confirming
+`Saved/SaveGames/KrowdKontrol_LevelClearTimes.sav` is actually written. The same E2E
+holdout run could not complete this, not because the fix is unproven, but because the
+holdout's Unreal MCP tooling has no ability-cast/state-mutation primitive that can
+drive an enemy from `Idle` through `Controlled` to `Banked` (`PressKey`/`Click` don't
+reach PIE game input, and no direct-invoke primitive exists for this state machine) —
+a structural gap in the holdout harness itself, not something this PR's diff can
+close, and not new: no prior PR touching this state machine has ever been able to
+close it either. Given that (a) the logging this PR adds will make the exact point of
+failure visible in the very next manual/live run if the save file still doesn't
+appear, and (b) both named suspects are now addressed (one fixed, one observed
+not-guilty), shipping with this one item still open is the acceptable interim state —
+the alternative is blocking indefinitely on a holdout-tooling gap unrelated to this
+diff's correctness. A human operator with real PIE input access remains the fastest
+path to closing this specific item; it does not require another investigation cycle.
+
 ## Files changed
 
 All `.h`/`.cpp` files below were written identically to `app/Source/KrowdKontrol/...`
@@ -51,11 +79,16 @@ D-009, so this is a plain-text copy for review — `app/` itself is unchanged in
 - [x] One low-risk, narrowly-justified fix (`IsTickableWhenPaused() = true`)
       targeting the issue's own named suspect #1, with test coverage for the
       mechanism.
-- [ ] **Confirm the real PIE clear→save chain now works end-to-end.** Requires a
-      live PIE session; this worktree has no network path to the Unreal MCP server
-      (structural gap, not something to route around here — see investigation.md's
-      Manual Verification section for the exact log-line sequence a human/holdout
-      run should check for).
+- [x] `OnWorldBeginPlay` reached in a real, engine-driven PIE session — confirmed
+      directly by the pass-1 E2E holdout's live `StartPIE` run (see "Update" above);
+      rules out named suspect #2 for that session.
+- [ ] **Confirm the real PIE clear→save chain now works end-to-end (bank all six
+      enemies, `.sav` file produced).** Requires driving an enemy through
+      `Controlled`→`Banked` in live PIE input, which no current holdout MCP
+      primitive can do (no ability-cast/state-mutation tool exists) and this
+      worktree also has no network path to the Unreal MCP server. Left for a
+      human/holdout run with real input access — see the "Update" section above for
+      why shipping with this one item open is the accepted interim state.
 
 ## Validation
 
