@@ -34,6 +34,7 @@
 #include "PunishmentManagerComponent.h"
 #include "SpeedReductionPunishmentComponent.h"
 #include "AbilityLockoutComponent.h"
+#include "AbilityPressHoldComponent.h"
 #include "AbilitySlot.h"
 #include "PlayerEnergyComponent.h"
 #include "PunishmentTriggeredTestListener.h"
@@ -205,6 +206,24 @@ bool FKrowdKontrolFlatCamera3DPipelineSmokeTest::RunTest(const FString& Paramete
 			}
 		}
 		TestTrue(FString::Printf(TEXT("SetupPlayerInputComponent should bind a %s action"), *ExpectedActionName.ToString()), bFound);
+	}
+
+	// The 5 IE_Released counterparts (issue #265, PRD "Cursor & Aiming Foundation"
+	// REQ-3) - same existence-check shape as ExpectedCastActionNames above, closing the
+	// gap that only the IE_Pressed bindings were previously checked for existence.
+	for (const FName& ExpectedActionName : ExpectedCastActionNames)
+	{
+		bool bFound = false;
+		for (int32 Index = 0; Index < InputComponent->GetNumActionBindings(); ++Index)
+		{
+			const FInputActionBinding& ActionBinding = InputComponent->GetActionBinding(Index);
+			if (ActionBinding.GetActionName() == ExpectedActionName && ActionBinding.KeyEvent == IE_Released)
+			{
+				bFound = true;
+				break;
+			}
+		}
+		TestTrue(FString::Printf(TEXT("SetupPlayerInputComponent should bind a %s IE_Released action"), *ExpectedActionName.ToString()), bFound);
 	}
 
 	// New OG-GDD keybindings (issue #258, PRD "Ability Targeting Shapes & Effect
@@ -425,16 +444,17 @@ bool FKrowdKontrolFlatCamera3DAbilityCastWiringTest::RunTest(const FString& Para
 	struct FWiringCase
 	{
 		void (AFlatCamera3DPrototypePawn::*Wrapper)();
+		void (AFlatCamera3DPrototypePawn::*ReleaseWrapper)();
 		EAbilitySlot ExpectedAbility;
 		int32 UnlockLevel;
 		const TCHAR* WrapperName;
 	};
 	const FWiringCase Cases[] = {
-		{ &AFlatCamera3DPrototypePawn::CastStunAbility, EAbilitySlot::Stun, 1, TEXT("CastStunAbility") },
-		{ &AFlatCamera3DPrototypePawn::CastSleepAbility, EAbilitySlot::Sleep, 2, TEXT("CastSleepAbility") },
-		{ &AFlatCamera3DPrototypePawn::CastRootAbility, EAbilitySlot::Root, 3, TEXT("CastRootAbility") },
-		{ &AFlatCamera3DPrototypePawn::CastFearAbility, EAbilitySlot::Fear, 4, TEXT("CastFearAbility") },
-		{ &AFlatCamera3DPrototypePawn::CastSnareAbility, EAbilitySlot::Snare, 5, TEXT("CastSnareAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastStunAbility, &AFlatCamera3DPrototypePawn::ReleaseStunAbility, EAbilitySlot::Stun, 1, TEXT("CastStunAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastSleepAbility, &AFlatCamera3DPrototypePawn::ReleaseSleepAbility, EAbilitySlot::Sleep, 2, TEXT("CastSleepAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastRootAbility, &AFlatCamera3DPrototypePawn::ReleaseRootAbility, EAbilitySlot::Root, 3, TEXT("CastRootAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastFearAbility, &AFlatCamera3DPrototypePawn::ReleaseFearAbility, EAbilitySlot::Fear, 4, TEXT("CastFearAbility") },
+		{ &AFlatCamera3DPrototypePawn::CastSnareAbility, &AFlatCamera3DPrototypePawn::ReleaseSnareAbility, EAbilitySlot::Snare, 5, TEXT("CastSnareAbility") },
 	};
 
 	for (const FWiringCase& Case : Cases)
@@ -479,6 +499,26 @@ bool FKrowdKontrolFlatCamera3DAbilityCastWiringTest::RunTest(const FString& Para
 			TestTrue(FString::Printf(TEXT("%s should drive the pawn's real AbilityCastVFXComponent to the matching locked colour"), Case.WrapperName),
 				Pawn->AbilityCastVFXComponent->CastFlashLightComponent->GetLightColor().Equals(
 					AbilityData::Get(Case.ExpectedAbility).Colour, 0.01f));
+		}
+
+		// Issue #265 release-wiring: drives the release side through the pawn's real
+		// AbilityPressHoldComponent (constructor-wired above, not a hand-wired stand-in),
+		// proving each Release*Ability() wrapper forwards its own EAbilitySlot rather than
+		// a neighboring one - simulates the hold-preview-active state a real hold would
+		// have reached (bAbilityHoldPreviewActive is reflected UPROPERTY state, same as
+		// KrowdKontrolAbilityPressHoldComponentTest.cpp asserts against directly) since
+		// this editor test World never ticks the real HoldThresholdSeconds timer.
+		if (TestNotNull(FString::Printf(TEXT("%s: Pawn->AbilityPressHoldComponent should exist"), Case.WrapperName),
+			ToRawPtr(Pawn->AbilityPressHoldComponent)))
+		{
+			const int32 Index = static_cast<int32>(Case.ExpectedAbility);
+			if (Pawn->AbilityPressHoldComponent->bAbilityHoldPreviewActive.IsValidIndex(Index))
+			{
+				Pawn->AbilityPressHoldComponent->bAbilityHoldPreviewActive[Index] = true;
+				(Pawn->*Case.ReleaseWrapper)();
+				TestFalse(FString::Printf(TEXT("%s: release should clear this ability's hold-preview flag on the pawn's real AbilityPressHoldComponent"), Case.WrapperName),
+					Pawn->AbilityPressHoldComponent->bAbilityHoldPreviewActive[Index]);
+			}
 		}
 	}
 
