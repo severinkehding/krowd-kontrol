@@ -227,6 +227,25 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Detection")
 	float DetectionRangeUnits = 1500.0f;
 
+	// Herd-follow speed (issue #214), in units/second, applied while CurrentState ==
+	// Controlled and ControllingAbility doesn't already claim this tick's movement via
+	// Snare (bAllowsMovementWhileControlled) or Fear (bFleesFromCasterWhileControlled) -
+	// see TickFollowMovement(). Deliberately its own flat base-class property, not a
+	// fraction of the per-type-virtual GetMovementSpeedUnitsPerSecond() - every
+	// controlled enemy trails the player at the same, predictable pace regardless of
+	// its own type's chase speed. Default (300.0f) is half AEnemyBase's own base
+	// chase-speed default (600.0f) - fast enough to keep pace with a walking player,
+	// slow enough to read as trailing, not chasing.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Herd")
+	float FollowSpeedUnitsPerSecond = 300.0f;
+
+	// The trailing gap TickFollowMovement stops at, in units, so a Controlled enemy
+	// never stacks on/overlaps the player pawn while following (issue #214, operator
+	// decision 2026-08-22: pied-piper trailing, not stacking). Base-defined, not
+	// overridden per concrete type - same precedent DetectionRangeUnits above sets.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Herd")
+	float FollowDistanceUnits = 200.0f;
+
 	// Issue #244: the room whose OwnedEnemies list this enemy was added to (nullptr
 	// if none - see ARoomActor::AddOwnedEnemy()'s doc comment on the auto-discovery
 	// that normally sets this with zero .umap authoring). Public so ARoomActor can
@@ -303,6 +322,12 @@ protected:
 	// gets the Elite bump for free with zero change to any of the 4 override
 	// implementations themselves.
 	float GetEffectiveMovementSpeedUnitsPerSecond() const;
+
+	// FollowSpeedUnitsPerSecond * (bIsElite ? EliteMovementSpeedMultiplier : 1.0f) -
+	// TickFollowMovement calls this, not FollowSpeedUnitsPerSecond directly, mirroring
+	// GetEffectiveMovementSpeedUnitsPerSecond()'s exact shape so an Elite enemy is
+	// harder to herd in every movement mode, not just while chasing.
+	float GetEffectiveFollowSpeedUnitsPerSecond() const;
 
 	// Each concrete subclass's own non-reserved secondary trim light, lit only while
 	// bIsElite is true - overridden to return that subclass's own EliteTrimLightComponent
@@ -403,6 +428,19 @@ private:
 	// negligible at game scale). Private/friend-testable, same shape as
 	// TickChaseMovement above.
 	void TickFleeMovement(const FVector& CasterLocation, float DeltaSeconds);
+
+	// Moves the actor in a straight line toward PlayerLocation at
+	// GetEffectiveFollowSpeedUnitsPerSecond() units/second, stopping once within
+	// FollowDistanceUnits of the player rather than closing all the way to their
+	// location - the "pied-piper" herd-follow movement (issue #214, operator decision
+	// 2026-08-22: controlled enemies trail the player, they don't stack on the pawn).
+	// No-op outside Controlled, and also a no-op while ControllingAbility already
+	// claims this tick's movement through a different flavour - Snare
+	// (bAllowsMovementWhileControlled, TickChaseMovement, issue #254) or Fear
+	// (bFleesFromCasterWhileControlled, TickFleeMovement, issue #253) - so a Controlled
+	// enemy is never moved twice in the same tick by competing movement rules.
+	// Private/friend-testable, same shape as TickChaseMovement/TickFleeMovement above.
+	void TickFollowMovement(const FVector& PlayerLocation, float DeltaSeconds);
 
 	void AdvanceToAlert();
 	void AdvanceToAttack();
