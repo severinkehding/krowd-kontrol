@@ -80,7 +80,7 @@ bool FKrowdKontrolLevelClearTimeWiringTest::RunTest(const FString& Parameters)
 	// warning (the first invocation already removed the timer entry). This project's
 	// harness counts a test that merely logs an unexpected warning as a pass
 	// (harness/run_ue_automation.sh's succeededWithWarnings bucket), so an unregistered
-	// log alone would NOT fail this test - the warning-count snapshot around
+	// log alone would NOT fail this test - the "no active timer" entry scan around
 	// RefreshLevelClearState() below is what actually enforces this regression check.
 	ClearTimeSubsystem->SubscribeToLevelLifecycle(LifecycleSubsystem);
 
@@ -105,24 +105,24 @@ bool FKrowdKontrolLevelClearTimeWiringTest::RunTest(const FString& Parameters)
 	Enemy->ReceiveControl(EAbilitySlot::Stun);        // -> Controlled
 	Enemy->TransitionToBanked();                      // -> Banked
 
-	// Snapshot the warning count immediately around RefreshLevelClearState(): a
-	// double-bind (the AddUniqueDynamic regression this test guards against) would
+	// A double-bind (the AddUniqueDynamic regression this test guards against) would
 	// make the single Broadcast() below invoke HandleLevelClear() twice on the same
 	// subscriber, and the second invocation's StopLevelTimerAndRecordClear call would
-	// hit the "no active timer" no-op warning. Comparing GetWarningTotal() before/after
-	// is what actually fails this test on that regression - relying on the warning
-	// being merely "unexpected" does not, since this harness treats a test that only
-	// logs a warning as a pass (see comment at the double-subscribe call above).
+	// hit the "no active timer" no-op warning. Assert that specific failure signature
+	// directly via the entries logged during RefreshLevelClearState(), rather than a
+	// total warning-count snapshot - a total-count comparison would also break on any
+	// unrelated UE_LOG(Warning) added anywhere in this call path (e.g. issue #234's own
+	// two new intentional diagnostic lines, which is exactly what forced this test's
+	// baseline to change once already).
 	//
-	// Baseline is 2, not 0 (issue #234): RefreshLevelClearState() and HandleLevelClear()
-	// each now emit one intentional UE_LOG(..., Warning, ...) diagnostic line on every
-	// successful single-bind clear, so a clean single-bind run always produces exactly
-	// 2 new warnings. A double-bind still fails this check - it would add a 3rd
-	// HandleLevelClear warning line plus StopLevelTimerAndRecordClear's own "no active
-	// timer" warning on the second invocation, landing on 4, not 2.
+	// Deliberately NOT AddExpectedError(TEXT("no active timer"), Contains, 0, false):
+	// per AutomationTest.h's own docstring, Occurrences == 0 means "must be seen one or
+	// more times or the test fails," not "must never occur" - it would make this test
+	// fail on every healthy single-bind run instead of catching the double-bind
+	// regression it's meant to guard against.
 	FAutomationTestExecutionInfo PreClearExecutionInfo;
 	GetExecutionInfo(PreClearExecutionInfo);
-	const int32 WarningTotalBeforeClear = PreClearExecutionInfo.GetWarningTotal();
+	const int32 EntryCountBeforeClear = PreClearExecutionInfo.GetEntries().Num();
 
 	// Fire OnLevelClear - mirrors KrowdKontrolLevelLifecycleSubsystemTest.cpp's use of
 	// RefreshLevelClearState() to drive it deterministically.
@@ -130,9 +130,18 @@ bool FKrowdKontrolLevelClearTimeWiringTest::RunTest(const FString& Parameters)
 
 	FAutomationTestExecutionInfo PostClearExecutionInfo;
 	GetExecutionInfo(PostClearExecutionInfo);
-	const int32 ExpectedNewWarningsFromIntentionalLogging = 2;
-	TestEqual(TEXT("RefreshLevelClearState() should log exactly its own + HandleLevelClear()'s intentional diagnostic warnings (2) - a double-bind would trigger StopLevelTimerAndRecordClear's 'no active timer' warning plus a second HandleLevelClear log on top of that"),
-		PostClearExecutionInfo.GetWarningTotal(), WarningTotalBeforeClear + ExpectedNewWarningsFromIntentionalLogging);
+	const TArray<FAutomationExecutionEntry>& PostClearEntries = PostClearExecutionInfo.GetEntries();
+	bool bSawNoActiveTimerWarning = false;
+	for (int32 EntryIndex = EntryCountBeforeClear; EntryIndex < PostClearEntries.Num(); ++EntryIndex)
+	{
+		if (PostClearEntries[EntryIndex].Event.Message.Contains(TEXT("no active timer")))
+		{
+			bSawNoActiveTimerWarning = true;
+			break;
+		}
+	}
+	TestFalse(TEXT("RefreshLevelClearState() must not trigger StopLevelTimerAndRecordClear's 'no active timer' warning on a healthy single-bind clear - a double-bind would produce it via the second HandleLevelClear() invocation"),
+		bSawNoActiveTimerWarning);
 
 	// This assertion pair can only be true if HandleLevelBegin actually called
 	// StartLevelTimer - otherwise StopLevelTimerAndRecordClear inside HandleLevelClear
