@@ -129,6 +129,13 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// private TickCheckDetection to prove the gate itself, not just the wiring.
 	friend class FKrowdKontrolEnemyRoomDetectionGateTest;
 
+	// Same grant, for the room-activation-countdown test (issue #245), which
+	// drives owned enemies' TickCheckDetection directly to prove they stay Idle
+	// while the room's first-entry countdown is running, and resume normal
+	// detection once it activates. Non-transitive - see MusicSubsystem.h's
+	// friend-class comment.
+	friend class FKrowdKontrolRoomActivationCountdownTest;
+
 	// Same grant, for the quest-tracker suggestion test (issue #249's pass-2 review
 	// coverage), which drives a plain AEnemyBaseTestActor through Idle->Alert->
 	// Controlled->Banked to prove HandleActorBanked() recomputes the suggested-ability

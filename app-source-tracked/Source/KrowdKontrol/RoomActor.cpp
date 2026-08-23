@@ -3,12 +3,17 @@
 #include "TargetZone.h"
 #include "EnemyBase.h"
 #include "AbilityData.h"
+#include "OnScreenPromptWidget.h"
+#include "KrowdKontrolPlayerController.h"
 #include "Engine/World.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
+#include "CoreGlobals.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameFramework/Pawn.h"
 
 namespace
 {
@@ -33,7 +38,21 @@ namespace
 
 ARoomActor::ARoomActor()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Ticks every frame to detect first entry into this room and advance its
+	// activation countdown. Originally throttled to a 0.25s-interval poll
+	// (mirroring ADoorConnectorActor's door-crossing idiom) - reverted, issue
+	// #290 pass-1 E2E finding: that throttle left a window, up to 0.25s wide,
+	// after the player physically entered the room but before this Tick() had
+	// run for the first time. During that window AEnemyBase's own per-frame
+	// Tick()/TickCheckDetection loop already saw the player resolve nearest to
+	// this room via IsPlayerInOwningRoom(), while IsActivationPending() was
+	// still false (bCountdownActive not yet set) - so the Idle->Alert gate
+	// this issue exists to hold shut let enemies through immediately, live and
+	// reproducibly, well before the on-screen countdown ever showed anything
+	// but "3". No event exists for "the player entered this room", so this is
+	// still a per-tick poll, just no longer throttled - it now runs at the
+	// same per-frame rate as the detection loop it has to stay ahead of.
+	PrimaryActorTick.bCanEverTick = true;
 
 	USceneComponent* RoomRoot = CreateDefaultSubobject<USceneComponent>(TEXT("RoomRoot"));
 	RootComponent = RoomRoot;
@@ -133,6 +152,29 @@ void ARoomActor::BeginPlay()
 	}
 }
 
+void ARoomActor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (bRoomActivated)
+	{
+		return;
+	}
+	// else-if, not two sequential ifs: the tick that starts the countdown
+	// (CheckFirstEntry -> StartCountdown, setting bCountdownActive) must not
+	// also advance it in that same frame - that would silently consume one
+	// tick's worth of DeltaSeconds off the enforced hold before the player-
+	// facing countdown display ever reflected it (code-review follow-up,
+	// issue #290 pass-1).
+	if (bCountdownActive)
+	{
+		AdvanceCountdown(DeltaSeconds);
+	}
+	else if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+	{
+		CheckFirstEntry(PlayerPawn->GetActorLocation());
+	}
+}
+
 ARoomActor* ARoomActor::FindNearestRoom(const AActor* Actor, const TArray<ARoomActor*>& Rooms)
 {
 	return FindNearestRoom(Actor->GetActorLocation(), Rooms);
@@ -152,6 +194,25 @@ ARoomActor* ARoomActor::FindNearestRoom(const FVector& Location, const TArray<AR
 		}
 	}
 	return Nearest;
+}
+
+const TArray<ARoomActor*>& ARoomActor::GetCachedRoomList(UWorld* World)
+{
+	static TWeakObjectPtr<UWorld> CachedWorld;
+	static uint64 CachedFrameNumber = TNumericLimits<uint64>::Max();
+	static TArray<ARoomActor*> CachedRooms;
+
+	if (CachedWorld.Get() != World || CachedFrameNumber != GFrameCounter)
+	{
+		CachedRooms.Reset();
+		for (TActorIterator<ARoomActor> It(World); It; ++It)
+		{
+			CachedRooms.Add(*It);
+		}
+		CachedWorld = World;
+		CachedFrameNumber = GFrameCounter;
+	}
+	return CachedRooms;
 }
 
 void ARoomActor::EnsureBankingZonesWired()
@@ -292,6 +353,12 @@ void ARoomActor::AddOwnedEnemy(AEnemyBase* Enemy)
 	}
 	OwnedEnemies.Add(Enemy);
 	Enemy->SetOwningRoom(this);
+	// This room's Tick() (CheckFirstEntry -> StartCountdown) must run before the
+	// enemy's Tick() -> TickCheckDetection() within any given frame, or an enemy
+	// ticking first on the exact first-entry frame sees IsActivationPending() ==
+	// false before the countdown has started and can alert one frame early
+	// (pass-2 behavioral-validation finding on issue #245).
+	Enemy->AddTickPrerequisiteActor(this);
 	BindOwnedEnemyDelegate(Enemy);
 	OnRoomClearedStateChanged.Broadcast();
 }
@@ -304,4 +371,90 @@ void ARoomActor::HandleOwnedEnemyBanked()
 void ARoomActor::HandleOwnedEnemyDestroyed(AActor* DestroyedActor)
 {
 	OnRoomClearedStateChanged.Broadcast();
+}
+
+void ARoomActor::CheckFirstEntry(const FVector& PlayerLocation)
+{
+	if (bRoomActivated || bCountdownActive || IsRoomCleared())
+	{
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	if (FindNearestRoom(PlayerLocation, GetCachedRoomList(World)) != this)
+	{
+		return;
+	}
+	StartCountdown();
+}
+
+void ARoomActor::StartCountdown()
+{
+	bCountdownActive = true;
+	RemainingCountdownSeconds = RoomActivationCountdownSeconds;
+	LastDisplayedCount = -1;
+	UpdateCountdownPrompt();
+}
+
+void ARoomActor::AdvanceCountdown(float DeltaSeconds)
+{
+	if (!bCountdownActive)
+	{
+		return;
+	}
+	RemainingCountdownSeconds = FMath::Max(0.0f, RemainingCountdownSeconds - DeltaSeconds);
+	if (RemainingCountdownSeconds <= 0.0f)
+	{
+		bCountdownActive = false;
+		ActivateRoom();
+		return;
+	}
+	UpdateCountdownPrompt();
+}
+
+void ARoomActor::ActivateRoom()
+{
+	bRoomActivated = true;
+}
+
+void ARoomActor::UpdateCountdownPrompt()
+{
+	const int32 DisplayCount = FMath::Max(0, FMath::CeilToInt(RemainingCountdownSeconds));
+	if (DisplayCount <= 0 || DisplayCount == LastDisplayedCount)
+	{
+		return;
+	}
+	LastDisplayedCount = DisplayCount;
+	if (UOnScreenPromptWidget* Widget = ResolvePromptWidget())
+	{
+		// 1.0s per digit, well under UOnScreenPromptWidget::MaxPromptDurationSeconds
+		// (2.0f) - PRD 09 REQ-4's hard cap stays untouched.
+		Widget->ShowPrompt(FText::AsNumber(DisplayCount), 1.0f);
+	}
+}
+
+UOnScreenPromptWidget* ARoomActor::ResolvePromptWidget()
+{
+	if (CachedPromptWidget)
+	{
+		return CachedPromptWidget;
+	}
+	if (UWorld* World = GetWorld())
+	{
+		if (AKrowdKontrolPlayerController* Controller = Cast<AKrowdKontrolPlayerController>(World->GetFirstPlayerController()))
+		{
+			CachedPromptWidget = Controller->OnScreenPromptWidgetInstance;
+		}
+	}
+	if (!CachedPromptWidget && !bHasWarnedMissingPromptWidget)
+	{
+		bHasWarnedMissingPromptWidget = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("ARoomActor: no OnScreenPromptWidget available on '%s' - the room-entry countdown cannot be shown."),
+			*GetNameSafe(this));
+	}
+	return CachedPromptWidget;
 }
