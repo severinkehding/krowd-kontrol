@@ -30,14 +30,24 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+static AKrowdKontrolPlayerController* GetPIEPlayerController(UWorld* World)
+{
+	return World ? Cast<AKrowdKontrolPlayerController>(World->GetFirstPlayerController()) : nullptr;
+}
+
+static UPlayerEnergyComponent* GetPossessedPawnEnergyComponent(AKrowdKontrolPlayerController* Controller)
+{
+	APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+	return Pawn ? Pawn->FindComponentByClass<UPlayerEnergyComponent>() : nullptr;
+}
+
 DEFINE_LATENT_AUTOMATION_COMMAND_TWO_PARAMETER(FKrowdKontrolTriggerDefeatRestartCommand, FAutomationTestBase*, Test, TSharedRef<float>, OutExpectedFullEnergy);
 
 bool FKrowdKontrolTriggerDefeatRestartCommand::Update()
 {
 	UWorld* PIEWorld = AutomationCommon::GetAnyGameWorld();
-	AKrowdKontrolPlayerController* Controller = PIEWorld ? Cast<AKrowdKontrolPlayerController>(PIEWorld->GetFirstPlayerController()) : nullptr;
-	APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
-	UPlayerEnergyComponent* Energy = Pawn ? Pawn->FindComponentByClass<UPlayerEnergyComponent>() : nullptr;
+	AKrowdKontrolPlayerController* Controller = GetPIEPlayerController(PIEWorld);
+	UPlayerEnergyComponent* Energy = GetPossessedPawnEnergyComponent(Controller);
 
 	if (Test->TestNotNull(TEXT("The possessed pawn should have a UPlayerEnergyComponent before triggering the defeat-restart"), Energy))
 	{
@@ -63,9 +73,8 @@ bool FKrowdKontrolAssertDefeatRestartCompletedCommand::Update()
 		Test->TestFalse(TEXT("The reloaded map should never be the engine's OpenWorld template (issue #223's regression symptom)"),
 			PIEWorld->GetMapName().Contains(TEXT("OpenWorld")));
 
-		AKrowdKontrolPlayerController* Controller = Cast<AKrowdKontrolPlayerController>(PIEWorld->GetFirstPlayerController());
-		APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
-		UPlayerEnergyComponent* Energy = Pawn ? Pawn->FindComponentByClass<UPlayerEnergyComponent>() : nullptr;
+		AKrowdKontrolPlayerController* Controller = GetPIEPlayerController(PIEWorld);
+		UPlayerEnergyComponent* Energy = GetPossessedPawnEnergyComponent(Controller);
 		if (Test->TestNotNull(TEXT("The possessed pawn should have a UPlayerEnergyComponent after the restart"), Energy))
 		{
 			Test->TestEqual(TEXT("Player energy should be restored to its starting value after the restart"),
@@ -101,9 +110,8 @@ bool FKrowdKontrolPIEDefeatRestartRoundTripTest::RunTest(const FString& Paramete
 			// closing the one-tick window where an enemy could otherwise chip the freshly
 			// restored energy between the two commands.
 			UWorld* PIEWorld = AutomationCommon::GetAnyGameWorld();
-			AKrowdKontrolPlayerController* Controller = PIEWorld ? Cast<AKrowdKontrolPlayerController>(PIEWorld->GetFirstPlayerController()) : nullptr;
-			APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
-			UPlayerEnergyComponent* Energy = Pawn ? Pawn->FindComponentByClass<UPlayerEnergyComponent>() : nullptr;
+			AKrowdKontrolPlayerController* Controller = GetPIEPlayerController(PIEWorld);
+			UPlayerEnergyComponent* Energy = GetPossessedPawnEnergyComponent(Controller);
 			return Energy && Energy->GetCurrentEnergy() >= *ExpectedFullEnergy;
 		},
 		[this]() -> bool
