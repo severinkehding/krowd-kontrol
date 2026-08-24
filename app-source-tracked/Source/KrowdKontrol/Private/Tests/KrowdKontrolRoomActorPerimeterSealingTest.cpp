@@ -289,6 +289,58 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 			NorthDoor->ConnectorFloorWidth);
 	}
 
+	// (7): a room with two doors on the same (East) side - exercises
+	// BuildWallGapFlanks() being called once per door on a single side, rather than
+	// once per side, so both doors' flank pairs must accumulate (not overwrite one
+	// another) in WallGapFlankComponents.
+	ARoomActor* MultiDoorRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(50000.f, 0.f, 0.f)));
+	if (!TestNotNull(TEXT("Multi-door ARoomActor should spawn into the test World"), MultiDoorRoom))
+	{
+		return false;
+	}
+	ARoomActor* MultiDoorNeighborA = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(53000.f, 800.f, 0.f)));
+	ARoomActor* MultiDoorNeighborB = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(53000.f, -800.f, 0.f)));
+	if (!TestNotNull(TEXT("Multi-door East neighbor A ARoomActor should spawn into the test World"), MultiDoorNeighborA) ||
+		!TestNotNull(TEXT("Multi-door East neighbor B ARoomActor should spawn into the test World"), MultiDoorNeighborB))
+	{
+		return false;
+	}
+
+	ADoorConnectorActor* MultiDoorA = World->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	ADoorConnectorActor* MultiDoorB = World->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	if (!TestNotNull(TEXT("Multi-door East door A should spawn into the test World"), MultiDoorA) ||
+		!TestNotNull(TEXT("Multi-door East door B should spawn into the test World"), MultiDoorB))
+	{
+		return false;
+	}
+	MultiDoorA->RoomA = MultiDoorRoom;
+	MultiDoorA->RoomB = MultiDoorNeighborA;
+	MultiDoorA->FinishSpawning(FTransform::Identity);
+	MultiDoorB->RoomA = MultiDoorRoom;
+	MultiDoorB->RoomB = MultiDoorNeighborB;
+	MultiDoorB->FinishSpawning(FTransform::Identity);
+
+	MultiDoorRoom->SealRoomPerimeter();
+
+	TestEqual(TEXT("Multi-door room's East wall mesh should stay NoCollision with two East doors"),
+		MultiDoorRoom->WallEastMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	CheckWallSolid(*this, TEXT("North wall (multi-door room)"), MultiDoorRoom->WallNorthMeshComponent);
+	CheckWallSolid(*this, TEXT("South wall (multi-door room)"), MultiDoorRoom->WallSouthMeshComponent);
+	CheckWallSolid(*this, TEXT("West wall (multi-door room)"), MultiDoorRoom->WallWestMeshComponent);
+
+	TArray<UBoxComponent*> MultiDoorFlanks;
+	MultiDoorRoom->GetComponents<UBoxComponent>(MultiDoorFlanks);
+	if (TestEqual(TEXT("Two doors on the same side should produce four flank components (two per door)"),
+		MultiDoorFlanks.Num(), 4))
+	{
+		for (UBoxComponent* Flank : MultiDoorFlanks)
+		{
+			TestEqual(TEXT("Each multi-door flank should be blocking (QueryOnly)"), Flank->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+			TestEqual(TEXT("Each multi-door flank should Block ECC_WorldDynamic"),
+				Flank->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
+		}
+	}
+
 	return true;
 }
 

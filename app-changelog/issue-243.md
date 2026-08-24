@@ -47,7 +47,7 @@ to close.
 | Player can't walk around a gated door via the corridor's open sides | Done — new `CorridorGuardRail` box components on `ADoorConnectorActor`, always-on (not gated), assertions added to `KrowdKontrolDoorConnectorActorTest.cpp` |
 | Fix is idempotent / safe under existing dynamic-actor test ordering | Done — dedicated idempotency test case; `SealRoomPerimeter()` is safe to call more than once |
 | No regression to existing room/door gating (#218/#229) | Done — `GateBlockingComponent` itself untouched; regression suite re-run (see Validation) |
-| Manual PIE perimeter-walk (issue's own stated AC) | **Not performed** — no live Unreal Editor/MCP connection reachable from this factory worktree (known gap, see `project_factory_worktree_no_unreal_mcp_network_path`). Automated unit coverage above is the substitute per the issue's own documented escape hatch; a human PIE pass is still recommended before considering this fully closed end-to-end. |
+| Manual PIE perimeter-walk (issue's own stated AC) | **Not met.** No live Unreal Editor/MCP connection is reachable from this factory worktree (known gap, see `project_factory_worktree_no_unreal_mcp_network_path`), so this manual-verification bullet was not performed. The issue's automation-infeasibility escape hatch is scoped to the separate "Automation check where feasible" bullet only, not to this one — the automated unit coverage above does not satisfy it. This AC remains open and requires a human (or MCP-connected) PIE pass before #243 can be considered fully closed. |
 
 ## Validation
 
