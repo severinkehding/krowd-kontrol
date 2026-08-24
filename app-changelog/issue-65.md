@@ -18,7 +18,7 @@ slow-flavour work).
 | `TrooperEnemy.h` / `TrooperEnemy.cpp` | Added `GetControlledDurationOverrideSeconds` override (Root -> 8.0f) |
 | `BomberEnemy.h` / `BomberEnemy.cpp` | Added `GetControlledDurationOverrideSeconds` override (Fear -> 7.0f) |
 | `EnemyBase.h` | Added `friend class FKrowdKontrolAbilityColourMatchTest;` |
-| `Private/Tests/KrowdKontrolAbilityColourMatchTest.cpp` | CREATE - `KrowdKontrol.Unit.AbilityColourMatch`, covering matched (Root/TR-UPR, Fear/B0-0MR), mismatched (Fear/TR-UPR, never gated/reduced), and Stun-vs-both-types (no bonus) |
+| `Private/Tests/KrowdKontrolAbilityColourMatchTest.cpp` | CREATE - `KrowdKontrol.Unit.AbilityColourMatch`, covering matched (Root/TR-UPR, Fear/B0-0MR), mismatched (Fear/TR-UPR and Root/B0-0MR, never gated/reduced), and Stun-vs-both-types (no bonus) |
 | `Private/Tests/KrowdKontrolTrooperEnemyTest.cpp` | UPDATE - case (r)'s expiry-reversion assertion now reads the actually-applied duration (`GetTotalControlledSeconds()`, 8.0f) instead of the now-stale `AbilityData::Get(Root).BaseDurationSeconds` (5.0f) assumption |
 | `Private/Tests/KrowdKontrolBomberEnemyTest.cpp` | UPDATE - case (t), same fix for Fear (7.0f) |
 
@@ -89,6 +89,28 @@ MISSION.md Hard Invariants reviewed against this diff: no kill-rule, colour-lock
 ability-roster, enemy-roster, engine/dimensionality, networking, or `app`-tracking
 invariant is touched - this is a same-shape extension of an already-shipped,
 already-invariant-compliant per-enemy override mechanism (issue #121).
+
+## Post-review follow-up (self-fix)
+
+PR #303's test-coverage review (MEDIUM) flagged that the mismatch coverage only ran
+in one direction: case (c) proves `ATrooperEnemy` falls through to `Super::` for
+Fear (Bomber's matched ability), but nothing proved the symmetric case -
+`ABomberEnemy` falling through to `Super::` for Root (Trooper's matched ability).
+Two hand-copied overrides in sibling files is exactly the shape where a copy-paste
+slip (wrong `if` condition, or the 7.0f/8.0f constants transposed between files)
+would pass every existing test. Added case (e) - `ABomberEnemy` + Root - asserting
+it applies at the 5.0f base duration, not TR-UPR's 8.0f bonus, mirroring case (c)'s
+shape exactly. `python harness/ci.py` (full mode) re-run clean after the addition:
+`UNIT_PASSED tests=106` (same suite, new assertion inside it - not a new automation
+test - so the count is unchanged from the pre-review baseline), `PIE_PASSED tests=5`,
+`GATE_OK mode=full`.
+
+The review's other finding (LOW - the new precondition `TestEqual` lines in
+`KrowdKontrolTrooperEnemyTest.cpp`/`KrowdKontrolBomberEnemyTest.cpp` duplicate what
+`AbilityColourMatchTest` cases (a)/(b) already assert) was left as-is: both the
+code-review and test-coverage agents independently recommended keeping it
+(Option A) for failure-localization reasons, matching this codebase's existing
+`KrowdKontrolSniperEnemyTest.cpp` convention - not a defect, so not changed.
 
 ---
 

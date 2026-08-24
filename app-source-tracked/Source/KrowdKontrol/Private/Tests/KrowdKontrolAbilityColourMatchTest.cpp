@@ -91,6 +91,21 @@ bool FKrowdKontrolAbilityColourMatchTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Stun should never grant a colour-match bonus against B0-0MR either"),
 		StunnedBomber->GetTotalControlledSeconds(), AbilityData::Get(EAbilitySlot::Stun).BaseDurationSeconds);
 
+	// (e) Root-vs-B0-0MR: colour-mismatched (B0-0MR is countered by Fear, not Root),
+	// still applies at full base effectiveness, never gated. Symmetric to case (c)'s
+	// Fear-vs-TR-UPR check, closing the other direction of cross-contamination risk
+	// between the two new overrides.
+	ABomberEnemy* MismatchedBomber = NewObject<ABomberEnemy>();
+	if (!TestNotNull(TEXT("ABomberEnemy should construct"), MismatchedBomber))
+	{
+		return false;
+	}
+	MismatchedBomber->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	MismatchedBomber->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	MismatchedBomber->ReceiveControl(EAbilitySlot::Root); // colour-mismatched: B0-0MR is countered by Fear, not Root
+	TestEqual(TEXT("Root-vs-B0-0MR should still apply at full base effectiveness, not TR-UPR's 8s bonus"),
+		MismatchedBomber->GetTotalControlledSeconds(), AbilityData::Get(EAbilitySlot::Root).BaseDurationSeconds);
+
 	return true;
 }
 
