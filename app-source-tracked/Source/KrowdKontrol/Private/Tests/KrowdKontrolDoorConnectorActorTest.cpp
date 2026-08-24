@@ -150,6 +150,10 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		Door->DoorMarkerMeshComponent->IsVisible());
 	TestFalse(TEXT("Door marker light should be hidden again once the door no longer connects valid rooms"),
 		Door->DoorMarkerLightComponent->IsVisible());
+	TestEqual(TEXT("Corridor guard rail A should revert to NoCollision once the door no longer connects valid rooms (issue #243)"),
+		Door->CorridorGuardRailAComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestEqual(TEXT("Corridor guard rail B should revert to NoCollision once the door no longer connects valid rooms (issue #243)"),
+		Door->CorridorGuardRailBComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	return true;
 }

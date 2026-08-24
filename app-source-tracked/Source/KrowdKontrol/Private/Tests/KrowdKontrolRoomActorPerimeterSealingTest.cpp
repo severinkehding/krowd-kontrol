@@ -191,6 +191,102 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 			FlanksAfterSecondCall.Contains(OldFlank));
 	}
 
+	// (5): a door wide enough to reach/exceed the wall's tangent extent - the flank
+	// should gracefully skip (BuildWallGapFlanks's KINDA_SMALL_NUMBER guard) rather than
+	// produce a negative/zero-extent box, matching the investigation doc's own named
+	// accepted risk ("that side ends up fully open rather than crashing"). For an
+	// East/West door, BuildWallGapFlanks's WallSpanHalfExtent is Room->RoomFloorExtent.Y
+	// (RoomActor.cpp:65) - not .X - so it's Y that must be narrowed to push the default
+	// ConnectorFloorWidth (300, GapHalfWidth=150) past the wall's own half-extent.
+	ARoomActor* NarrowRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(30000.f, 0.f, 0.f)));
+	if (!TestNotNull(TEXT("Narrow ARoomActor should spawn into the test World"), NarrowRoom))
+	{
+		return false;
+	}
+	NarrowRoom->RoomFloorExtent = FVector2D(1000.f, 100.f);
+
+	ARoomActor* NarrowNeighbor = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(33000.f, 0.f, 0.f)));
+	if (!TestNotNull(TEXT("Narrow neighbor ARoomActor should spawn into the test World"), NarrowNeighbor))
+	{
+		return false;
+	}
+
+	ADoorConnectorActor* WideDoor = World->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	if (!TestNotNull(TEXT("Wide ADoorConnectorActor should spawn into the test World"), WideDoor))
+	{
+		return false;
+	}
+	WideDoor->RoomA = NarrowRoom;
+	WideDoor->RoomB = NarrowNeighbor;
+	WideDoor->FinishSpawning(FTransform::Identity); // ConnectorFloorWidth=300 -> GapHalfWidth=150 > NarrowRoom's RoomFloorExtent.Y=100
+
+	NarrowRoom->SealRoomPerimeter();
+
+	TArray<UBoxComponent*> NarrowFlanks;
+	NarrowRoom->GetComponents<UBoxComponent>(NarrowFlanks);
+	TestEqual(TEXT("A gap wider than the wall's tangent extent should skip both flanks, not crash or produce a degenerate box"),
+		NarrowFlanks.Num(), 0);
+	TestEqual(TEXT("East wall mesh should still go NoCollision (visual-only) once its side is gapped, even when both flanks are skipped"),
+		NarrowRoom->WallEastMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+
+	// (6): a room with a door on its North side (neighbor at +Y) - exercises the
+	// North/South branch of Side selection and BuildWallGapFlanks's axis-swapped
+	// geometry, never reached by any of the East/West cases above.
+	ARoomActor* NorthDoorRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(40000.f, 0.f, 0.f)));
+	if (!TestNotNull(TEXT("North-door ARoomActor should spawn into the test World"), NorthDoorRoom))
+	{
+		return false;
+	}
+	ARoomActor* NorthNeighbor = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(40000.f, 3000.f, 0.f)));
+	if (!TestNotNull(TEXT("North neighbor ARoomActor should spawn into the test World"), NorthNeighbor))
+	{
+		return false;
+	}
+
+	ADoorConnectorActor* NorthDoor = World->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	if (!TestNotNull(TEXT("North ADoorConnectorActor should spawn into the test World"), NorthDoor))
+	{
+		return false;
+	}
+	NorthDoor->RoomA = NorthDoorRoom;
+	NorthDoor->RoomB = NorthNeighbor;
+	NorthDoor->FinishSpawning(FTransform::Identity);
+
+	NorthDoorRoom->SealRoomPerimeter();
+
+	TestEqual(TEXT("North wall mesh should stay NoCollision (visual-only) once its side is gapped"),
+		NorthDoorRoom->WallNorthMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	CheckWallSolid(*this, TEXT("South wall (North-door room)"), NorthDoorRoom->WallSouthMeshComponent);
+	CheckWallSolid(*this, TEXT("East wall (North-door room)"), NorthDoorRoom->WallEastMeshComponent);
+	CheckWallSolid(*this, TEXT("West wall (North-door room)"), NorthDoorRoom->WallWestMeshComponent);
+
+	TArray<UBoxComponent*> NorthFlanks;
+	NorthDoorRoom->GetComponents<UBoxComponent>(NorthFlanks);
+	if (TestEqual(TEXT("A room with one North door should have exactly two flank components"), NorthFlanks.Num(), 2))
+	{
+		for (UBoxComponent* Flank : NorthFlanks)
+		{
+			TestEqual(TEXT("Each North-side flank should be blocking (QueryOnly)"), Flank->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+			TestEqual(TEXT("Each North-side flank should Block ECC_WorldDynamic"),
+				Flank->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
+		}
+
+		// The two flanks' combined X-span should leave a walkable gap matching the
+		// door's ConnectorFloorWidth, centered at X=0 (relative to NorthDoorRoom) -
+		// the axis-swapped mirror of the East-door case's Y-span assertion above.
+		const float ExtentA = NorthFlanks[0]->GetUnscaledBoxExtent().X;
+		const float ExtentB = NorthFlanks[1]->GetUnscaledBoxExtent().X;
+		const float RelativeXA = NorthFlanks[0]->GetRelativeLocation().X;
+		const float RelativeXB = NorthFlanks[1]->GetRelativeLocation().X;
+		const bool bAIsNegativeSide = RelativeXA < RelativeXB;
+		const float GapMin = bAIsNegativeSide ? (RelativeXA + ExtentA) : (RelativeXB + ExtentB);
+		const float GapMax = bAIsNegativeSide ? (RelativeXB - ExtentB) : (RelativeXA - ExtentA);
+		TestTrue(TEXT("North-side flank gap's negative edge should match -ConnectorFloorWidth/2"),
+			FMath::IsNearlyEqual(GapMin, -NorthDoor->ConnectorFloorWidth * 0.5f, 0.1f));
+		TestTrue(TEXT("North-side flank gap's positive edge should match +ConnectorFloorWidth/2"),
+			FMath::IsNearlyEqual(GapMax, NorthDoor->ConnectorFloorWidth * 0.5f, 0.1f));
+	}
+
 	return true;
 }
 
