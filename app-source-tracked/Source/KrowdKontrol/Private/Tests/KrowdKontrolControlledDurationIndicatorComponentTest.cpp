@@ -180,8 +180,12 @@ bool FKrowdKontrolControlledDurationIndicatorComponentTest::RunTest(const FStrin
 				// relative X location must move negative (left) so its left edge stays fixed
 				// rather than shrinking symmetrically about the enemy's centre.
 				const float RelativeXAtFullFraction = WorldIndicator->FillMeshComponent->GetRelativeLocation().X;
-				const float FearBaseDurationSeconds = AbilityData::Get(EAbilitySlot::Fear).BaseDurationSeconds;
-				WorldBomber->TickControlledDuration(FearBaseDurationSeconds / 2.0f);
+				// issue #65: B0-0MR's GetControlledDurationOverrideSeconds now returns a 7s
+				// colour-match bonus for Fear, not the 5s AbilityData::Get(Fear).BaseDurationSeconds
+				// baseline - read the actually-applied duration off the enemy itself, same fix
+				// KrowdKontrolBomberEnemyTest.cpp case (t) already applies.
+				const float FearDurationSeconds = WorldBomber->GetTotalControlledSeconds();
+				WorldBomber->TickControlledDuration(FearDurationSeconds / 2.0f);
 				TestTrue(TEXT("(g3) FillMeshComponent's relative X should move negative (left) as FillFraction drains below 1.0"),
 					WorldIndicator->FillMeshComponent->GetRelativeLocation().X < RelativeXAtFullFraction);
 			}

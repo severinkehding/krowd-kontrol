@@ -174,3 +174,15 @@ void ATrooperEnemy::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	AdvanceAttackTelegraph(DeltaTime);
 }
+
+float ATrooperEnemy::GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const
+{
+	// Issue #65: TR-UPR is specifically countered by Root with an 8s lock vs the 5s
+	// baseline every other enemy/ability combination uses (operator ruling
+	// 2026-08-22, sourced from the OG GDD ability/enemy table).
+	if (Ability == EAbilitySlot::Root)
+	{
+		return 8.0f;
+	}
+	return Super::GetControlledDurationOverrideSeconds(Ability);
+}

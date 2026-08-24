@@ -265,24 +265,31 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 		RootedListener->CallCount, 1);
 
 	// (l-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
-	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
-	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
-	// the way, so the drain-ray has NOT fired yet; a second identical tick brings the
-	// cumulative elapsed time up to AttackTelegraphSeconds and the ray fires exactly
-	// once. This is Runner's own independent AdvanceAttackTelegraph copy, mirroring
-	// KrowdKontrolBomberEnemyTest.cpp's (m-snare) case for the same behaviour.
+	// scales the attack telegraph's elapsed time by GetControlledSpeedMultiplier() -
+	// and for RU-NNR specifically that is the COLOUR-MATCHED 0.25f (issue #65: Snare's
+	// colour-match bonus deepens the slow from 50% base to 75% - see
+	// ARunnerEnemy::GetControlledSpeedMultiplier and the ability-shapes PRD table),
+	// not Snare's 0.5f base that KrowdKontrolBomberEnemyTest.cpp's (m-snare) case
+	// exercises on a non-countered enemy. Three full AttackTelegraphSeconds' worth of
+	// ticks advance the telegraph only 75% of the way (still no drain-ray); the
+	// fourth brings cumulative elapsed time to AttackTelegraphSeconds and the ray
+	// fires exactly once.
 	ARunnerEnemy* SnaredRunner = NewObject<ARunnerEnemy>();
 	AdvanceToAttack(SnaredRunner, ZeroDistanceLocation);
 	SnaredRunner->ReceiveControl(EAbilitySlot::Snare);
 	TestEqual(TEXT("(l-snare) Runner should be Controlled after Snare"),
 		static_cast<uint8>(SnaredRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+	TestEqual(TEXT("(l-snare) RU-NNR under Snare should use the colour-matched 0.25f multiplier (issue #65)"),
+		SnaredRunner->GetControlledSpeedMultiplier(), 0.25f);
 	UDrainRayFiredTestListener* SnaredListener = NewObject<UDrainRayFiredTestListener>();
 	SnaredRunner->OnRunnerDrainFired.AddDynamic(SnaredListener, &UDrainRayFiredTestListener::HandleDrainRayFired);
 	SnaredRunner->AdvanceAttackTelegraph(SnaredRunner->AttackTelegraphSeconds);
-	TestEqual(TEXT("(l-snare) The drain-ray should NOT have fired after only one telegraph's worth of half-speed ticks"),
+	SnaredRunner->AdvanceAttackTelegraph(SnaredRunner->AttackTelegraphSeconds);
+	SnaredRunner->AdvanceAttackTelegraph(SnaredRunner->AttackTelegraphSeconds);
+	TestEqual(TEXT("(l-snare) The drain-ray should NOT have fired after three telegraphs' worth of quarter-speed ticks (75% progress)"),
 		SnaredListener->CallCount, 0);
 	SnaredRunner->AdvanceAttackTelegraph(SnaredRunner->AttackTelegraphSeconds);
-	TestEqual(TEXT("(l-snare) The drain-ray should fire exactly once once cumulative elapsed time (at half speed) reaches AttackTelegraphSeconds"),
+	TestEqual(TEXT("(l-snare) The drain-ray should fire exactly once once cumulative quarter-speed elapsed time reaches AttackTelegraphSeconds"),
 		SnaredListener->CallCount, 1);
 
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared

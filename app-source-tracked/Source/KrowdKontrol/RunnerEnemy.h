@@ -94,6 +94,12 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Runner")
 	FOnRunnerDrainFired OnRunnerDrainFired;
 
+	// Issue #65: RU-NNR's colour-match bonus vs Snare is potency, not duration -
+	// public to match the base declaration's access (callers hold concrete
+	// ARunnerEnemy pointers in tests); see the .cpp for the locked numbers and
+	// their PRD source.
+	virtual float GetControlledSpeedMultiplier() const override;
+
 protected:
 	virtual float GetAttackRangeUnits() const override;
 	virtual float GetMovementSpeedUnitsPerSecond() const override;

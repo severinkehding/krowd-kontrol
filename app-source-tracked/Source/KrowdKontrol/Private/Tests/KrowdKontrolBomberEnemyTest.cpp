@@ -410,14 +410,17 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// (t) issue #138: expiry-reversion via Fear (Bomber's own OnControlledEntry
-	// ability, case (c) above), using AbilityData::Get(Fear).BaseDurationSeconds
-	// directly rather than a hardcoded magic number - no per-enemy override exists for
-	// Bomber, so the base duration governs.
+	// (t) issue #138/#65: expiry-reversion via Fear (Bomber's own OnControlledEntry
+	// ability, case (c) above). B0-0MR's GetControlledDurationOverrideSeconds now
+	// returns a 7s colour-match bonus for Fear (issue #65), not the 5s
+	// AbilityData::Get(Fear).BaseDurationSeconds baseline - read the actually-applied
+	// duration off the enemy itself rather than assuming the base duration governs.
 	ABomberEnemy* ExpiryBomber = NewObject<ABomberEnemy>();
 	AdvanceToAttack(ExpiryBomber, ZeroDistanceLocation);
-	ExpiryBomber->ReceiveControl(EAbilitySlot::Fear); // Attack -> Controlled
-	const float FearDurationSeconds = AbilityData::Get(EAbilitySlot::Fear).BaseDurationSeconds;
+	ExpiryBomber->ReceiveControl(EAbilitySlot::Fear); // Attack -> Controlled, 7.0f override
+	const float FearDurationSeconds = ExpiryBomber->GetTotalControlledSeconds();
+	TestEqual(TEXT("Fear's colour-match override (7.0f) should govern expiry, not the 5s base duration"),
+		FearDurationSeconds, 7.0f);
 	ExpiryBomber->TickControlledDuration(FearDurationSeconds - 1.0f);
 	TestEqual(TEXT("Bomber should still be Controlled before the Fear duration elapses"),
 		static_cast<uint8>(ExpiryBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));

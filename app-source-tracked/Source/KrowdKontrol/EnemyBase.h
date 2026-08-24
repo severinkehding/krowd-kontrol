@@ -170,6 +170,15 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// friend-class comment.
 	friend class FKrowdKontrolControlledDurationIndicatorComponentTest;
 
+	// Same grant, for the colour-match duration-bonus test (issue #65), which
+	// drives real ATrooperEnemy/ABomberEnemy instances through Idle->Alert->Attack
+	// via the private TickCheckDetection before ReceiveControl(), to prove the
+	// per-enemy GetControlledDurationOverrideSeconds() bonus (Root/Fear) and the
+	// no-bonus mismatch/Stun cases against real concrete subclasses, not a
+	// generic AEnemyBaseTestActor. Non-transitive - see MusicSubsystem.h's
+	// friend-class comment.
+	friend class FKrowdKontrolAbilityColourMatchTest;
+
 public:
 	AEnemyBase();
 
@@ -399,7 +408,11 @@ protected:
 	// AdvanceXTelegraph consult this instead of a raw DeltaSeconds, so Snare's 50% slow
 	// (or Root's inert 1.0f "full speed while allowed to attack") applies uniformly to
 	// both movement and attack-telegraph timing with one source of truth.
-	float GetControlledSpeedMultiplier() const;
+	// Virtual for issue #65's per-matchup potency bonus: RU-NNR deepens Snare's slow
+	// from the 50% base to 75% on colour match (docs/prd-ability-shapes.md's locked
+	// table) - a potency override, where the other three matchups override duration
+	// via GetControlledDurationOverrideSeconds() instead.
+	virtual float GetControlledSpeedMultiplier() const;
 
 private:
 	// Internal transition-guard logic, never subclass-overridable directly - keeps the
