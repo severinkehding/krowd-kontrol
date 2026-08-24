@@ -1,16 +1,24 @@
 // Issue #65: proves the colour-match Controlled-duration bonus for the two
 // remaining duration-bearing matchups (Root->TR-UPR: 8s, Fear->B0-0MR: 7s), added as
 // per-enemy-subclass GetControlledDurationOverrideSeconds() overrides on ATrooperEnemy
-// and ABomberEnemy, mirroring ASniperEnemy's already-shipped Sleep override (issue
-// #121, covered separately by KrowdKontrolSniperEnemyTest.cpp - not re-tested here).
+// and ABomberEnemy, mirroring ASniperEnemy's already-shipped Sleep->SN-1PR override
+// (issue #121: 7s, unchanged by this issue - case (f) below re-asserts it here so all
+// 3 duration-bearing matchups this issue's table lists are diff-visible in one place,
+// on top of KrowdKontrolSniperEnemyTest.cpp's own pre-existing case (s) coverage).
+// Snare->RU-NNR is a potency (75%-slow), not duration, bonus per the issue's
+// 2026-08-22 operator ruling and is explicitly out of scope here pending the Ability
+// Targeting Shapes PRD's slow-flavour work (no ControlledSpeedMultiplier override
+// hook exists yet).
 //
-// Covers: one matched application per new override, one mismatched application
-// (proves a non-countering ability still applies at full base effectiveness and is
-// never gated), and Stun-vs-both-enemy-types (proves Stun stays colour-neutral).
+// Covers: one matched application per new override plus the pre-existing Sleep one,
+// one mismatched application (proves a non-countering ability still applies at full
+// base effectiveness and is never gated), and Stun-vs-both-enemy-types (proves Stun
+// stays colour-neutral).
 
 #include "Misc/AutomationTest.h"
 #include "TrooperEnemy.h"
 #include "BomberEnemy.h"
+#include "SniperEnemy.h"
 #include "AbilityData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -105,6 +113,23 @@ bool FKrowdKontrolAbilityColourMatchTest::RunTest(const FString& Parameters)
 	MismatchedBomber->ReceiveControl(EAbilitySlot::Root); // colour-mismatched: B0-0MR is countered by Fear, not Root
 	TestEqual(TEXT("Root-vs-B0-0MR should still apply at full base effectiveness, not TR-UPR's 8s bonus"),
 		MismatchedBomber->GetTotalControlledSeconds(), AbilityData::Get(EAbilitySlot::Root).BaseDurationSeconds);
+
+	// (f) Sleep-vs-SN-1PR: colour-matched, gets the pre-existing 7s bonus (issue
+	// #121), not the 5s base duration - re-asserted here (on top of
+	// KrowdKontrolSniperEnemyTest.cpp's own case (s)) so this issue's table's third
+	// duration-bearing matchup is diff-visible in the suite this issue's AC asks for,
+	// alongside cases (a)/(b) above.
+	ASniperEnemy* MatchedSniper = NewObject<ASniperEnemy>();
+	if (!TestNotNull(TEXT("ASniperEnemy should construct"), MatchedSniper))
+	{
+		return false;
+	}
+	MatchedSniper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	MatchedSniper->ReceiveControl(EAbilitySlot::Sleep); // colour-matched: SN-1PR countered by Sleep
+	TestEqual(TEXT("Sleep-vs-SN-1PR should apply the pre-existing 7s colour-match bonus, not the 5s base duration"),
+		MatchedSniper->GetTotalControlledSeconds(), 7.0f);
+	TestNotEqual(TEXT("precondition: Sleep's colour-match bonus (7.0f) differs from Sleep's own base duration"),
+		7.0f, AbilityData::Get(EAbilitySlot::Sleep).BaseDurationSeconds);
 
 	return true;
 }
