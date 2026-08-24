@@ -129,6 +129,16 @@ bool FKrowdKontrolPostRunSummaryWidgetWiringTest::RunTest(const FString& Paramet
 	// Assert real, non-placeholder values reached the widget.
 	TestFalse(TEXT("Clear time should not show the 4:32 placeholder after a real level clear"),
 		Widget->GetClearTimeDisplayText().ToString().Contains(TEXT("4:32")));
+
+	// Cross-check: the widget's displayed clear time should match this run's actual
+	// elapsed time, read independently from the subsystem - not just "not the placeholder".
+	const float ExpectedRunClearTimeSeconds = ClearTimeSubsystem->GetLastClearTimeSeconds();
+	const int32 ClampedRunSeconds = FMath::Max(0, FMath::RoundToInt(ExpectedRunClearTimeSeconds));
+	const FString ExpectedClearTimeDisplay = FString::Printf(
+		TEXT("Clear Time: %d:%02d"), ClampedRunSeconds / 60, ClampedRunSeconds % 60);
+	TestEqual(TEXT("Widget's displayed clear time should match the subsystem's independently-read run time"),
+		Widget->GetClearTimeDisplayText().ToString(), ExpectedClearTimeDisplay);
+
 	TestFalse(TEXT("Crowd Mastery should not show the 14 placeholder after a real level clear"),
 		Widget->GetCrowdMasteryDisplayText().ToString().Contains(TEXT("14")));
 	TestEqual(TEXT("Crowd Mastery should show the real value this test drove"),
@@ -152,6 +162,21 @@ bool FKrowdKontrolPostRunSummaryWidgetWiringTest::RunTest(const FString& Paramet
 	const FString ExpectedBestDisplay = FString::Printf(TEXT("Best: %d:%02d"), ClampedBestSeconds / 60, ClampedBestSeconds % 60);
 	TestEqual(TEXT("Widget's displayed best time should match the subsystem's independently-read persisted best"),
 		Widget->GetBestClearTimeDisplayText().ToString(), ExpectedBestDisplay);
+
+	// Missing-subsystem degrade: HandleLevelClear() should not crash and should fall back
+	// to 0 clear-time/best-time (Crowd Mastery is independent of ClearTimeSubsystem and
+	// still populates) when CachedLevelClearTimeSubsystem was never resolved - a separate
+	// UPostRunSummaryWidget instance's own state, not shared with Widget above.
+	UPostRunSummaryWidget* DegradedWidget = CreateWidget<UPostRunSummaryWidget>(World, UPostRunSummaryWidget::StaticClass());
+	if (TestNotNull(TEXT("UPostRunSummaryWidget should construct for the degrade case"), DegradedWidget))
+	{
+		// CachedLevelClearTimeSubsystem left null - simulates GetGameInstance() being null.
+		DegradedWidget->HandleLevelClear();
+		TestEqual(TEXT("Clear time should fall back to 0:00 with no resolvable subsystem"),
+			DegradedWidget->GetClearTimeDisplayText().ToString(), FString(TEXT("Clear Time: 0:00")));
+		TestEqual(TEXT("Best clear time should fall back to 0:00 with no resolvable subsystem"),
+			DegradedWidget->GetBestClearTimeDisplayText().ToString(), FString(TEXT("Best: 0:00")));
+	}
 
 	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);
 	return true;

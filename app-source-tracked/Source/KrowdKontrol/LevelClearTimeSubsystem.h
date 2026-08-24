@@ -77,10 +77,12 @@ public:
 
 	// This run's clear time - as opposed to the persisted best GetBestClearTimeSeconds()
 	// reads from disk - captured from StopLevelTimerAndRecordClear()'s return value the
-	// moment HandleLevelClear() runs. Valid only after HandleLevelClear() has run at
-	// least once for the current level; 0 before that. BlueprintPure (unlike
-	// GetBestClearTimeSeconds, which is BlueprintCallable only because it reads from
-	// disk) since this getter has no side effects.
+	// moment HandleLevelClear() runs. Not reset on HandleLevelBegin(): before this level's
+	// own HandleLevelClear() has run, this still holds whatever the previous level (if any)
+	// last recorded - 0 only if no level has ever cleared yet this game instance. Callers
+	// that need to distinguish "not cleared yet" from "cleared with time 0" must track that
+	// separately. BlueprintPure (unlike GetBestClearTimeSeconds, which is BlueprintCallable
+	// only because it reads from disk) since this getter has no side effects.
 	UFUNCTION(BlueprintPure, Category = "Level Clear Time")
 	float GetLastClearTimeSeconds() const { return LastClearTimeSeconds; }
 
