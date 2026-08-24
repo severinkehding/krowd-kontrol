@@ -22,6 +22,7 @@ class UGizmoFirstContactComponent;
 class UFirstStunBeaconComponent;
 class UAbilityMatchupSignalComponent;
 class UAbilityMatchupNudgeComponent;
+class UTeachingPromptComponent;
 class UPunishmentManagerComponent;
 class USpeedReductionPunishmentComponent;
 class UPunishmentArbitrationComponent;
@@ -213,6 +214,14 @@ public:
 	// AbilityCastComponent's OnAbilityCastApplied directly.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UAbilityMatchupNudgeComponent> AbilityMatchupNudgeComponent;
+
+	// New Level-1 core-loop teaching prompts (issue #219, PRD "Level Progression &
+	// Teaching Arc" REQ-3) - four one-shot on-screen prompts (stun/control/drop/room-
+	// clear), each tied to a real gameplay signal, reusing OnScreenPromptWidget. Bound
+	// in the constructor below, to AbilityCastComponent's OnAbilityCastApplied, same
+	// shape as GizmoFirstContactComponent/FirstStunBeaconComponent above.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UTeachingPromptComponent> TeachingPromptComponent;
 
 	// Applies CameraArmLength/CameraBoomPitch/CameraFieldOfView onto
 	// CameraBoom/TopDownCamera. Called once from the constructor (CDO + freshly
