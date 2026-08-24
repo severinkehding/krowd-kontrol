@@ -408,7 +408,11 @@ protected:
 	// AdvanceXTelegraph consult this instead of a raw DeltaSeconds, so Snare's 50% slow
 	// (or Root's inert 1.0f "full speed while allowed to attack") applies uniformly to
 	// both movement and attack-telegraph timing with one source of truth.
-	float GetControlledSpeedMultiplier() const;
+	// Virtual for issue #65's per-matchup potency bonus: RU-NNR deepens Snare's slow
+	// from the 50% base to 75% on colour match (docs/prd-ability-shapes.md's locked
+	// table) - a potency override, where the other three matchups override duration
+	// via GetControlledDurationOverrideSeconds() instead.
+	virtual float GetControlledSpeedMultiplier() const;
 
 private:
 	// Internal transition-guard logic, never subclass-overridable directly - keeps the

@@ -19,6 +19,7 @@
 #include "TrooperEnemy.h"
 #include "BomberEnemy.h"
 #include "SniperEnemy.h"
+#include "RunnerEnemy.h"
 #include "AbilityData.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -130,6 +131,40 @@ bool FKrowdKontrolAbilityColourMatchTest::RunTest(const FString& Parameters)
 		MatchedSniper->GetTotalControlledSeconds(), 7.0f);
 	TestNotEqual(TEXT("precondition: Sleep's colour-match bonus (7.0f) differs from Sleep's own base duration"),
 		7.0f, AbilityData::Get(EAbilitySlot::Sleep).BaseDurationSeconds);
+
+	// (g) Snare-vs-RU-NNR: colour-matched, but this matchup's bonus is POTENCY, not
+	// duration - the slow deepens from Snare's 50% base ControlledSpeedMultiplier to
+	// 75% (0.25f) on match, per docs/prd-ability-shapes.md's locked table ("Slow: 50%
+	// base, 75% on colour match (see #65)"). Duration stays at Snare's unmodified
+	// base - a potency-bonused RU-NNR must NOT also get a duration bonus.
+	ARunnerEnemy* MatchedRunner = NewObject<ARunnerEnemy>();
+	if (!TestNotNull(TEXT("ARunnerEnemy should construct"), MatchedRunner))
+	{
+		return false;
+	}
+	MatchedRunner->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	MatchedRunner->ReceiveControl(EAbilitySlot::Snare); // colour-matched: RU-NNR countered by Snare
+	TestEqual(TEXT("Snare-vs-RU-NNR should deepen the slow to 75% (0.25f multiplier) on colour match"),
+		MatchedRunner->GetControlledSpeedMultiplier(), 0.25f);
+	TestEqual(TEXT("Snare-vs-RU-NNR's bonus is potency-only - duration stays at Snare's base"),
+		MatchedRunner->GetTotalControlledSeconds(), AbilityData::Get(EAbilitySlot::Snare).BaseDurationSeconds);
+	TestNotEqual(TEXT("precondition: the matched 0.25f multiplier differs from Snare's own base multiplier"),
+		0.25f, AbilityData::Get(EAbilitySlot::Snare).ControlledSpeedMultiplier);
+
+	// (h) Snare-vs-TR-UPR: colour-mismatched (TR-UPR is countered by Root, not
+	// Snare), still applies at Snare's full base effectiveness - the 50% base slow,
+	// never RU-NNR's deepened 75%. Closes the potency-bonus cross-contamination
+	// direction the duration cases (c)/(e) close for their overrides.
+	ATrooperEnemy* SnaredTrooper = NewObject<ATrooperEnemy>();
+	if (!TestNotNull(TEXT("ATrooperEnemy should construct (Snare mismatch case)"), SnaredTrooper))
+	{
+		return false;
+	}
+	SnaredTrooper->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+	SnaredTrooper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack
+	SnaredTrooper->ReceiveControl(EAbilitySlot::Snare); // colour-mismatched
+	TestEqual(TEXT("Snare-vs-TR-UPR should keep Snare's 50% base slow, not RU-NNR's deepened 75%"),
+		SnaredTrooper->GetControlledSpeedMultiplier(), AbilityData::Get(EAbilitySlot::Snare).ControlledSpeedMultiplier);
 
 	return true;
 }

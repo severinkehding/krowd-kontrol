@@ -98,6 +98,23 @@ ARunnerEnemy::ARunnerEnemy()
 	}
 }
 
+float ARunnerEnemy::GetControlledSpeedMultiplier() const
+{
+	// Issue #65: RU-NNR is specifically countered by Snare, and Snare's colour-match
+	// bonus is POTENCY, not duration - the slow deepens from the 50% base
+	// (AbilityData's 0.5f ControlledSpeedMultiplier, issue #254) to 75% (0.25f) on
+	// match, per docs/prd-ability-shapes.md's locked ability table ("Slow: 50% base,
+	// 75% on colour match (see #65)") and the operator's 2026-08-22 respec on issue
+	// #65 (per-matchup enhanced effect on top of each ability's base - only the
+	// three incapacitating matchups express theirs as extra duration via
+	// GetControlledDurationOverrideSeconds()).
+	if (IsControlled() && GetControllingAbility() == EAbilitySlot::Snare)
+	{
+		return 0.25f;
+	}
+	return Super::GetControlledSpeedMultiplier();
+}
+
 float ARunnerEnemy::GetAttackRangeUnits() const
 {
 	// Short range - a little beyond ABomberEnemy's 150.0f melee-contact range, since a
