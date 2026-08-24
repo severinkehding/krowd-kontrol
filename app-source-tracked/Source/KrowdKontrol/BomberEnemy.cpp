@@ -214,3 +214,15 @@ void ABomberEnemy::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	AdvanceAttackTelegraph(DeltaTime);
 }
+
+float ABomberEnemy::GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const
+{
+	// Issue #65: B0-0MR is specifically countered by Fear with a 7s lock vs the 5s
+	// baseline every other enemy/ability combination uses (operator ruling
+	// 2026-08-22, sourced from the OG GDD ability/enemy table).
+	if (Ability == EAbilitySlot::Fear)
+	{
+		return 7.0f;
+	}
+	return Super::GetControlledDurationOverrideSeconds(Ability);
+}

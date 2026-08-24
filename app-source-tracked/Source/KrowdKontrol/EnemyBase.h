@@ -170,6 +170,15 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// friend-class comment.
 	friend class FKrowdKontrolControlledDurationIndicatorComponentTest;
 
+	// Same grant, for the colour-match duration-bonus test (issue #65), which
+	// drives real ATrooperEnemy/ABomberEnemy instances through Idle->Alert->Attack
+	// via the private TickCheckDetection before ReceiveControl(), to prove the
+	// per-enemy GetControlledDurationOverrideSeconds() bonus (Root/Fear) and the
+	// no-bonus mismatch/Stun cases against real concrete subclasses, not a
+	// generic AEnemyBaseTestActor. Non-transitive - see MusicSubsystem.h's
+	// friend-class comment.
+	friend class FKrowdKontrolAbilityColourMatchTest;
+
 public:
 	AEnemyBase();
 

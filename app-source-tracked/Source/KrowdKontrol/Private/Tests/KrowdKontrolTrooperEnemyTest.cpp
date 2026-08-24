@@ -431,14 +431,17 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 			WorldlessTrooper->AttackTellAudioComponent.Get());
 	}
 
-	// (r) issue #138: expiry-reversion via Root (Trooper's own OnControlledEntry
-	// ability, case (c) above), using AbilityData::Get(Root).BaseDurationSeconds
-	// directly rather than a hardcoded magic number - no per-enemy override exists for
-	// Trooper, so the base duration governs.
+	// (r) issue #138/#65: expiry-reversion via Root (Trooper's own OnControlledEntry
+	// ability, case (c) above). TR-UPR's GetControlledDurationOverrideSeconds now
+	// returns an 8s colour-match bonus for Root (issue #65), not the 5s
+	// AbilityData::Get(Root).BaseDurationSeconds baseline - read the actually-applied
+	// duration off the enemy itself rather than assuming the base duration governs.
 	ATrooperEnemy* ExpiryTrooper = NewObject<ATrooperEnemy>();
 	AdvanceToAttack(ExpiryTrooper, ZeroDistanceLocation);
-	ExpiryTrooper->ReceiveControl(EAbilitySlot::Root); // Attack -> Controlled
-	const float RootDurationSeconds = AbilityData::Get(EAbilitySlot::Root).BaseDurationSeconds;
+	ExpiryTrooper->ReceiveControl(EAbilitySlot::Root); // Attack -> Controlled, 8.0f override
+	const float RootDurationSeconds = ExpiryTrooper->GetTotalControlledSeconds();
+	TestEqual(TEXT("Root's colour-match override (8.0f) should govern expiry, not the 5s base duration"),
+		RootDurationSeconds, 8.0f);
 	ExpiryTrooper->TickControlledDuration(RootDurationSeconds - 1.0f);
 	TestEqual(TEXT("Trooper should still be Controlled before the Root duration elapses"),
 		static_cast<uint8>(ExpiryTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
