@@ -9,6 +9,22 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 
+namespace
+{
+	void ConfigureCorridorGuardRail(UBoxComponent* GuardRail, USceneComponent* Root)
+	{
+		GuardRail->SetupAttachment(Root);
+		GuardRail->SetCollisionResponseToAllChannels(ECR_Ignore);
+		GuardRail->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+		GuardRail->SetGenerateOverlapEvents(false);
+		// Starts disabled/zero-sized like the door's other connector-span geometry -
+		// RecomputeConnectorGeometry() positions and enables it once RoomA/RoomB resolve to
+		// a valid span. Unlike GateBlockingComponent, never re-toggled after that - the
+		// corridor sides are always solid, not gated.
+		GuardRail->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+}
+
 ADoorConnectorActor::ADoorConnectorActor()
 {
 	// Ticks (cheap, 4Hz) so the player-beyond-door term of RefreshGateState() tracks
@@ -87,22 +103,10 @@ ADoorConnectorActor::ADoorConnectorActor()
 	GateBlockingComponent->SetGenerateOverlapEvents(false);
 
 	CorridorGuardRailAComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CorridorGuardRailAComponent"));
-	CorridorGuardRailAComponent->SetupAttachment(DoorConnectorRoot);
-	CorridorGuardRailAComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	CorridorGuardRailAComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	CorridorGuardRailAComponent->SetGenerateOverlapEvents(false);
-	// Starts disabled/zero-sized like the door's other connector-span geometry -
-	// RecomputeConnectorGeometry() positions and enables it once RoomA/RoomB resolve to
-	// a valid span. Unlike GateBlockingComponent, never re-toggled after that - the
-	// corridor sides are always solid, not gated.
-	CorridorGuardRailAComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ConfigureCorridorGuardRail(CorridorGuardRailAComponent, DoorConnectorRoot);
 
 	CorridorGuardRailBComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CorridorGuardRailBComponent"));
-	CorridorGuardRailBComponent->SetupAttachment(DoorConnectorRoot);
-	CorridorGuardRailBComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	CorridorGuardRailBComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	CorridorGuardRailBComponent->SetGenerateOverlapEvents(false);
-	CorridorGuardRailBComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ConfigureCorridorGuardRail(CorridorGuardRailBComponent, DoorConnectorRoot);
 }
 
 void ADoorConnectorActor::HideConnectorVisuals()
@@ -158,15 +162,15 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	const float GuardRailOffset = ConnectorFloorWidth * 0.5f + CorridorGuardRailThickness * 0.5f;
 	const FVector GuardRailExtent(Length * 0.5f, CorridorGuardRailThickness * 0.5f, CorridorGuardRailHeight * 0.5f);
 
-	CorridorGuardRailAComponent->SetWorldLocation(Midpoint + LateralDirection * GuardRailOffset);
-	CorridorGuardRailAComponent->SetWorldRotation(Delta.Rotation());
-	CorridorGuardRailAComponent->SetBoxExtent(GuardRailExtent);
-	CorridorGuardRailAComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-
-	CorridorGuardRailBComponent->SetWorldLocation(Midpoint - LateralDirection * GuardRailOffset);
-	CorridorGuardRailBComponent->SetWorldRotation(Delta.Rotation());
-	CorridorGuardRailBComponent->SetBoxExtent(GuardRailExtent);
-	CorridorGuardRailBComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	auto PlaceGuardRail = [&](UBoxComponent* GuardRail, const FVector& Location)
+	{
+		GuardRail->SetWorldLocation(Location);
+		GuardRail->SetWorldRotation(Delta.Rotation());
+		GuardRail->SetBoxExtent(GuardRailExtent);
+		GuardRail->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	};
+	PlaceGuardRail(CorridorGuardRailAComponent, Midpoint + LateralDirection * GuardRailOffset);
+	PlaceGuardRail(CorridorGuardRailBComponent, Midpoint - LateralDirection * GuardRailOffset);
 }
 
 void ADoorConnectorActor::OnConstruction(const FTransform& Transform)

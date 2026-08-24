@@ -46,6 +46,22 @@ namespace
 		Test.TestEqual(FString::Printf(TEXT("%s should Block ECC_WorldDynamic - the channel the real player pawn presents"), WallName),
 			Wall->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
 	}
+
+	// Asserts a gapped side's two flanks leave a walkable span matching
+	// +/-ConnectorFloorWidth/2, centered on the room - shared by the East-door and
+	// North-door cases below, which differ only in which axis (Y vs X) the gap runs
+	// along.
+	void CheckFlankGapSpan(FAutomationTestBase& Test, const TCHAR* SideName, float ExtentA, float RelativeA,
+		float ExtentB, float RelativeB, float ConnectorFloorWidth)
+	{
+		const bool bAIsNegativeSide = RelativeA < RelativeB;
+		const float GapMin = bAIsNegativeSide ? (RelativeA + ExtentA) : (RelativeB + ExtentB);
+		const float GapMax = bAIsNegativeSide ? (RelativeB - ExtentB) : (RelativeA - ExtentA);
+		Test.TestTrue(FString::Printf(TEXT("%s flank gap's negative edge should match -ConnectorFloorWidth/2"), SideName),
+			FMath::IsNearlyEqual(GapMin, -ConnectorFloorWidth * 0.5f, 0.1f));
+		Test.TestTrue(FString::Printf(TEXT("%s flank gap's positive edge should match +ConnectorFloorWidth/2"), SideName),
+			FMath::IsNearlyEqual(GapMax, ConnectorFloorWidth * 0.5f, 0.1f));
+	}
 }
 
 bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Parameters)
@@ -121,17 +137,10 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 
 		// The two flanks' combined Y-span should leave a walkable gap matching the
 		// door's ConnectorFloorWidth, centered at Y=0 (relative to EastDoorRoom).
-		const float ExtentA = EastFlanks[0]->GetUnscaledBoxExtent().Y;
-		const float ExtentB = EastFlanks[1]->GetUnscaledBoxExtent().Y;
-		const float RelativeYA = EastFlanks[0]->GetRelativeLocation().Y;
-		const float RelativeYB = EastFlanks[1]->GetRelativeLocation().Y;
-		const bool bAIsNegativeSide = RelativeYA < RelativeYB;
-		const float GapMin = bAIsNegativeSide ? (RelativeYA + ExtentA) : (RelativeYB + ExtentB);
-		const float GapMax = bAIsNegativeSide ? (RelativeYB - ExtentB) : (RelativeYA - ExtentA);
-		TestTrue(TEXT("Flank gap's negative edge should match -ConnectorFloorWidth/2"),
-			FMath::IsNearlyEqual(GapMin, -EastDoor->ConnectorFloorWidth * 0.5f, 0.1f));
-		TestTrue(TEXT("Flank gap's positive edge should match +ConnectorFloorWidth/2"),
-			FMath::IsNearlyEqual(GapMax, EastDoor->ConnectorFloorWidth * 0.5f, 0.1f));
+		CheckFlankGapSpan(*this, TEXT("East-door"),
+			EastFlanks[0]->GetUnscaledBoxExtent().Y, EastFlanks[0]->GetRelativeLocation().Y,
+			EastFlanks[1]->GetUnscaledBoxExtent().Y, EastFlanks[1]->GetRelativeLocation().Y,
+			EastDoor->ConnectorFloorWidth);
 	}
 
 	// (3): a mid-chain room with doors on both East and West.
@@ -274,17 +283,10 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 		// The two flanks' combined X-span should leave a walkable gap matching the
 		// door's ConnectorFloorWidth, centered at X=0 (relative to NorthDoorRoom) -
 		// the axis-swapped mirror of the East-door case's Y-span assertion above.
-		const float ExtentA = NorthFlanks[0]->GetUnscaledBoxExtent().X;
-		const float ExtentB = NorthFlanks[1]->GetUnscaledBoxExtent().X;
-		const float RelativeXA = NorthFlanks[0]->GetRelativeLocation().X;
-		const float RelativeXB = NorthFlanks[1]->GetRelativeLocation().X;
-		const bool bAIsNegativeSide = RelativeXA < RelativeXB;
-		const float GapMin = bAIsNegativeSide ? (RelativeXA + ExtentA) : (RelativeXB + ExtentB);
-		const float GapMax = bAIsNegativeSide ? (RelativeXB - ExtentB) : (RelativeXA - ExtentA);
-		TestTrue(TEXT("North-side flank gap's negative edge should match -ConnectorFloorWidth/2"),
-			FMath::IsNearlyEqual(GapMin, -NorthDoor->ConnectorFloorWidth * 0.5f, 0.1f));
-		TestTrue(TEXT("North-side flank gap's positive edge should match +ConnectorFloorWidth/2"),
-			FMath::IsNearlyEqual(GapMax, NorthDoor->ConnectorFloorWidth * 0.5f, 0.1f));
+		CheckFlankGapSpan(*this, TEXT("North-door"),
+			NorthFlanks[0]->GetUnscaledBoxExtent().X, NorthFlanks[0]->GetRelativeLocation().X,
+			NorthFlanks[1]->GetUnscaledBoxExtent().X, NorthFlanks[1]->GetRelativeLocation().X,
+			NorthDoor->ConnectorFloorWidth);
 	}
 
 	return true;
