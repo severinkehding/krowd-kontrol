@@ -93,7 +93,7 @@ void ULevelClearTimeSubsystem::HandleLevelClear()
 	UE_LOG(LogTemp, Log,
 		TEXT("ULevelClearTimeSubsystem::HandleLevelClear: stopping timer and recording clear for '%s'"),
 		*CurrentLevelID.ToString());
-	StopLevelTimerAndRecordClear(CurrentLevelID);
+	LastClearTimeSeconds = StopLevelTimerAndRecordClear(CurrentLevelID);
 }
 
 bool ULevelClearTimeSubsystem::RecordCrowdMasteryCount(FName LevelID, int32 SimultaneousControlledCount)

@@ -12,6 +12,7 @@
 #include "AbilityCooldownTrayWidget.h"
 #include "EnergyMeterWidget.h"
 #include "QuestTrackerWidget.h"
+#include "PostRunSummaryWidget.h"
 #include "FlatCamera3DPrototypePawn.h"
 #include "Paper2DPrototypePawn.h"
 #include "AbilityUnlockComponent.h"
@@ -73,6 +74,7 @@ bool FKrowdKontrolHUDWiringTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("BeginPlay should construct the energy meter widget"), ToRawPtr(Controller->EnergyMeterWidgetInstance));
 	TestNotNull(TEXT("BeginPlay should construct the on-screen prompt widget"), ToRawPtr(Controller->OnScreenPromptWidgetInstance));
 	TestNotNull(TEXT("BeginPlay should construct the quest tracker widget"), ToRawPtr(Controller->QuestTrackerWidgetInstance));
+	TestNotNull(TEXT("BeginPlay should construct the post-run summary widget"), ToRawPtr(Controller->PostRunSummaryWidgetInstance));
 
 	// AddToViewport() is a documented no-op under this project's -nullrhi Automation
 	// run (no UGameViewportSubsystem target) - assert no-crash only, matching

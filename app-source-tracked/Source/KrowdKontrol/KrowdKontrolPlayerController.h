@@ -12,6 +12,7 @@ class UEnergyMeterWidget;
 class UOnScreenPromptWidget;
 class UBriefingCardWidget;
 class UQuestTrackerWidget;
+class UPostRunSummaryWidget;
 class APlaceholderTargetZoneActor;
 class ULevelClearTimeSubsystem;
 class ULevelFailComponent;
@@ -70,6 +71,15 @@ public:
 	// ULevelLifecycleSubsystem::OnLevelBegin via ShowLevelBriefing() below.
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
 	TObjectPtr<UBriefingCardWidget> BriefingCardWidgetInstance;
+
+	// Post-run recap screen (issue #175, PRD 06 REQ-6). Unlike every other widget in
+	// this list, CreateHUDWidgets() deliberately does NOT call AddToViewport() on this
+	// one - it self-binds to ULevelLifecycleSubsystem::OnLevelClear (see
+	// PostRunSummaryWidget.h) and adds itself to the viewport only once real
+	// clear-time/Crowd-Mastery data is available, so it never appears prematurely at
+	// level start.
+	UPROPERTY(BlueprintReadOnly, Category = "HUD")
+	TObjectPtr<UPostRunSummaryWidget> PostRunSummaryWidgetInstance;
 
 	// Called by ULevelBriefingSubsystem::HandleLevelBegin. If BriefingCardWidgetInstance
 	// doesn't exist yet (OnLevelBegin fires before CreateHUDWidgets(), same race issue
