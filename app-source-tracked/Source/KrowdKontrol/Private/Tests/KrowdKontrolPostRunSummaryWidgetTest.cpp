@@ -53,31 +53,41 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 	// caller needed, the screen is self-demonstrating.
 	TestTrue(TEXT("Clear time text should be non-empty after construction"),
 		!Widget->GetClearTimeDisplayText().IsEmpty());
+	TestTrue(TEXT("Best clear time text should be non-empty after construction"),
+		!Widget->GetBestClearTimeDisplayText().IsEmpty());
 	TestTrue(TEXT("Crowd Mastery text should be non-empty after construction"),
 		!Widget->GetCrowdMasteryDisplayText().IsEmpty());
 
-	// (b) SetSummaryValues is the real wiring point a future tracking system will
-	// use - confirm both fields reflect an explicit call with known values, not just
-	// whatever the placeholder default happens to be.
-	Widget->SetSummaryValues(272.0f, 14);
+	// (b) SetSummaryValues is the real wiring point HandleLevelClear() uses - confirm
+	// all three fields reflect an explicit call with known values, not just whatever
+	// the placeholder default happens to be. Best-time value (200.0f) deliberately
+	// distinct from the clear-time value (272.0f) so a copy-paste argument-order bug
+	// would be caught by the assertions, not silently pass.
+	Widget->SetSummaryValues(272.0f, 200.0f, 14);
 	TestEqual(TEXT("Clear time should format as M:SS"),
 		Widget->GetClearTimeDisplayText().ToString(), FString(TEXT("Clear Time: 4:32")));
+	TestEqual(TEXT("Best clear time should format as M:SS"),
+		Widget->GetBestClearTimeDisplayText().ToString(), FString(TEXT("Best: 3:20")));
 	TestEqual(TEXT("Crowd Mastery should show the given count"),
 		Widget->GetCrowdMasteryDisplayText().ToString(), FString(TEXT("Crowd Mastery: 14")));
 
 	// (c) A zero-second, zero-count run should still render (edge case: no negative
 	// time/counts, no divide-by-zero in the minutes/seconds split).
-	Widget->SetSummaryValues(0.0f, 0);
+	Widget->SetSummaryValues(0.0f, 0.0f, 0);
 	TestEqual(TEXT("Zero clear time should format as 0:00"),
 		Widget->GetClearTimeDisplayText().ToString(), FString(TEXT("Clear Time: 0:00")));
+	TestEqual(TEXT("Zero best clear time should format as 0:00"),
+		Widget->GetBestClearTimeDisplayText().ToString(), FString(TEXT("Best: 0:00")));
 	TestEqual(TEXT("Zero Crowd Mastery should show 0"),
 		Widget->GetCrowdMasteryDisplayText().ToString(), FString(TEXT("Crowd Mastery: 0")));
 
 	// (d) Negative inputs must floor at zero (SetSummaryValues() clamps with
 	// FMath::Max(0, ...) rather than asserting - confirm that's what actually happens).
-	Widget->SetSummaryValues(-5.0f, -3);
+	Widget->SetSummaryValues(-5.0f, -5.0f, -3);
 	TestEqual(TEXT("Negative clear time should floor to 0:00"),
 		Widget->GetClearTimeDisplayText().ToString(), FString(TEXT("Clear Time: 0:00")));
+	TestEqual(TEXT("Negative best clear time should floor to 0:00"),
+		Widget->GetBestClearTimeDisplayText().ToString(), FString(TEXT("Best: 0:00")));
 	TestEqual(TEXT("Negative Crowd Mastery should floor to 0"),
 		Widget->GetCrowdMasteryDisplayText().ToString(), FString(TEXT("Crowd Mastery: 0")));
 
@@ -130,11 +140,15 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Clear time text should be empty when the tree was never built"),
 		UnbuiltWidget->GetClearTimeDisplayText().IsEmpty());
+	TestTrue(TEXT("Best clear time text should be empty when the tree was never built"),
+		UnbuiltWidget->GetBestClearTimeDisplayText().IsEmpty());
 	TestTrue(TEXT("Crowd Mastery text should be empty when the tree was never built"),
 		UnbuiltWidget->GetCrowdMasteryDisplayText().IsEmpty());
-	UnbuiltWidget->SetSummaryValues(272.0f, 14);
+	UnbuiltWidget->SetSummaryValues(272.0f, 200.0f, 14);
 	TestTrue(TEXT("SetSummaryValues() on an unbuilt tree should not crash and should stay empty"),
 		UnbuiltWidget->GetClearTimeDisplayText().IsEmpty());
+	TestTrue(TEXT("SetSummaryValues() on an unbuilt tree should leave best clear time empty too"),
+		UnbuiltWidget->GetBestClearTimeDisplayText().IsEmpty());
 
 	return true;
 }

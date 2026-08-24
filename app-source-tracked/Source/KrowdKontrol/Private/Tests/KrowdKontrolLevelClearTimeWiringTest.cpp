@@ -151,6 +151,12 @@ bool FKrowdKontrolLevelClearTimeWiringTest::RunTest(const FString& Parameters)
 		ClearTimeSubsystem->GetBestClearTimeSeconds(MapName, OutBest));
 	TestTrue(TEXT("The recorded best time should be non-negative"), OutBest >= 0.0f);
 
+	// GetLastClearTimeSeconds() (issue #175) should reflect the same clear this
+	// HandleLevelClear() invocation just persisted as the best - a fresh save slot
+	// means this run's elapsed time and the recorded best are the same value.
+	TestEqual(TEXT("GetLastClearTimeSeconds() should equal the elapsed time this OnLevelClear invocation recorded"),
+		ClearTimeSubsystem->GetLastClearTimeSeconds(), OutBest);
+
 	// Null-safety: must not crash, and must log the documented warning.
 	AddExpectedError(TEXT("LifecycleSubsystem is null"), EAutomationExpectedErrorFlags::Contains, 1);
 	ClearTimeSubsystem->SubscribeToLevelLifecycle(nullptr);

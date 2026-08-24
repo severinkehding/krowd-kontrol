@@ -6,6 +6,7 @@
 #include "OnScreenPromptWidget.h"
 #include "QuestTrackerWidget.h"
 #include "BriefingCardWidget.h"
+#include "PostRunSummaryWidget.h"
 #include "AbilityUnlockComponent.h"
 #include "AbilityUnlockLevelSubsystem.h"
 #include "LevelBriefingSubsystem.h"
@@ -100,6 +101,14 @@ void AKrowdKontrolPlayerController::CreateHUDWidgets()
 		{
 			BriefingCardWidgetInstance->AddToViewport();
 		}
+	}
+	if (!PostRunSummaryWidgetInstance)
+	{
+		// Deliberately no AddToViewport() here, unlike every sibling block above - this
+		// widget stays off-screen until it self-adds itself from its own OnLevelClear
+		// handler (see PostRunSummaryWidget.h's PostRunSummaryWidgetInstance comment and
+		// UPostRunSummaryWidget::HandleLevelClear()).
+		PostRunSummaryWidgetInstance = CreateWidget<UPostRunSummaryWidget>(this, UPostRunSummaryWidget::StaticClass());
 	}
 	// Covers the race where ULevelBriefingSubsystem::HandleLevelBegin() already
 	// called ShowLevelBriefing() - buffering the row because BriefingCardWidgetInstance

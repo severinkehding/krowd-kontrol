@@ -1,10 +1,14 @@
 #include "PostRunSummaryWidget.h"
 #include "HUDChromeColours.h"
+#include "LevelClearTimeSubsystem.h"
+#include "CrowdMasterySubsystem.h"
+#include "LevelLifecycleSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
@@ -13,6 +17,7 @@ void UPostRunSummaryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 	EnsureWidgetTreeBuilt();
+	BindToLevelLifecycle();
 }
 
 bool UPostRunSummaryWidget::Initialize()
@@ -21,6 +26,7 @@ bool UPostRunSummaryWidget::Initialize()
 	if (bNewlyInitialized)
 	{
 		EnsureWidgetTreeBuilt();
+		BindToLevelLifecycle();
 	}
 	return bNewlyInitialized;
 }
@@ -46,7 +52,7 @@ void UPostRunSummaryWidget::EnsureWidgetTreeBuilt()
 			WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient);
 		}
 		BuildWidgetTree();
-		SetSummaryValues(PlaceholderClearTimeSeconds, PlaceholderCrowdMasteryCount);
+		SetSummaryValues(PlaceholderClearTimeSeconds, PlaceholderBestClearTimeSeconds, PlaceholderCrowdMasteryCount);
 	}
 }
 
@@ -69,26 +75,40 @@ void UPostRunSummaryWidget::BuildWidgetTree()
 	ClearTimeText->SetColorAndOpacity(TextColor);
 	Layout->AddChildToVerticalBox(ClearTimeText);
 
+	BestClearTimeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BestClearTimeText"));
+	BestClearTimeText->SetColorAndOpacity(TextColor);
+	Layout->AddChildToVerticalBox(BestClearTimeText);
+
 	CrowdMasteryText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CrowdMasteryText"));
 	CrowdMasteryText->SetColorAndOpacity(TextColor);
 	Layout->AddChildToVerticalBox(CrowdMasteryText);
 }
 
-void UPostRunSummaryWidget::SetSummaryValues(float ClearTimeSeconds, int32 CrowdMasteryCount)
+void UPostRunSummaryWidget::SetSummaryValues(float ClearTimeSeconds, float BestClearTimeSeconds, int32 CrowdMasteryCount)
 {
-	const int32 ClampedSeconds = FMath::Max(0, FMath::RoundToInt(ClearTimeSeconds));
-	const int32 Minutes = ClampedSeconds / 60;
-	const int32 Seconds = ClampedSeconds % 60;
 	const FText ClearTimeDisplay = FText::Format(
-		NSLOCTEXT("PostRunSummaryWidget", "ClearTimeFormat", "Clear Time: {0}:{1}"),
-		FText::AsNumber(Minutes),
-		FText::FromString(FString::Printf(TEXT("%02d"), Seconds)));
+		NSLOCTEXT("PostRunSummaryWidget", "ClearTimeFormat", "Clear Time: {0}"),
+		FormatClockSeconds(ClearTimeSeconds));
 	SetTextBlockSafe(ClearTimeText, ClearTimeDisplay, TEXT("ClearTimeText"));
+
+	const FText BestClearTimeDisplay = FText::Format(
+		NSLOCTEXT("PostRunSummaryWidget", "BestClearTimeFormat", "Best: {0}"),
+		FormatClockSeconds(BestClearTimeSeconds));
+	SetTextBlockSafe(BestClearTimeText, BestClearTimeDisplay, TEXT("BestClearTimeText"));
 
 	const FText CrowdMasteryDisplay = FText::Format(
 		NSLOCTEXT("PostRunSummaryWidget", "CrowdMasteryFormat", "Crowd Mastery: {0}"),
 		FText::AsNumber(FMath::Max(0, CrowdMasteryCount)));
 	SetTextBlockSafe(CrowdMasteryText, CrowdMasteryDisplay, TEXT("CrowdMasteryText"));
+}
+
+FText UPostRunSummaryWidget::FormatClockSeconds(float TotalSeconds)
+{
+	const int32 ClampedSeconds = FMath::Max(0, FMath::RoundToInt(TotalSeconds));
+	return FText::Format(
+		NSLOCTEXT("PostRunSummaryWidget", "ClockFormat", "{0}:{1}"),
+		FText::AsNumber(ClampedSeconds / 60),
+		FText::FromString(FString::Printf(TEXT("%02d"), ClampedSeconds % 60)));
 }
 
 void UPostRunSummaryWidget::SetTextBlockSafe(UTextBlock* TextBlock, const FText& Text, const TCHAR* FieldName) const
@@ -110,9 +130,70 @@ FText UPostRunSummaryWidget::GetClearTimeDisplayText() const
 	return ClearTimeText ? ClearTimeText->GetText() : FText::GetEmpty();
 }
 
+FText UPostRunSummaryWidget::GetBestClearTimeDisplayText() const
+{
+	return BestClearTimeText ? BestClearTimeText->GetText() : FText::GetEmpty();
+}
+
 FText UPostRunSummaryWidget::GetCrowdMasteryDisplayText() const
 {
 	return CrowdMasteryText ? CrowdMasteryText->GetText() : FText::GetEmpty();
+}
+
+void UPostRunSummaryWidget::BindToLevelLifecycle()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	if (ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>())
+	{
+		LifecycleSubsystem->OnLevelClear.AddUniqueDynamic(this, &UPostRunSummaryWidget::HandleLevelClear);
+	}
+}
+
+void UPostRunSummaryWidget::HandleLevelClear()
+{
+	UWorld* World = GetWorld();
+	const FName LevelID = World ? FName(*World->GetMapName()) : NAME_None;
+
+	float RunClearTimeSeconds = 0.0f;
+	float BestClearTimeSeconds = 0.0f;
+	if (ULevelClearTimeSubsystem* ClearTimeSubsystem = ResolveLevelClearTimeSubsystem())
+	{
+		RunClearTimeSeconds = ClearTimeSubsystem->GetLastClearTimeSeconds();
+		ClearTimeSubsystem->GetBestClearTimeSeconds(LevelID, BestClearTimeSeconds);
+	}
+
+	int32 CrowdMasteryCount = 0;
+	if (UCrowdMasterySubsystem* CrowdMasterySubsystem = World ? World->GetSubsystem<UCrowdMasterySubsystem>() : nullptr)
+	{
+		CrowdMasteryCount = CrowdMasterySubsystem->GetRunningMaxControlledCount();
+	}
+
+	SetSummaryValues(RunClearTimeSeconds, BestClearTimeSeconds, CrowdMasteryCount);
+	AddToViewport();
+}
+
+ULevelClearTimeSubsystem* UPostRunSummaryWidget::ResolveLevelClearTimeSubsystem()
+{
+	if (CachedLevelClearTimeSubsystem)
+	{
+		return CachedLevelClearTimeSubsystem;
+	}
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		CachedLevelClearTimeSubsystem = GameInstance->GetSubsystem<ULevelClearTimeSubsystem>();
+	}
+	if (!CachedLevelClearTimeSubsystem && !bHasWarnedMissingLevelClearTimeSubsystem)
+	{
+		bHasWarnedMissingLevelClearTimeSubsystem = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPostRunSummaryWidget: no ULevelClearTimeSubsystem available - ")
+			TEXT("clear-time/best-time fields will show 0 on the next level clear."));
+	}
+	return CachedLevelClearTimeSubsystem;
 }
 
 namespace
@@ -123,7 +204,8 @@ namespace
 	// could use to visually confirm the rendered clear-time/Crowd-Mastery text or
 	// chrome colours. Adds the widget to the local player's viewport with its
 	// existing placeholder values - this is an observation path only, not a real
-	// gameplay trigger (a future real "run cleared" event replaces this call site).
+	// gameplay trigger (a real "run cleared" event, HandleLevelClear() above, is
+	// what production code uses since issue #175).
 	void ShowPostRunSummary(const TArray<FString>& Args, UWorld* World)
 	{
 		APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;

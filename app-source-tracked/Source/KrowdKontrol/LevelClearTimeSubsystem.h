@@ -75,6 +75,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Level Clear Time")
 	bool GetBestClearTimeSeconds(FName LevelID, float& OutBestSeconds) const;
 
+	// This run's clear time - as opposed to the persisted best GetBestClearTimeSeconds()
+	// reads from disk - captured from StopLevelTimerAndRecordClear()'s return value the
+	// moment HandleLevelClear() runs. Not reset on HandleLevelBegin(): before this level's
+	// own HandleLevelClear() has run, this still holds whatever the previous level (if any)
+	// last recorded - 0 only if no level has ever cleared yet this game instance. Callers
+	// that need to distinguish "not cleared yet" from "cleared with time 0" must track that
+	// separately. BlueprintPure (unlike GetBestClearTimeSeconds, which is BlueprintCallable
+	// only because it reads from disk) since this getter has no side effects.
+	UFUNCTION(BlueprintPure, Category = "Level Clear Time")
+	float GetLastClearTimeSeconds() const { return LastClearTimeSeconds; }
+
 	// Subscribes this subsystem to LifecycleSubsystem's OnLevelBegin/OnLevelClear
 	// delegates (issue #170, PRD "Run Lifecycle & Progression Signals" REQ-2) so a
 	// level's clear-time timer starts and stops automatically. Takes the lifecycle
@@ -137,4 +148,8 @@ private:
 	// The map name from the most recent HandleLevelBegin() call - HandleLevelClear()
 	// uses this since OnLevelClear's own signature carries no MapName.
 	FName CurrentLevelID;
+
+	// This run's clear time, captured by HandleLevelClear() - see
+	// GetLastClearTimeSeconds()'s doc comment above.
+	float LastClearTimeSeconds = 0.0f;
 };

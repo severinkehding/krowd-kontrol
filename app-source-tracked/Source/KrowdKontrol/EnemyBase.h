@@ -90,6 +90,13 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	friend class FKrowdKontrolCrowdMasteryBeginPlayWiringTest;
 	friend class FKrowdKontrolLevelClearTimeWiringTest;
 
+	// Same grant, for the post-run summary widget end-to-end wiring test (issue #175),
+	// which drives real AEnemyBaseTestActor instances through Idle->Alert->Attack via
+	// the private TickCheckDetection before ReceiveControl()/TransitionToBanked(), to
+	// prove a real OnLevelClear broadcast reaches the widget with real clear-time/best/
+	// Crowd-Mastery data. Non-transitive - see MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
+
 	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
 	// sync test (issue #20), which drive a plain AEnemyBaseTestActor through the same
 	// Idle->Alert transition as FKrowdKontrolOvercrowdAudioSubsystemTest above.

@@ -6,35 +6,43 @@
 
 class UBorder;
 class UTextBlock;
+class ULevelClearTimeSubsystem;
+class UCrowdMasterySubsystem;
+class ULevelLifecycleSubsystem;
 
-// Post-run summary screen (PRD 13 REQ-5): displays clear time and the "Crowd
-// Mastery" stat after a level/run clears. Real clear-time and Crowd Mastery
-// tracking don't exist yet (PRD 06 REQ-2/REQ-3, tracked separately) - this widget
-// builds its own UI tree in C++ (no Widget Blueprint asset - mirrors
-// UAbilityCooldownTrayWidget/UEnergyMeterWidget's existing precedent) and seeds
-// itself with placeholder values on construction, purely to prove out the screen's
-// layout and both fields rendering. SetSummaryValues() is the wiring point a future
-// real tracking system replaces the placeholder call with.
+// Post-run summary screen (PRD 13 REQ-5): displays clear time, persisted best clear
+// time, and the "Crowd Mastery" stat after a level/run clears. This widget builds its
+// own UI tree in C++ (no Widget Blueprint asset - mirrors
+// UAbilityCooldownTrayWidget/UEnergyMeterWidget's existing precedent) and seeds itself
+// with placeholder values on construction so the screen is self-demonstrating today.
+// Issue #175 (PRD 06 REQ-6) wires it to real gameplay: the widget self-subscribes to
+// ULevelLifecycleSubsystem::OnLevelClear (mirroring UQuestTrackerWidget's own
+// self-subscribe-to-OnLevelBegin shape) and, on a real level clear, calls
+// SetSummaryValues() with real clear-time/best-time/Crowd-Mastery data and adds itself
+// to the viewport - see HandleLevelClear()'s own comment for the full sequence.
 UCLASS()
 class KROWDKONTROL_API UPostRunSummaryWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
 public:
-	// Formats ClearTimeSeconds as M:SS (matches PRD 06 REQ-2's own display example,
-	// "Your best: 4:32") and CrowdMasteryCount as a plain integer count, and updates
-	// both text fields. This is the call a future real clear-time/Crowd Mastery
-	// tracking system (PRD 06 REQ-2/REQ-3) is expected to make with live data;
-	// NativeOnInitialized() calls it with placeholder values so the screen is
-	// self-demonstrating today.
+	// Formats ClearTimeSeconds/BestClearTimeSeconds as M:SS (matches PRD 06 REQ-2's own
+	// display example, "Your best: 4:32") and CrowdMasteryCount as a plain integer
+	// count, and updates all three text fields. This is the call
+	// UPostRunSummaryWidget::HandleLevelClear() makes with live data on a real level
+	// clear; NativeOnInitialized() calls it with placeholder values so the screen is
+	// self-demonstrating before that ever happens.
 	UFUNCTION(BlueprintCallable, Category = "Post-Run Summary")
-	void SetSummaryValues(float ClearTimeSeconds, int32 CrowdMasteryCount);
+	void SetSummaryValues(float ClearTimeSeconds, float BestClearTimeSeconds, int32 CrowdMasteryCount);
 
 	// Read-only accessors for what's currently displayed - used by the Automation
 	// Framework test, also generally useful to anything that wants to confirm the
 	// screen's state without re-deriving formatting.
 	UFUNCTION(BlueprintPure, Category = "Post-Run Summary")
 	FText GetClearTimeDisplayText() const;
+
+	UFUNCTION(BlueprintPure, Category = "Post-Run Summary")
+	FText GetBestClearTimeDisplayText() const;
 
 	UFUNCTION(BlueprintPure, Category = "Post-Run Summary")
 	FText GetCrowdMasteryDisplayText() const;
@@ -62,6 +70,7 @@ protected:
 private:
 	friend class FKrowdKontrolPostRunSummaryWidgetTest;
 	friend class FKrowdKontrolReservedGameplayColoursTest;
+	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
 
 	void BuildWidgetTree();
 
@@ -75,6 +84,45 @@ private:
 	// otherwise logs which field is rendering blank and why.
 	void SetTextBlockSafe(UTextBlock* TextBlock, const FText& Text, const TCHAR* FieldName) const;
 
+	// Shared by both time fields in SetSummaryValues(): clamps TotalSeconds to
+	// non-negative and formats it as "M:SS".
+	static FText FormatClockSeconds(float TotalSeconds);
+
+	// Resolves this world's ULevelLifecycleSubsystem and subscribes to its
+	// OnLevelClear - mirrors UQuestTrackerWidget::BindToLevelLifecycle()'s identical
+	// self-subscribe idiom, adapted for OnLevelClear. Deliberately no
+	// HasLevelBegun()-style late-subscribe catch-up: OnLevelClear only ever broadcasts
+	// from ULevelLifecycleSubsystem::RefreshLevelClearState(), called from Tick(), and
+	// this widget's own construction (from CreateHUDWidgets(), an actor's BeginPlay())
+	// is guaranteed to complete before the first Tick() of any frame - so it is
+	// impossible for OnLevelClear to fire before this widget has bound to it.
+	void BindToLevelLifecycle();
+
+	// Bound to ULevelLifecycleSubsystem::OnLevelClear via BindToLevelLifecycle().
+	// Reads this run's real clear time (ULevelClearTimeSubsystem::GetLastClearTimeSeconds()),
+	// the persisted personal best (GetBestClearTimeSeconds()), and this run's Crowd
+	// Mastery peak (UCrowdMasterySubsystem::GetRunningMaxControlledCount()), calls
+	// SetSummaryValues() with the real values, then AddToViewport()s itself. Relies on
+	// ULevelClearTimeSubsystem::HandleLevelClear() having already run for this same
+	// broadcast (it subscribes earlier, from world-Initialize() time, vs. this widget's
+	// actor-BeginPlay()-time bind) so LastClearTimeSeconds/the persisted best are both
+	// already up to date by the time this handler reads them.
+	UFUNCTION()
+	void HandleLevelClear();
+
+	// Resolves (and caches) the current UGameInstance's ULevelClearTimeSubsystem,
+	// mirroring AKrowdKontrolPlayerController::ResolveLevelClearTimeSubsystem()'s exact
+	// pattern - GetGameInstance() is null in this project's CreateNewMap()-based
+	// Automation test worlds, so the Automation Framework test injects a
+	// directly-constructed instance into CachedLevelClearTimeSubsystem via the
+	// friendship above instead of going through this resolver.
+	ULevelClearTimeSubsystem* ResolveLevelClearTimeSubsystem();
+
+	UPROPERTY()
+	TObjectPtr<ULevelClearTimeSubsystem> CachedLevelClearTimeSubsystem;
+
+	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
+
 	// Kept as a member (rather than a BuildWidgetTree() local) so
 	// KrowdKontrolReservedGameplayColoursTest.cpp can audit its background colour via
 	// friend-class access, matching UAbilityCooldownTrayWidget::SlotIconBorders's
@@ -86,10 +134,14 @@ private:
 	TObjectPtr<UTextBlock> ClearTimeText;
 
 	UPROPERTY()
+	TObjectPtr<UTextBlock> BestClearTimeText;
+
+	UPROPERTY()
 	TObjectPtr<UTextBlock> CrowdMasteryText;
 
-	// Placeholder values only (issue #74) - real clear-time/Crowd Mastery tracking
-	// is out of scope here, tracked by PRD 06 REQ-2/REQ-3.
+	// Placeholder values only (issue #74) - shown until a real OnLevelClear broadcast
+	// calls SetSummaryValues() with real data (issue #175).
 	static constexpr float PlaceholderClearTimeSeconds = 272.0f;
+	static constexpr float PlaceholderBestClearTimeSeconds = 272.0f;
 	static constexpr int32 PlaceholderCrowdMasteryCount = 14;
 };
