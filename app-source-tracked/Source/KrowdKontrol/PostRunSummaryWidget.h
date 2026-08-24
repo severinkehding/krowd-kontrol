@@ -84,6 +84,10 @@ private:
 	// otherwise logs which field is rendering blank and why.
 	void SetTextBlockSafe(UTextBlock* TextBlock, const FText& Text, const TCHAR* FieldName) const;
 
+	// Shared by both time fields in SetSummaryValues(): clamps TotalSeconds to
+	// non-negative and formats it as "M:SS".
+	static FText FormatClockSeconds(float TotalSeconds);
+
 	// Resolves this world's ULevelLifecycleSubsystem and subscribes to its
 	// OnLevelClear - mirrors UQuestTrackerWidget::BindToLevelLifecycle()'s identical
 	// self-subscribe idiom, adapted for OnLevelClear. Deliberately no

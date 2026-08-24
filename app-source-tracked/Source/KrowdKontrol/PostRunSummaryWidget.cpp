@@ -86,28 +86,29 @@ void UPostRunSummaryWidget::BuildWidgetTree()
 
 void UPostRunSummaryWidget::SetSummaryValues(float ClearTimeSeconds, float BestClearTimeSeconds, int32 CrowdMasteryCount)
 {
-	const int32 ClampedSeconds = FMath::Max(0, FMath::RoundToInt(ClearTimeSeconds));
-	const int32 Minutes = ClampedSeconds / 60;
-	const int32 Seconds = ClampedSeconds % 60;
 	const FText ClearTimeDisplay = FText::Format(
-		NSLOCTEXT("PostRunSummaryWidget", "ClearTimeFormat", "Clear Time: {0}:{1}"),
-		FText::AsNumber(Minutes),
-		FText::FromString(FString::Printf(TEXT("%02d"), Seconds)));
+		NSLOCTEXT("PostRunSummaryWidget", "ClearTimeFormat", "Clear Time: {0}"),
+		FormatClockSeconds(ClearTimeSeconds));
 	SetTextBlockSafe(ClearTimeText, ClearTimeDisplay, TEXT("ClearTimeText"));
 
-	const int32 ClampedBestSeconds = FMath::Max(0, FMath::RoundToInt(BestClearTimeSeconds));
-	const int32 BestMinutes = ClampedBestSeconds / 60;
-	const int32 BestSeconds = ClampedBestSeconds % 60;
 	const FText BestClearTimeDisplay = FText::Format(
-		NSLOCTEXT("PostRunSummaryWidget", "BestClearTimeFormat", "Best: {0}:{1}"),
-		FText::AsNumber(BestMinutes),
-		FText::FromString(FString::Printf(TEXT("%02d"), BestSeconds)));
+		NSLOCTEXT("PostRunSummaryWidget", "BestClearTimeFormat", "Best: {0}"),
+		FormatClockSeconds(BestClearTimeSeconds));
 	SetTextBlockSafe(BestClearTimeText, BestClearTimeDisplay, TEXT("BestClearTimeText"));
 
 	const FText CrowdMasteryDisplay = FText::Format(
 		NSLOCTEXT("PostRunSummaryWidget", "CrowdMasteryFormat", "Crowd Mastery: {0}"),
 		FText::AsNumber(FMath::Max(0, CrowdMasteryCount)));
 	SetTextBlockSafe(CrowdMasteryText, CrowdMasteryDisplay, TEXT("CrowdMasteryText"));
+}
+
+FText UPostRunSummaryWidget::FormatClockSeconds(float TotalSeconds)
+{
+	const int32 ClampedSeconds = FMath::Max(0, FMath::RoundToInt(TotalSeconds));
+	return FText::Format(
+		NSLOCTEXT("PostRunSummaryWidget", "ClockFormat", "{0}:{1}"),
+		FText::AsNumber(ClampedSeconds / 60),
+		FText::FromString(FString::Printf(TEXT("%02d"), ClampedSeconds % 60)));
 }
 
 void UPostRunSummaryWidget::SetTextBlockSafe(UTextBlock* TextBlock, const FText& Text, const TCHAR* FieldName) const
