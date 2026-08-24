@@ -5,9 +5,11 @@
 #include "AbilityData.h"
 #include "OnScreenPromptWidget.h"
 #include "KrowdKontrolPlayerController.h"
+#include "DoorConnectorActor.h"
 #include "Engine/World.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/BoxComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
@@ -19,9 +21,10 @@ namespace
 {
 	// Shared by all 4 wall mesh components below - the engine's
 	// /Engine/BasicShapes/Cube.Cube is a 100x100x100uu cube, so scale = desired
-	// size-in-cm / 100. Walls have collision disabled: ARoomActor has no per-door
-	// "which wall side" data, so a solid wall on all 4 sides would seal off the very
-	// connector paths this issue also requires to be walkable.
+	// size-in-cm / 100. Walls have collision disabled at construction time: real
+	// per-door wall-side blocking collision is applied later, in
+	// ARoomActor::SealRoomPerimeter() (issue #243), once every placed door in the
+	// World is discoverable.
 	void SetupWallMeshComponent(UStaticMeshComponent* WallMeshComponent, UStaticMesh* CubeMesh,
 		USceneComponent* RoomRoot, const FVector& Scale, const FVector& RelativeLocation)
 	{
@@ -33,6 +36,68 @@ namespace
 		WallMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		WallMeshComponent->SetRelativeScale3D(Scale);
 		WallMeshComponent->SetRelativeLocation(RelativeLocation);
+	}
+
+	enum class ERoomWallSide : uint8 { North, South, East, West };
+
+	// Mirrors ADoorConnectorActor::GateBlockingComponent's collision setup exactly
+	// (DoorConnectorActor.cpp:81-87) - the real player pawn presents ECC_WorldDynamic/
+	// BlockAllDynamic (issue #218's "attempt 3" root-cause finding), not ECC_Pawn or
+	// ECC_WorldStatic, so any new blocking volume must reuse this same channel or it
+	// silently fails to stop the player exactly like #218's first two attempts did.
+	void ConfigureBlockingCollision(UPrimitiveComponent* Component)
+	{
+		Component->SetCollisionResponseToAllChannels(ECR_Ignore);
+		Component->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+		Component->SetGenerateOverlapEvents(false);
+		Component->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
+
+	// Creates 0-2 invisible blocking UBoxComponents flanking the doorway gap
+	// [GapCenterOffset - GapHalfWidth, GapCenterOffset + GapHalfWidth] along Side's
+	// tangent axis, leaving that span walkable while blocking the rest of the wall's
+	// face. A flank is skipped if the gap already reaches or exceeds that edge of the
+	// wall (zero/negative remaining length) - e.g. an unusually wide connector.
+	void BuildWallGapFlanks(ARoomActor* Room, ERoomWallSide Side, float GapCenterOffset, float GapHalfWidth,
+		TArray<TObjectPtr<UBoxComponent>>& OutFlanks)
+	{
+		const bool bEastWest = (Side == ERoomWallSide::East || Side == ERoomWallSide::West);
+		const float WallSpanHalfExtent = bEastWest ? Room->RoomFloorExtent.Y : Room->RoomFloorExtent.X;
+		const float FixedAxisPosition = bEastWest
+			? (Side == ERoomWallSide::East ? Room->RoomFloorExtent.X : -Room->RoomFloorExtent.X)
+			: (Side == ERoomWallSide::North ? Room->RoomFloorExtent.Y : -Room->RoomFloorExtent.Y);
+
+		const float FlankRanges[2][2] = {
+			{ -WallSpanHalfExtent, GapCenterOffset - GapHalfWidth },
+			{ GapCenterOffset + GapHalfWidth, WallSpanHalfExtent },
+		};
+
+		for (const auto& Range : FlankRanges)
+		{
+			const float Length = Range[1] - Range[0];
+			if (Length <= KINDA_SMALL_NUMBER)
+			{
+				continue;
+			}
+			const float Center = (Range[0] + Range[1]) * 0.5f;
+
+			UBoxComponent* Flank = NewObject<UBoxComponent>(Room);
+			Flank->SetupAttachment(Room->GetRootComponent());
+			Flank->RegisterComponent();
+
+			const FVector RelativeLocation = bEastWest
+				? FVector(FixedAxisPosition, Center, Room->RoomWallHeight * 0.5f)
+				: FVector(Center, FixedAxisPosition, Room->RoomWallHeight * 0.5f);
+			const FVector BoxExtent = bEastWest
+				? FVector(Room->RoomWallThickness * 0.5f, Length * 0.5f, Room->RoomWallHeight * 0.5f)
+				: FVector(Length * 0.5f, Room->RoomWallThickness * 0.5f, Room->RoomWallHeight * 0.5f);
+
+			Flank->SetRelativeLocation(RelativeLocation);
+			Flank->SetBoxExtent(BoxExtent);
+			ConfigureBlockingCollision(Flank);
+
+			OutFlanks.Add(Flank);
+		}
 	}
 }
 
@@ -148,6 +213,70 @@ void ARoomActor::BeginPlay()
 		if (FindNearestRoom(Enemy, AllRooms) == this)
 		{
 			AddOwnedEnemy(Enemy);
+		}
+	}
+
+	SealRoomPerimeter();
+}
+
+void ARoomActor::SealRoomPerimeter()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TObjectPtr<UBoxComponent>& Flank : WallGapFlankComponents)
+	{
+		if (Flank)
+		{
+			Flank->DestroyComponent();
+		}
+	}
+	WallGapFlankComponents.Reset();
+
+	UStaticMeshComponent* WallBySide[4] = {
+		WallNorthMeshComponent, WallSouthMeshComponent, WallEastMeshComponent, WallWestMeshComponent };
+	bool bSideHasDoor[4] = { false, false, false, false };
+
+	for (TActorIterator<ADoorConnectorActor> It(World); It; ++It)
+	{
+		ADoorConnectorActor* Door = *It;
+		if (!Door->ConnectsValidRooms() || (Door->RoomA != this && Door->RoomB != this))
+		{
+			continue;
+		}
+		ARoomActor* OtherRoom = (Door->RoomA == this) ? ToRawPtr(Door->RoomB) : ToRawPtr(Door->RoomA);
+
+		const FVector LocalMidpoint =
+			((GetActorLocation() + OtherRoom->GetActorLocation()) * 0.5f) - GetActorLocation();
+		const bool bEastWest = FMath::Abs(LocalMidpoint.X) >= FMath::Abs(LocalMidpoint.Y);
+		const ERoomWallSide Side = bEastWest
+			? (LocalMidpoint.X >= 0.f ? ERoomWallSide::East : ERoomWallSide::West)
+			: (LocalMidpoint.Y >= 0.f ? ERoomWallSide::North : ERoomWallSide::South);
+		const float GapCenterOffset = bEastWest ? LocalMidpoint.Y : LocalMidpoint.X;
+
+		bSideHasDoor[static_cast<uint8>(Side)] = true;
+		BuildWallGapFlanks(this, Side, GapCenterOffset, Door->ConnectorFloorWidth * 0.5f, WallGapFlankComponents);
+	}
+
+	for (uint8 SideIndex = 0; SideIndex < 4; ++SideIndex)
+	{
+		if (!WallBySide[SideIndex])
+		{
+			continue;
+		}
+		if (bSideHasDoor[SideIndex])
+		{
+			// The full-span wall mesh stays visual-only on a gapped side - its two
+			// flanks (built above) carry the real blocking collision instead, so the
+			// doorway width in between stays walkable.
+			WallBySide[SideIndex]->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+		else
+		{
+			ConfigureBlockingCollision(WallBySide[SideIndex]);
 		}
 	}
 }

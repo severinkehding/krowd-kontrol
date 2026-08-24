@@ -135,8 +135,12 @@ namespace KrowdKontrolLevelTestUtils
 
 	// Asserts every room has a floor mesh with a valid UStaticMesh set (REQ-3 - no
 	// void anywhere along the playable path) and that collision is split correctly:
-	// the floor keeps blocking collision, but walls stay non-blocking so they don't
-	// seal off connector paths (ARoomActor has no per-door "which wall side" data).
+	// the floor keeps blocking collision, and walls stay non-blocking here specifically
+	// because this asserts pre-BeginPlay construction-time state - the only context this
+	// helper is ever called from (KrowdKontrolRoomActorTest.cpp, which never dispatches
+	// BeginPlay). At real play time, ARoomActor::SealRoomPerimeter() (issue #243) enables
+	// blocking collision on any wall side with no connecting door, and gaps the sides
+	// that have one - see KrowdKontrolRoomActorPerimeterSealingTest.cpp for that coverage.
 	inline void CheckRoomsHaveFloorGeometry(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
 	{
 		for (ARoomActor* Room : Rooms)

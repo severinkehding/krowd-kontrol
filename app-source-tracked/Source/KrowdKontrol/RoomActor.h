@@ -8,7 +8,9 @@
 class APlaceholderTargetZoneActor;
 class ATargetZone;
 class UStaticMeshComponent;
+class UBoxComponent;
 class AEnemyBase;
+class ADoorConnectorActor;
 class UOnScreenPromptWidget;
 class AKrowdKontrolPlayerController;
 
@@ -72,6 +74,23 @@ public:
 	// idempotent entry point.
 	UFUNCTION(BlueprintCallable, Category = "Room")
 	void EnsureBankingZonesWired();
+
+	// Issue #243 / PRD Room Encounter Flow REQ-1: seals this room's 4-wall perimeter so
+	// the only walkable connection to an adjacent room is through a door actually
+	// connected to this room. A side with no connecting ADoorConnectorActor gets
+	// blocking collision on its existing wall mesh; a side with one gets a
+	// matching-width gap (flanked by two invisible blocking segments) so the doorway
+	// itself stays open for ADoorConnectorActor's own GateBlockingComponent to gate.
+	// Called from BeginPlay, on the same "every placed actor already exists in the
+	// World by the time any BeginPlay fires" assumption AddOwnedEnemy's own
+	// auto-discovery already relies on. Exposed publicly and idempotent (destroys and
+	// rebuilds its own flank components each call) so a test using the
+	// SpawnActor-after-play pattern - where BeginPlay dispatches immediately per-actor,
+	// before a later-spawned door exists - can call it again once the connecting
+	// door(s) are actually in the World, mirroring EnsureBankingZonesWired()'s own
+	// "safe to call more than once" contract.
+	UFUNCTION(BlueprintCallable, Category = "Room")
+	void SealRoomPerimeter();
 
 	// Enemies this room must clear before its gated door(s) open. Auto-discovered in
 	// BeginPlay via nearest-room-by-distance over every AEnemyBase in the world (issue
@@ -267,6 +286,12 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room", meta = (AllowPrivateAccess = "true"))
 	TArray<FRoomTargetZone> TargetZones;
+
+	// Flank collision volumes SealRoomPerimeter() creates for wall sides that have a
+	// connecting door - tracked so a repeat call can destroy and rebuild them instead
+	// of leaking components.
+	UPROPERTY()
+	TArray<TObjectPtr<UBoxComponent>> WallGapFlankComponents;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room|Enemies", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<AEnemyBase>> OwnedEnemies;

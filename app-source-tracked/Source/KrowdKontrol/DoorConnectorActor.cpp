@@ -85,6 +85,24 @@ ADoorConnectorActor::ADoorConnectorActor()
 	GateBlockingComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
 	GateBlockingComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
 	GateBlockingComponent->SetGenerateOverlapEvents(false);
+
+	CorridorGuardRailAComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CorridorGuardRailAComponent"));
+	CorridorGuardRailAComponent->SetupAttachment(DoorConnectorRoot);
+	CorridorGuardRailAComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	CorridorGuardRailAComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	CorridorGuardRailAComponent->SetGenerateOverlapEvents(false);
+	// Starts disabled/zero-sized like the door's other connector-span geometry -
+	// RecomputeConnectorGeometry() positions and enables it once RoomA/RoomB resolve to
+	// a valid span. Unlike GateBlockingComponent, never re-toggled after that - the
+	// corridor sides are always solid, not gated.
+	CorridorGuardRailAComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	CorridorGuardRailBComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CorridorGuardRailBComponent"));
+	CorridorGuardRailBComponent->SetupAttachment(DoorConnectorRoot);
+	CorridorGuardRailBComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	CorridorGuardRailBComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	CorridorGuardRailBComponent->SetGenerateOverlapEvents(false);
+	CorridorGuardRailBComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void ADoorConnectorActor::HideConnectorVisuals()
@@ -92,6 +110,8 @@ void ADoorConnectorActor::HideConnectorVisuals()
 	ConnectorFloorMeshComponent->SetVisibility(false);
 	DoorMarkerMeshComponent->SetVisibility(false);
 	DoorMarkerLightComponent->SetVisibility(false);
+	CorridorGuardRailAComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CorridorGuardRailBComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	// Route through RefreshGateState() rather than hardcoding NoCollision, so a
 	// GatingRoom that's still un-cleared stays blocked even while the connector's visuals
 	// are hidden (e.g. RecomputeConnectorGeometry() called again post-placement with a
@@ -133,6 +153,20 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	GateBlockingComponent->SetWorldRotation(Delta.Rotation());
 	GateBlockingComponent->SetBoxExtent(FVector(
 		ConnectorFloorThickness, ConnectorFloorWidth * 0.5f, DoorMarkerHeight));
+
+	const FVector LateralDirection = FRotationMatrix(Delta.Rotation()).GetUnitAxis(EAxis::Y);
+	const float GuardRailOffset = ConnectorFloorWidth * 0.5f + CorridorGuardRailThickness * 0.5f;
+	const FVector GuardRailExtent(Length * 0.5f, CorridorGuardRailThickness * 0.5f, CorridorGuardRailHeight * 0.5f);
+
+	CorridorGuardRailAComponent->SetWorldLocation(Midpoint + LateralDirection * GuardRailOffset);
+	CorridorGuardRailAComponent->SetWorldRotation(Delta.Rotation());
+	CorridorGuardRailAComponent->SetBoxExtent(GuardRailExtent);
+	CorridorGuardRailAComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+	CorridorGuardRailBComponent->SetWorldLocation(Midpoint - LateralDirection * GuardRailOffset);
+	CorridorGuardRailBComponent->SetWorldRotation(Delta.Rotation());
+	CorridorGuardRailBComponent->SetBoxExtent(GuardRailExtent);
+	CorridorGuardRailBComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 }
 
 void ADoorConnectorActor::OnConstruction(const FTransform& Transform)

@@ -18,6 +18,7 @@
 #include "Engine/World.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/BoxComponent.h"
 #include "ReservedGameplayColours.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -63,6 +64,10 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		Door->DoorMarkerMeshComponent->IsVisible());
 	TestFalse(TEXT("Door marker light should start hidden before any rooms are assigned"),
 		Door->DoorMarkerLightComponent->IsVisible());
+	TestEqual(TEXT("Corridor guard rail A should be NoCollision before the door connects valid rooms (issue #243)"),
+		Door->CorridorGuardRailAComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestEqual(TEXT("Corridor guard rail B should be NoCollision before the door connects valid rooms (issue #243)"),
+		Door->CorridorGuardRailBComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	Door->RoomA = RoomOne;
 	TestFalse(TEXT("A door with only RoomA assigned should not connect valid rooms"),
@@ -97,6 +102,20 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		FMath::IsNearlyEqual(Door->ConnectorFloorMeshComponent->GetComponentScale().Y, Door->ConnectorFloorWidth / 100.f, 0.01f));
 	TestTrue(TEXT("Connector floor mesh's Z scale should be driven by ConnectorFloorThickness"),
 		FMath::IsNearlyEqual(Door->ConnectorFloorMeshComponent->GetComponentScale().Z, Door->ConnectorFloorThickness / 100.f, 0.01f));
+
+	TestEqual(TEXT("Corridor guard rail A should be QueryOnly once the door connects two valid rooms (issue #243)"),
+		Door->CorridorGuardRailAComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+	TestEqual(TEXT("Corridor guard rail A should Block ECC_WorldDynamic - the channel the real player pawn presents (issue #243)"),
+		Door->CorridorGuardRailAComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
+	TestEqual(TEXT("Corridor guard rail B should be QueryOnly once the door connects two valid rooms (issue #243)"),
+		Door->CorridorGuardRailBComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+	TestEqual(TEXT("Corridor guard rail B should Block ECC_WorldDynamic - the channel the real player pawn presents (issue #243)"),
+		Door->CorridorGuardRailBComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
+	const FVector GuardRailMidpoint =
+		(Door->CorridorGuardRailAComponent->GetComponentLocation() + Door->CorridorGuardRailBComponent->GetComponentLocation()) * 0.5f;
+	const FVector ExpectedConnectorMidpoint = (RoomOne->GetActorLocation() + RoomTwo->GetActorLocation()) * 0.5f;
+	TestTrue(TEXT("Corridor guard rails should be symmetric around the connector's midpoint (issue #243)"),
+		GuardRailMidpoint.Equals(ExpectedConnectorMidpoint, 0.1f));
 
 	TestTrue(TEXT("Door marker mesh should be visible once the door connects two valid rooms"),
 		Door->DoorMarkerMeshComponent->IsVisible());
