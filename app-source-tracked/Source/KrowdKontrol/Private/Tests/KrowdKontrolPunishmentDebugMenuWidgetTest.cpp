@@ -12,8 +12,7 @@
 //
 // CreateWidget<T>(World, ...) - not CreateWidget<T>(PlayerController, ...) - since
 // FAutomationEditorCommonUtils::CreateNewMap() test Worlds have no local player, and
-// the controller-argument overload would CastChecked<ULocalPlayer>() and fail (same
-// note as KrowdKontrolAbilityCooldownTrayWidgetTest.cpp).
+// the controller-argument overload would CastChecked<ULocalPlayer>() and fail.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -189,6 +188,41 @@ bool FKrowdKontrolPunishmentDebugMenuWidgetTest::RunTest(const FString& Paramete
 			static_cast<uint8>(Overcrowd->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
 
 		Overcrowd->ForceEndPanicOverload();
+	}
+
+	// (f) Null-bound components: a pawn missing a punishment component must not crash
+	// the widget's instant-end calls, and the CVar flip must still occur.
+	{
+		UPunishmentDebugMenuWidget* UnboundWidget =
+			CreateWidget<UPunishmentDebugMenuWidget>(World, UPunishmentDebugMenuWidget::StaticClass());
+		if (!TestNotNull(TEXT("Second widget instance should construct"), UnboundWidget))
+		{
+			return false;
+		}
+		UnboundWidget->BindPunishmentComponents(nullptr, nullptr, nullptr);
+
+		UnboundWidget->HandleLockoutCheckStateChanged(false);
+		UnboundWidget->HandleSpeedReductionCheckStateChanged(false);
+		UnboundWidget->HandleOvercrowdCheckStateChanged(false);
+
+		IConsoleVariable* LockoutCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.LockoutEnabled"));
+		IConsoleVariable* SpeedReductionCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.SpeedReductionEnabled"));
+		IConsoleVariable* OvercrowdCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.OvercrowdEnabled"));
+		if (!TestNotNull(TEXT("kk.Punishment.LockoutEnabled CVar should be registered"), LockoutCVar)
+			|| !TestNotNull(TEXT("kk.Punishment.SpeedReductionEnabled CVar should be registered"), SpeedReductionCVar)
+			|| !TestNotNull(TEXT("kk.Punishment.OvercrowdEnabled CVar should be registered"), OvercrowdCVar))
+		{
+			return false;
+		}
+
+		TestEqual(TEXT("Unchecking with a null-bound lockout component should still flip its CVar"), LockoutCVar->GetInt(), 0);
+		TestEqual(TEXT("Unchecking with a null-bound speed reduction component should still flip its CVar"), SpeedReductionCVar->GetInt(), 0);
+		TestEqual(TEXT("Unchecking with a null-bound Overcrowd component should still flip its CVar"), OvercrowdCVar->GetInt(), 0);
+
+		// Restore process-wide CVar state for the next KrowdKontrol.Unit.* test in this pass.
+		LockoutCVar->Set(1);
+		SpeedReductionCVar->Set(1);
+		OvercrowdCVar->Set(1);
 	}
 
 	return true;

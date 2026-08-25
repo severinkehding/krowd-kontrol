@@ -113,13 +113,28 @@ void UPunishmentDebugMenuWidget::BuildWidgetTree()
 	{
 		LockoutCheckBox->SetIsChecked(LockoutCVar->GetInt() != 0);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPunishmentDebugMenuWidget::BuildWidgetTree: kk.Punishment.LockoutEnabled CVar not found - checkbox initial state may not reflect the punishment's real state."));
+	}
 	if (IConsoleVariable* SpeedReductionCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.SpeedReductionEnabled")))
 	{
 		SpeedReductionCheckBox->SetIsChecked(SpeedReductionCVar->GetInt() != 0);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPunishmentDebugMenuWidget::BuildWidgetTree: kk.Punishment.SpeedReductionEnabled CVar not found - checkbox initial state may not reflect the punishment's real state."));
+	}
 	if (IConsoleVariable* OvercrowdCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.OvercrowdEnabled")))
 	{
 		OvercrowdCheckBox->SetIsChecked(OvercrowdCVar->GetInt() != 0);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPunishmentDebugMenuWidget::BuildWidgetTree: kk.Punishment.OvercrowdEnabled CVar not found - checkbox initial state may not reflect the punishment's real state."));
 	}
 
 	// Hidden by default - toggled into view by AKrowdKontrolPlayerController::
@@ -168,6 +183,11 @@ void UPunishmentDebugMenuWidget::HandleLockoutCheckStateChanged(bool bIsChecked)
 	{
 		CVar->Set(bIsChecked ? 1 : 0);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPunishmentDebugMenuWidget::HandleLockoutCheckStateChanged: kk.Punishment.LockoutEnabled CVar not found - checkbox has no effect."));
+	}
 	if (!bIsChecked)
 	{
 		if (UAbilityLockoutComponent* Component = BoundLockoutComponent.Get())
@@ -183,6 +203,11 @@ void UPunishmentDebugMenuWidget::HandleSpeedReductionCheckStateChanged(bool bIsC
 	{
 		CVar->Set(bIsChecked ? 1 : 0);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPunishmentDebugMenuWidget::HandleSpeedReductionCheckStateChanged: kk.Punishment.SpeedReductionEnabled CVar not found - checkbox has no effect."));
+	}
 	if (!bIsChecked)
 	{
 		if (USpeedReductionPunishmentComponent* Component = BoundSpeedReductionComponent.Get())
@@ -197,6 +222,11 @@ void UPunishmentDebugMenuWidget::HandleOvercrowdCheckStateChanged(bool bIsChecke
 	if (IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.OvercrowdEnabled")))
 	{
 		CVar->Set(bIsChecked ? 1 : 0);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPunishmentDebugMenuWidget::HandleOvercrowdCheckStateChanged: kk.Punishment.OvercrowdEnabled CVar not found - checkbox has no effect."));
 	}
 	if (!bIsChecked)
 	{

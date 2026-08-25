@@ -57,6 +57,11 @@ Closed issue #26's ask, minimally: config-driven (ini/CVar) enable/disable per
 punishment so playtests can isolate mechanics. No menu UI required — CVars are enough
 at this stage.
 
+**Update (2026-08-25, PR #308):** A menu UI was subsequently built on top of this
+CVar mechanism (`UPunishmentDebugMenuWidget`, F1-toggled, three checkboxes) — not a
+replacement of the CVar gate, but a discoverable UI layer over it. See
+`app-changelog/issue-26.md` for the full account.
+
 ## Out of scope
 - Overcrowd itself (merged) beyond arbitration integration.
 - Difficulty scaling of punishment parameters per level (later balancing pass).
