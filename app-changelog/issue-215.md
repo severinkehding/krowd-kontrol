@@ -28,9 +28,11 @@ nullptr` case in this file's own `NewObject`-only Automation tests), the offset 
 always `FVector::ZeroVector` - a solo controlled enemy behaves byte-for-byte
 identically to #214, unmodified. With 2+ followers, each is assigned a distinct
 angle (`2*PI*SlotIndex / NumFollowers`) around a new `FollowSeparationRadiusUnits`
-circle centered on the player, using `FMath::Cos`/`FMath::Sin` - the same
-circular-offset math already used elsewhere in this module
-(`AbilityCastComponent.cpp`, `BomberEnemy.cpp`). `TickFollowMovement` now targets
+circle centered on the player, using `FMath::Cos`/`FMath::Sin` - this is the first
+radial-offset-into-a-position use of these functions in the module (existing
+`FMath::Cos`/`FMath::Sin` calls in `AbilityCastComponent.cpp`/`BomberEnemy.cpp`
+drive a cone half-angle check and a pulse scalar respectively, not a spatial
+offset). `TickFollowMovement` now targets
 `PlayerLocation + ComputeFollowSeparationOffset()` instead of `PlayerLocation`
 directly; its stop-short/clamp logic is otherwise untouched.
 

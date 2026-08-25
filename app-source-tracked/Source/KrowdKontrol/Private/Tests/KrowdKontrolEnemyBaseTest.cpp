@@ -1038,6 +1038,30 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("(j-follow) All three simultaneously-Controlled followers should resolve to distinct separation offsets"),
 				!OffsetA.Equals(OffsetC) && !OffsetB.Equals(OffsetC));
 
+			// Exactly one of the three offsets should be the slot-0 zero-offset, and the
+			// other two should sit on the FollowSeparationRadiusUnits circle - locks in
+			// the documented formula's magnitude, not just pairwise inequality (a radius-
+			// scaling bug could still yield three distinct-but-wrong vectors).
+			const int32 ZeroOffsetCount = (OffsetA.Equals(FVector::ZeroVector) ? 1 : 0)
+				+ (OffsetB.Equals(FVector::ZeroVector) ? 1 : 0)
+				+ (OffsetC.Equals(FVector::ZeroVector) ? 1 : 0);
+			TestEqual(TEXT("(j-follow) Exactly one of three simultaneous followers should get slot 0 (zero offset)"), ZeroOffsetCount, 1);
+			if (!OffsetA.Equals(FVector::ZeroVector))
+			{
+				TestTrue(TEXT("(j-follow) A non-slot-0 offset should sit on the FollowSeparationRadiusUnits circle"),
+					FMath::IsNearlyEqual(OffsetA.Size(), SeparationFollowerA->FollowSeparationRadiusUnits, 1.0f));
+			}
+			if (!OffsetB.Equals(FVector::ZeroVector))
+			{
+				TestTrue(TEXT("(j-follow) A non-slot-0 offset should sit on the FollowSeparationRadiusUnits circle"),
+					FMath::IsNearlyEqual(OffsetB.Size(), SeparationFollowerB->FollowSeparationRadiusUnits, 1.0f));
+			}
+			if (!OffsetC.Equals(FVector::ZeroVector))
+			{
+				TestTrue(TEXT("(j-follow) A non-slot-0 offset should sit on the FollowSeparationRadiusUnits circle"),
+					FMath::IsNearlyEqual(OffsetC.Size(), SeparationFollowerC->FollowSeparationRadiusUnits, 1.0f));
+			}
+
 			// (j2-follow) the resolved follow-target positions (PlayerLocation + offset)
 			// are therefore distinct too, not just the raw offsets - the issue's actual AC
 			// wording ("each follower resolves to a distinct target position").
@@ -1062,6 +1086,37 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 				TestEqual(TEXT("(j3-follow) A Snare-Controlled bystander should not change other followers' resolved offsets"),
 					OffsetAAfterSnare, OffsetA);
 			}
+
+			// (j3b-follow) mirrors (j3-follow) for the other half of the Snare/Fear
+			// movement-conflict gate: a Fear-Controlled bystander (bFleesFromCasterWhileControlled)
+			// must also not consume a follow slot or change other followers' offsets -
+			// the gate is two independently-set OR conditions, and only Snare was covered.
+			AEnemyBaseTestActor* FearedBystander = SeparationWorld->SpawnActor<AEnemyBaseTestActor>();
+			if (TestNotNull(TEXT("(j3b-follow) Feared bystander should spawn"), FearedBystander))
+			{
+				FearedBystander->TickCheckDetection(FVector(1000.0f, 0.0f, 0.0f)); // Idle -> Alert
+				FearedBystander->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled, but Fear moves via TickFleeMovement instead
+				const FVector OffsetAAfterFear = SeparationFollowerA->ComputeFollowSeparationOffset();
+				TestEqual(TEXT("(j3b-follow) A Fear-Controlled bystander should not change other followers' resolved offsets"),
+					OffsetAAfterFear, OffsetA);
+			}
+
+			// (j5-follow) closes the loop between "the offset computes correctly" and
+			// "the offset is actually applied by the method that moves the enemy" - every
+			// (j-follow)-(j3b-follow) check above calls ComputeFollowSeparationOffset()
+			// directly, never TickFollowMovement() itself with 2+ followers sharing a
+			// World, so a regression that drops/mis-applies the offset term in
+			// TickFollowMovement would pass all of them while still re-converging the herd.
+			const FVector BeforeMoveA = SeparationFollowerA->GetActorLocation();
+			const FVector BeforeMoveB = SeparationFollowerB->GetActorLocation();
+			SeparationFollowerA->TickFollowMovement(SeparationPlayerLocation, 1.0f);
+			SeparationFollowerB->TickFollowMovement(SeparationPlayerLocation, 1.0f);
+			TestTrue(TEXT("(j5-follow) Two simultaneously-following enemies should move toward distinct resolved positions, not converge"),
+				!SeparationFollowerA->GetActorLocation().Equals(SeparationFollowerB->GetActorLocation()));
+			TestTrue(TEXT("(j5-follow) A should move toward its own offset target, not raw PlayerLocation"),
+				FVector::Dist(SeparationFollowerA->GetActorLocation(), TargetA) < FVector::Dist(BeforeMoveA, TargetA));
+			TestTrue(TEXT("(j5-follow) B should move toward its own offset target, not raw PlayerLocation"),
+				FVector::Dist(SeparationFollowerB->GetActorLocation(), TargetB) < FVector::Dist(BeforeMoveB, TargetB));
 		}
 	}
 
@@ -1079,6 +1134,34 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 			SoloFollower->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
 			TestEqual(TEXT("(j4-follow) A solo Controlled-and-following enemy should resolve a zero separation offset"),
 				SoloFollower->ComputeFollowSeparationOffset(), FVector::ZeroVector);
+		}
+	}
+
+	// (j6-follow) the N=2 boundary (the smallest "2+ followers" case named in the
+	// issue's AC) in its own fresh World, isolated from (j-follow)'s N=3 case above -
+	// at N=2 the non-zero slot's angle is exactly PI (2*PI*1/2), giving a fully
+	// deterministic offset direction to assert against, not just pairwise inequality.
+	UWorld* PairSeparationWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), PairSeparationWorld))
+	{
+		AEnemyBaseTestActor* PairFollowerA = PairSeparationWorld->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* PairFollowerB = PairSeparationWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("(j6-follow) First pair follower should spawn"), PairFollowerA)
+			&& TestNotNull(TEXT("(j6-follow) Second pair follower should spawn"), PairFollowerB))
+		{
+			PairFollowerA->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+			PairFollowerA->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+			PairFollowerB->TickCheckDetection(ZeroDistanceLocation);
+			PairFollowerB->ReceiveControl(EAbilitySlot::Stun);
+
+			const FVector PairOffsetA = PairFollowerA->ComputeFollowSeparationOffset();
+			const FVector PairOffsetB = PairFollowerB->ComputeFollowSeparationOffset();
+			const int32 PairZeroOffsetCount = (PairOffsetA.Equals(FVector::ZeroVector) ? 1 : 0)
+				+ (PairOffsetB.Equals(FVector::ZeroVector) ? 1 : 0);
+			TestEqual(TEXT("(j6-follow) Exactly one of two simultaneous followers should get slot 0 (zero offset)"), PairZeroOffsetCount, 1);
+			const FVector PairNonZeroOffset = PairOffsetA.Equals(FVector::ZeroVector) ? PairOffsetB : PairOffsetA;
+			TestTrue(TEXT("(j6-follow) At N=2 the non-slot-0 offset should point along the negative X axis at FollowSeparationRadiusUnits (angle = PI)"),
+				PairNonZeroOffset.Equals(FVector(-PairFollowerA->FollowSeparationRadiusUnits, 0.0f, 0.0f), 1.0f));
 		}
 	}
 
