@@ -171,17 +171,32 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 			{
 				TestEqual(TEXT("Width cap should hold issue #247's TrackerWidthPx envelope"),
 					WidthCap->GetWidthOverride(), UQuestTrackerWidget::TrackerWidthPx);
+				TestEqual(TEXT("Width cap's content should be the chrome border, not detached from the live tree"),
+					Cast<UWidget>(WidthCap->GetContent()), Cast<UWidget>(Widget->ChromeBorder));
 			}
 		}
 	}
 
-	// (5) Resolution-safety envelope - issue #247's explicit ~15%-of-screen-width
-	// ceiling, checked at this project's documented min/max target resolutions
-	// (same pair KrowdKontrolEnergyMeterWidgetTest.cpp section 9b uses). The low
-	// (smallest) resolution is the binding case - both are checked explicitly rather
-	// than relying on that argument alone.
+	// (4b) Auto-wrap on every text row - the width cap alone re-clips off-screen
+	// without it (issue #310); the SizeBox constrains the child's desired size,
+	// but line-breaking is what AutoWrapText provides.
+	TestTrue(TEXT("Banked-count text should auto-wrap inside the width cap (issue #310)"),
+		Widget->BankedCountText->GetAutoWrapText());
+	TestTrue(TEXT("Suggested-ability text should auto-wrap inside the width cap (issue #310)"),
+		Widget->SuggestedAbilityText->GetAutoWrapText());
+	TestTrue(TEXT("Room-state text should auto-wrap inside the width cap (issue #310)"),
+		Widget->RoomStateText->GetAutoWrapText());
+
+	// (5) Resolution-safety envelope, checked at this project's documented min/max
+	// target resolutions (same pair KrowdKontrolEnergyMeterWidgetTest.cpp section 9b
+	// uses). The low (smallest) resolution is the binding case - both are checked
+	// explicitly rather than relying on that argument alone. Issue #247's original
+	// ceiling was ~15%, but at the 160px cap that forced every tracker line to wrap
+	// onto 2-3 lines; the 2026-08-26 operator playtest widened the cap to 260px and
+	// relaxed the ceiling to 25% (see TrackerWidthPx's header comment for the full
+	// history).
 	const float TrackerFootprintWidthPx = UQuestTrackerWidget::TrackerMarginPx + UQuestTrackerWidget::TrackerWidthPx;
-	const float MaxWidthFraction = 0.15f;
+	const float MaxWidthFraction = 0.25f;
 	const FVector2D TargetResolutions[] = { FVector2D(1280.0f, 720.0f), FVector2D(3840.0f, 2160.0f) };
 	for (const FVector2D& TargetResolution : TargetResolutions)
 	{

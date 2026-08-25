@@ -258,20 +258,17 @@ private:
 	UPROPERTY()
 	EQuestDirection8 CurrentObjectiveDirection = EQuestDirection8::None;
 
-	// Fixed pixel footprint from the viewport's top-right corner. 160px + 24px margin
-	// = 184px footprint, which is ~14.4% of a 1280px-wide viewport (this project's
-	// documented minimum target resolution - see the resolution-safety test) - inside
-	// issue #247's explicit "no more than roughly 15% of screen width" envelope, with
-	// the 1280px case being the binding (smallest, tightest) one; every wider
-	// resolution is strictly safer for the same fixed-size box. Recompute this comment
-	// if either constant below changes.
-	//
-	// Width only - height is NOT fixed. The tracker's text lines are wider than
-	// 160px and Slate text does not clip, so a fixed-size slot let them overflow
-	// rightward past the right-pinned edge, off-screen (2026-08-26 operator
-	// playtest, issue #310). Instead a USizeBox caps the width at TrackerWidthPx,
-	// the text blocks wrap, and the canvas slot auto-sizes so the box grows
-	// downward - the unconstrained direction - keeping #247's width envelope.
+	// Width-capped footprint from the viewport's top-right corner (height is NOT
+	// fixed - see QuestTrackerWidget.cpp's WidthCap construction comment for why).
+	// 260px + 24px margin = 284px, ~22.2% of a 1280px-wide viewport (this project's
+	// documented minimum target resolution - see the resolution-safety test).
+	// History: issue #247 originally imposed a "roughly 15% of screen width"
+	// ceiling and the first shipped cap was 160px - but at 160px every tracker
+	// line wrapped onto 2-3 lines (2026-08-26 operator playtest: "text wraps like
+	// crazy"), so the operator widened it to 260px and relaxed the envelope to 25%
+	// (the resolution-safety test pins the new bound). Readability of the live
+	// objective beats the original ceiling. Recompute this comment if either
+	// constant below changes.
 	static constexpr float TrackerMarginPx = 24.0f;
-	static constexpr float TrackerWidthPx = 160.0f;
+	static constexpr float TrackerWidthPx = 260.0f;
 };
