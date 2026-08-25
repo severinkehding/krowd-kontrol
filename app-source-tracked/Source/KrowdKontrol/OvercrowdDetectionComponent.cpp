@@ -1,6 +1,13 @@
 #include "OvercrowdDetectionComponent.h"
 #include "EnemyBase.h"
 #include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
+
+static TAutoConsoleVariable<int32> CVarPunishmentOvercrowdEnabled(
+	TEXT("kk.Punishment.OvercrowdEnabled"),
+	1,
+	TEXT("If 0, prevents the Overcrowd punishment (UOvercrowdDetectionComponent) from activating on trigger, regardless of arbitration outcome. Defaults to 1 (enabled)."),
+	ECVF_Default);
 
 UOvercrowdDetectionComponent::UOvercrowdDetectionComponent()
 {
@@ -36,6 +43,17 @@ void UOvercrowdDetectionComponent::AdvancePanicOverloadState(float DeltaSeconds)
 		return;
 	}
 
+	if (!IsOvercrowdEnabledByCVar())
+	{
+		// Freeze the arming timer outright while disabled, not just the trigger
+		// flip - mirrors UAbilityLockoutComponent/USpeedReductionPunishmentComponent's
+		// fully-no-op-at-entry pattern. Gating only the flip below would let
+		// UncontrolledSeconds keep accumulating in the background while the
+		// punishment reads as off, causing an instant, unexplained trigger the
+		// moment the CVar is re-enabled.
+		return;
+	}
+
 	const TArray<TWeakObjectPtr<AEnemyBase>> QualifyingEnemies = GetHotUncontrolledEnemiesNearby();
 
 	if (QualifyingEnemies.Num() < OvercrowdCrowdThreshold)
@@ -54,6 +72,23 @@ void UOvercrowdDetectionComponent::AdvancePanicOverloadState(float DeltaSeconds)
 		ConvergedEnemies = QualifyingEnemies;
 		OnPanicOverloadStateChanged.Broadcast(CurrentState);
 	}
+}
+
+void UOvercrowdDetectionComponent::ForceEndPanicOverload()
+{
+	if (CurrentState != EPanicOverloadState::Active)
+	{
+		return;
+	}
+	CurrentState = EPanicOverloadState::Inactive;
+	UncontrolledSeconds = 0.0f;
+	ConvergedEnemies.Reset();
+	OnPanicOverloadStateChanged.Broadcast(CurrentState);
+}
+
+bool UOvercrowdDetectionComponent::IsOvercrowdEnabledByCVar()
+{
+	return CVarPunishmentOvercrowdEnabled.GetValueOnGameThread() != 0;
 }
 
 TArray<TWeakObjectPtr<AEnemyBase>> UOvercrowdDetectionComponent::GetHotUncontrolledEnemiesNearby() const

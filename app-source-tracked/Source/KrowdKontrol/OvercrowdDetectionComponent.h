@@ -106,6 +106,12 @@ class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 	// ability-lock/speed-reduction - non-transitive, same rationale as the grants above.
 	friend class FKrowdKontrolPunishmentArbitrationComponentTest;
 
+	// Same grant, for the punishment debug menu widget's own test (issue #26), which
+	// drives this component to Active via AdvancePanicOverloadState to prove
+	// ForceEndPanicOverload() ends it immediately - non-transitive, same rationale as
+	// the grants above.
+	friend class FKrowdKontrolPunishmentDebugMenuWidgetTest;
+
 public:
 	UOvercrowdDetectionComponent();
 
@@ -157,6 +163,28 @@ public:
 	// number of times over the component's life. Not a lifetime-firing cap.
 	UPROPERTY(BlueprintAssignable, Category = "Overcrowd")
 	FOnPanicOverloadStateChanged OnPanicOverloadStateChanged;
+
+	// Immediately reverts an Active Panic Overload to Inactive - resets UncontrolledSeconds
+	// and ConvergedEnemies and broadcasts OnPanicOverloadStateChanged(Inactive). Guards on
+	// CurrentState up front and returns early if already Inactive, the same guarded-early-return
+	// shape as USpeedReductionPunishmentComponent::EndSpeedReduction(). Used by the punishment
+	// debug menu (issue #26) to satisfy "existing active effects end immediately when toggled
+	// off" - does not by itself freeze the arming timer while Active; that's
+	// IsOvercrowdEnabledByCVar()'s job (see below) for the not-yet-Active case.
+	void ForceEndPanicOverload();
+
+	// Whether kk.Punishment.OvercrowdEnabled currently allows this punishment to arm/activate -
+	// consulted at the top of AdvancePanicOverloadState()'s not-yet-Active branch, so disabling
+	// it freezes UncontrolledSeconds outright rather than merely suppressing the Inactive->Active
+	// flip, the same fully-no-op-at-entry pattern as
+	// UAbilityLockoutComponent::IsLockoutEnabledByCVar()/USpeedReductionPunishmentComponent's CVar
+	// check. Unlike UAbilityLockoutComponent::IsLockoutEnabledByCVar() - which PunishmentArbitrationComponent
+	// calls directly to decide fallback routing to speed-reduction (issue #181) - this accessor has
+	// no external caller: Overcrowd is priority-1 in arbitration, which only ever checks
+	// IsOvercrowdActive() (state), never this CVar. The CVar itself is a file-scope static in this
+	// component's own .cpp, so this accessor is still the only way another translation unit could
+	// read it, if one ever needs to.
+	static bool IsOvercrowdEnabledByCVar();
 
 protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;

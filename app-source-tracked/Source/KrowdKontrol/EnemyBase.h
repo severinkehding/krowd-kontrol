@@ -114,6 +114,12 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// detection. Non-transitive - see MusicSubsystem.h's friend-class comment.
 	friend class FKrowdKontrolPunishmentArbitrationComponentTest;
 
+	// Same grant, for the punishment debug menu widget's own test (issue #26), which
+	// drives a plain AEnemyBaseTestActor through the same Idle->Alert transition to
+	// arm real Overcrowd detection. Non-transitive - see MusicSubsystem.h's
+	// friend-class comment.
+	friend class FKrowdKontrolPunishmentDebugMenuWidgetTest;
+
 	// Same grant, for the IHerdable coverage test (issue #211), which drives
 	// AEnemyBaseTestActor through Idle->Alert via the private TickCheckDetection
 	// before calling the public ReceiveControl()/TransitionToBanked() to reach
