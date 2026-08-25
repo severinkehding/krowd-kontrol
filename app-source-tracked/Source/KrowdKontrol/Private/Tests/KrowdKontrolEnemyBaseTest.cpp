@@ -1004,6 +1004,84 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// (j-follow) minimal per-follower separation (issue #215): with N >= 2
+	// simultaneously Controlled-and-following enemies sharing a real World,
+	// ComputeFollowSeparationOffset() resolves a distinct offset per enemy rather than
+	// every follower converging on the same point - locks in the issue's AC ("each
+	// follower resolves to a distinct target position"). Needs a real spawned World
+	// (unlike (a-follow)-(g-follow) above) since the offset is computed by iterating
+	// all AEnemyBase instances currently sharing the World via TActorIterator, the
+	// same pattern UCrowdMasterySubsystem::SampleControlledCount() already uses.
+	UWorld* SeparationWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), SeparationWorld))
+	{
+		AEnemyBaseTestActor* SeparationFollowerA = SeparationWorld->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* SeparationFollowerB = SeparationWorld->SpawnActor<AEnemyBaseTestActor>();
+		AEnemyBaseTestActor* SeparationFollowerC = SeparationWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("(j-follow) First separation follower should spawn"), SeparationFollowerA)
+			&& TestNotNull(TEXT("(j-follow) Second separation follower should spawn"), SeparationFollowerB)
+			&& TestNotNull(TEXT("(j-follow) Third separation follower should spawn"), SeparationFollowerC))
+		{
+			SeparationFollowerA->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+			SeparationFollowerA->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+			SeparationFollowerB->TickCheckDetection(ZeroDistanceLocation);
+			SeparationFollowerB->ReceiveControl(EAbilitySlot::Stun);
+			SeparationFollowerC->TickCheckDetection(ZeroDistanceLocation);
+			SeparationFollowerC->ReceiveControl(EAbilitySlot::Stun);
+
+			const FVector OffsetA = SeparationFollowerA->ComputeFollowSeparationOffset();
+			const FVector OffsetB = SeparationFollowerB->ComputeFollowSeparationOffset();
+			const FVector OffsetC = SeparationFollowerC->ComputeFollowSeparationOffset();
+
+			TestTrue(TEXT("(j-follow) Two simultaneously-Controlled followers should resolve to distinct separation offsets"),
+				!OffsetA.Equals(OffsetB));
+			TestTrue(TEXT("(j-follow) All three simultaneously-Controlled followers should resolve to distinct separation offsets"),
+				!OffsetA.Equals(OffsetC) && !OffsetB.Equals(OffsetC));
+
+			// (j2-follow) the resolved follow-target positions (PlayerLocation + offset)
+			// are therefore distinct too, not just the raw offsets - the issue's actual AC
+			// wording ("each follower resolves to a distinct target position").
+			const FVector SeparationPlayerLocation(3000.0f, 0.0f, 0.0f);
+			const FVector TargetA = SeparationPlayerLocation + OffsetA;
+			const FVector TargetB = SeparationPlayerLocation + OffsetB;
+			const FVector TargetC = SeparationPlayerLocation + OffsetC;
+			TestTrue(TEXT("(j2-follow) Resolved follow-target positions should be distinct across simultaneous followers"),
+				!TargetA.Equals(TargetB) && !TargetA.Equals(TargetC) && !TargetB.Equals(TargetC));
+
+			// (j3-follow) a Snare-Controlled enemy sharing the same World does NOT consume
+			// a follow slot or change the other three followers' offsets - proves the
+			// Snare/Fear movement-conflict filter inside ComputeFollowSeparationOffset()
+			// matches TickFollowMovement's own gate, mirroring (d-follow)'s Snare-exclusion
+			// case at the offset-computation level instead of the movement level.
+			AEnemyBaseTestActor* SnaredBystander = SeparationWorld->SpawnActor<AEnemyBaseTestActor>();
+			if (TestNotNull(TEXT("(j3-follow) Snared bystander should spawn"), SnaredBystander))
+			{
+				SnaredBystander->TickCheckDetection(FVector(1000.0f, 0.0f, 0.0f)); // Idle -> Alert
+				SnaredBystander->ReceiveControl(EAbilitySlot::Snare); // Alert -> Controlled, but Snare moves via TickChaseMovement instead
+				const FVector OffsetAAfterSnare = SeparationFollowerA->ComputeFollowSeparationOffset();
+				TestEqual(TEXT("(j3-follow) A Snare-Controlled bystander should not change other followers' resolved offsets"),
+					OffsetAAfterSnare, OffsetA);
+			}
+		}
+	}
+
+	// (j4-follow) solo case in a real (non-null) World: exactly one Controlled-and-
+	// following enemy resolves a zero offset, matching pre-#215 behaviour exactly -
+	// AC: "a single controlled enemy ... behaves identically to before this change."
+	// Uses its own fresh World so it is genuinely solo, unlike SeparationWorld above.
+	UWorld* SoloSeparationWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), SoloSeparationWorld))
+	{
+		AEnemyBaseTestActor* SoloFollower = SoloSeparationWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("(j4-follow) Solo follower should spawn"), SoloFollower))
+		{
+			SoloFollower->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+			SoloFollower->ReceiveControl(EAbilitySlot::Stun); // Alert -> Controlled
+			TestEqual(TEXT("(j4-follow) A solo Controlled-and-following enemy should resolve a zero separation offset"),
+				SoloFollower->ComputeFollowSeparationOffset(), FVector::ZeroVector);
+		}
+	}
+
 	return true;
 }
 

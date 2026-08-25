@@ -262,6 +262,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Herd")
 	float FollowDistanceUnits = 200.0f;
 
+	// Radius of the circle multiple simultaneous followers are placed around,
+	// centered on the player (issue #215). Only applied when 2+ enemies are
+	// simultaneously Controlled-and-following - a solo follower's offset is always
+	// FVector::ZeroVector regardless of this value, matching #214's unmodified
+	// single-enemy behavior. See ComputeFollowSeparationOffset().
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Herd")
+	float FollowSeparationRadiusUnits = 150.0f;
+
 	// Issue #244: the room whose OwnedEnemies list this enemy was added to (nullptr
 	// if none - see ARoomActor::AddOwnedEnemy()'s doc comment on the auto-discovery
 	// that normally sets this with zero .umap authoring). Public so ARoomActor can
@@ -469,7 +477,35 @@ private:
 	// GetEnemyState()/GetControllingAbility(), never position, so a Root-Controlled
 	// add trailing the player doesn't affect that boss's Vulnerable-state gate.
 	// Private/friend-testable, same shape as TickChaseMovement/TickFleeMovement above.
+	// Issue #215: the actual movement target is PlayerLocation plus
+	// ComputeFollowSeparationOffset() below, not PlayerLocation directly - see that
+	// method's doc comment for why (spreads multiple simultaneous followers into a
+	// legible train; resolves to zero for a solo follower, preserving #214 exactly).
 	void TickFollowMovement(const FVector& PlayerLocation, float DeltaSeconds);
+
+	// Issue #215: resolves this enemy's own distinct follow-target offset among all
+	// other simultaneously-Controlled-and-following enemies, so multiple followers
+	// spread into a visually legible train instead of converging on the exact same
+	// point (TickFollowMovement above adds this to PlayerLocation before computing
+	// ToTarget). Iterates all AEnemyBase actors in the world via TActorIterator,
+	// mirroring UCrowdMasterySubsystem::SampleControlledCount()'s exact
+	// "TActorIterator<AEnemyBase>, Controlled-state filter" shape (issue explicitly
+	// forbids touching that subsystem's own logic, so this is an independent,
+	// parallel iteration, not a call into it) - then narrows further to actors that
+	// are *actually* moved by TickFollowMovement this tick, applying the identical
+	// Snare/Fear movement-conflict gate TickFollowMovement's own gate uses (a
+	// Snare-Controlled or Fear-Controlled enemy is moved by TickChaseMovement/
+	// TickFleeMovement instead, so it should not consume a follow slot). Returns
+	// FVector::ZeroVector whenever fewer than 2 such followers exist (including
+	// GetWorld() == nullptr, the common case in this file's own NewObject-only
+	// Automation tests) - the "no unnecessary offset for a solo follower" AC.
+	// Slot order is simply TActorIterator's own encounter order, not sorted by any
+	// stable key - the AC only requires distinct positions THIS tick among the
+	// current followers, not a persistent per-enemy slot across ticks, and no
+	// Unreal API guarantees TActorIterator/GetUniqueID() ordering stability across
+	// spawn/destroy churn or level reloads. Private/friend-testable, same shape as
+	// TickFollowMovement itself.
+	FVector ComputeFollowSeparationOffset() const;
 
 	void AdvanceToAlert();
 	void AdvanceToAttack();
