@@ -262,6 +262,49 @@ void AEnemyBase::TickFleeMovement(const FVector& CasterLocation, float DeltaSeco
 	SetActorLocation(GetActorLocation() + AwayFromCaster.GetSafeNormal() * MoveDistance);
 }
 
+FVector AEnemyBase::ComputeFollowSeparationOffset() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return FVector::ZeroVector;
+	}
+
+	TArray<const AEnemyBase*> Followers;
+	for (TActorIterator<AEnemyBase> It(World); It; ++It)
+	{
+		const AEnemyBase* Enemy = *It;
+		if (Enemy->CurrentState != EEnemyState::Controlled)
+		{
+			continue;
+		}
+		const FAbilityData& EnemyAbilityData = AbilityData::Get(Enemy->ControllingAbility);
+		if (EnemyAbilityData.bAllowsMovementWhileControlled || EnemyAbilityData.bFleesFromCasterWhileControlled)
+		{
+			continue;
+		}
+		Followers.Add(Enemy);
+	}
+
+	if (Followers.Num() <= 1)
+	{
+		return FVector::ZeroVector;
+	}
+
+	const int32 SlotIndex = Followers.IndexOfByKey(this);
+	if (SlotIndex <= 0)
+	{
+		// Slot 0 (and the not-found/-1 case, which should not occur since `this` is
+		// always Controlled-and-following whenever TickFollowMovement calls this)
+		// gets no offset - matches the pre-#215 behaviour exactly for whichever
+		// follower TActorIterator happens to encounter first this tick.
+		return FVector::ZeroVector;
+	}
+
+	const float AngleRadians = (2.0f * PI * SlotIndex) / Followers.Num();
+	return FVector(FMath::Cos(AngleRadians), FMath::Sin(AngleRadians), 0.0f) * FollowSeparationRadiusUnits;
+}
+
 void AEnemyBase::TickFollowMovement(const FVector& PlayerLocation, float DeltaSeconds)
 {
 	if (CurrentState != EEnemyState::Controlled)
@@ -273,8 +316,9 @@ void AEnemyBase::TickFollowMovement(const FVector& PlayerLocation, float DeltaSe
 	{
 		return;
 	}
-	const FVector ToPlayer = PlayerLocation - GetActorLocation();
-	const float DistanceRemaining = ToPlayer.Size() - FollowDistanceUnits;
+	const FVector FollowTargetLocation = PlayerLocation + ComputeFollowSeparationOffset();
+	const FVector ToTarget = FollowTargetLocation - GetActorLocation();
+	const float DistanceRemaining = ToTarget.Size() - FollowDistanceUnits;
 	if (DistanceRemaining <= KINDA_SMALL_NUMBER)
 	{
 		return;
@@ -286,7 +330,7 @@ void AEnemyBase::TickFollowMovement(const FVector& PlayerLocation, float DeltaSe
 	// AbilityData.cpp's ControlledSpeedMultiplier comment on Snare, issue #214 review
 	// follow-up).
 	const float MoveDistance = FMath::Min(DistanceRemaining, GetEffectiveFollowSpeedUnitsPerSecond() * DeltaSeconds);
-	SetActorLocation(GetActorLocation() + ToPlayer.GetSafeNormal() * MoveDistance);
+	SetActorLocation(GetActorLocation() + ToTarget.GetSafeNormal() * MoveDistance);
 }
 
 void AEnemyBase::Tick(float DeltaTime)
