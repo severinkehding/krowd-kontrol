@@ -169,13 +169,16 @@ public:
 	// CurrentState up front and returns early if already Inactive, the same guarded-early-return
 	// shape as USpeedReductionPunishmentComponent::EndSpeedReduction(). Used by the punishment
 	// debug menu (issue #26) to satisfy "existing active effects end immediately when toggled
-	// off" without changing kk.Punishment.OvercrowdEnabled's own gate-only-new-activations
-	// semantics (see IsOvercrowdEnabledByCVar() below).
+	// off" - does not by itself freeze the arming timer while Active; that's
+	// IsOvercrowdEnabledByCVar()'s job (see below) for the not-yet-Active case.
 	void ForceEndPanicOverload();
 
-	// Whether kk.Punishment.OvercrowdEnabled currently allows this punishment to activate -
-	// consulted only at the Inactive->Active transition inside AdvancePanicOverloadState().
-	// Unlike UAbilityLockoutComponent::IsLockoutEnabledByCVar() - which PunishmentArbitrationComponent
+	// Whether kk.Punishment.OvercrowdEnabled currently allows this punishment to arm/activate -
+	// consulted at the top of AdvancePanicOverloadState()'s not-yet-Active branch, so disabling
+	// it freezes UncontrolledSeconds outright rather than merely suppressing the Inactive->Active
+	// flip, the same fully-no-op-at-entry pattern as
+	// UAbilityLockoutComponent::IsLockoutEnabledByCVar()/USpeedReductionPunishmentComponent's CVar
+	// check. Unlike UAbilityLockoutComponent::IsLockoutEnabledByCVar() - which PunishmentArbitrationComponent
 	// calls directly to decide fallback routing to speed-reduction (issue #181) - this accessor has
 	// no external caller: Overcrowd is priority-1 in arbitration, which only ever checks
 	// IsOvercrowdActive() (state), never this CVar. The CVar itself is a file-scope static in this

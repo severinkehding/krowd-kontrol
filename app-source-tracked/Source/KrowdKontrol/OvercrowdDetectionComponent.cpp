@@ -43,6 +43,17 @@ void UOvercrowdDetectionComponent::AdvancePanicOverloadState(float DeltaSeconds)
 		return;
 	}
 
+	if (!IsOvercrowdEnabledByCVar())
+	{
+		// Freeze the arming timer outright while disabled, not just the trigger
+		// flip - mirrors UAbilityLockoutComponent/USpeedReductionPunishmentComponent's
+		// fully-no-op-at-entry pattern. Gating only the flip below would let
+		// UncontrolledSeconds keep accumulating in the background while the
+		// punishment reads as off, causing an instant, unexplained trigger the
+		// moment the CVar is re-enabled.
+		return;
+	}
+
 	const TArray<TWeakObjectPtr<AEnemyBase>> QualifyingEnemies = GetHotUncontrolledEnemiesNearby();
 
 	if (QualifyingEnemies.Num() < OvercrowdCrowdThreshold)
@@ -53,7 +64,7 @@ void UOvercrowdDetectionComponent::AdvancePanicOverloadState(float DeltaSeconds)
 
 	UncontrolledSeconds += DeltaSeconds;
 
-	if (UncontrolledSeconds >= OvercrowdUncontrolledDurationSeconds && IsOvercrowdEnabledByCVar())
+	if (UncontrolledSeconds >= OvercrowdUncontrolledDurationSeconds)
 	{
 		// Flip before broadcasting (see MusicSubsystem::SetMusicState) so a
 		// re-entrant listener sees CurrentState already updated.

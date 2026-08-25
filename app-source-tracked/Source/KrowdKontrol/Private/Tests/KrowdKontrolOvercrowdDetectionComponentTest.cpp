@@ -368,13 +368,17 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 		static_cast<uint8>(NonMemberComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
 	TestEqual(TEXT("No recovery broadcast should have fired"), NonMemberListener->CallCount, 1);
 
-	// --- Scenario 8 (issue #26): kk.Punishment.OvercrowdEnabled=0 suppresses the
-	// Inactive->Active flip even once the trigger condition (threshold count sustained
-	// for the full duration) is fully met, and restoring the CVar to 1 resumes normal
-	// triggering. The CVar is process-wide state shared by every KrowdKontrol.Unit.*
-	// test running in the same Automation Framework pass, so this always ends by
-	// leaving it at 1, regardless of which assertion below fails first. Fresh World,
-	// same reasoning as every other scenario above. ---
+	// --- Scenario 8 (issue #26): kk.Punishment.OvercrowdEnabled=0 freezes the arming
+	// timer (UncontrolledSeconds) outright, not just the Inactive->Active flip - a
+	// qualifying count sustained well past the full duration while disabled must not
+	// leave any accumulated progress behind, or re-enabling the CVar later would
+	// trigger instantly off stale accumulation rather than requiring a fresh full
+	// duration. Restoring the CVar to 1 resumes normal triggering, and a fresh
+	// duration after restoring is what actually flips it, proving nothing carried
+	// over from the disabled period. The CVar is process-wide state shared by every
+	// KrowdKontrol.Unit.* test running in the same Automation Framework pass, so this
+	// always ends by leaving it at 1, regardless of which assertion below fails
+	// first. Fresh World, same reasoning as every other scenario above. ---
 	{
 		IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.OvercrowdEnabled"));
 		if (!TestNotNull(TEXT("kk.Punishment.OvercrowdEnabled CVar should be registered"), CVar))
@@ -408,10 +412,26 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 		CVarComponent->AdvancePanicOverloadState(CVarComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
 		TestEqual(TEXT("kk.Punishment.OvercrowdEnabled=0 should suppress the Inactive->Active flip even past the full duration"),
 			static_cast<uint8>(CVarComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
+		TestEqual(TEXT("kk.Punishment.OvercrowdEnabled=0 should freeze UncontrolledSeconds itself at 0, not just the flip"),
+			CVarComponent->UncontrolledSeconds, 0.0f);
+
+		// A qualifying-count advance too short to trigger on its own, still while
+		// disabled, must leave UncontrolledSeconds untouched rather than partially
+		// accumulating.
+		CVarComponent->AdvancePanicOverloadState(CVarComponent->OvercrowdUncontrolledDurationSeconds * 0.5f);
+		TestEqual(TEXT("UncontrolledSeconds should stay frozen across further advances while disabled"),
+			CVarComponent->UncontrolledSeconds, 0.0f);
 
 		CVar->Set(1);
-		CVarComponent->AdvancePanicOverloadState(CVarComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
-		TestEqual(TEXT("Restoring kk.Punishment.OvercrowdEnabled to 1 should allow the flip to Active normally"),
+
+		// Re-enabling must require a fresh full duration, proving no accumulation
+		// from the disabled period carried over.
+		CVarComponent->AdvancePanicOverloadState(CVarComponent->OvercrowdUncontrolledDurationSeconds * 0.5f);
+		TestEqual(TEXT("Restoring the CVar with less than a full duration elapsed since should not yet trigger"),
+			static_cast<uint8>(CVarComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
+
+		CVarComponent->AdvancePanicOverloadState(CVarComponent->OvercrowdUncontrolledDurationSeconds * 0.6f);
+		TestEqual(TEXT("Restoring kk.Punishment.OvercrowdEnabled to 1 should allow the flip to Active after a fresh full duration"),
 			static_cast<uint8>(CVarComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
 
 		CVar->Set(1); // restore for the next KrowdKontrol.Unit.* test in this pass
