@@ -116,6 +116,17 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 	const FVector ExpectedConnectorMidpoint = (RoomOne->GetActorLocation() + RoomTwo->GetActorLocation()) * 0.5f;
 	TestTrue(TEXT("Corridor guard rails should be symmetric around the connector's midpoint (issue #243)"),
 		GuardRailMidpoint.Equals(ExpectedConnectorMidpoint, 0.1f));
+	// Regression (2026-08-26 operator playtest): rails must span only the corridor gap
+	// between the two room perimeters (1000cm in this setup), never the full
+	// centre-to-centre span - a full-span rail runs from room centre to room centre,
+	// carving an impassable channel through both room interiors.
+	const float ExpectedRailHalfLength =
+		((RoomTwo->GetActorLocation() - RoomOne->GetActorLocation()).Size()
+			- RoomOne->RoomFloorExtent.X - RoomTwo->RoomFloorExtent.X) * 0.5f;
+	TestTrue(TEXT("Corridor guard rail A should span only the gap between room perimeters, not the room interiors (2026-08-26 playtest)"),
+		FMath::IsNearlyEqual(Door->CorridorGuardRailAComponent->GetUnscaledBoxExtent().X, ExpectedRailHalfLength, 0.1f));
+	TestTrue(TEXT("Corridor guard rail B should span only the gap between room perimeters, not the room interiors (2026-08-26 playtest)"),
+		FMath::IsNearlyEqual(Door->CorridorGuardRailBComponent->GetUnscaledBoxExtent().X, ExpectedRailHalfLength, 0.1f));
 
 	TestTrue(TEXT("Door marker mesh should be visible once the door connects two valid rooms"),
 		Door->DoorMarkerMeshComponent->IsVisible());

@@ -158,19 +158,42 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	GateBlockingComponent->SetBoxExtent(FVector(
 		ConnectorFloorThickness, ConnectorFloorWidth * 0.5f, DoorMarkerHeight));
 
+	// The rails must span only the corridor gap BETWEEN the two room perimeters, never
+	// the full centre-to-centre distance: a Length*0.5 half-extent (2026-08-26 operator
+	// playtest) runs each rail from room centre to room centre, carving an impassable
+	// 320cm-wide channel through both room interiors that walls the player off from
+	// their own room. Clamp each end to the room's floor edge along the connector axis
+	// (support-function projection of the axis-aligned floor slab - rooms in both
+	// hand-authored levels are unrotated, per ARoomActor::RoomFloorExtent's spacing
+	// comment).
+	const FVector Direction = Delta / Length;
+	auto ProjectedFloorHalfExtent = [&Direction](const ARoomActor* Room)
+	{
+		return FMath::Abs(Direction.X) * Room->RoomFloorExtent.X +
+			FMath::Abs(Direction.Y) * Room->RoomFloorExtent.Y;
+	};
+	const float GapStartDistance = ProjectedFloorHalfExtent(RoomA);
+	const float GapEndDistance = Length - ProjectedFloorHalfExtent(RoomB);
+	const float GuardRailHalfLength = (GapEndDistance - GapStartDistance) * 0.5f;
+
 	const FVector LateralDirection = FRotationMatrix(Delta.Rotation()).GetUnitAxis(EAxis::Y);
 	const float GuardRailOffset = ConnectorFloorWidth * 0.5f + CorridorGuardRailThickness * 0.5f;
-	const FVector GuardRailExtent(Length * 0.5f, CorridorGuardRailThickness * 0.5f, CorridorGuardRailHeight * 0.5f);
+	const FVector GapMidpoint = LocationA + Direction * (GapStartDistance + GapEndDistance) * 0.5f;
+	const FVector GuardRailExtent(GuardRailHalfLength, CorridorGuardRailThickness * 0.5f, CorridorGuardRailHeight * 0.5f);
 
 	auto PlaceGuardRail = [&](UBoxComponent* GuardRail, const FVector& Location)
 	{
 		GuardRail->SetWorldLocation(Location);
 		GuardRail->SetWorldRotation(Delta.Rotation());
 		GuardRail->SetBoxExtent(GuardRailExtent);
-		GuardRail->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		// Overlapping/adjacent room floors leave no corridor gap - degenerate rails
+		// would sit inside a room, so disable them entirely rather than block there.
+		GuardRail->SetCollisionEnabled(GuardRailHalfLength > 0.f
+			? ECollisionEnabled::QueryOnly
+			: ECollisionEnabled::NoCollision);
 	};
-	PlaceGuardRail(CorridorGuardRailAComponent, Midpoint + LateralDirection * GuardRailOffset);
-	PlaceGuardRail(CorridorGuardRailBComponent, Midpoint - LateralDirection * GuardRailOffset);
+	PlaceGuardRail(CorridorGuardRailAComponent, GapMidpoint + LateralDirection * GuardRailOffset);
+	PlaceGuardRail(CorridorGuardRailBComponent, GapMidpoint - LateralDirection * GuardRailOffset);
 }
 
 void ADoorConnectorActor::OnConstruction(const FTransform& Transform)
