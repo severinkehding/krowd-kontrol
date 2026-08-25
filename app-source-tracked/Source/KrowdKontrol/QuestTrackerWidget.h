@@ -265,7 +265,13 @@ private:
 	// the 1280px case being the binding (smallest, tightest) one; every wider
 	// resolution is strictly safer for the same fixed-size box. Recompute this comment
 	// if either constant below changes.
+	//
+	// Width only - height is NOT fixed. The tracker's text lines are wider than
+	// 160px and Slate text does not clip, so a fixed-size slot let them overflow
+	// rightward past the right-pinned edge, off-screen (2026-08-26 operator
+	// playtest, issue #310). Instead a USizeBox caps the width at TrackerWidthPx,
+	// the text blocks wrap, and the canvas slot auto-sizes so the box grows
+	// downward - the unconstrained direction - keeping #247's width envelope.
 	static constexpr float TrackerMarginPx = 24.0f;
 	static constexpr float TrackerWidthPx = 160.0f;
-	static constexpr float TrackerHeightPx = 80.0f;
 };

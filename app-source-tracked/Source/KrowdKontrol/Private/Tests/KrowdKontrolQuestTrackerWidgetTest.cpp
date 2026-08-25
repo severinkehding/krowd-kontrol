@@ -45,6 +45,7 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Border.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
@@ -158,6 +159,18 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 					TrackerSlot->GetAnchors() == FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
 				TestTrue(TEXT("Tracker should be aligned to its own top-right corner"),
 					TrackerSlot->GetAlignment() == FVector2D(1.0f, 0.0f));
+				// Issue #310 regression (2026-08-26 operator playtest): a fixed-size slot
+				// let unclipped text overflow rightward past the right-pinned edge,
+				// off-screen. Auto-size + the width-capping SizeBox below make the box
+				// grow downward instead.
+				TestTrue(TEXT("Tracker slot should auto-size so wrapped text grows the box downward, not off-screen (issue #310)"),
+					TrackerSlot->GetAutoSize());
+			}
+			USizeBox* WidthCap = Cast<USizeBox>(RootCanvas->GetChildAt(0));
+			if (TestNotNull(TEXT("Root canvas child should be the width-capping USizeBox (issue #310)"), WidthCap))
+			{
+				TestEqual(TEXT("Width cap should hold issue #247's TrackerWidthPx envelope"),
+					WidthCap->GetWidthOverride(), UQuestTrackerWidget::TrackerWidthPx);
 			}
 		}
 	}
