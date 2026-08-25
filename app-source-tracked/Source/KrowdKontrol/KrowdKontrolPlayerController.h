@@ -13,6 +13,7 @@ class UOnScreenPromptWidget;
 class UBriefingCardWidget;
 class UQuestTrackerWidget;
 class UPostRunSummaryWidget;
+class UPunishmentDebugMenuWidget;
 class APlaceholderTargetZoneActor;
 class ULevelClearTimeSubsystem;
 class ULevelFailComponent;
@@ -81,6 +82,15 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
 	TObjectPtr<UPostRunSummaryWidget> PostRunSummaryWidgetInstance;
 
+	// Per-punishment debug/accessibility menu (issue #26) - hidden by default, toggled
+	// by F1 via HandleToggleDebugMenu() below, bound to the possessed pawn's three
+	// punishment components in WireWidgetsToPawn(). Unlike PostRunSummaryWidgetInstance,
+	// this one IS added to the viewport immediately in CreateHUDWidgets() - it starts
+	// Collapsed (set in its own BuildWidgetTree()) and is shown/hidden in place by
+	// ToggleMenuVisibility(), not deferred until a later event.
+	UPROPERTY(BlueprintReadOnly, Category = "HUD")
+	TObjectPtr<UPunishmentDebugMenuWidget> PunishmentDebugMenuWidgetInstance;
+
 	// Called by ULevelBriefingSubsystem::HandleLevelBegin. If BriefingCardWidgetInstance
 	// doesn't exist yet (OnLevelBegin fires before CreateHUDWidgets(), same race issue
 	// #235 fixed for OnScreenPromptWidgetInstance), buffers Row and CreateHUDWidgets()
@@ -143,6 +153,11 @@ private:
 	// otherwise, so a stray keypress with no briefing up is harmless.
 	UFUNCTION()
 	void HandleBriefingDismissInput();
+
+	// Bound to EKeys::F1 in SetupInputComponent() (issue #26): shows/hides
+	// PunishmentDebugMenuWidgetInstance. No-ops if the widget doesn't exist yet.
+	UFUNCTION()
+	void HandleToggleDebugMenu();
 
 	// Set true when ShowLevelBriefing() arrives before BriefingCardWidgetInstance
 	// exists (OnLevelBegin racing CreateHUDWidgets(), same shape as

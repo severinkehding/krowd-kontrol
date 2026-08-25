@@ -106,6 +106,12 @@ class KROWDKONTROL_API UOvercrowdDetectionComponent : public UActorComponent
 	// ability-lock/speed-reduction - non-transitive, same rationale as the grants above.
 	friend class FKrowdKontrolPunishmentArbitrationComponentTest;
 
+	// Same grant, for the punishment debug menu widget's own test (issue #26), which
+	// drives this component to Active via AdvancePanicOverloadState to prove
+	// ForceEndPanicOverload() ends it immediately - non-transitive, same rationale as
+	// the grants above.
+	friend class FKrowdKontrolPunishmentDebugMenuWidgetTest;
+
 public:
 	UOvercrowdDetectionComponent();
 
@@ -157,6 +163,22 @@ public:
 	// number of times over the component's life. Not a lifetime-firing cap.
 	UPROPERTY(BlueprintAssignable, Category = "Overcrowd")
 	FOnPanicOverloadStateChanged OnPanicOverloadStateChanged;
+
+	// Immediately reverts an Active Panic Overload to Inactive - resets UncontrolledSeconds
+	// and ConvergedEnemies and broadcasts OnPanicOverloadStateChanged(Inactive), mirroring
+	// UAbilityLockoutComponent::EndAllLockouts()'s instant/unconditional shape. Safe no-op if
+	// already Inactive. Used by the punishment debug menu (issue #26) to satisfy "existing
+	// active effects end immediately when toggled off" without changing
+	// kk.Punishment.OvercrowdEnabled's own gate-only-new-activations semantics (see
+	// IsOvercrowdEnabledByCVar() below).
+	void ForceEndPanicOverload();
+
+	// Whether kk.Punishment.OvercrowdEnabled currently allows this punishment to activate -
+	// consulted only at the Inactive->Active transition inside AdvancePanicOverloadState(),
+	// mirroring UAbilityLockoutComponent::IsLockoutEnabledByCVar()'s exact rationale. The CVar
+	// itself is a file-scope static in this component's own .cpp, so this accessor is the only
+	// way another translation unit can read it.
+	static bool IsOvercrowdEnabledByCVar();
 
 protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;

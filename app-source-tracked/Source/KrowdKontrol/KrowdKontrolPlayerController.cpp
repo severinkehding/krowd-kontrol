@@ -13,6 +13,9 @@
 #include "AbilityUnlockPromptComponent.h"
 #include "AbilityLockoutComponent.h"
 #include "AbilityCooldownComponent.h"
+#include "PunishmentDebugMenuWidget.h"
+#include "SpeedReductionPunishmentComponent.h"
+#include "OvercrowdDetectionComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "PlaceholderTargetZoneActor.h"
@@ -110,6 +113,18 @@ void AKrowdKontrolPlayerController::CreateHUDWidgets()
 		// UPostRunSummaryWidget::HandleLevelClear()).
 		PostRunSummaryWidgetInstance = CreateWidget<UPostRunSummaryWidget>(this, UPostRunSummaryWidget::StaticClass());
 	}
+	if (!PunishmentDebugMenuWidgetInstance)
+	{
+		PunishmentDebugMenuWidgetInstance = CreateWidget<UPunishmentDebugMenuWidget>(this, UPunishmentDebugMenuWidget::StaticClass());
+		if (PunishmentDebugMenuWidgetInstance)
+		{
+			// Unlike PostRunSummaryWidgetInstance, this one IS added to the viewport
+			// immediately - it starts Collapsed (set in its own BuildWidgetTree()) and
+			// is shown/hidden in place by ToggleMenuVisibility(), not deferred until a
+			// later event.
+			PunishmentDebugMenuWidgetInstance->AddToViewport();
+		}
+	}
 	// Covers the race where ULevelBriefingSubsystem::HandleLevelBegin() already
 	// called ShowLevelBriefing() - buffering the row because BriefingCardWidgetInstance
 	// didn't exist yet - before CreateHUDWidgets() ran (same shape as the
@@ -136,6 +151,7 @@ void AKrowdKontrolPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 	InputComponent->BindKey(EKeys::AnyKey, IE_Pressed, this, &AKrowdKontrolPlayerController::HandleBriefingDismissInput);
+	InputComponent->BindKey(EKeys::F1, IE_Pressed, this, &AKrowdKontrolPlayerController::HandleToggleDebugMenu);
 }
 
 void AKrowdKontrolPlayerController::HandleBriefingDismissInput()
@@ -143,6 +159,14 @@ void AKrowdKontrolPlayerController::HandleBriefingDismissInput()
 	if (BriefingCardWidgetInstance && BriefingCardWidgetInstance->IsBriefingVisible())
 	{
 		BriefingCardWidgetInstance->DismissBriefing();
+	}
+}
+
+void AKrowdKontrolPlayerController::HandleToggleDebugMenu()
+{
+	if (PunishmentDebugMenuWidgetInstance)
+	{
+		PunishmentDebugMenuWidgetInstance->ToggleMenuVisibility();
 	}
 }
 
@@ -165,6 +189,13 @@ void AKrowdKontrolPlayerController::WireWidgetsToPawn(APawn* InPawn)
 	if (EnergyMeterWidgetInstance)
 	{
 		EnergyMeterWidgetInstance->BindToEnergyComponent(InPawn->FindComponentByClass<UPlayerEnergyComponent>());
+	}
+	if (PunishmentDebugMenuWidgetInstance)
+	{
+		PunishmentDebugMenuWidgetInstance->BindPunishmentComponents(
+			InPawn->FindComponentByClass<UAbilityLockoutComponent>(),
+			InPawn->FindComponentByClass<USpeedReductionPunishmentComponent>(),
+			InPawn->FindComponentByClass<UOvercrowdDetectionComponent>());
 	}
 	if (OnScreenPromptWidgetInstance)
 	{

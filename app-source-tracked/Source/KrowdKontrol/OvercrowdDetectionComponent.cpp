@@ -1,6 +1,13 @@
 #include "OvercrowdDetectionComponent.h"
 #include "EnemyBase.h"
 #include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
+
+static TAutoConsoleVariable<int32> CVarPunishmentOvercrowdEnabled(
+	TEXT("kk.Punishment.OvercrowdEnabled"),
+	1,
+	TEXT("If 0, prevents the Overcrowd punishment (UOvercrowdDetectionComponent) from activating on trigger, regardless of arbitration outcome. Defaults to 1 (enabled)."),
+	ECVF_Default);
 
 UOvercrowdDetectionComponent::UOvercrowdDetectionComponent()
 {
@@ -46,7 +53,7 @@ void UOvercrowdDetectionComponent::AdvancePanicOverloadState(float DeltaSeconds)
 
 	UncontrolledSeconds += DeltaSeconds;
 
-	if (UncontrolledSeconds >= OvercrowdUncontrolledDurationSeconds)
+	if (UncontrolledSeconds >= OvercrowdUncontrolledDurationSeconds && IsOvercrowdEnabledByCVar())
 	{
 		// Flip before broadcasting (see MusicSubsystem::SetMusicState) so a
 		// re-entrant listener sees CurrentState already updated.
@@ -54,6 +61,23 @@ void UOvercrowdDetectionComponent::AdvancePanicOverloadState(float DeltaSeconds)
 		ConvergedEnemies = QualifyingEnemies;
 		OnPanicOverloadStateChanged.Broadcast(CurrentState);
 	}
+}
+
+void UOvercrowdDetectionComponent::ForceEndPanicOverload()
+{
+	if (CurrentState != EPanicOverloadState::Active)
+	{
+		return;
+	}
+	CurrentState = EPanicOverloadState::Inactive;
+	UncontrolledSeconds = 0.0f;
+	ConvergedEnemies.Reset();
+	OnPanicOverloadStateChanged.Broadcast(CurrentState);
+}
+
+bool UOvercrowdDetectionComponent::IsOvercrowdEnabledByCVar()
+{
+	return CVarPunishmentOvercrowdEnabled.GetValueOnGameThread() != 0;
 }
 
 TArray<TWeakObjectPtr<AEnemyBase>> UOvercrowdDetectionComponent::GetHotUncontrolledEnemiesNearby() const

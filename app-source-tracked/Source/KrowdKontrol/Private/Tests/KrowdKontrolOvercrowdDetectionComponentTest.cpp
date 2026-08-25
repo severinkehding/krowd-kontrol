@@ -32,6 +32,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Components/SceneComponent.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -366,6 +367,99 @@ bool FKrowdKontrolOvercrowdDetectionComponentTest::RunTest(const FString& Parame
 	TestEqual(TEXT("Landing CC on an enemy outside the triggering convergence must not end Panic Overload"),
 		static_cast<uint8>(NonMemberComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
 	TestEqual(TEXT("No recovery broadcast should have fired"), NonMemberListener->CallCount, 1);
+
+	// --- Scenario 8 (issue #26): kk.Punishment.OvercrowdEnabled=0 suppresses the
+	// Inactive->Active flip even once the trigger condition (threshold count sustained
+	// for the full duration) is fully met, and restoring the CVar to 1 resumes normal
+	// triggering. The CVar is process-wide state shared by every KrowdKontrol.Unit.*
+	// test running in the same Automation Framework pass, so this always ends by
+	// leaving it at 1, regardless of which assertion below fails first. Fresh World,
+	// same reasoning as every other scenario above. ---
+	{
+		IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("kk.Punishment.OvercrowdEnabled"));
+		if (!TestNotNull(TEXT("kk.Punishment.OvercrowdEnabled CVar should be registered"), CVar))
+		{
+			return false;
+		}
+
+		UWorld* CVarWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World for the CVar scenario"), CVarWorld))
+		{
+			return false;
+		}
+
+		APawn* CVarPlayerPawn = CVarWorld->SpawnActor<APawn>();
+		UOvercrowdDetectionComponent* CVarComponent = NewObject<UOvercrowdDetectionComponent>(CVarPlayerPawn);
+		CVarComponent->RegisterComponent();
+
+		CVar->Set(0);
+
+		for (int32 Index = 0; Index < CVarComponent->OvercrowdCrowdThreshold; ++Index)
+		{
+			AEnemyBaseTestActor* Enemy = CVarWorld->SpawnActor<AEnemyBaseTestActor>();
+			if (!TestNotNull(TEXT("CVar-scenario AEnemyBaseTestActor should spawn"), Enemy))
+			{
+				CVar->Set(1);
+				return false;
+			}
+			Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		}
+
+		CVarComponent->AdvancePanicOverloadState(CVarComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
+		TestEqual(TEXT("kk.Punishment.OvercrowdEnabled=0 should suppress the Inactive->Active flip even past the full duration"),
+			static_cast<uint8>(CVarComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
+
+		CVar->Set(1);
+		CVarComponent->AdvancePanicOverloadState(CVarComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
+		TestEqual(TEXT("Restoring kk.Punishment.OvercrowdEnabled to 1 should allow the flip to Active normally"),
+			static_cast<uint8>(CVarComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
+
+		CVar->Set(1); // restore for the next KrowdKontrol.Unit.* test in this pass
+	}
+
+	// --- Scenario 9 (issue #26): ForceEndPanicOverload() ends an Active state
+	// immediately - no need to wait for recovery/CC - broadcasts exactly once more with
+	// Inactive, and is a safe no-op (no additional broadcast) when called again while
+	// already Inactive. Fresh World, same reasoning as every other scenario above. ---
+	{
+		UWorld* ForceEndWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World for the ForceEndPanicOverload scenario"), ForceEndWorld))
+		{
+			return false;
+		}
+
+		APawn* ForceEndPlayerPawn = ForceEndWorld->SpawnActor<APawn>();
+		UOvercrowdDetectionComponent* ForceEndComponent = NewObject<UOvercrowdDetectionComponent>(ForceEndPlayerPawn);
+		ForceEndComponent->RegisterComponent();
+
+		UPanicOverloadStateTestListener* ForceEndListener = NewObject<UPanicOverloadStateTestListener>();
+		ForceEndComponent->OnPanicOverloadStateChanged.AddDynamic(ForceEndListener, &UPanicOverloadStateTestListener::HandlePanicOverloadStateChanged);
+
+		for (int32 Index = 0; Index < ForceEndComponent->OvercrowdCrowdThreshold; ++Index)
+		{
+			AEnemyBaseTestActor* Enemy = ForceEndWorld->SpawnActor<AEnemyBaseTestActor>();
+			if (!TestNotNull(TEXT("ForceEndPanicOverload-scenario AEnemyBaseTestActor should spawn"), Enemy))
+			{
+				return false;
+			}
+			Enemy->TickCheckDetection(FVector::ZeroVector); // Idle -> Alert
+		}
+
+		ForceEndComponent->AdvancePanicOverloadState(ForceEndComponent->OvercrowdUncontrolledDurationSeconds + 10.0f);
+		TestEqual(TEXT("ForceEndPanicOverload scenario should reach Active before testing the force-end"),
+			static_cast<uint8>(ForceEndComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Active));
+		TestEqual(TEXT("ForceEndPanicOverload scenario's trigger should have broadcast exactly once"), ForceEndListener->CallCount, 1);
+
+		ForceEndComponent->ForceEndPanicOverload();
+		TestEqual(TEXT("ForceEndPanicOverload should immediately revert an Active state to Inactive"),
+			static_cast<uint8>(ForceEndComponent->GetPanicOverloadState()), static_cast<uint8>(EPanicOverloadState::Inactive));
+		TestEqual(TEXT("ForceEndPanicOverload should broadcast exactly once more (trigger + force-end = 2 total)"), ForceEndListener->CallCount, 2);
+		TestEqual(TEXT("ForceEndPanicOverload's broadcast should carry Inactive"),
+			static_cast<uint8>(ForceEndListener->LastState), static_cast<uint8>(EPanicOverloadState::Inactive));
+
+		ForceEndComponent->ForceEndPanicOverload();
+		TestEqual(TEXT("A second ForceEndPanicOverload call while already Inactive should be a safe no-op"), ForceEndListener->CallCount, 2);
+	}
 
 	return true;
 }
