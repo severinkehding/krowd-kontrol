@@ -92,7 +92,7 @@ void UQuestTrackerWidget::BuildWidgetTree()
 	UVerticalBox* Rows = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("QuestTrackerRows"));
 	ChromeBorder->SetContent(Rows);
 
-	// AutoWrapText on every line: inside the SizeBox's 160px cap, wrapping is what
+	// AutoWrapText on every line: inside the SizeBox's 520px cap, wrapping is what
 	// converts "too wide" into "taller" instead of "clipped off-screen" (issue #310).
 	BankedCountText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuestTrackerBankedCountText"));
 	BankedCountText->SetColorAndOpacity(TextColor);

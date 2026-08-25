@@ -5,8 +5,8 @@
 // increments the displayed count to N, matching the issue's explicit "fires
 // OnActorBanked N times, asserts displayed count reaches N" acceptance criterion,
 // (4) the panel is anchored to the top-right corner, (5) its pixel footprint stays
-// within the issue's ~15%-of-screen-width envelope at both a 1280x720 minimum and a
-// 3840x2160 maximum target resolution (same reasoning
+// within the operator-relaxed ~45%-of-screen-width envelope at both a 1280x720 minimum
+// and a 3840x2160 maximum target resolution (same reasoning
 // KrowdKontrolEnergyMeterWidgetTest.cpp section 9b documents), and (6) its chrome
 // colours come from HUDChromeColours, mirroring KrowdKontrolEnergyMeterWidgetTest.cpp's
 // own in-file chrome check rather than KrowdKontrolReservedGameplayColoursTest.cpp's
