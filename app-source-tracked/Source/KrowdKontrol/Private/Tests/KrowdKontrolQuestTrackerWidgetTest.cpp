@@ -171,9 +171,21 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 			{
 				TestEqual(TEXT("Width cap should hold issue #247's TrackerWidthPx envelope"),
 					WidthCap->GetWidthOverride(), UQuestTrackerWidget::TrackerWidthPx);
+				TestEqual(TEXT("Width cap's content should be the chrome border, not detached from the live tree"),
+					Cast<UWidget>(WidthCap->GetContent()), Cast<UWidget>(Widget->ChromeBorder));
 			}
 		}
 	}
+
+	// (4b) Auto-wrap on every text row - the width cap alone re-clips off-screen
+	// without it (issue #310); the SizeBox constrains the child's desired size,
+	// but line-breaking is what AutoWrapText provides.
+	TestTrue(TEXT("Banked-count text should auto-wrap inside the width cap (issue #310)"),
+		Widget->BankedCountText->GetAutoWrapText());
+	TestTrue(TEXT("Suggested-ability text should auto-wrap inside the width cap (issue #310)"),
+		Widget->SuggestedAbilityText->GetAutoWrapText());
+	TestTrue(TEXT("Room-state text should auto-wrap inside the width cap (issue #310)"),
+		Widget->RoomStateText->GetAutoWrapText());
 
 	// (5) Resolution-safety envelope - issue #247's explicit ~15%-of-screen-width
 	// ceiling, checked at this project's documented min/max target resolutions

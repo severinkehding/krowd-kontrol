@@ -50,6 +50,27 @@ satisfying invariant #8's carve-out.
 
 No fixes were required during validation — the gate passed on the first full run.
 
+## Review follow-up (2026-08-26)
+
+Automated review (PR #312) surfaced two HIGH and one LOW finding, all fixed in a
+follow-up commit:
+
+- Added `TestTrue` assertions for `SetAutoWrapText(true)` on all three text rows —
+  the fix's third mechanism (alongside the width cap and auto-size) had no
+  regression coverage.
+- Added a `TestEqual` assertion that the `USizeBox`'s content is `ChromeBorder`,
+  closing a gap where a future edit could detach the border from the live tree
+  without failing any existing test.
+- Merged `QuestTrackerWidget.h`'s two contradictory `TrackerWidthPx`/
+  `TrackerMarginPx` doc-comment paragraphs (one still said "fixed pixel
+  footprint"/"fixed-size box", left over from before this PR; the other,
+  appended by this PR, correctly said "Width only - height is NOT fixed") into
+  one internally-consistent paragraph.
+
+`python harness/run_ue_automation.sh KrowdKontrol.Unit.QuestTrackerWidget` —
+rebuilt (`UE_BUILD_OK`) and passed (`UE_AUTOMATION_RESULT passed=2 total=2`)
+after these changes. Full quick gate (`python harness/ci.py --quick`): `GATE_OK`.
+
 ---
 
 The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
