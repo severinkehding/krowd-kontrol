@@ -192,11 +192,11 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 	// uses). The low (smallest) resolution is the binding case - both are checked
 	// explicitly rather than relying on that argument alone. Issue #247's original
 	// ceiling was ~15%, but at the 160px cap that forced every tracker line to wrap
-	// onto 2-3 lines; the 2026-08-26 operator playtest widened the cap to 260px and
-	// relaxed the ceiling to 25% (see TrackerWidthPx's header comment for the full
-	// history).
+	// onto 2-3 lines; the 2026-08-26 operator playtest widened the cap twice (160
+	// -> 260 -> 520px, "maybe double") and relaxed the ceiling to 45% (see
+	// TrackerWidthPx's header comment for the full history).
 	const float TrackerFootprintWidthPx = UQuestTrackerWidget::TrackerMarginPx + UQuestTrackerWidget::TrackerWidthPx;
-	const float MaxWidthFraction = 0.25f;
+	const float MaxWidthFraction = 0.45f;
 	const FVector2D TargetResolutions[] = { FVector2D(1280.0f, 720.0f), FVector2D(3840.0f, 2160.0f) };
 	for (const FVector2D& TargetResolution : TargetResolutions)
 	{

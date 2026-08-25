@@ -260,15 +260,16 @@ private:
 
 	// Width-capped footprint from the viewport's top-right corner (height is NOT
 	// fixed - see QuestTrackerWidget.cpp's WidthCap construction comment for why).
-	// 260px + 24px margin = 284px, ~22.2% of a 1280px-wide viewport (this project's
+	// 520px + 24px margin = 544px, ~42.5% of a 1280px-wide viewport (this project's
 	// documented minimum target resolution - see the resolution-safety test).
 	// History: issue #247 originally imposed a "roughly 15% of screen width"
 	// ceiling and the first shipped cap was 160px - but at 160px every tracker
 	// line wrapped onto 2-3 lines (2026-08-26 operator playtest: "text wraps like
-	// crazy"), so the operator widened it to 260px and relaxed the envelope to 25%
-	// (the resolution-safety test pins the new bound). Readability of the live
-	// objective beats the original ceiling. Recompute this comment if either
-	// constant below changes.
+	// crazy"), 260px still wrapped too much, and the operator settled on 520px
+	// ("maybe double") with the resolution-safety envelope relaxed to 45% to pin
+	// the new bound. Readability of the live objective beats the original ceiling;
+	// revisit if 720p ever becomes a real target rather than a documented floor.
+	// Recompute this comment if either constant below changes.
 	static constexpr float TrackerMarginPx = 24.0f;
-	static constexpr float TrackerWidthPx = 260.0f;
+	static constexpr float TrackerWidthPx = 520.0f;
 };
