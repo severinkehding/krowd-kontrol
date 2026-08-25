@@ -14,6 +14,7 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Border.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -65,30 +66,46 @@ void UQuestTrackerWidget::BuildWidgetTree()
 	ChromeBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("QuestTrackerChromeBorder"));
 	ChromeBorder->SetBrushColor(ChromeBackgroundColor);
 
-	UCanvasPanelSlot* TrackerSlot = RootCanvas->AddChildToCanvas(ChromeBorder);
-	checkf(TrackerSlot, TEXT("QuestTrackerWidget: AddChildToCanvas(ChromeBorder) returned null"));
+	// Width cap + auto height, NOT a fixed-size slot (issue #310, 2026-08-26 operator
+	// playtest): the text lines are wider than TrackerWidthPx and Slate text does not
+	// clip, so a fixed 160px slot let them overflow rightward past the right-pinned
+	// edge, straight off-screen. The SizeBox holds issue #247's width envelope while
+	// the wrapped text (below) grows the box downward instead - the direction with
+	// room. UAbilityCooldownTrayWidget's right-anchored slot uses the same
+	// auto-size idiom; UEnergyMeterWidget's fixed-size slot is only safe because its
+	// top-LEFT anchoring overflows into the screen, not off it.
+	USizeBox* WidthCap = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("QuestTrackerWidthCap"));
+	WidthCap->SetWidthOverride(TrackerWidthPx);
+	WidthCap->SetContent(ChromeBorder);
+
+	UCanvasPanelSlot* TrackerSlot = RootCanvas->AddChildToCanvas(WidthCap);
+	checkf(TrackerSlot, TEXT("QuestTrackerWidget: AddChildToCanvas(WidthCap) returned null"));
 	// Top-right corner anchoring - see this class's header comment for why this
 	// corner. Diagonally opposite UOnScreenPromptWidget's top-center (not a corner
 	// widget) and distinct from UEnergyMeterWidget (top-left)/UAbilityCooldownTrayWidget
 	// (bottom-right).
 	TrackerSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
 	TrackerSlot->SetAlignment(FVector2D(1.0f, 0.0f));
-	TrackerSlot->SetAutoSize(false);
-	TrackerSlot->SetSize(FVector2D(TrackerWidthPx, TrackerHeightPx));
+	TrackerSlot->SetAutoSize(true);
 	TrackerSlot->SetPosition(FVector2D(-TrackerMarginPx, TrackerMarginPx));
 
 	UVerticalBox* Rows = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("QuestTrackerRows"));
 	ChromeBorder->SetContent(Rows);
 
+	// AutoWrapText on every line: inside the SizeBox's 520px cap, wrapping is what
+	// converts "too wide" into "taller" instead of "clipped off-screen" (issue #310).
 	BankedCountText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuestTrackerBankedCountText"));
 	BankedCountText->SetColorAndOpacity(TextColor);
+	BankedCountText->SetAutoWrapText(true);
 	Rows->AddChildToVerticalBox(BankedCountText);
 
 	SuggestedAbilityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuestTrackerSuggestedAbilityText"));
+	SuggestedAbilityText->SetAutoWrapText(true);
 	Rows->AddChildToVerticalBox(SuggestedAbilityText);
 
 	RoomStateText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("QuestTrackerRoomStateText"));
 	RoomStateText->SetColorAndOpacity(TextColor);
+	RoomStateText->SetAutoWrapText(true);
 	Rows->AddChildToVerticalBox(RoomStateText);
 }
 
