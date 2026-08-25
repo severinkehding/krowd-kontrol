@@ -107,9 +107,15 @@ void UTeachingPromptComponent::CheckStunPromptFireCondition()
 	{
 		if (It->GetThreatState() == EThreatState::Hot)
 		{
-			bHasFiredStunPrompt = true;
+			// Only latch the one-shot guard once the prompt is actually shown. Unlike
+			// the other three prompts (which fire well after gameplay has started, once
+			// the widget is certainly resolvable), this one can trigger on the very
+			// first tick for an enemy placed right at the player's spawn - burning the
+			// guard on a failed ResolvePromptWidget() there would silently and
+			// permanently drop the prompt instead of retrying next tick.
 			if (UOnScreenPromptWidget* Widget = ResolvePromptWidget())
 			{
+				bHasFiredStunPrompt = true;
 				Widget->ShowPrompt(NSLOCTEXT("TeachingPromptComponent", "StunPrompt", "STUN IT — PRESS 1"));
 			}
 			return;
@@ -133,7 +139,8 @@ void UTeachingPromptComponent::CheckControlPromptDismissCondition()
 
 void UTeachingPromptComponent::CheckDropPromptFireCondition()
 {
-	if (bHasFiredDropPrompt || !FirstControlledEnemy.IsValid())
+	if (bHasFiredDropPrompt || !FirstControlledEnemy.IsValid()
+		|| FirstControlledEnemy->GetEnemyState() != EEnemyState::Controlled)
 	{
 		return;
 	}
