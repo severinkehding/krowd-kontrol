@@ -360,12 +360,16 @@ bool FKrowdKontrolBossCheckpointRestartTest::RunTest(const FString& Parameters)
 			Controller->WasRestartRequested());
 		TestTrue(TEXT("A fresh-run restart's mode should be recorded as fresh"),
 			Controller->WasFreshRunRequested());
+		TestEqual(TEXT("A fresh-run restart must compute empty reload options even with the checkpoint latched"),
+			Controller->GetLastComputedRestartOptions(), FString());
 
 		Controller->RequestLevelRestart(); // bFreshRun defaults to false - the defeat path.
 		TestTrue(TEXT("A defeat-mode restart should still flip bRestartRequested even with the checkpoint latched"),
 			Controller->WasRestartRequested());
 		TestFalse(TEXT("A defeat-mode restart's mode should be recorded as not fresh"),
 			Controller->WasFreshRunRequested());
+		TestEqual(TEXT("A defeat-mode restart must still compute BossCheckpoint options"),
+			Controller->GetLastComputedRestartOptions(), FString(TEXT("BossCheckpoint")));
 	}
 
 	return true;

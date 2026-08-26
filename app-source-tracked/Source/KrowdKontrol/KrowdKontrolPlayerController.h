@@ -148,6 +148,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Level Restart")
 	bool WasFreshRunRequested() const { return bLastRestartWasFreshRun; }
 
+	// Test-observability seam (issue #343 review follow-up): the ternary that decides
+	// whether a restart honours a latched boss checkpoint - the actual behavioral crux
+	// of issue #342's fix - only ever runs inside RequestLevelRestart()'s
+	// World->IsGameWorld() guard, so an Automation test World (CreateNewMap(), never a
+	// game world) can prove bLastRestartWasFreshRun flips correctly without proving
+	// anything about which options string a fresh-run restart actually computes.
+	// Computed unconditionally, ahead of the IsGameWorld() guard, so this accessor
+	// captures it either way - same idiom as WasFreshRunRequested() above.
+	UFUNCTION(BlueprintPure, Category = "Level Restart")
+	FString GetLastComputedRestartOptions() const { return LastComputedRestartOptions; }
+
 	// Called at the end of HandleLevelFailed() (issue #172, PRD REQ-4) with the default
 	// bFreshRun=false, and externally by UPostRunSummaryWidget::HandleRerunClicked()
 	// (issue #320) and UPostRunSummaryWidget::HandleNextLevelClicked() on the final
@@ -291,6 +302,11 @@ private:
 	// Records the bFreshRun argument of the most recent RequestLevelRestart() call - see
 	// WasFreshRunRequested()'s comment for why this exists.
 	bool bLastRestartWasFreshRun = false;
+
+	// Records the OpenLevel Options string the most recent RequestLevelRestart() call
+	// computed (empty for bFreshRun=true, ComputeRestartOptions()'s result otherwise) -
+	// see GetLastComputedRestartOptions()'s comment for why this exists.
+	FString LastComputedRestartOptions;
 
 	// One-shot guard for ApplyBossCheckpointIfRequested(), same never-reset-once-set
 	// idiom as bRestartRequested above. The "BossCheckpoint" FURL option it reads
