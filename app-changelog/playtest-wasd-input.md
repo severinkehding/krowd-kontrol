@@ -20,3 +20,17 @@ dismisses, and the operator cleared Level 1 end-to-end.
 
 The change is already live in `app/` (compiled 07:14, editor running it since
 07:20); this PR mirrors it into `app-source-tracked/` per D-009.
+
+## Code-review follow-up (PR #309 review, 2026-08-26)
+
+The review caught that `bConsumeInput = false` alone was incomplete:
+`UBriefingCardWidget::ShowBriefing()` pauses the world, and UE skips any key
+binding without `bExecuteWhenPaused` while paused — so press-any-key-to-dismiss
+never actually fired; the card only closed via its 8s auto-dismiss timer. Fixed
+by also setting `bExecuteWhenPaused = true` (safe: `bGamePaused` is snapshotted
+per frame, so the unpausing keypress cannot leak into that frame's pawn axes).
+Also added `KrowdKontrol.Unit.PlayerControllerInputBinding`, which inspects the
+registered `FInputKeyBinding` directly and pins both flags (plus the adjacent
+#308 F1 binding's presence) — the prior briefing test called the handler
+directly and so passed the whole time input was dead. Verified: clean UBT build
++ test passes 1/1 headless.
