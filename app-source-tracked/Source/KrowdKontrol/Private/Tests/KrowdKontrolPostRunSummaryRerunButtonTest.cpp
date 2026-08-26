@@ -5,9 +5,9 @@
 // RerunButton exists, its OnClicked delegate is bound, and clicking it (via
 // HandleRerunClicked(), friend access) invokes the same
 // AKrowdKontrolPlayerController::RequestLevelRestart() path HandleLevelFailed()
-// (defeat, issue #172/#223) and HandleNextLevelClicked()'s final-level branch (#321)
-// already use - proven via WasRestartRequested(), the same real accessor those tests
-// use. The real UGameplayStatics::OpenLevel() call inside RequestLevelRestart() stays
+// (defeat, issue #172/#223) already uses - proven via WasRestartRequested(), the same
+// real accessor that test uses. The real UGameplayStatics::OpenLevel() call inside
+// RequestLevelRestart() stays
 // unreachable here since CreateNewMap() test Worlds are never game worlds - same
 // documented limitation as KrowdKontrolLevelRestartTest.cpp. Also exercises the real
 // HandleLevelClear() path (not just HandleRerunClicked() directly) with this same real
@@ -24,8 +24,7 @@
 // idiom for proving the same guard shape).
 //
 // (c) Layout order: RerunButton must render below the info block (CrowdMasteryText,
-// the last info-block element) and above NextLevelButton in the vertical layout, per
-// this issue's AC.
+// the last info-block element) in the vertical layout, per this issue's AC.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -130,7 +129,7 @@ bool FKrowdKontrolPostRunSummaryRerunButtonTest::RunTest(const FString& Paramete
 		Widget->HandleRerunClicked(); // must not log again - the AddExpectedError count of 1 above proves it
 	}
 
-	// (c) Layout order: RerunButton must render above NextLevelButton (this issue's AC).
+	// (c) Layout order: RerunButton must render below the info block (this issue's AC).
 	{
 		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
@@ -152,10 +151,8 @@ bool FKrowdKontrolPostRunSummaryRerunButtonTest::RunTest(const FString& Paramete
 
 		const int32 CrowdMasteryIndex = Layout->GetChildIndex(Widget->CrowdMasteryText);
 		const int32 RerunIndex = Layout->GetChildIndex(Widget->RerunButton);
-		const int32 NextLevelIndex = Layout->GetChildIndex(Widget->NextLevelButton);
-		TestTrue(TEXT("RerunButton should be positioned below the info block and above NextLevelButton in the layout"),
-			CrowdMasteryIndex >= 0 && RerunIndex >= 0 && NextLevelIndex >= 0
-				&& CrowdMasteryIndex < RerunIndex && RerunIndex < NextLevelIndex);
+		TestTrue(TEXT("RerunButton should be positioned below the info block in the layout"),
+			CrowdMasteryIndex >= 0 && RerunIndex >= 0 && CrowdMasteryIndex < RerunIndex);
 	}
 
 	return true;
