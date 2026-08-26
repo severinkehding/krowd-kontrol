@@ -1,12 +1,15 @@
 // Confirms issue #323's full wiring end-to-end: the project's GameDefaultMap ini
-// setting resolves to /Game/Maps/L_MainMenu (AC #2), the map loads and its
-// WorldSettings override resolves to AMainMenuGameMode (so AMainMenuPlayerController
-// ::BeginPlay() actually shows UMainMenuWidget on launch - issue #324's already-built
-// wiring), the map contains no gameplay actors (AC #1: no AEnemyBase, no ATargetZone,
-// no pawn carrying UPlayerEnergyComponent), and the Editor Startup Map is left
-// unchanged at L_Level01 (AC #3) - all four are only verifiable against the real
-// .umap/.ini content, which is excluded from app-source-tracked/ per D-009, so this
-// is the only in-diff, verifiable proof any of this actually landed correctly.
+// setting resolves to /Game/Maps/L_MainMenu (AC #2), and the map's WorldSettings
+// override resolves to AMainMenuGameMode (AC #4) - the class that, per issue #324's
+// already-built wiring, is what makes AMainMenuPlayerController::BeginPlay() show
+// UMainMenuWidget on launch, though that runtime behavior itself is not exercised
+// here (no BeginPlay is dispatched - see the acceptance-criteria table in this
+// issue's changelog for the still-manual verification step). The map contains no
+// gameplay actors (AC #1: no AEnemyBase, no ATargetZone, no pawn carrying
+// UPlayerEnergyComponent), and the Editor Startup Map is left unchanged at
+// L_Level01 (AC #3) - all four checks are only verifiable against the real
+// .umap/.ini content, which is excluded from app-source-tracked/ per D-009, so
+// this is the only in-diff, verifiable proof any of this actually landed correctly.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.

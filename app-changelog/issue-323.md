@@ -86,6 +86,32 @@ Not mirrored: `L_MainMenu.umap` itself is a binary asset, excluded from
 - [x] `app-source-tracked/` mirror + this changelog written
 - [ ] Real click-through / Quit-button behavior in a live PIE or packaged session - not automatable in this environment (no ability-cast/click input primitive reaches real PIE input - `holdout_no_ability_cast_input_primitive`, `holdout_no_defeat_trigger_primitive`); flagged for manual operator sign-off, matching issue #324's own precedent.
 
+## Post-review fixes (PR #334 self-fix pass)
+
+Two comment-accuracy fixes from review, both comment-only (no assertion logic changed):
+
+- `KrowdKontrolMainMenuMapTest.cpp`'s file-header comment previously implied the test
+  proves `AMainMenuPlayerController::BeginPlay()` shows `UMainMenuWidget` on launch;
+  reworded to state that's the *design intent* behind checking the GameMode class,
+  not something this test exercises (no `BeginPlay` is dispatched here - see the
+  unchecked AC row above).
+- `KrowdKontrolMainMenuGameModeTest.cpp:49`'s comment claiming to mirror
+  `KrowdKontrolGameModeTest.cpp`'s `FKrowdKontrolGameModeLevelOverrideTest` "exactly"
+  reworded to describe the actual difference (strict `TestEqual` vs. that test's
+  "no override, or expected class" fallback).
+
+A third review finding (assert `FAutomationEditorCommonUtils::LoadMap`'s return value
+via `TestTrue`) was attempted and reverted: `LoadMap` returns `void` in this engine's
+`AutomationEditorCommon.h` (UE 5.8), not `bool` as the finding assumed - confirmed by
+a UBT compile failure (`C2665: no overloaded function could convert all the argument
+types`) before reverting. The underlying pattern (discarding whatever `LoadMap` does
+return) is unchanged from the original PR and is shared by 8+ other test files in this
+suite; a real fix would need a different mechanism than the one proposed (e.g.
+comparing `World->GetOutermost()->GetName()` against the requested map path) and is
+better scoped as its own follow-up covering all call sites, not patched two-at-a-time.
+Re-ran `python harness/ci.py --quick` after this pass: `GATE_OK mode=quick`
+(`UNIT_PASSED tests=117`, `PIE_PASSED tests=5`).
+
 ## Validation Evidence
 
 See `implementation.md` in the workflow run artifacts for the full validation record.

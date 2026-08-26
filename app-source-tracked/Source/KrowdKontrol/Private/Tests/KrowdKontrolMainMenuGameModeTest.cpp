@@ -46,7 +46,10 @@ bool FKrowdKontrolMainMenuGameModeTest::RunTest(const FString& Parameters)
 // Confirms /Game/Maps/L_MainMenu's WorldSettings actually overrides GameMode to
 // AMainMenuGameMode - the real issue #323 hand-off mechanism this PR's changelog
 // centers on, previously only checked by a one-off manual headless-pythonscript run.
-// Mirrors KrowdKontrolGameModeTest.cpp's FKrowdKontrolGameModeLevelOverrideTest exactly.
+// Structurally follows KrowdKontrolGameModeTest.cpp's FKrowdKontrolGameModeLevelOverrideTest
+// (same LoadMap + GetWorldSettings()->DefaultGameMode read), but asserts strict equality to
+// AMainMenuGameMode rather than that test's "no override, or the expected class" fallback -
+// this map is required to carry the override, not merely permitted to.
 // Retargeted from the now-deleted /Game/Maps/L_MainMenuTemp (issue #324's throwaway
 // stand-in) onto the real map issue #323 authors - the GameMode override moved with it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
