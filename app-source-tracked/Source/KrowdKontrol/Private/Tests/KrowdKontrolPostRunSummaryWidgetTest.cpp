@@ -183,6 +183,8 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 			{
 				TestEqual(TEXT("Width cap should hold ContentWidthPx"),
 					WidthCap->GetWidthOverride(), UPostRunSummaryWidget::ContentWidthPx);
+				TestEqual(TEXT("Height cap should hold ContentHeightPx"),
+					WidthCap->GetMaxDesiredHeight(), UPostRunSummaryWidget::ContentHeightPx);
 				TestEqual(TEXT("Width cap's content should be the chrome border, not detached from the live tree"),
 					Cast<UWidget>(WidthCap->GetContent()), Cast<UWidget>(Widget->RootBorder));
 			}
@@ -203,15 +205,22 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 	// uses (issue #310's pattern, the one this issue's AC names explicitly). Unlike
 	// the quest tracker's corner-pinned footprint (which risks running off the RIGHT
 	// edge), a centred block's risk is running wider/taller than the viewport itself,
-	// so the check is "content width stays comfortably under full screen width" at
-	// both extremes rather than a corner-margin fraction.
+	// so the check is "content width/height stay comfortably under full screen
+	// width/height" at both extremes rather than a corner-margin fraction. Height is
+	// checked here too (not just width) because AutoWrapText growing wrapped text
+	// taller is exactly what ContentHeightPx bounds, and the 1280x720 minimum is the
+	// tighter of the two resolutions for that bound.
 	const float MaxWidthFraction = 0.5f;
+	const float MaxHeightFraction = 0.5f;
 	const FVector2D TargetResolutions[] = { FVector2D(1280.0f, 720.0f), FVector2D(3840.0f, 2160.0f) };
 	for (const FVector2D& TargetResolution : TargetResolutions)
 	{
 		TestTrue(*FString::Printf(TEXT("Content block width should stay within %.0f%% of screen width at %dx%d"),
 			MaxWidthFraction * 100.0f, (int32)TargetResolution.X, (int32)TargetResolution.Y),
 			UPostRunSummaryWidget::ContentWidthPx <= TargetResolution.X * MaxWidthFraction);
+		TestTrue(*FString::Printf(TEXT("Content block height should stay within %.0f%% of screen height at %dx%d"),
+			MaxHeightFraction * 100.0f, (int32)TargetResolution.X, (int32)TargetResolution.Y),
+			UPostRunSummaryWidget::ContentHeightPx <= TargetResolution.Y * MaxHeightFraction);
 	}
 
 	return true;

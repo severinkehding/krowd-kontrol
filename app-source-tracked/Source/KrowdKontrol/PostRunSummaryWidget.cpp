@@ -79,8 +79,11 @@ void UPostRunSummaryWidget::BuildWidgetTree()
 	// Width cap + auto height, matching UQuestTrackerWidget's issue #310 fix -
 	// AutoWrapText below (not a fixed-size slot) is what turns "too wide" into
 	// "taller", not "clipped off-screen", at the 1280x720 minimum target resolution.
+	// MaxDesiredHeight caps how much taller that growth can push the block, so it stays
+	// within the same 1280x720 minimum target resolution vertically too.
 	USizeBox* WidthCap = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SummaryWidthCap"));
 	WidthCap->SetWidthOverride(ContentWidthPx);
+	WidthCap->SetMaxDesiredHeight(ContentHeightPx);
 	WidthCap->SetContent(RootBorder);
 
 	UCanvasPanelSlot* ContentSlot = RootCanvas->AddChildToCanvas(WidthCap);
