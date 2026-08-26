@@ -150,7 +150,23 @@ void AKrowdKontrolPlayerController::ShowLevelBriefing(const FLevelBriefingRow& R
 void AKrowdKontrolPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
-	InputComponent->BindKey(EKeys::AnyKey, IE_Pressed, this, &AKrowdKontrolPlayerController::HandleBriefingDismissInput);
+	// bConsumeInput MUST be false here: the controller's InputComponent is processed
+	// BEFORE the possessed pawn's in APlayerController::BuildInputStack's ordering, so a
+	// consuming AnyKey binding at this level eats every key press (WASD axes included -
+	// a consumed key contributes nothing to its axes that frame) before
+	// AFlatCamera3DPrototypePawn ever sees it. This is exactly the all-input-dead
+	// regression both 2026-08-24/26 operator playtests hit (present since PR #272
+	// introduced this binding).
+	FInputKeyBinding& BriefingDismissBinding = InputComponent->BindKey(EKeys::AnyKey, IE_Pressed, this, &AKrowdKontrolPlayerController::HandleBriefingDismissInput);
+	BriefingDismissBinding.bConsumeInput = false;
+	// bExecuteWhenPaused MUST be true: UBriefingCardWidget::ShowBriefing() pauses the
+	// world, and UE substitutes an empty delegate for any binding without this flag
+	// while paused (PlayerInput.cpp's bGamePaused check) - so without it the dismiss
+	// binding can never fire during the one window it exists for, and the card only
+	// ever closed via its 8s auto-dismiss timer (PR #309 code review, finding 1).
+	// Safe against input leaking: bGamePaused is snapshotted per frame, so the
+	// unpausing keypress still contributes nothing to that frame's pawn axes.
+	BriefingDismissBinding.bExecuteWhenPaused = true;
 	InputComponent->BindKey(EKeys::F1, IE_Pressed, this, &AKrowdKontrolPlayerController::HandleToggleDebugMenu);
 }
 
