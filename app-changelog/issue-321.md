@@ -10,13 +10,23 @@ defeat-restart reload path, `AKrowdKontrolPlayerController::RequestLevelRestart(
 
 ## Critical finding fixed as part of this issue
 
-`ULevelSequenceSubsystem::HandleLevelClear()` previously called
-`UGameplayStatics::OpenLevel()` itself, automatically, the instant `OnLevelClear`
-fired. This was inert only because `LevelSequenceTable` is unset in production today
-(`ComputeNextLevelMapName()` always returns `NAME_None`). The instant a real table gets
-populated, that auto-advance would race the post-run summary screen — tearing down the
-world before the player could read it or press anything, making the new button
-decorative or racy.
+**This is a disclosed, intentional regression relative to issue #216's shipped
+behavior — not a silent removal.** `ULevelSequenceSubsystem::HandleLevelClear()`
+previously called `UGameplayStatics::OpenLevel()` itself, automatically, the instant
+`OnLevelClear` fired. This PR removes that automatic call. It is necessary, not
+incidental: the instant a real `LevelSequenceTable` gets populated, that auto-advance
+would race the post-run summary screen — tearing down the world before the player
+could read it or press anything, making this issue's new button decorative or racy.
+Leaving the automatic call in place was not a viable option for shipping a
+player-operated NEXT LEVEL button at all. Today it is inert only because
+`LevelSequenceTable` is unset in production (`ComputeNextLevelMapName()` always
+returns `NAME_None`), but the removal itself is a real, deliberate behavior change,
+not contingent on that.
+
+Regression coverage: `KrowdKontrolLevelSequenceSubsystemTest.cpp` case (a) asserts
+`LastAdvanceAttemptedMapName` stays `NAME_None` after a real `OnLevelClear` broadcast,
+which would fail if `HandleLevelClear()` ever reintroduced the automatic advance -
+this is the pinned regression test for the behavior change described here.
 
 **Fix**: extracted the `OpenLevel()` call out of `HandleLevelClear()` into a new public
 `ULevelSequenceSubsystem::AdvanceToNextLevel()`. `HandleLevelClear()` now only resolves
