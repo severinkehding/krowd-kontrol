@@ -166,4 +166,16 @@ private:
 	static constexpr float PlaceholderClearTimeSeconds = 272.0f;
 	static constexpr float PlaceholderBestClearTimeSeconds = 272.0f;
 	static constexpr int32 PlaceholderCrowdMasteryCount = 14;
+
+	// Width cap for the centred content block (issue #319) - keeps the block's
+	// footprint well within the 1280x720 minimum target resolution regardless of
+	// text length, mirroring UQuestTrackerWidget::TrackerWidthPx's own role.
+	static constexpr float ContentWidthPx = 480.0f;
+
+	// Height cap for the centred content block (issue #319) - AutoWrapText on the four
+	// text fields turns "too wide" into "taller" rather than clipped/off-screen, but
+	// that growth is otherwise unbounded, so this caps the block's vertical footprint
+	// the same way ContentWidthPx caps its horizontal one, keeping it within the
+	// 1280x720 minimum target resolution.
+	static constexpr float ContentHeightPx = 320.0f;
 };
