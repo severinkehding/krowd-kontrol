@@ -112,6 +112,44 @@ better scoped as its own follow-up covering all call sites, not patched two-at-a
 Re-ran `python harness/ci.py --quick` after this pass: `GATE_OK mode=quick`
 (`UNIT_PASSED tests=117`, `PIE_PASSED tests=5`).
 
+## Diff-visible evidence for binary/config assets (pass-1 review follow-up)
+
+Pass-1 validation flagged that the `.umap` asset and `DefaultEngine.ini` change are
+structurally invisible to a diff-only reviewer: `app/` is gitignored and
+`app-source-tracked/` only mirrors `.h`/`.cpp`/`.Build.cs` per D-009, so neither the
+map's existence/contents nor the ini edit ever appear as a reviewable diff hunk. That
+is an accepted structural gap in this repo's mirroring convention, not a defect in
+this PR - but the underlying facts below are captured here verbatim, in this
+diff-tracked file, so a reviewer doesn't have to take the prose summary above on
+faith alone.
+
+`app/Config/DefaultEngine.ini`, `[/Script/EngineSettings.GameMapsSettings]` section,
+read directly from the working tree at pass-1-fix time:
+
+```ini
+[/Script/EngineSettings.GameMapsSettings]
+GameDefaultMap=/Game/Maps/L_MainMenu
+GlobalDefaultGameMode=/Script/KrowdKontrol.KrowdKontrolGameMode
+EditorStartupMap=/Game/Maps/L_Level01
+```
+
+`app/Content/Maps/` listing, same working tree, same moment:
+
+```
+$ ls app/Content/Maps/ | grep -i mainmenu
+L_MainMenu.umap
+
+$ ls app/Content/Maps/L_MainMenuTemp.umap
+ls: cannot access 'app/Content/Maps/L_MainMenuTemp.umap': No such file or directory
+```
+
+This confirms, at the filesystem level: `L_MainMenu.umap` exists, `GameDefaultMap`
+points at it, `EditorStartupMap` is untouched at `L_Level01`, and `L_MainMenuTemp.umap`
+is gone. `KrowdKontrol.Unit.MainMenuMapWiring` (in this PR's diff) independently
+re-derives the ini values and the map's WorldSettings/actor content at every harness
+run, so this isn't a one-time snapshot - see that test file for the live-checked
+version of the same claims.
+
 ## Validation Evidence
 
 See `implementation.md` in the workflow run artifacts for the full validation record.
