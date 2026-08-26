@@ -1,0 +1,62 @@
+# Issue #313: Fix enemy freeze after player contact — guarantee an unconditional exit from every enemy state
+
+An enemy driven into `Attack` (the state a player-contact/aggro advance lands it in)
+had no coded exit except `ReceiveControl()` — a fresh player ability cast. If the
+player retreated out of range, or the enemy's own per-type attack telegraph finished
+with nothing left to do, the enemy froze in place forever, breaking the
+chase → contact → recover → re-engage loop and leaving "cast a control ability on it"
+as the only (unintended) way to unstick it.
+
+The fix adds `RemainingAttackSeconds` / `GetAttackDurationSeconds()` /
+`TickAttackDuration()` to `AEnemyBase`, mirroring the existing
+`TickControlledDuration` exit-timer pattern used for `Controlled → Alert` exactly:
+`AdvanceToAttack()` arms a countdown (base default 2.5s, chosen with a safety margin
+over every concrete subclass's longest `AttackTelegraphSeconds`, `ABomberEnemy`'s
+2.0s), and `TickAttackDuration()` — called unconditionally from `Tick()` alongside
+`TickControlledDuration` — reverts `Attack → Alert` once it elapses, regardless of
+whether any per-type telegraph completed or a player applied a control ability. A new
+`OnAttackExpired()` virtual hook and `OnEnemyAttackExpired` delegate mirror
+`OnControlledExpired()`/`OnEnemyControlledExpired` for parity.
+
+A full state-machine audit (every write-site of `CurrentState` in `EnemyBase.cpp`)
+confirmed `Attack` was the only dead-end state — `Idle`, `Alert`, and `Controlled`
+already have unconditional or player-independent exits, and `Banked` is deliberately
+terminal by design (MISSION.md Hard Invariant 2, already covered by an existing test).
+
+## Acceptance criteria
+
+- [x] **Enemy resumes normal behaviour after player contact, without a new ability
+  cast.** `TickAttackDuration()` reverts `Attack → Alert` unconditionally on timeout;
+  covered by regression test case `(i5)`/`(i5b)` in `KrowdKontrolEnemyBaseTest.cpp`,
+  which drives an enemy into `Attack` and asserts it reverts to `Alert` with no
+  `ReceiveControl()` call, then can re-enter `Attack` again if still in range —
+  proving it actually resumes its behaviour tree rather than getting stuck at `Alert`.
+- [x] **Automated regression test that fails pre-fix, passes post-fix.** New test
+  case added to the existing `KrowdKontrol.Unit.EnemyBase` automation test; asserts
+  `OnEnemyAttackExpired` fires exactly once and state transitions unconditionally.
+- [x] **Full state-machine audit for other dead-end states.** Completed in the
+  investigation (every `CurrentState` writer site reviewed) — `Attack` was the only
+  dead end; no follow-up issue needed.
+- [x] **No balance/damage/UI changes.** Confirmed out of scope and untouched — no
+  `AbilityData` values, knockback, or status-bar/indicator UI changed.
+
+## Validation evidence
+
+Full gate (`harness/ci.py --full`): `GATE_OK mode=full` — `UNIT_PASSED tests=119`,
+`PIE_PASSED tests=5`, `UE_BUILD_OK`, `UE_AUTOMATION_OK` (`passed=1 total=1`),
+`E2E_PASSED steps=1`. Diff scope reviewed and confirmed limited to
+`app-source-tracked/Source/KrowdKontrol/` (EnemyBase.h/.cpp + 3 test files); no
+protected files touched. `app-source-tracked/` mirror cross-checked byte-for-byte
+against the live `app/` symlink, with two unrelated `friend class` grants from other
+concurrent in-flight factory work (issues #321, #219) confirmed excluded from this
+diff. No fixes required during validation — gate passed first run.
+
+## Follow-up (not blocking, flagged for playtest)
+
+`ATrooperEnemy`'s continuous re-arm-while-in-range attack design means the new 2.5s
+base timeout will cause its attack tell/light to replay roughly every 2.5s during
+sustained close-range engagement, instead of firing continuously and silently
+forever. This is a visible cadence change, not a balance change — flagged for a live
+PIE playtest pass before merge; if it reads as janky, the fix is a one-line
+`ATrooperEnemy::GetAttackDurationSeconds()` override (not a change to
+`AttackTelegraphSeconds`, which is a different, in-scope-protected value).
