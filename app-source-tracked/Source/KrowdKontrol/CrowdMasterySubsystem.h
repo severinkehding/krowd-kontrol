@@ -75,8 +75,8 @@ public:
 private:
 	int32 RunningMaxControlledCount = 0;
 
-	// One-shot guard so a still-missing GameInstance/UCrowdMasteryTotalSubsystem only
-	// logs once per instance, not once per HandleLevelClear() call - same idiom
+	// One-shot guard so a still-missing UCrowdMasteryTotalSubsystem only logs once per
+	// instance, not once per HandleLevelClear() call - same idiom
 	// ULevelLifecycleSubsystem::bHasWarnedMissingLevelClearTimeSubsystem documents.
 	bool bHasWarnedMissingCrowdMasteryTotalSubsystem = false;
 };

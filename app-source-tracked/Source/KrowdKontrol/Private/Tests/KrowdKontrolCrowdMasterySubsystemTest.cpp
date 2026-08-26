@@ -5,7 +5,9 @@
 // to 0 for real when ULevelLifecycleSubsystem::OnLevelBegin fires, via the
 // Initialize()-time AddDynamic binding (not just a manually-simulated call). Also
 // confirms AEnemyBase::OnEnemyControlledExpired (this issue's own new delegate) fires
-// exactly once from a real TickControlledDuration()-driven expiry.
+// exactly once from a real TickControlledDuration()-driven expiry, and that
+// Initialize() binds HandleLevelClear to the sibling OnLevelClear delegate the same
+// real-AddDynamic way (issue #327, docs/prd-crowd-mastery-persistence.md REQ-1).
 //
 // SampleControlledCount()/HandleLevelBegin() are called/driven directly (never via a
 // real per-frame Tick() loop, since UCrowdMasterySubsystem is not tick-driven at all)
@@ -240,6 +242,35 @@ bool FKrowdKontrolCrowdMasterySubsystemTest::RunTest(const FString& Parameters)
 
 		TestEqual(TEXT("OnEnemyControlledExpired should fire exactly once when the duration elapses"),
 			Listener->CallCount, 1);
+	}
+
+	// (g) OnLevelClear wiring: Initialize() really binds HandleLevelClear to
+	// ULevelLifecycleSubsystem::OnLevelClear, not just a standalone-callable method -
+	// same "prove the real AddDynamic binding, not just the handler in isolation"
+	// rationale case (e) above uses for the sibling OnLevelBegin binding. The
+	// null-GameInstance early-return itself is covered "for free" by every other case
+	// in this file already calling HandleLevelClear() indirectly-never (CreateNewMap()
+	// worlds have no GameInstance, so it silently no-ops - see
+	// ULevelLifecycleSubsystem::EnsureLevelClearTimeSubscription()'s identical
+	// no-warning rationale for why that's not itself asserted here).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		UCrowdMasterySubsystem* Subsystem = World->GetSubsystem<UCrowdMasterySubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), LifecycleSubsystem)
+			|| !TestNotNull(TEXT("UWorld should auto-instantiate UCrowdMasterySubsystem"), Subsystem))
+		{
+			return false;
+		}
+
+		TestTrue(TEXT("Initialize() should bind HandleLevelClear to OnLevelClear"),
+			LifecycleSubsystem->OnLevelClear.Contains(Subsystem,
+				GET_FUNCTION_NAME_CHECKED(UCrowdMasterySubsystem, HandleLevelClear)));
 	}
 
 	return true;

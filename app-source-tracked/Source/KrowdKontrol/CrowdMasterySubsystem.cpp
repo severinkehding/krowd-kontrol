@@ -62,12 +62,9 @@ void UCrowdMasterySubsystem::HandleLevelClear()
 	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	if (!GameInstance)
 	{
-		if (!bHasWarnedMissingCrowdMasteryTotalSubsystem)
-		{
-			bHasWarnedMissingCrowdMasteryTotalSubsystem = true;
-			UE_LOG(LogTemp, Warning,
-				TEXT("UCrowdMasterySubsystem::HandleLevelClear: no GameInstance available - Crowd Mastery total was not deposited for this level."));
-		}
+		// Normal case for this project's CreateNewMap()-based Automation test worlds -
+		// see ULevelLifecycleSubsystem::EnsureLevelClearTimeSubscription()'s identical
+		// no-warning rationale.
 		return;
 	}
 

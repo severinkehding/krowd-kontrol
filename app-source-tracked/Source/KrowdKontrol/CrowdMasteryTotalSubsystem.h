@@ -13,8 +13,9 @@
 // establishes for personal-best clear times.
 //
 // Public API deliberately never calls GetWorld() or GetGameInstance() - mirrors
-// ULevelClearTimeSubsystem's own top-of-file rationale, so this subsystem stays
-// directly NewObject<>()-testable with no UWorld/CreateNewMap() dependency. The
+// ULevelClearTimeSubsystem's own rationale (see that class's
+// SubscribeToLevelLifecycle() doc comment), so this subsystem stays directly
+// NewObject<>()-testable with no UWorld/CreateNewMap() dependency. The
 // real deposit call comes from UCrowdMasterySubsystem::HandleLevelClear(), which
 // legitimately resolves this world's GameInstance since it is itself a
 // UWorldSubsystem.
