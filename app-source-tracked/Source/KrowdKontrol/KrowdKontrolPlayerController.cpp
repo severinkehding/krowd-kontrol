@@ -255,9 +255,13 @@ void AKrowdKontrolPlayerController::HandleLevelFailed()
 	RequestLevelRestart();
 }
 
-void AKrowdKontrolPlayerController::RequestLevelRestart()
+void AKrowdKontrolPlayerController::RequestLevelRestart(bool bFreshRun)
 {
-	bRestartRequested = true;
+	bLastRestartWasFreshRun = bFreshRun;
+	if (!bFreshRun)
+	{
+		bRestartRequested = true;
+	}
 
 	UWorld* World = GetWorld();
 	// Real map travel only makes sense in an actual game world (PIE or packaged) -
@@ -268,9 +272,18 @@ void AKrowdKontrolPlayerController::RequestLevelRestart()
 	// loads inside Automation tests; see issue #172). bRestartRequested above is
 	// what the Automation Framework test asserts instead; the real reload is
 	// verified manually in PIE (see this issue's PR body).
+	// A fresh voluntary rerun always targets the level's own start - the
+	// boss-checkpoint restore ComputeRestartOptions() computes is a defeat-restart
+	// affordance only (issue #342), so bFreshRun skips it entirely rather than
+	// resetting the underlying HasReachedBossCheckpoint() latch (which stays latched
+	// for the rest of this World's lifetime by design). Computed unconditionally (not
+	// just inside the IsGameWorld() guard below) so GetLastComputedRestartOptions() -
+	// this issue's Automation test seam - can prove this ternary picks the right branch
+	// even from a CreateNewMap() World that never reaches the real OpenLevel() call.
+	LastComputedRestartOptions = bFreshRun ? FString() : ComputeRestartOptions();
 	if (World && World->IsGameWorld())
 	{
-		UGameplayStatics::OpenLevel(this, ComputeRestartLevelName(), false, ComputeRestartOptions());
+		UGameplayStatics::OpenLevel(this, ComputeRestartLevelName(), false, LastComputedRestartOptions);
 	}
 }
 

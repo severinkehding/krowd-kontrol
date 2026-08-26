@@ -252,16 +252,20 @@ void UPostRunSummaryWidget::HandleLevelClear()
 	SetSummaryValues(RunClearTimeSeconds, BestClearTimeSeconds, CrowdMasteryCount);
 	AddToViewport();
 
-	// Issue #320 AC: RERUN LEVEL must work via both mouse click and keyboard
-	// (Enter/Space) without requiring the player to Tab into it first. Scoped to only
-	// fire here (once gameplay is already over for this run), not globally in
-	// BeginPlay(), so this cannot affect in-level WASD/ability input routing.
+	// Issue #320 AC: the post-clear screen's primary action must work via both mouse
+	// click and keyboard (Enter/Space) without requiring the player to Tab into it
+	// first. Scoped to only fire here (once gameplay is already over for this run), not
+	// globally in BeginPlay(), so this cannot affect in-level WASD/ability input routing.
+	// Focuses NextLevelButton, not RerunButton (issue #342 bundled fix) - continuing
+	// forward (NEXT LEVEL / FINISH RUN) is the more-primary action on this screen than
+	// retrying, and until this fix NEXT LEVEL was unreachable for keyboard-only players
+	// unless Tab-navigation happened to work.
 	if (APlayerController* OwningController = GetOwningPlayer())
 	{
 		FInputModeGameAndUI InputMode;
-		if (RerunButton)
+		if (NextLevelButton)
 		{
-			InputMode.SetWidgetToFocus(RerunButton->TakeWidget());
+			InputMode.SetWidgetToFocus(NextLevelButton->TakeWidget());
 		}
 		OwningController->SetInputMode(InputMode);
 	}
@@ -278,7 +282,10 @@ void UPostRunSummaryWidget::HandleRerunClicked()
 {
 	if (AKrowdKontrolPlayerController* PlayerController = Cast<AKrowdKontrolPlayerController>(GetOwningPlayer()))
 	{
-		PlayerController->RequestLevelRestart();
+		// bFreshRun=true (issue #342): this is a voluntary post-clear rerun, not a
+		// defeat-restart - it must not inherit a latched boss checkpoint or flip
+		// WasRestartRequested(), both of which are defeat-only affordances.
+		PlayerController->RequestLevelRestart(/*bFreshRun=*/true);
 	}
 	else if (!bHasWarnedMissingOwningControllerOnRerun)
 	{
@@ -295,7 +302,10 @@ void UPostRunSummaryWidget::HandleNextLevelClicked()
 	{
 		if (AKrowdKontrolPlayerController* PlayerController = Cast<AKrowdKontrolPlayerController>(GetOwningPlayer()))
 		{
-			PlayerController->RequestLevelRestart();
+			// bFreshRun=true (issue #342): same "voluntary, not defeat" reasoning as
+			// HandleRerunClicked() above - the final-level FINISH RUN fallback reruns the
+			// current level, it is not a death.
+			PlayerController->RequestLevelRestart(/*bFreshRun=*/true);
 		}
 		else if (!bHasWarnedMissingOwningController)
 		{
