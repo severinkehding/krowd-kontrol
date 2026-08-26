@@ -7,7 +7,10 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/PanelSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
@@ -60,12 +63,34 @@ void UPostRunSummaryWidget::EnsureWidgetTreeBuilt()
 
 void UPostRunSummaryWidget::BuildWidgetTree()
 {
+	// First UCanvasPanel usage needed here for the same reason
+	// UPunishmentDebugMenuWidget::BuildWidgetTree() needs one (issue #319): centering
+	// the content block requires a UCanvasPanelSlot, which only a UCanvasPanel child
+	// gets - a bare UBorder root has no anchor/alignment mechanism at all.
+	UCanvasPanel* RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("SummaryRootCanvas"));
+	WidgetTree->RootWidget = RootCanvas;
+
 	// Chrome background/text come from HUDChromeColours (issue #93), shared across all
 	// HUD widgets - stays inside PRD 11 REQ-2's desaturated white/gray/black base
 	// palette and outside MISSION.md Hard Invariant 3's reserved gameplay colours.
 	RootBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SummaryRootBorder"));
 	RootBorder->SetBrushColor(HUDChromeColours::GetBackground());
-	WidgetTree->RootWidget = RootBorder;
+
+	// Width cap + auto height, matching UQuestTrackerWidget's issue #310 fix -
+	// AutoWrapText below (not a fixed-size slot) is what turns "too wide" into
+	// "taller", not "clipped off-screen", at the 1280x720 minimum target resolution.
+	USizeBox* WidthCap = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SummaryWidthCap"));
+	WidthCap->SetWidthOverride(ContentWidthPx);
+	WidthCap->SetContent(RootBorder);
+
+	UCanvasPanelSlot* ContentSlot = RootCanvas->AddChildToCanvas(WidthCap);
+	checkf(ContentSlot, TEXT("UPostRunSummaryWidget: AddChildToCanvas(WidthCap) returned null"));
+	// Centred on both axes (issue #319 / Post-Run Progression PRD REQ-1's locked
+	// 2026-08-26 operator design decision) - mirrors
+	// UPunishmentDebugMenuWidget::BuildWidgetTree()'s identical centering call.
+	ContentSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+	ContentSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+	ContentSlot->SetAutoSize(true);
 
 	UVerticalBox* Layout = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SummaryLayout"));
 	UPanelSlot* LayoutSlot = RootBorder->SetContent(Layout);
@@ -75,14 +100,17 @@ void UPostRunSummaryWidget::BuildWidgetTree()
 
 	ClearTimeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ClearTimeText"));
 	ClearTimeText->SetColorAndOpacity(TextColor);
+	ClearTimeText->SetAutoWrapText(true);
 	Layout->AddChildToVerticalBox(ClearTimeText);
 
 	BestClearTimeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BestClearTimeText"));
 	BestClearTimeText->SetColorAndOpacity(TextColor);
+	BestClearTimeText->SetAutoWrapText(true);
 	Layout->AddChildToVerticalBox(BestClearTimeText);
 
 	CrowdMasteryText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CrowdMasteryText"));
 	CrowdMasteryText->SetColorAndOpacity(TextColor);
+	CrowdMasteryText->SetAutoWrapText(true);
 	Layout->AddChildToVerticalBox(CrowdMasteryText);
 
 	RerunButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("SummaryRerunButton"));
@@ -91,6 +119,7 @@ void UPostRunSummaryWidget::BuildWidgetTree()
 	RerunButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SummaryRerunButtonLabel"));
 	RerunButtonLabel->SetColorAndOpacity(TextColor);
 	RerunButtonLabel->SetText(NSLOCTEXT("PostRunSummaryWidget", "RerunLevel", "RERUN LEVEL"));
+	RerunButtonLabel->SetAutoWrapText(true);
 	RerunButton->SetContent(RerunButtonLabel);
 
 	Layout->AddChildToVerticalBox(RerunButton);
