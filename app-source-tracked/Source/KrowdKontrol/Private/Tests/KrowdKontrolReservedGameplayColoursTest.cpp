@@ -8,10 +8,11 @@
 // claims text colour is reserved-colour-safe chrome too.
 //
 // Widgets currently audited here: UAbilityCooldownTrayWidget, UPostRunSummaryWidget
-// (issue #74), UOnScreenPromptWidget (issue #34), and UBriefingCardWidget (issue
-// #246). UEnergyMeterWidget is issue #64/PR #92's deliverable and still isn't
-// audited here - a pre-existing gap, not introduced by issue #74, tracked as a
-// separate follow-up. Add any future HUD widget's chrome to this list.
+// (issue #74), UOnScreenPromptWidget (issue #34), UBriefingCardWidget (issue #246),
+// and UMainMenuWidget (issue #324). UEnergyMeterWidget is issue #64/PR #92's
+// deliverable and still isn't audited here - a pre-existing gap, not introduced by
+// issue #74, tracked as a separate follow-up. Add any future HUD widget's chrome to
+// this list.
 //
 // Needs friend-class access to each widget's private chrome members (e.g.
 // SlotIconBorders/SlotCooldownTexts, RootBorder) - see each widget's own
@@ -28,6 +29,7 @@
 #include "PostRunSummaryWidget.h"
 #include "OnScreenPromptWidget.h"
 #include "BriefingCardWidget.h"
+#include "MainMenuWidget.h"
 #include "AbilityTooltipWidget.h"
 #include "AbilityData.h"
 #include "Tests/AutomationEditorCommon.h"
@@ -234,6 +236,21 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 		// asserting the *opposite* case explicitly rather than only omitting a check.
 		TestTrue(TEXT("Tooltip swatch colour SHOULD match AbilityData's reserved colour for the bound ability"),
 			TooltipWidget->SwatchBorder->GetBrushColor() == AbilityData::Get(EAbilitySlot::Sleep).Colour);
+	}
+
+	// (8) Main menu widget audit (issue #324) - root border and title/Quit-label text
+	// colours, mirroring the other widgets' audits above. MasteryDisplayAnchor has no
+	// colour of its own (an empty USizeBox, no border/brush) - nothing to audit there.
+	UMainMenuWidget* MenuWidget =
+		CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
+	if (TestNotNull(TEXT("UMainMenuWidget should construct"), MenuWidget))
+	{
+		TestFalse(TEXT("Main menu root border colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MenuWidget->RootBorder->GetBrushColor()));
+		TestFalse(TEXT("Main menu title text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MenuWidget->TitleText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Main menu Quit button label colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MenuWidget->QuitButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 	}
 
 	// (7) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
