@@ -97,6 +97,13 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// Crowd-Mastery data. Non-transitive - see MusicSubsystem.h's friend-class comment.
 	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
 
+	// Same grant, for the post-run summary screen's NEXT LEVEL button test (issue
+	// #321), which drives the same real Idle->Alert->Attack->Controlled->Banked
+	// sequence to fire a real OnLevelClear so ULevelSequenceSubsystem::
+	// ComputeNextLevelMapName() resolves for real. Non-transitive - see
+	// MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolPostRunSummaryNextLevelButtonTest;
+
 	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
 	// sync test (issue #20), which drive a plain AEnemyBaseTestActor through the same
 	// Idle->Alert transition as FKrowdKontrolOvercrowdAudioSubsystemTest above.
@@ -184,6 +191,13 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// generic AEnemyBaseTestActor. Non-transitive - see MusicSubsystem.h's
 	// friend-class comment.
 	friend class FKrowdKontrolAbilityColourMatchTest;
+
+	// Same grant, for the teaching-prompt component's test (issue #219), which drives
+	// real AEnemyBase subclasses through Idle->Alert via the private TickCheckDetection
+	// before ReceiveControl()/TransitionToBanked(), to prove the "first hot enemy"/
+	// "first controlled enemy banked" prompt conditions fire off real state transitions,
+	// not synthetic ones. Non-transitive - see MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolTeachingPromptComponentTest;
 
 public:
 	AEnemyBase();

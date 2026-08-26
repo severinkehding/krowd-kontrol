@@ -1,5 +1,5 @@
 // Confirms issue #216: ULevelSequenceSubsystem is the OnLevelClear consumer that
-// advances the run through a configured level sequence. Covers (a) a non-final
+// resolves the run's position in a configured level sequence. Covers (a) a non-final
 // level's clear resolving the next map from LevelSequenceTable without touching
 // ULevelLifecycleSubsystem::FinalMapName; (b) a level explicitly marked as the
 // sequence's end (NextLevelMapName == NAME_None) setting FinalMapName so the
@@ -10,6 +10,16 @@
 // (d) an entirely unset LevelSequenceTable - the system's actual current production
 // default until the real DataTable asset is authored - taking the same warn-once
 // no-op path via a distinct guard clause from case (c)'s "table set, no matching row".
+//
+// Issue #321 split this subsystem's responsibilities: HandleLevelClear() (exercised
+// below, via the real OnLevelClear broadcast) now only resolves/bookkeeps - it no
+// longer calls UGameplayStatics::OpenLevel() itself. The actual map travel moved to
+// a new public AdvanceToNextLevel(), now only ever invoked by the post-run summary
+// screen's NEXT LEVEL button (KrowdKontrolPostRunSummaryNextLevelButtonTest.cpp),
+// not automatically on clear. No assertion below changed - every case here already
+// only asserted ComputeNextLevelMapName()/FinalMapName, since CreateNewMap() test
+// Worlds are never game worlds and the old OpenLevel() call was already unreachable
+// from this test's perspective.
 //
 // Each case uses its own FAutomationEditorCommonUtils::CreateNewMap() World, per
 // this module's established per-scenario isolation convention (see

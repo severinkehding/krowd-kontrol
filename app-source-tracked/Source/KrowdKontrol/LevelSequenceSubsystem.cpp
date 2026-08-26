@@ -69,6 +69,15 @@ void ULevelSequenceSubsystem::HandleLevelClear()
 		}
 		return;
 	}
+}
+
+void ULevelSequenceSubsystem::AdvanceToNextLevel()
+{
+	const FName NextLevelMapName = ComputeNextLevelMapName();
+	if (NextLevelMapName == NAME_None)
+	{
+		return;
+	}
 
 	// Real map travel only makes sense in an actual game world (PIE or packaged) -
 	// never in the Editor-type Worlds FAutomationEditorCommonUtils::CreateNewMap()
@@ -76,8 +85,9 @@ void ULevelSequenceSubsystem::HandleLevelClear()
 	// World that was never loaded from a real map package, hanging the Automation
 	// run (same hazard AKrowdKontrolPlayerController::RequestLevelRestart()
 	// documents, issue #172).
+	UWorld* World = GetWorld();
 	if (World && World->IsGameWorld())
 	{
-		UGameplayStatics::OpenLevel(this, Row->NextLevelMapName);
+		UGameplayStatics::OpenLevel(this, NextLevelMapName);
 	}
 }
