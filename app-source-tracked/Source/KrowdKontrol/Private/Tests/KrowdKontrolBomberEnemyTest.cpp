@@ -221,6 +221,20 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l-root) OnControlledExpired should clear the tell light once Root's window ends"),
 		RootedBomber->AttackTellLightComponent->Intensity, 0.0f);
 
+	// (l-attack-expired) issue #313 pass-1 review follow-up (HIGH): OnAttackExpired
+	// must clear the tell light once the Attack-duration timeout reverts Attack ->
+	// Alert unconditionally, mid-telegraph - the same bug OnControlledExpired above
+	// exists to prevent, but for the Attack -> Alert edge instead of Controlled -> Alert.
+	ABomberEnemy* ExpiredAttackBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(ExpiredAttackBomber, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-attack-expired) Attack tell should be visibly on before the Attack-duration timeout"),
+		ExpiredAttackBomber->AttackTellLightComponent->Intensity > 0.0f);
+	ExpiredAttackBomber->TickAttackDuration(ExpiredAttackBomber->GetAttackDurationSeconds());
+	TestEqual(TEXT("(l-attack-expired) Bomber should be back to Alert once the Attack-duration timeout elapses"),
+		static_cast<uint8>(ExpiredAttackBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-attack-expired) OnAttackExpired should clear the tell light once the Attack-duration timeout elapses"),
+		ExpiredAttackBomber->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
 	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
 	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of

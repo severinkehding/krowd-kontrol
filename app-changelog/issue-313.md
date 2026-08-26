@@ -89,3 +89,19 @@ Addressed all findings from the code-review and test-coverage review agents:
 Not changed: `ATrooperEnemy`'s cadence itself remains exactly as shipped — the
 reviews' own recommendation was to resolve that via the already-planned live PIE
 playtest, not to guess at a cap value during self-fix.
+
+## Review follow-up (self-fix pass 2, 2026-08-27)
+
+Addressed all findings from validation pass-1:
+- Added `AEnemyBase::OnAttackExpired()` overrides to all 4 concrete enemy subclasses
+  (`ABomberEnemy`/`ARunnerEnemy`/`ATrooperEnemy`/`ASniperEnemy`), each clearing
+  `AttackTellLightComponent`'s intensity, mirroring the existing `OnControlledExpired()`
+  pattern exactly. Without this, the Attack-duration timeout reverted `Attack ->
+  Alert` but left the attack-tell light lit indefinitely (HIGH finding). Added a
+  regression test per subclass (`(l-attack-expired)`) driving the real
+  `TickAttackDuration()` path and asserting the tell light clears.
+- Updated `EnemyBase.h`'s transition-table comment to list the new `Attack -> Alert`
+  timeout edge, which the audit method the PR body itself cites had missed (MEDIUM).
+- Filed the Trooper cadence change as its own follow-up issue, per issue #313's
+  acceptance criteria: [#337](https://github.com/severinkehding/krowd-kontrol/issues/337)
+  (MEDIUM/scope) — previously only recorded inline above.

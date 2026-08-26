@@ -151,6 +151,7 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
 	virtual void OnControlledExpired() override;
+	virtual void OnAttackExpired() override;
 	virtual void Tick(float DeltaTime) override;
 
 	// Issue #65: B0-0MR is specifically countered by Fear with a 7s lock vs the 5s

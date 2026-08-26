@@ -19,6 +19,9 @@ class UControlledDurationIndicatorComponent;
 //   Alert -> Attack: player enters GetAttackRangeUnits() (overridable per concrete
 //     enemy type).
 //   Alert/Attack -> Controlled: ReceiveControl(EAbilitySlot) is called.
+//   Attack -> Alert: the Attack-duration timeout elapses before ReceiveControl() is
+//     called (issue #313's guaranteed, ability-independent exit from Attack - see
+//     GetAttackDurationSeconds()/TickAttackDuration).
 //   Controlled -> Banked: TransitionToBanked() is called.
 //   Controlled -> Alert: the Controlled-state duration elapses before
 //     TransitionToBanked() is called (operator decision, issue #138, 2026-08-18).

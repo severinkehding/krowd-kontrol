@@ -92,6 +92,7 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
 	virtual void OnControlledExpired() override;
+	virtual void OnAttackExpired() override;
 	virtual void Tick(float DeltaTime) override;
 
 	// Issue #121: SN-1PR is specifically countered by Sleep with a 7s lock vs the 5s

@@ -109,6 +109,15 @@ void ABomberEnemy::OnControlledExpired()
 	AttackTellLightComponent->SetIntensity(0.0f);
 }
 
+void ABomberEnemy::OnAttackExpired()
+{
+	// Issue #313's Attack-duration timeout reverts Attack -> Alert unconditionally,
+	// even mid-telegraph - without this the tell stays lit forever once that happens,
+	// the same bug OnControlledExpired above exists to prevent for the Controlled ->
+	// Alert edge (pass-1 review follow-up, issue #313).
+	AttackTellLightComponent->SetIntensity(0.0f);
+}
+
 void ABomberEnemy::OnAttackEntry()
 {
 	AttackTellLightComponent->SetIntensity(AttackTellIntensity);

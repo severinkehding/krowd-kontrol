@@ -100,6 +100,7 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
 	virtual void OnControlledExpired() override;
+	virtual void OnAttackExpired() override;
 	virtual void Tick(float DeltaTime) override;
 
 	// Issue #65: TR-UPR is specifically countered by Root with an 8s lock vs the 5s
