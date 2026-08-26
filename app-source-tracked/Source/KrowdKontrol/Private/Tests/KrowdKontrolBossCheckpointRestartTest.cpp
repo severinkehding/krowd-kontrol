@@ -313,6 +313,61 @@ bool FKrowdKontrolBossCheckpointRestartTest::RunTest(const FString& Parameters)
 			Pawn->GetActorLocation(), BossLocation);
 	}
 
+	// --- Case F: issue #342 - a fresh voluntary rerun after a boss checkpoint has
+	// latched must ignore the checkpoint (empty reload options) and must not flip
+	// bRestartRequested - that invariant is documented as defeat-path only. The
+	// defeat-mode (bFreshRun=false, the default) restart must be completely unaffected
+	// by this fix, so this case checks both modes against the same latched checkpoint.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+		World->InitializeActorsForPlay(FURL());
+
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!TestNotNull(TEXT("Controller should spawn"), Controller))
+		{
+			return false;
+		}
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		Controller->DispatchBeginPlay();
+
+		ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelLifecycleSubsystem"), LifecycleSubsystem))
+		{
+			return false;
+		}
+
+		ABossBaseTestActor* Boss = World->SpawnActor<ABossBaseTestActor>();
+		if (!TestNotNull(TEXT("ABossBaseTestActor should spawn into the test World"), Boss))
+		{
+			return false;
+		}
+		Boss->AdvanceToArmed(); // Idle -> Armed
+		LifecycleSubsystem->RefreshBossCheckpointState();
+		TestTrue(TEXT("HasReachedBossCheckpoint should latch once a real boss leaves Idle"),
+			LifecycleSubsystem->HasReachedBossCheckpoint());
+		TestEqual(TEXT("Sanity: ComputeRestartOptions should report BossCheckpoint with the latch set"),
+			Controller->ComputeRestartOptions(), FString(TEXT("BossCheckpoint")));
+
+		TestFalse(TEXT("bRestartRequested should start false"), Controller->WasRestartRequested());
+
+		Controller->RequestLevelRestart(/*bFreshRun=*/true);
+		TestFalse(TEXT("A fresh-run restart must not flip bRestartRequested - that invariant is defeat-path only"),
+			Controller->WasRestartRequested());
+		TestTrue(TEXT("A fresh-run restart's mode should be recorded as fresh"),
+			Controller->WasFreshRunRequested());
+
+		Controller->RequestLevelRestart(); // bFreshRun defaults to false - the defeat path.
+		TestTrue(TEXT("A defeat-mode restart should still flip bRestartRequested even with the checkpoint latched"),
+			Controller->WasRestartRequested());
+		TestFalse(TEXT("A defeat-mode restart's mode should be recorded as not fresh"),
+			Controller->WasFreshRunRequested());
+	}
+
 	return true;
 }
 

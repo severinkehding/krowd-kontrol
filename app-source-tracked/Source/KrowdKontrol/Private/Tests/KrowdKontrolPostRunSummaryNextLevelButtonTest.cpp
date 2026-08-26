@@ -176,7 +176,11 @@ bool FKrowdKontrolPostRunSummaryNextLevelButtonTest::RunTest(const FString& Para
 		TestFalse(TEXT("bRestartRequested should be false before the button is clicked"),
 			Controller->WasRestartRequested());
 		Controller->PostRunSummaryWidgetInstance->HandleNextLevelClicked();
-		TestTrue(TEXT("Clicking the button on the final level should invoke the shared RequestLevelRestart() path"),
+		// Issue #342: the final-level FINISH RUN fallback is a voluntary rerun, not a
+		// defeat-restart - same reasoning as KrowdKontrolPostRunSummaryRerunButtonTest.cpp.
+		TestTrue(TEXT("Clicking the button on the final level should invoke the shared RequestLevelRestart() path in fresh-run mode"),
+			Controller->WasFreshRunRequested());
+		TestFalse(TEXT("Clicking the button on the final level must not flip bRestartRequested - that invariant is defeat-path only"),
 			Controller->WasRestartRequested());
 	}
 

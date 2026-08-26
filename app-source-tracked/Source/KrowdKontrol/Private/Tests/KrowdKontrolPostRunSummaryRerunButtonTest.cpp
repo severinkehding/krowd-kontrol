@@ -101,7 +101,14 @@ bool FKrowdKontrolPostRunSummaryRerunButtonTest::RunTest(const FString& Paramete
 		TestFalse(TEXT("bRestartRequested should be false before the button is clicked"),
 			Controller->WasRestartRequested());
 		Widget->HandleRerunClicked();
-		TestTrue(TEXT("Clicking RERUN LEVEL should invoke the shared RequestLevelRestart() path"),
+		// Issue #342: RERUN LEVEL is a voluntary post-clear rerun, not a defeat-restart -
+		// it must reach RequestLevelRestart(bFreshRun=true) (proven via the
+		// WasFreshRunRequested() test seam, since bFreshRun=true deliberately leaves
+		// WasRestartRequested() itself false, unlike the pre-fix behavior this assertion
+		// used to check).
+		TestTrue(TEXT("Clicking RERUN LEVEL should invoke the shared RequestLevelRestart() path in fresh-run mode"),
+			Controller->WasFreshRunRequested());
+		TestFalse(TEXT("Clicking RERUN LEVEL must not flip bRestartRequested - that invariant is defeat-path only"),
 			Controller->WasRestartRequested());
 	}
 

@@ -138,14 +138,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Level Restart")
 	bool WasRestartRequested() const { return bRestartRequested; }
 
-	// Called at the end of HandleLevelFailed() (issue #172, PRD REQ-4). Sets
-	// bRestartRequested and, only in a real game world, reloads the current map via
-	// UGameplayStatics::OpenLevel. Also called externally by
-	// UPostRunSummaryWidget::HandleRerunClicked() (issue #320) and by
-	// UPostRunSummaryWidget::HandleNextLevelClicked() on the final shipped level
-	// (issue #321), both reusing this same shared reload path instead of duplicating
-	// it.
-	void RequestLevelRestart();
+	// Test-observability seam (issue #342): a fresh voluntary rerun no longer flips
+	// bRestartRequested, and the real map reload it would otherwise trigger is
+	// unreachable from an Automation test World (same limitation WasRestartRequested()'s
+	// own comment documents) - so without this, nothing about a fresh-run
+	// RequestLevelRestart() call is externally observable at all. Records which mode the
+	// most recent call used, letting the PostRunSummaryWidget click-handler tests prove
+	// the call actually happened and used the right mode, not just that it didn't crash.
+	UFUNCTION(BlueprintPure, Category = "Level Restart")
+	bool WasFreshRunRequested() const { return bLastRestartWasFreshRun; }
+
+	// Called at the end of HandleLevelFailed() (issue #172, PRD REQ-4) with the default
+	// bFreshRun=false, and externally by UPostRunSummaryWidget::HandleRerunClicked()
+	// (issue #320) and UPostRunSummaryWidget::HandleNextLevelClicked() on the final
+	// shipped level (issue #321) with bFreshRun=true, both reusing this same shared
+	// reload path instead of duplicating it. bFreshRun=false (defeat-restart, unchanged
+	// behavior) sets bRestartRequested and honours a latched boss checkpoint via
+	// ComputeRestartOptions(). bFreshRun=true (a voluntary post-clear rerun, issue #342)
+	// does neither: bRestartRequested stays false (WasRestartRequested() is documented as
+	// a defeat-only signal) and the reload always targets the level's own start, since a
+	// boss-checkpoint restore is a defeat-restart affordance, not something a player who
+	// just cleared the level asked for. Only in a real game world does either mode reload
+	// the current map via UGameplayStatics::OpenLevel.
+	void RequestLevelRestart(bool bFreshRun = false);
 
 protected:
 	virtual void BeginPlay() override;
@@ -272,6 +287,10 @@ private:
 	// World. Left true for the (Automation-World-only) lifetime of a controller that
 	// never actually reloads.
 	bool bRestartRequested = false;
+
+	// Records the bFreshRun argument of the most recent RequestLevelRestart() call - see
+	// WasFreshRunRequested()'s comment for why this exists.
+	bool bLastRestartWasFreshRun = false;
 
 	// One-shot guard for ApplyBossCheckpointIfRequested(), same never-reset-once-set
 	// idiom as bRestartRequested above. The "BossCheckpoint" FURL option it reads

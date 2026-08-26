@@ -255,9 +255,13 @@ void AKrowdKontrolPlayerController::HandleLevelFailed()
 	RequestLevelRestart();
 }
 
-void AKrowdKontrolPlayerController::RequestLevelRestart()
+void AKrowdKontrolPlayerController::RequestLevelRestart(bool bFreshRun)
 {
-	bRestartRequested = true;
+	bLastRestartWasFreshRun = bFreshRun;
+	if (!bFreshRun)
+	{
+		bRestartRequested = true;
+	}
 
 	UWorld* World = GetWorld();
 	// Real map travel only makes sense in an actual game world (PIE or packaged) -
@@ -270,7 +274,13 @@ void AKrowdKontrolPlayerController::RequestLevelRestart()
 	// verified manually in PIE (see this issue's PR body).
 	if (World && World->IsGameWorld())
 	{
-		UGameplayStatics::OpenLevel(this, ComputeRestartLevelName(), false, ComputeRestartOptions());
+		// A fresh voluntary rerun always targets the level's own start - the
+		// boss-checkpoint restore ComputeRestartOptions() computes is a defeat-restart
+		// affordance only (issue #342), so bFreshRun skips it entirely rather than
+		// resetting the underlying HasReachedBossCheckpoint() latch (which stays latched
+		// for the rest of this World's lifetime by design).
+		const FString RestartOptions = bFreshRun ? FString() : ComputeRestartOptions();
+		UGameplayStatics::OpenLevel(this, ComputeRestartLevelName(), false, RestartOptions);
 	}
 }
 
