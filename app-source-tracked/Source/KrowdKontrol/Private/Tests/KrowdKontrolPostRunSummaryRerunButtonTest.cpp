@@ -9,11 +9,22 @@
 // already use - proven via WasRestartRequested(), the same real accessor those tests
 // use. The real UGameplayStatics::OpenLevel() call inside RequestLevelRestart() stays
 // unreachable here since CreateNewMap() test Worlds are never game worlds - same
-// documented limitation as KrowdKontrolLevelRestartTest.cpp.
+// documented limitation as KrowdKontrolLevelRestartTest.cpp. Also exercises the real
+// HandleLevelClear() path (not just HandleRerunClicked() directly) with this same real
+// owning player/LocalPlayer, so the SetInputMode()/focus-on-RerunButton wiring added by
+// this issue actually executes under test instead of being silently skipped (as it is
+// in KrowdKontrolPostRunSummaryWidgetWiringTest.cpp, whose widget has no owning player).
 //
 // (b) No owning player: a bare CreateWidget<T>(World, ...) construction (mirrors
 // KrowdKontrolMainMenuWidgetTest.cpp's identical HandleQuitClicked() null-owner case)
-// must not crash when HandleRerunClicked() is called directly.
+// must not crash when HandleRerunClicked() is called directly, and the
+// bHasWarnedMissingOwningControllerOnRerun one-shot guard must actually be one-shot -
+// calling it twice must only log once (mirrors
+// KrowdKontrolAbilityUnlockLevelSubsystemTest.cpp's AddExpectedError(..., 1, false)
+// idiom for proving the same guard shape).
+//
+// (c) Layout order: RerunButton must render above NextLevelButton in the vertical
+// layout, per this issue's AC.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -22,7 +33,9 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "PostRunSummaryWidget.h"
 #include "KrowdKontrolPlayerController.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/PanelWidget.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -68,6 +81,15 @@ bool FKrowdKontrolPostRunSummaryRerunButtonTest::RunTest(const FString& Paramete
 		TestTrue(TEXT("RerunButton->OnClicked should be bound to HandleRerunClicked"),
 			Widget->RerunButton->OnClicked.IsBound());
 
+		// Exercise the real HandleLevelClear() path (not just HandleRerunClicked()
+		// directly) with a real owning player/LocalPlayer, so the new
+		// SetInputMode()/focus-on-RerunButton wiring added in this issue actually
+		// executes under test, not just skipped because GetOwningPlayer() is null (as
+		// it is in KrowdKontrolPostRunSummaryWidgetWiringTest.cpp).
+		Widget->HandleLevelClear();
+		TestNotNull(TEXT("RerunButton should still be valid after HandleLevelClear() runs with a real owning player"),
+			ToRawPtr(Widget->RerunButton));
+
 		TestFalse(TEXT("bRestartRequested should be false before the button is clicked"),
 			Controller->WasRestartRequested());
 		Widget->HandleRerunClicked();
@@ -75,7 +97,8 @@ bool FKrowdKontrolPostRunSummaryRerunButtonTest::RunTest(const FString& Paramete
 			Controller->WasRestartRequested());
 	}
 
-	// (b) No owning player: must not crash.
+	// (b) No owning player: must not crash, and the warning must fire exactly once even
+	// across repeated clicks (bHasWarnedMissingOwningControllerOnRerun).
 	{
 		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
@@ -91,7 +114,37 @@ bool FKrowdKontrolPostRunSummaryRerunButtonTest::RunTest(const FString& Paramete
 
 		TestNull(TEXT("GetOwningPlayer should be null for a bare CreateWidget(World, ...) construction"),
 			Widget->GetOwningPlayer());
+
+		AddExpectedError(TEXT("owning player is not an AKrowdKontrolPlayerController"),
+			EAutomationExpectedErrorFlags::Contains, 1, false);
 		Widget->HandleRerunClicked(); // must not crash
+		Widget->HandleRerunClicked(); // must not log again - the AddExpectedError count of 1 above proves it
+	}
+
+	// (c) Layout order: RerunButton must render above NextLevelButton (this issue's AC).
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		UPostRunSummaryWidget* Widget = CreateWidget<UPostRunSummaryWidget>(World, UPostRunSummaryWidget::StaticClass());
+		if (!TestNotNull(TEXT("UPostRunSummaryWidget should construct"), Widget))
+		{
+			return false;
+		}
+
+		UPanelWidget* Layout = Widget->RootBorder ? Cast<UPanelWidget>(Widget->RootBorder->GetContent()) : nullptr;
+		if (!TestNotNull(TEXT("RootBorder's content should be the layout panel widget"), Layout))
+		{
+			return false;
+		}
+
+		const int32 RerunIndex = Layout->GetChildIndex(Widget->RerunButton);
+		const int32 NextLevelIndex = Layout->GetChildIndex(Widget->NextLevelButton);
+		TestTrue(TEXT("RerunButton should be positioned above NextLevelButton in the layout"),
+			RerunIndex >= 0 && NextLevelIndex >= 0 && RerunIndex < NextLevelIndex);
 	}
 
 	return true;

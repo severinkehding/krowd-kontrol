@@ -63,7 +63,7 @@ with the reasoning documented inline.
 |------|--------|-------------------|
 | `app/Source/KrowdKontrol/PostRunSummaryWidget.h` | UPDATE | `RerunButton`/`RerunButtonLabel` members, `HandleRerunClicked()` declaration, `bHasWarnedMissingOwningControllerOnRerun` guard, new test friend class (also carries #321's already-landed members forward, see "Concurrent work" above) |
 | `app/Source/KrowdKontrol/PostRunSummaryWidget.cpp` | UPDATE | `RerunButton` construction in `BuildWidgetTree()`, `HandleRerunClicked()` implementation, `SetInputMode`/focus call in `HandleLevelClear()` (also carries #321's already-landed code forward, see "Concurrent work" above) |
-| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolPostRunSummaryRerunButtonTest.cpp` | CREATE | `KrowdKontrol.Unit.PostRunSummaryRerunButton` - real click wiring + no-owning-player degrade cases |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolPostRunSummaryRerunButtonTest.cpp` | CREATE | `KrowdKontrol.Unit.PostRunSummaryRerunButton` - real click wiring (incl. the real `HandleLevelClear()`/`SetInputMode` path), no-owning-player degrade with a proven one-shot warning guard, and `RerunButton`/`NextLevelButton` layout-order assertion |
 | `app-source-tracked/Source/KrowdKontrol/PostRunSummaryWidget.h` | UPDATE (mirror) | Plain-text mirror per D-009 |
 | `app-source-tracked/Source/KrowdKontrol/PostRunSummaryWidget.cpp` | UPDATE (mirror) | Plain-text mirror per D-009 |
 | `app-source-tracked/Source/KrowdKontrol/Private/Tests/KrowdKontrolPostRunSummaryRerunButtonTest.cpp` | CREATE (mirror) | Plain-text mirror per D-009 |
@@ -74,6 +74,8 @@ with the reasoning documented inline.
 - [x] Activating the button reloads the current level via `AKrowdKontrolPlayerController::RequestLevelRestart()` - no second reload implementation written
 - [x] The button responds to mouse click (`OnClicked` binding + `SetInputMode(FInputModeGameAndUI())`) and keyboard (initial focus via `SetWidgetToFocus`)
 - [x] `KrowdKontrol.Unit.PostRunSummaryRerunButton` asserts activating the button flips `WasRestartRequested()` true via the real click handler
+- [x] `KrowdKontrol.Unit.PostRunSummaryRerunButton` also exercises the real `HandleLevelClear()` path (not just `HandleRerunClicked()` directly) with a real owning player, so the `SetInputMode`/focus-on-`RerunButton` wiring actually executes under test
+- [x] `KrowdKontrol.Unit.PostRunSummaryRerunButton` proves `bHasWarnedMissingOwningControllerOnRerun` is genuinely one-shot (two calls, one log line, via `AddExpectedError(..., 1, false)`) and that `RerunButton` is positioned above `NextLevelButton` in the layout
 - [x] `app/` and `app-source-tracked/` copies of all touched files are byte-identical (`diff` clean)
 - [x] `app-changelog/issue-320.md` written, documenting the concurrent-work interaction with #321
 - [ ] Real PIE mouse-click-through and keyboard Enter/Space activation - not automatable in this environment, flagged above for manual sign-off
