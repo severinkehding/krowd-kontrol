@@ -27,8 +27,16 @@ bool UMainMenuWidget::Initialize()
 
 void UMainMenuWidget::EnsureWidgetTreeBuilt()
 {
+	// Whichever of NativeOnInitialized()/Initialize() fires first builds the tree; the
+	// other is then a no-op, regardless of engine call order between the two.
 	if (!TitleText)
 	{
+		// UUserWidget::WidgetTree is normally lazily created inside Initialize() (before
+		// it conditionally calls NativeOnInitialized()) - but NativeOnInitialized() can
+		// also be invoked directly, bypassing Initialize() entirely. WidgetTree would
+		// still be null in that case, and WidgetTree->ConstructWidget<T>() on a null
+		// WidgetTree crashes - same fix as UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()
+		// (issue #66).
 		if (!WidgetTree)
 		{
 			WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient);
@@ -98,8 +106,8 @@ void UMainMenuWidget::HandleQuitClicked()
 	// PIE (never touches the running Editor process); in a packaged build or -game it
 	// exits the application (Engine/Private/GameEngine.cpp's EXIT/QUIT handling - this
 	// is the same "Quit Game" Blueprint node every UE main menu uses for exactly this
-	// reason). See the plan's ALTERNATIVES_REJECTED for why hand-rolled context
-	// detection was considered and rejected. GetOwningPlayer() resolves null in a bare
+	// reason) - hand-rolled GIsEditor/IsPlayInEditor() context detection was considered
+	// and rejected as redundant. GetOwningPlayer() resolves null in a bare
 	// CreateWidget<T>(World, ...) test construction, in which case QuitGame() is a
 	// guaranteed no-op (KismetSystemLibrary.cpp) - safe to call directly from a test.
 	UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, false);

@@ -61,8 +61,9 @@ private:
 	TObjectPtr<UTextBlock> QuitButtonLabel;
 
 	// Reserved, explicitly-sized, empty region for the future Crowd Mastery display
-	// widget - see SetMasteryDisplayContent(). A USizeBox (not UNamedSlot - see plan's
-	// ALTERNATIVES_REJECTED) so it occupies real layout space today even with no content.
+	// widget - see SetMasteryDisplayContent(). A USizeBox (not UNamedSlot - this project
+	// has no Widget Blueprint assets, so UNamedSlot's inheritance-override machinery has
+	// no consumer) so it occupies real layout space today even with no content.
 	UPROPERTY()
 	TObjectPtr<USizeBox> MasteryDisplayAnchor;
 

@@ -89,6 +89,39 @@ and work on any map.
 - **Real Quit behavior in a packaged/`-game` build** - same automatability gap;
   flagged for manual sign-off, not verified this run.
 
+## Post-review fixes (self-fix pass)
+
+Addressed all FIX-worthy findings from the multi-agent review of this PR:
+
+- Added `KrowdKontrolMainMenuPlayerControllerTest.cpp` (`KrowdKontrol.Unit.MainMenuPlayerControllerBeginPlay`)
+  - the PR's headline acceptance criterion (`AMainMenuPlayerController::BeginPlay()`
+  constructing/showing the widget and enabling the cursor) was previously untested;
+  now covered following `KrowdKontrolHUDWiringTest.cpp`'s `ULocalPlayer` + `DispatchBeginPlay()`
+  precedent.
+- Removed the vestigial `friend class FKrowdKontrolMainMenuGameModeTest;` declaration
+  from `MainMenuPlayerController.h` (`MainMenuWidgetInstance` is already public - no
+  friendship needed).
+- Added `UMainMenuWidget::EnsureWidgetTreeBuilt()`'s idempotency-guard rationale
+  comment, matching `UPostRunSummaryWidget`/`UOnScreenPromptWidget`/`UBriefingCardWidget`'s
+  identical pattern (issue #66 precedent).
+- Added test coverage for `EnsureWidgetTreeBuilt()`'s double-init guard and the
+  bare-`NewObject()` degrade-safe path, and for `SetMasteryDisplayContent(nullptr)`'s
+  documented no-op behavior, ported from `KrowdKontrolPostRunSummaryWidgetTest.cpp`/
+  `KrowdKontrolBriefingCardWidgetTest.cpp`'s equivalent cases.
+- Strengthened the title-text test to assert the exact string ("KROWD KONTROL"),
+  not just non-empty.
+- Reordered `KrowdKontrolReservedGameplayColoursTest.cpp`'s new "(8) Main menu widget
+  audit" block to after the pre-existing "(7)" canary block, restoring the file's
+  number-matches-reading-order convention.
+- Dropped three "see the plan's ___ section" comment references
+  (`MainMenuPlayerController.cpp`, `MainMenuWidget.h`, `KrowdKontrolMainMenuWidgetTest.cpp`)
+  that pointed at a workflow-run artifact not tracked in this git repository; the
+  surrounding prose already carries the same rationale inline.
+- Not fixed (flagged to operator, both advisory-only and outside this PR's reach):
+  `CLAUDE.md`'s Repo Layout tree omitting `app-source-tracked/`/`app-changelog/`, and
+  its Conventions section staying "TBD" - `CLAUDE.md` is a protected path the factory
+  cannot self-edit.
+
 ## Files changed
 
 | File | Action | What it contains |
@@ -98,6 +131,7 @@ and work on any map.
 | `app/Source/KrowdKontrol/MainMenuPlayerController.h` / `.cpp` | CREATE | `AMainMenuPlayerController` - shows `UMainMenuWidget` on `BeginPlay` |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolMainMenuWidgetTest.cpp` | CREATE | `KrowdKontrol.Unit.MainMenuWidget` |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolMainMenuGameModeTest.cpp` | CREATE | `KrowdKontrol.Unit.MainMenuGameModeSetsPlayerController` |
+| `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolMainMenuPlayerControllerTest.cpp` | CREATE | `KrowdKontrol.Unit.MainMenuPlayerControllerBeginPlay` (post-review fix) |
 | `app/Source/KrowdKontrol/Private/Tests/KrowdKontrolReservedGameplayColoursTest.cpp` | UPDATE | Added "(8) Main menu widget audit" section |
 | `app/Content/Maps/L_MainMenuTemp.umap` | CREATE | Binary map asset: empty level, WorldSettings -> GameMode Override = `AMainMenuGameMode` |
 | `app-source-tracked/Source/KrowdKontrol/MainMenuWidget.h` / `.cpp` | CREATE (mirror) | Plain-text mirror per D-009 |
@@ -105,6 +139,7 @@ and work on any map.
 | `app-source-tracked/Source/KrowdKontrol/MainMenuPlayerController.h` / `.cpp` | CREATE (mirror) | Plain-text mirror per D-009 |
 | `app-source-tracked/Source/KrowdKontrol/Private/Tests/KrowdKontrolMainMenuWidgetTest.cpp` | CREATE (mirror) | Plain-text mirror per D-009 |
 | `app-source-tracked/Source/KrowdKontrol/Private/Tests/KrowdKontrolMainMenuGameModeTest.cpp` | CREATE (mirror) | Plain-text mirror per D-009 |
+| `app-source-tracked/Source/KrowdKontrol/Private/Tests/KrowdKontrolMainMenuPlayerControllerTest.cpp` | CREATE (mirror) | Plain-text mirror per D-009 (post-review fix) |
 | `app-source-tracked/Source/KrowdKontrol/Private/Tests/KrowdKontrolReservedGameplayColoursTest.cpp` | UPDATE (mirror) | Plain-text mirror per D-009 |
 
 Not mirrored: `L_MainMenuTemp.umap` itself is a binary asset, excluded from
@@ -118,7 +153,7 @@ under `Content/`).
 - [x] A Quit button is present; `HandleQuitClicked()` calls `UKismetSystemLibrary::QuitGame(...)`, verified against engine source
 - [x] An explicitly-sized, named, empty `USizeBox` region is reserved for the future mastery display, fillable via `SetMasteryDisplayContent()`
 - [x] No reserved gameplay colour appears anywhere in this widget's chrome - enforced by the extended `KrowdKontrolReservedGameplayColoursTest`
-- [x] `AMainMenuGameMode`/`AMainMenuPlayerController` display the widget on `BeginPlay`, reusing the existing `bShowMouseCursor = true` mechanism, no new input-handling code invented
+- [x] `AMainMenuGameMode`/`AMainMenuPlayerController` display the widget on `BeginPlay`, reusing the existing `bShowMouseCursor = true` mechanism, no new input-handling code invented - now directly verified by `KrowdKontrol.Unit.MainMenuPlayerControllerBeginPlay` (post-review fix)
 - [x] Automation tests confirm construction, title/Quit-button presence, and that activating Quit safely reaches the correct engine call
 - [x] `python harness/ci.py --quick` reports `GATE_OK mode=quick`
 - [x] `app-source-tracked/` mirror + this changelog written

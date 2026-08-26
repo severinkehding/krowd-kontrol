@@ -238,6 +238,14 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			TooltipWidget->SwatchBorder->GetBrushColor() == AbilityData::Get(EAbilitySlot::Sleep).Colour);
 	}
 
+	// (7) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
+	// genuine collision, not just on the (never-colliding) real widget colours above -
+	// guards against an inverted/typo'd assertion silently passing forever.
+	UBorder* CollidingBorder = NewObject<UBorder>(GetTransientPackage());
+	CollidingBorder->SetBrushColor(ReservedGameplayColours::GetPurple());
+	TestTrue(TEXT("A border deliberately set to a reserved colour should be detected as colliding"),
+		AllReserved.Contains(CollidingBorder->GetBrushColor()));
+
 	// (8) Main menu widget audit (issue #324) - root border and title/Quit-label text
 	// colours, mirroring the other widgets' audits above. MasteryDisplayAnchor has no
 	// colour of its own (an empty USizeBox, no border/brush) - nothing to audit there.
@@ -252,14 +260,6 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 		TestFalse(TEXT("Main menu Quit button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->QuitButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 	}
-
-	// (7) Proves the audit's TestFalse(...Contains(...)) shape actually goes red on a
-	// genuine collision, not just on the (never-colliding) real widget colours above -
-	// guards against an inverted/typo'd assertion silently passing forever.
-	UBorder* CollidingBorder = NewObject<UBorder>(GetTransientPackage());
-	CollidingBorder->SetBrushColor(ReservedGameplayColours::GetPurple());
-	TestTrue(TEXT("A border deliberately set to a reserved colour should be detected as colliding"),
-		AllReserved.Contains(CollidingBorder->GetBrushColor()));
 
 	return true;
 }

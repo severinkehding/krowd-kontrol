@@ -8,10 +8,9 @@
 // resolves via GetOwningPlayer(), which is null for a CreateWidget<T>(World, ...)
 // construction (no owning local player) - UKismetSystemLibrary::QuitGame() then
 // safely no-ops (TargetPC resolves null; verified directly against
-// Engine/Private/KismetSystemLibrary.cpp - see plan's "Verified From Engine Source"
-// section). This test proves the wiring (OnClicked is bound) and calls
-// HandleQuitClicked() directly to prove that no-op path doesn't crash - same
-// "prove the degrade-safely path directly" shape as
+// Engine/Private/KismetSystemLibrary.cpp). This test proves the wiring (OnClicked is
+// bound) and calls HandleQuitClicked() directly to prove that no-op path doesn't
+// crash - same "prove the degrade-safely path directly" shape as
 // KrowdKontrolPunishmentDebugMenuWidgetTest.cpp's null-bound-component case (f).
 
 #include "Misc/AutomationTest.h"
@@ -43,10 +42,11 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// (a) Title text is present and non-empty.
+	// (a) Title text is present and reads "KROWD KONTROL".
 	if (TestNotNull(TEXT("TitleText should be non-null"), ToRawPtr(Widget->TitleText)))
 	{
-		TestFalse(TEXT("Title text should not be empty"), Widget->GetTitleDisplayText().IsEmpty());
+		TestEqual(TEXT("Title text should read KROWD KONTROL"),
+			Widget->GetTitleDisplayText().ToString(), FString(TEXT("KROWD KONTROL")));
 	}
 
 	// (b)/(c) Quit button exists, is wired to a real handler, and activating it is
@@ -70,6 +70,32 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 		Widget->SetMasteryDisplayContent(PlaceholderMasteryContent);
 		TestEqual(TEXT("SetMasteryDisplayContent should fill the anchor"),
 			Widget->MasteryDisplayAnchor->GetContent(), Cast<UWidget>(PlaceholderMasteryContent));
+
+		// SetMasteryDisplayContent(nullptr) is documented as a no-op - must not clear
+		// content that's already been set.
+		Widget->SetMasteryDisplayContent(nullptr);
+		TestEqual(TEXT("SetMasteryDisplayContent(nullptr) should not clear existing content"),
+			Widget->MasteryDisplayAnchor->GetContent(), Cast<UWidget>(PlaceholderMasteryContent));
+	}
+
+	// (e) Initialize() guard - must not rebuild the tree when NativeOnInitialized()
+	// (invoked synchronously by CreateWidget()) already built it.
+	UMainMenuWidget* GuardWidget = CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
+	if (TestNotNull(TEXT("GuardWidget should construct"), GuardWidget))
+	{
+		UTextBlock* FirstTitleText = GuardWidget->TitleText;
+		GuardWidget->Initialize();
+		TestEqual(TEXT("Initialize() must not rebuild the tree when already built"),
+			ToRawPtr(GuardWidget->TitleText), FirstTitleText);
+	}
+
+	// (f) Unbuilt tree (bare NewObject(), neither NativeOnInitialized() nor Initialize()
+	// called) should degrade to empty display rather than crash.
+	UMainMenuWidget* UnbuiltWidget = NewObject<UMainMenuWidget>();
+	if (TestNotNull(TEXT("UnbuiltWidget should construct"), UnbuiltWidget))
+	{
+		TestTrue(TEXT("GetTitleDisplayText should degrade to empty text before the tree is built"),
+			UnbuiltWidget->GetTitleDisplayText().IsEmpty());
 	}
 
 	return true;

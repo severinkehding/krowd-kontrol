@@ -18,8 +18,6 @@ class KROWDKONTROL_API AMainMenuPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 
-	friend class FKrowdKontrolMainMenuGameModeTest;
-
 public:
 	virtual void BeginPlay() override;
 
