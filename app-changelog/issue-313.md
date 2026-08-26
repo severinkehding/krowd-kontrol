@@ -60,3 +60,32 @@ forever. This is a visible cadence change, not a balance change — flagged for 
 PIE playtest pass before merge; if it reads as janky, the fix is a one-line
 `ATrooperEnemy::GetAttackDurationSeconds()` override (not a change to
 `AttackTelegraphSeconds`, which is a different, in-scope-protected value).
+
+The cadence itself is still pending that playtest call and is deliberately left
+unchanged here, but it is no longer untested while it waits: `(m2)` in
+`KrowdKontrolTrooperEnemyTest.cpp` now drives a Trooper through a real `Tick()` loop
+past the base timeout with a live in-range player pawn and asserts it lands back in
+`Attack` with the ray-fired delegate still firing repeatedly, pinning the
+currently-intentional behaviour so a future change to it — the playtest-driven
+override above, or an accidental regression — shows up as a named test result.
+
+## Review follow-up (self-fix, 2026-08-27)
+
+Addressed all findings from the code-review and test-coverage review agents:
+- Added a cross-subclass safety-margin test (`(i5c)` in `KrowdKontrolEnemyBaseTest.cpp`)
+  asserting `GetAttackDurationSeconds() > AttackTelegraphSeconds` for all four concrete
+  enemy types, turning the prose invariant `EnemyBase.h`'s `GetAttackDurationSeconds()`
+  comment documents into a machine-checked one.
+- Added a real-`Tick()`-path regression test (`(i5d)`) for `TickAttackDuration`,
+  mirroring the existing `(i2)`/`(i4)` pair for `TickControlledDuration` — guards
+  against a future edit accidentally moving the call inside the pawn-gated block below
+  it. Extended `KrowdKontrolBomberEnemyTest.cpp`'s existing real-`Tick()` case `(m)`
+  with an assertion that state is still `Attack` immediately before the fire
+  assertion, proving the base timeout hadn't already preempted the telegraph.
+- Added the Trooper cadence pinning test described above.
+- Reworded the `EnemyBase.cpp` comment that said re-entry happens "on the very next
+  tick" to accurately describe it happening later in the same `Tick()` call.
+
+Not changed: `ATrooperEnemy`'s cadence itself remains exactly as shipped — the
+reviews' own recommendation was to resolve that via the already-planned live PIE
+playtest, not to guess at a cap value during self-fix.

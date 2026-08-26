@@ -26,6 +26,9 @@
 #include "AbilityData.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "Components/SceneComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -319,6 +322,55 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 			TickedTrooper->Tick(TickedTrooper->AttackTelegraphSeconds);
 			TestEqual(TEXT("Two successive Tick() calls should each fire a ray, proving the rapid re-arm survives the real per-frame path"),
 				TickedListener->CallCount, 2);
+		}
+	}
+
+	// (m2) issue #313 follow-up (test-coverage review, MEDIUM finding): pins the
+	// disclosed cadence change - a Trooper has no GetAttackDurationSeconds() override,
+	// so it now inherits the base class's unconditional Attack-duration timeout (2.5s).
+	// During sustained close-range engagement this forces Attack -> Alert and, within
+	// that same Tick() call, TickCheckDetection immediately re-detects the still-in-range
+	// player back into Attack (replaying OnAttackEntry()'s attack tell) - instead of
+	// firing continuously forever the way Trooper's rapid re-arm did pre-#313. This is
+	// currently-intentional (app-changelog/issue-313.md's Follow-up note, pending a live
+	// PIE playtest call on whether it needs its own override) - pinning it here so a
+	// future change to this behaviour, deliberate or not, shows up as a named test
+	// result instead of only ever being caught by a live playtest.
+	UWorld* CadenceWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), CadenceWorld))
+	{
+		ATrooperEnemy* CadenceTrooper = CadenceWorld->SpawnActor<ATrooperEnemy>();
+		APawn* CadencePlayerPawn = CadenceWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("ATrooperEnemy should spawn into the test World"), CadenceTrooper)
+			&& TestNotNull(TEXT("APawn should spawn into the test World"), CadencePlayerPawn))
+		{
+			APlayerController* CadenceController = CadenceWorld->SpawnActor<APlayerController>();
+			if (!TestNotNull(TEXT("Should be able to spawn a controller to possess the pawn"), CadenceController))
+			{
+				return false;
+			}
+			CadenceController->Possess(CadencePlayerPawn);
+			CadenceWorld->AddController(CadenceController);
+
+			USceneComponent* CadencePlayerPawnRoot = NewObject<USceneComponent>(CadencePlayerPawn);
+			CadencePlayerPawnRoot->RegisterComponent();
+			CadencePlayerPawn->SetRootComponent(CadencePlayerPawnRoot);
+			CadencePlayerPawn->SetActorLocation(ZeroDistanceLocation); // stays within attack range throughout
+
+			AdvanceToAttack(CadenceTrooper, ZeroDistanceLocation);
+			UTrooperRayFiredTestListener* CadenceListener = NewObject<UTrooperRayFiredTestListener>();
+			CadenceTrooper->OnTrooperRayFired.AddDynamic(CadenceListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
+
+			const float CadenceAttackDurationSeconds = CadenceTrooper->GetAttackDurationSeconds();
+			for (float Elapsed = 0.0f; Elapsed < CadenceAttackDurationSeconds + 1.0f; Elapsed += 0.5f)
+			{
+				CadenceTrooper->Tick(0.5f);
+			}
+
+			TestEqual(TEXT("A Trooper kept in range should be back in Attack after the base timeout cycles it through Alert and back, same real Tick() path"),
+				static_cast<uint8>(CadenceTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+			TestTrue(TEXT("The attack-tell ray should keep firing across the Attack -> Alert -> Attack cycle, not go silent"),
+				CadenceListener->CallCount > 1);
 		}
 	}
 

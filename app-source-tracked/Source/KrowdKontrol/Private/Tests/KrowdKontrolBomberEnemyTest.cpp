@@ -277,6 +277,12 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			UBomberExplodedTestListener* TickedListener = NewObject<UBomberExplodedTestListener>();
 			TickedBomber->OnBomberExploded.AddDynamic(TickedListener, &UBomberExplodedTestListener::HandleBomberExploded);
 			TickedBomber->Tick(TickedBomber->AttackTelegraphSeconds);
+			// Issue #313 (test-coverage review): proves the base class's own
+			// TickAttackDuration (2.5s) hasn't already preempted this telegraph
+			// (2.0s) within this same Tick() call - the exact tick-order race the
+			// AttackDuration-vs-AttackTelegraphSeconds margin exists to avoid.
+			TestEqual(TEXT("Attack-duration timeout must not have preempted the telegraph"),
+				static_cast<uint8>(TickedBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 			TestEqual(TEXT("Tick() drives the telegraph through to firing"), TickedListener->CallCount, 1);
 		}
 		// (n) TriggerExplosion doesn't crash with no UWorld (GetWorld() null guard);

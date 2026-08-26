@@ -244,9 +244,10 @@ void AEnemyBase::TickAttackDuration(float DeltaSeconds)
 		// always end on its own, never requiring the player to spend a control
 		// ability just to unstick it. Reverting to Alert (not Idle) re-enters the
 		// same TickCheckDetection proximity check that got it here, so a player still
-		// standing in attack range on the very next tick simply re-triggers Attack
-		// immediately - this is what makes an enemy that keeps the player in range
-		// keep attacking, and one whose target retreats actually resume chasing.
+		// standing in attack range gets re-triggered into Attack later in this same
+		// Tick() call (TickCheckDetection runs unconditionally right after this) -
+		// this is what makes an enemy that keeps the player in range keep attacking,
+		// and one whose target retreats actually resume chasing.
 		CurrentState = EEnemyState::Alert;
 		OnAttackExpired();
 		OnEnemyAttackExpired.Broadcast();

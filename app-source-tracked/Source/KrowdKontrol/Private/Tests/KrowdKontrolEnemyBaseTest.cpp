@@ -30,6 +30,10 @@
 #include "ReservedGameplayColours.h"
 #include "Components/PointLightComponent.h"
 #include "AbilityData.h"
+#include "BomberEnemy.h"
+#include "SniperEnemy.h"
+#include "TrooperEnemy.h"
+#include "RunnerEnemy.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -341,6 +345,65 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	AttackExpiryEnemy->TickCheckDetection(AttackZeroDistanceLocation);
 	TestEqual(TEXT("A re-expired Attack enemy back in range should be able to re-enter Attack"),
 		static_cast<uint8>(AttackExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+
+	// (i5c) issue #313 (test-coverage review, HIGH finding): the entire fix depends on
+	// one invariant - the base GetAttackDurationSeconds() timeout must stay strictly
+	// greater than every concrete subclass's own AttackTelegraphSeconds (EnemyBase.h's
+	// GetAttackDurationSeconds comment spells out why: TickAttackDuration runs before
+	// each subclass's own telegraph-advance and reverts Attack -> Alert first if it wins
+	// the race, silently suppressing that subclass's shot). Previously only a prose
+	// invariant; asserted directly here so a future balance change that violates it
+	// fails this test instead of surfacing as a live-PIE "enemy stopped attacking" bug.
+	UWorld* MarginWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), MarginWorld))
+	{
+		ABomberEnemy* MarginBomber = MarginWorld->SpawnActor<ABomberEnemy>();
+		ASniperEnemy* MarginSniper = MarginWorld->SpawnActor<ASniperEnemy>();
+		ATrooperEnemy* MarginTrooper = MarginWorld->SpawnActor<ATrooperEnemy>();
+		ARunnerEnemy* MarginRunner = MarginWorld->SpawnActor<ARunnerEnemy>();
+		if (TestNotNull(TEXT("ABomberEnemy should spawn into the test World"), MarginBomber)
+			&& TestNotNull(TEXT("ASniperEnemy should spawn into the test World"), MarginSniper)
+			&& TestNotNull(TEXT("ATrooperEnemy should spawn into the test World"), MarginTrooper)
+			&& TestNotNull(TEXT("ARunnerEnemy should spawn into the test World"), MarginRunner))
+		{
+			const float BaseAttackDuration = MarginBomber->GetAttackDurationSeconds(); // same virtual default across all
+			TestTrue(TEXT("Base Attack-duration timeout must exceed ABomberEnemy's own telegraph"),
+				BaseAttackDuration > MarginBomber->AttackTelegraphSeconds);
+			TestTrue(TEXT("Base Attack-duration timeout must exceed ASniperEnemy's own telegraph"),
+				BaseAttackDuration > MarginSniper->AttackTelegraphSeconds);
+			TestTrue(TEXT("Base Attack-duration timeout must exceed ATrooperEnemy's own telegraph"),
+				BaseAttackDuration > MarginTrooper->AttackTelegraphSeconds);
+			TestTrue(TEXT("Base Attack-duration timeout must exceed ARunnerEnemy's own telegraph"),
+				BaseAttackDuration > MarginRunner->AttackTelegraphSeconds);
+		}
+	}
+
+	// (i5d) issue #313 (code-review review, MEDIUM finding): TickAttackDuration's
+	// expiry-and-revert driven through the real Tick() override, not just the
+	// friend-called helper directly (as (i5)/(i5b) above do) - mirrors (i4) below,
+	// proving the "not gated on a live player pawn" comment at EnemyBase.cpp's Tick()
+	// holds for Attack the same way (i4) already proves it for Controlled. No
+	// PlayerController/pawn spawned in this World, matching (i4)'s same no-player-pawn
+	// setup - guards against a future edit accidentally moving the TickAttackDuration()
+	// call inside the pawn-gated block right below it (an easy mistake, since
+	// TickCheckDetection/TickChaseMovement there *are* gated).
+	UWorld* AttackExpiryTickWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), AttackExpiryTickWorld))
+	{
+		AEnemyBaseTestActor* TickedAttackExpiryEnemy = AttackExpiryTickWorld->SpawnActor<AEnemyBaseTestActor>();
+		if (TestNotNull(TEXT("AEnemyBaseTestActor should spawn into the test World"), TickedAttackExpiryEnemy))
+		{
+			TickedAttackExpiryEnemy->TickCheckDetection(AttackZeroDistanceLocation); // Idle -> Alert
+			TickedAttackExpiryEnemy->TickCheckDetection(AttackZeroDistanceLocation); // Alert -> Attack
+			const float TickedAttackDurationSeconds = TickedAttackExpiryEnemy->GetAttackDurationSeconds();
+			for (float Elapsed = 0.0f; Elapsed < TickedAttackDurationSeconds + 1.0f; Elapsed += 0.5f)
+			{
+				TickedAttackExpiryEnemy->Tick(0.5f);
+			}
+			TestEqual(TEXT("Tick() alone, with no live player pawn, should still drive Attack -> Alert reversion"),
+				static_cast<uint8>(TickedAttackExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+		}
+	}
 
 	// (i4) duration-expiry reversion driven through the real Tick() override, not just
 	// the friend-called TickControlledDuration helper directly (as (i2)/(i3) above do) -
