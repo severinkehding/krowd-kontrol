@@ -1,7 +1,9 @@
 #include "CrowdMasterySubsystem.h"
+#include "CrowdMasteryTotalSubsystem.h"
 #include "LevelLifecycleSubsystem.h"
 #include "EnemyBase.h"
 #include "EngineUtils.h"
+#include "Engine/GameInstance.h"
 
 void UCrowdMasterySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -15,6 +17,7 @@ void UCrowdMasterySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		if (ULevelLifecycleSubsystem* LifecycleSubsystem = World->GetSubsystem<ULevelLifecycleSubsystem>())
 		{
 			LifecycleSubsystem->OnLevelBegin.AddDynamic(this, &UCrowdMasterySubsystem::HandleLevelBegin);
+			LifecycleSubsystem->OnLevelClear.AddDynamic(this, &UCrowdMasterySubsystem::HandleLevelClear);
 		}
 	}
 }
@@ -51,4 +54,28 @@ void UCrowdMasterySubsystem::HandleEnemyControlledExpired()
 void UCrowdMasterySubsystem::HandleLevelBegin(FName MapName)
 {
 	RunningMaxControlledCount = 0;
+}
+
+void UCrowdMasterySubsystem::HandleLevelClear()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (!GameInstance)
+	{
+		// Normal case for this project's CreateNewMap()-based Automation test worlds -
+		// see ULevelLifecycleSubsystem::EnsureLevelClearTimeSubscription()'s identical
+		// no-warning rationale.
+		return;
+	}
+
+	if (UCrowdMasteryTotalSubsystem* TotalSubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>())
+	{
+		TotalSubsystem->DepositRunMastery(RunningMaxControlledCount);
+	}
+	else if (!bHasWarnedMissingCrowdMasteryTotalSubsystem)
+	{
+		bHasWarnedMissingCrowdMasteryTotalSubsystem = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UCrowdMasterySubsystem::HandleLevelClear: no UCrowdMasteryTotalSubsystem available on this GameInstance - Crowd Mastery total was not deposited for this level."));
+	}
 }

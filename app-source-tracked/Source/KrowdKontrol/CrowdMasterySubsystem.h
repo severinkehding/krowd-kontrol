@@ -66,6 +66,17 @@ public:
 	UFUNCTION()
 	void HandleLevelBegin(FName MapName);
 
+	// Bound to every real ULevelLifecycleSubsystem::OnLevelClear in Initialize() below.
+	// Deposits this level's RunningMaxControlledCount into this world's GameInstance's
+	// UCrowdMasteryTotalSubsystem (PRD "Crowd Mastery Persistence" REQ-1, issue #327).
+	UFUNCTION()
+	void HandleLevelClear();
+
 private:
 	int32 RunningMaxControlledCount = 0;
+
+	// One-shot guard so a still-missing UCrowdMasteryTotalSubsystem only logs once per
+	// instance, not once per HandleLevelClear() call - same idiom
+	// ULevelLifecycleSubsystem::bHasWarnedMissingLevelClearTimeSubsystem documents.
+	bool bHasWarnedMissingCrowdMasteryTotalSubsystem = false;
 };
