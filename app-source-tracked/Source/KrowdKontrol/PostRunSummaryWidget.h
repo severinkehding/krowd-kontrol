@@ -48,6 +48,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Post-Run Summary")
 	FText GetCrowdMasteryDisplayText() const;
 
+	UFUNCTION(BlueprintPure, Category = "Post-Run Summary")
+	FText GetNextLevelButtonDisplayText() const;
+
 protected:
 	// Fires synchronously from CreateWidget(), before any Slate/viewport realization
 	// - unlike NativeConstruct(), this doesn't depend on TakeWidget()/AddToViewport(),
@@ -73,6 +76,7 @@ private:
 	friend class FKrowdKontrolReservedGameplayColoursTest;
 	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
 	friend class FKrowdKontrolPostRunSummaryRerunButtonTest;
+	friend class FKrowdKontrolPostRunSummaryNextLevelButtonTest;
 
 	void BuildWidgetTree();
 
@@ -117,6 +121,15 @@ private:
 	UFUNCTION()
 	void HandleRerunClicked();
 
+	// Bound to NextLevelButton->OnClicked. If ResolvedNextLevelMapName is NAME_None
+	// (this is the sequence's final shipped level), reruns the current level via the
+	// shared defeat-restart reload path (issue #223) - the "FINISH RUN (More Levels
+	// Coming)" placeholder behavior, per this issue's AC, since routing to a main
+	// menu is deferred to docs/prd-main-menu.md. Otherwise advances via
+	// ULevelSequenceSubsystem::AdvanceToNextLevel().
+	UFUNCTION()
+	void HandleNextLevelClicked();
+
 	// Resolves (and caches) the current UGameInstance's ULevelClearTimeSubsystem,
 	// mirroring AKrowdKontrolPlayerController::ResolveLevelClearTimeSubsystem()'s exact
 	// pattern - GetGameInstance() is null in this project's CreateNewMap()-based
@@ -137,6 +150,12 @@ private:
 	// One-shot warning guard for HandleLevelClear()'s focus-wiring block, mirroring
 	// bHasWarnedMissingOwningControllerOnRerun's idiom above.
 	bool bHasWarnedMissingOwningControllerForFocus = false;
+
+	// One-shot warning guards for HandleNextLevelClicked()'s two dependency-lookup
+	// branches, mirroring bHasWarnedMissingLevelClearTimeSubsystem's idiom above -
+	// without these, a repeatedly-clicked dead button would otherwise spam the log.
+	bool bHasWarnedMissingOwningController = false;
+	bool bHasWarnedMissingSequenceSubsystemOnClick = false;
 
 	// Kept as a member (rather than a BuildWidgetTree() local) so
 	// KrowdKontrolReservedGameplayColoursTest.cpp can audit its background colour via
@@ -160,6 +179,21 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> RerunButtonLabel;
+
+	UPROPERTY()
+	TObjectPtr<UButton> NextLevelButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> NextLevelButtonLabel;
+
+	// Resolved once per HandleLevelClear() from ULevelSequenceSubsystem::
+	// ComputeNextLevelMapName() - drives both the button's label and
+	// HandleNextLevelClicked()'s branch, so the two can never disagree between the
+	// moment the label was set and the moment the player clicks (the map cannot
+	// change out from under this widget in between - AdvanceToNextLevel() is now
+	// only ever called from this same click handler, never automatically).
+	UPROPERTY()
+	FName ResolvedNextLevelMapName = NAME_None;
 
 	// Placeholder values only (issue #74) - shown until a real OnLevelClear broadcast
 	// calls SetSummaryValues() with real data (issue #175).

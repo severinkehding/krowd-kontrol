@@ -3,6 +3,7 @@
 #include "LevelClearTimeSubsystem.h"
 #include "CrowdMasterySubsystem.h"
 #include "LevelLifecycleSubsystem.h"
+#include "LevelSequenceSubsystem.h"
 #include "KrowdKontrolPlayerController.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -126,6 +127,17 @@ void UPostRunSummaryWidget::BuildWidgetTree()
 	RerunButton->SetContent(RerunButtonLabel);
 
 	Layout->AddChildToVerticalBox(RerunButton);
+
+	NextLevelButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("SummaryNextLevelButton"));
+	NextLevelButton->OnClicked.AddDynamic(this, &UPostRunSummaryWidget::HandleNextLevelClicked);
+
+	NextLevelButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SummaryNextLevelButtonLabel"));
+	NextLevelButtonLabel->SetColorAndOpacity(TextColor);
+	NextLevelButtonLabel->SetText(NSLOCTEXT("PostRunSummaryWidget", "NextLevel", "NEXT LEVEL"));
+	NextLevelButtonLabel->SetAutoWrapText(true);
+	NextLevelButton->SetContent(NextLevelButtonLabel);
+
+	Layout->AddChildToVerticalBox(NextLevelButton);
 }
 
 void UPostRunSummaryWidget::SetSummaryValues(float ClearTimeSeconds, float BestClearTimeSeconds, int32 CrowdMasteryCount)
@@ -184,6 +196,11 @@ FText UPostRunSummaryWidget::GetCrowdMasteryDisplayText() const
 	return CrowdMasteryText ? CrowdMasteryText->GetText() : FText::GetEmpty();
 }
 
+FText UPostRunSummaryWidget::GetNextLevelButtonDisplayText() const
+{
+	return NextLevelButtonLabel ? NextLevelButtonLabel->GetText() : FText::GetEmpty();
+}
+
 void UPostRunSummaryWidget::BindToLevelLifecycle()
 {
 	UWorld* World = GetWorld();
@@ -215,6 +232,22 @@ void UPostRunSummaryWidget::HandleLevelClear()
 	{
 		CrowdMasteryCount = CrowdMasterySubsystem->GetRunningMaxControlledCount();
 	}
+
+	if (ULevelSequenceSubsystem* SequenceSubsystem = World ? World->GetSubsystem<ULevelSequenceSubsystem>() : nullptr)
+	{
+		ResolvedNextLevelMapName = SequenceSubsystem->ComputeNextLevelMapName();
+	}
+	else
+	{
+		ResolvedNextLevelMapName = NAME_None;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPostRunSummaryWidget::HandleLevelClear: no ULevelSequenceSubsystem available on '%s' - next-level button will show the final-level state."),
+			*GetNameSafe(this));
+	}
+	const FText NextLevelLabel = ResolvedNextLevelMapName == NAME_None
+		? NSLOCTEXT("PostRunSummaryWidget", "FinishRun", "FINISH RUN (More Levels Coming)")
+		: NSLOCTEXT("PostRunSummaryWidget", "NextLevel", "NEXT LEVEL");
+	SetTextBlockSafe(NextLevelButtonLabel, NextLevelLabel, TEXT("NextLevelButtonLabel"));
 
 	SetSummaryValues(RunClearTimeSeconds, BestClearTimeSeconds, CrowdMasteryCount);
 	AddToViewport();
@@ -252,6 +285,36 @@ void UPostRunSummaryWidget::HandleRerunClicked()
 		bHasWarnedMissingOwningControllerOnRerun = true;
 		UE_LOG(LogTemp, Warning,
 			TEXT("UPostRunSummaryWidget::HandleRerunClicked: owning player is not an AKrowdKontrolPlayerController on '%s' - rerun will not run."),
+			*GetNameSafe(this));
+	}
+}
+
+void UPostRunSummaryWidget::HandleNextLevelClicked()
+{
+	if (ResolvedNextLevelMapName == NAME_None)
+	{
+		if (AKrowdKontrolPlayerController* PlayerController = Cast<AKrowdKontrolPlayerController>(GetOwningPlayer()))
+		{
+			PlayerController->RequestLevelRestart();
+		}
+		else if (!bHasWarnedMissingOwningController)
+		{
+			bHasWarnedMissingOwningController = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("UPostRunSummaryWidget::HandleNextLevelClicked: owning player is not an AKrowdKontrolPlayerController on '%s' - final-level restart will not run."),
+				*GetNameSafe(this));
+		}
+		return;
+	}
+	if (ULevelSequenceSubsystem* SequenceSubsystem = GetWorld() ? GetWorld()->GetSubsystem<ULevelSequenceSubsystem>() : nullptr)
+	{
+		SequenceSubsystem->AdvanceToNextLevel();
+	}
+	else if (!bHasWarnedMissingSequenceSubsystemOnClick)
+	{
+		bHasWarnedMissingSequenceSubsystemOnClick = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPostRunSummaryWidget::HandleNextLevelClicked: no ULevelSequenceSubsystem available on '%s' - next-level advance will not run."),
 			*GetNameSafe(this));
 	}
 }

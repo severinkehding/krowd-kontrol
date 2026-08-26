@@ -41,7 +41,10 @@ contract:
 - Keyboard/mouse both work; the in-game cursor (issue #262) is already
   visible on this screen.
 
-### REQ-3: Next-level button (P0)
+### REQ-3: Next-level button (P0) — ✅ implemented, issue #321 / PR #335
+(mechanism only — `LevelSequenceTable` has no populated Content DataTable asset yet,
+so every real level currently shows the "FINISH RUN (More Levels Coming)" placeholder;
+follow-up issue recommended for real table content)
 - Advances to the next level in the shipped sequence (L_Level01 → L_Level02 →
   L_Level03 today; the sequence definition must be data, not hardcoded ifs,
   so L4/L5 slot in when they land).

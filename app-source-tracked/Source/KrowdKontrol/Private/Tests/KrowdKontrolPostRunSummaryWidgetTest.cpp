@@ -26,6 +26,7 @@
 #include "Misc/AutomationTest.h"
 #include "PostRunSummaryWidget.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "Components/Button.h"
 #include "Engine/World.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -63,6 +64,16 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 		!Widget->GetBestClearTimeDisplayText().IsEmpty());
 	TestTrue(TEXT("Crowd Mastery text should be non-empty after construction"),
 		!Widget->GetCrowdMasteryDisplayText().IsEmpty());
+
+	// (a2) NextLevelButton is built, wired to HandleNextLevelClicked(), and defaults to
+	// "NEXT LEVEL" before any real level clear has resolved ResolvedNextLevelMapName
+	// (issue #321).
+	if (TestNotNull(TEXT("NextLevelButton should be non-null"), ToRawPtr(Widget->NextLevelButton)))
+	{
+		TestTrue(TEXT("NextLevelButton::OnClicked should be bound"), Widget->NextLevelButton->OnClicked.IsBound());
+	}
+	TestEqual(TEXT("Next-level button should default to NEXT LEVEL before any level clear"),
+		Widget->GetNextLevelButtonDisplayText().ToString(), FString(TEXT("NEXT LEVEL")));
 
 	// (b) SetSummaryValues is the real wiring point HandleLevelClear() uses - confirm
 	// all three fields reflect an explicit call with known values, not just whatever
