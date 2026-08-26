@@ -3,8 +3,10 @@
 #include "LevelClearTimeSubsystem.h"
 #include "CrowdMasterySubsystem.h"
 #include "LevelLifecycleSubsystem.h"
+#include "KrowdKontrolPlayerController.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
+#include "Components/Button.h"
 #include "Components/PanelSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
@@ -82,6 +84,16 @@ void UPostRunSummaryWidget::BuildWidgetTree()
 	CrowdMasteryText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CrowdMasteryText"));
 	CrowdMasteryText->SetColorAndOpacity(TextColor);
 	Layout->AddChildToVerticalBox(CrowdMasteryText);
+
+	RerunButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("SummaryRerunButton"));
+	RerunButton->OnClicked.AddDynamic(this, &UPostRunSummaryWidget::HandleRerunClicked);
+
+	RerunButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SummaryRerunButtonLabel"));
+	RerunButtonLabel->SetColorAndOpacity(TextColor);
+	RerunButtonLabel->SetText(NSLOCTEXT("PostRunSummaryWidget", "RerunLevel", "RERUN LEVEL"));
+	RerunButton->SetContent(RerunButtonLabel);
+
+	Layout->AddChildToVerticalBox(RerunButton);
 }
 
 void UPostRunSummaryWidget::SetSummaryValues(float ClearTimeSeconds, float BestClearTimeSeconds, int32 CrowdMasteryCount)
@@ -174,6 +186,42 @@ void UPostRunSummaryWidget::HandleLevelClear()
 
 	SetSummaryValues(RunClearTimeSeconds, BestClearTimeSeconds, CrowdMasteryCount);
 	AddToViewport();
+
+	// Issue #320 AC: RERUN LEVEL must work via both mouse click and keyboard
+	// (Enter/Space) without requiring the player to Tab into it first. Scoped to only
+	// fire here (once gameplay is already over for this run), not globally in
+	// BeginPlay(), so this cannot affect in-level WASD/ability input routing.
+	if (APlayerController* OwningController = GetOwningPlayer())
+	{
+		FInputModeGameAndUI InputMode;
+		if (RerunButton)
+		{
+			InputMode.SetWidgetToFocus(RerunButton->TakeWidget());
+		}
+		OwningController->SetInputMode(InputMode);
+	}
+	else if (!bHasWarnedMissingOwningControllerForFocus)
+	{
+		bHasWarnedMissingOwningControllerForFocus = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPostRunSummaryWidget::HandleLevelClear: no owning player on '%s' - RerunButton will not receive keyboard focus."),
+			*GetNameSafe(this));
+	}
+}
+
+void UPostRunSummaryWidget::HandleRerunClicked()
+{
+	if (AKrowdKontrolPlayerController* PlayerController = Cast<AKrowdKontrolPlayerController>(GetOwningPlayer()))
+	{
+		PlayerController->RequestLevelRestart();
+	}
+	else if (!bHasWarnedMissingOwningControllerOnRerun)
+	{
+		bHasWarnedMissingOwningControllerOnRerun = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UPostRunSummaryWidget::HandleRerunClicked: owning player is not an AKrowdKontrolPlayerController on '%s' - rerun will not run."),
+			*GetNameSafe(this));
+	}
 }
 
 ULevelClearTimeSubsystem* UPostRunSummaryWidget::ResolveLevelClearTimeSubsystem()

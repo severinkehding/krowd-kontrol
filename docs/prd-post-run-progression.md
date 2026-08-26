@@ -34,7 +34,7 @@ contract:
 - Resolution-safety test coverage in the same style as the quest tracker's
   envelope assertions (issue #310's test additions are the pattern to copy).
 
-### REQ-2: Rerun button (P0)
+### REQ-2: Rerun button (P0) — ✅ implemented, issue #320
 - Reloads the current level fresh (the defeat-restart flow, issue #223's
   PIE-prefix-safe map reload, is the machinery to reuse — clear-screen rerun
   and defeat-restart should share one code path).

@@ -6,6 +6,7 @@
 
 class UBorder;
 class UTextBlock;
+class UButton;
 class ULevelClearTimeSubsystem;
 class UCrowdMasterySubsystem;
 class ULevelLifecycleSubsystem;
@@ -71,6 +72,7 @@ private:
 	friend class FKrowdKontrolPostRunSummaryWidgetTest;
 	friend class FKrowdKontrolReservedGameplayColoursTest;
 	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
+	friend class FKrowdKontrolPostRunSummaryRerunButtonTest;
 
 	void BuildWidgetTree();
 
@@ -110,6 +112,11 @@ private:
 	UFUNCTION()
 	void HandleLevelClear();
 
+	// Bound to RerunButton->OnClicked (issue #320). Calls RequestLevelRestart() via
+	// the shared defeat-restart reload path (issue #223) to reload the current level.
+	UFUNCTION()
+	void HandleRerunClicked();
+
 	// Resolves (and caches) the current UGameInstance's ULevelClearTimeSubsystem,
 	// mirroring AKrowdKontrolPlayerController::ResolveLevelClearTimeSubsystem()'s exact
 	// pattern - GetGameInstance() is null in this project's CreateNewMap()-based
@@ -122,6 +129,14 @@ private:
 	TObjectPtr<ULevelClearTimeSubsystem> CachedLevelClearTimeSubsystem;
 
 	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
+
+	// One-shot warning guard for HandleRerunClicked()'s owning-controller lookup -
+	// without this, a repeatedly-clicked dead button would otherwise spam the log.
+	bool bHasWarnedMissingOwningControllerOnRerun = false;
+
+	// One-shot warning guard for HandleLevelClear()'s focus-wiring block, mirroring
+	// bHasWarnedMissingOwningControllerOnRerun's idiom above.
+	bool bHasWarnedMissingOwningControllerForFocus = false;
 
 	// Kept as a member (rather than a BuildWidgetTree() local) so
 	// KrowdKontrolReservedGameplayColoursTest.cpp can audit its background colour via
@@ -138,6 +153,13 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> CrowdMasteryText;
+
+	// Issue #320.
+	UPROPERTY()
+	TObjectPtr<UButton> RerunButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> RerunButtonLabel;
 
 	// Placeholder values only (issue #74) - shown until a real OnLevelClear broadcast
 	// calls SetSummaryValues() with real data (issue #175).

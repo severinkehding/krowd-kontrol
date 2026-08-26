@@ -138,6 +138,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Level Restart")
 	bool WasRestartRequested() const { return bRestartRequested; }
 
+	// Called at the end of HandleLevelFailed() (issue #172, PRD REQ-4). Sets
+	// bRestartRequested and, only in a real game world, reloads the current map via
+	// UGameplayStatics::OpenLevel. Also called externally by
+	// UPostRunSummaryWidget::HandleRerunClicked() (issue #320), reusing this same
+	// shared reload path instead of duplicating it.
+	void RequestLevelRestart();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
@@ -199,11 +206,6 @@ private:
 	// whatever pawn GetPawn() currently returns instead of the one that actually failed.
 	UPROPERTY()
 	TWeakObjectPtr<ULevelFailComponent> WiredLevelFailComponent;
-
-	// Called at the end of HandleLevelFailed() (issue #172, PRD REQ-4). Sets
-	// bRestartRequested and, only in a real game world, reloads the current map via
-	// UGameplayStatics::OpenLevel.
-	void RequestLevelRestart();
 
 	// Extracted from RequestLevelRestart() so the level-restart Automation test can
 	// assert the reload target is computed correctly without ever calling the real,
