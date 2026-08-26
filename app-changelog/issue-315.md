@@ -28,7 +28,7 @@ separate, later issues that will call this function once it exists.
       bullets above
 - [x] `app/` and `app-source-tracked/` copies of all changed/new files are identical
       (`diff` clean)
-- [x] `python harness/ci.py --quick` reports `GATE_OK`, unit test count incremented by
+- [x] `python harness/ci.py` (full) reports `GATE_OK`, unit test count incremented by
       1 versus baseline
 - [x] No regression in `KrowdKontrol.Unit.AbilityColourMatch` or
       `KrowdKontrol.Unit.ReservedGameplayColours` (neither file is modified by this
@@ -36,20 +36,29 @@ separate, later issues that will call this function once it exists.
 
 ## Validation evidence
 
-Quick gate (`python harness/ci.py --quick`, mode=quick):
+Full gate (`python harness/ci.py`, mode=full):
 
 ```
-HARNESS_START mode=quick driver=cli
+HARNESS_START mode=full driver=cli
 STATIC_SKIPPED no 'static' command in harness.config.json
 UNIT_PASSED tests=120
 PIE_PASSED tests=5
-GATE_OK mode=quick
+APP_STARTED driver=cli
+UE_BUILD_START KrowdKontrolEditor Win64 Development
+UE_BUILD_OK
+UE_AUTOMATION_RESULT passed=1 total=1
+UE_AUTOMATION_OK
+E2E_PASSED steps=1
+HOLDOUT_ABSENT no .factory/holdout/run.py
+MUTATIONS_ABSENT no harness/mutations/run.py
+GATE_OK mode=full
 ```
 
-Targeted filter runs during implementation additionally confirmed
-`KrowdKontrol.Unit.ChainColour` (`passed=1 total=1`) and no regression in the
-pre-existing `KrowdKontrol.Unit.AbilityColourMatch` (`passed=1 total=1`) and
-`KrowdKontrol.Unit.ReservedGameplayColours` (`passed=1 total=1`) tests.
+`UE_AUTOMATION_RESULT passed=1 total=1` is `KrowdKontrol.Unit.ChainColour`, the new
+test added by this change. No regression in the pre-existing
+`KrowdKontrol.Unit.AbilityColourMatch` or `KrowdKontrol.Unit.ReservedGameplayColours`
+tests (neither is modified by this change; both remain part of the 120 passing unit
+tests counted above).
 
 MISSION.md Hard Invariants reviewed against this diff: this change touches the
 colour-lock invariant (Hard Invariant 3) and the enemy-roster invariant (Hard
