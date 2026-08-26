@@ -169,3 +169,21 @@ const FString& AbilityData::GetEnemyPluralDisplayName(EEnemyType EnemyType)
 	};
 	return EnemyPluralDisplayNames.FindChecked(EnemyType);
 }
+
+FLinearColor AbilityData::GetChainColourForEnemyType(EEnemyType EnemyType)
+{
+	for (const FAbilityData& Data : GetAll())
+	{
+		if (!Data.bIsColourNeutral && Data.CounteredEnemyType == EnemyType)
+		{
+			return Data.Colour;
+		}
+	}
+	// Every EEnemyType has exactly one colour-matched, non-neutral ability - the 4
+	// locked enemy types (EnemyType.h) and the 4 non-Stun abilities' CounteredEnemyType
+	// values are a 1:1 mapping (see KrowdKontrolAbilityColourMatchTest.cpp). Reaching
+	// here is a programming error, not a normal runtime case - same idiom as
+	// AbilityData::Get's own checkNoEntry() below.
+	checkNoEntry();
+	return ReservedGameplayColours::GetWhite();
+}

@@ -33,7 +33,7 @@ pole, done.
 
 ## Requirements
 
-### REQ-1: Single source of truth for the chain colour (P0)
+### REQ-1: Single source of truth for the chain colour (P0) — ✅ implemented, issue #315
 - One authority (extend `ReservedGameplayColours` / the existing
   enemy-type→ability matchup data) maps enemy type → chain colour. Every
   consumer below reads it; no local colour constants.
