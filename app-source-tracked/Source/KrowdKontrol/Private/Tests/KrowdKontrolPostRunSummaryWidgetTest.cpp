@@ -195,6 +195,8 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 		Widget->BestClearTimeText->GetAutoWrapText());
 	TestTrue(TEXT("Crowd Mastery text should auto-wrap inside the width cap (issue #319)"),
 		Widget->CrowdMasteryText->GetAutoWrapText());
+	TestTrue(TEXT("Rerun button label should auto-wrap inside the width cap (issue #319)"),
+		Widget->RerunButtonLabel->GetAutoWrapText());
 
 	// (h) Resolution-safety envelope, checked at this project's documented min/max
 	// target resolutions - same pair KrowdKontrolQuestTrackerWidgetTest.cpp's case (5)
