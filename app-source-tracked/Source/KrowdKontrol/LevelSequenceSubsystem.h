@@ -75,6 +75,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Level Sequence")
 	void AdvanceToNextLevel();
 
+	// Recorded unconditionally at the top of AdvanceToNextLevel(), before its
+	// IsGameWorld() guard - the real UGameplayStatics::OpenLevel() call stays
+	// unreachable in Automation's CreateNewMap() Editor Worlds (issue #172), but this
+	// lets tests assert AdvanceToNextLevel() was actually reached and resolved the
+	// right map, and that HandleLevelClear() never triggers it itself (issue #321's
+	// critical fix: auto-advance only ever runs from the NEXT LEVEL button's click
+	// handler now). Public for the same test-observability reason as
+	// LevelSequenceTable above - stays NAME_None if AdvanceToNextLevel() was never
+	// called or had nothing to advance to.
+	UPROPERTY(VisibleAnywhere, Category = "Level Sequence")
+	FName LastAdvanceAttemptedMapName = NAME_None;
+
 private:
 	// Looks up LevelSequenceTable by this world's bare (PIE-prefix-stripped) map
 	// name. Returns nullptr if LevelSequenceTable is unset or has no matching row.

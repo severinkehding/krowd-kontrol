@@ -79,6 +79,8 @@ void ULevelSequenceSubsystem::AdvanceToNextLevel()
 		return;
 	}
 
+	LastAdvanceAttemptedMapName = NextLevelMapName;
+
 	// Real map travel only makes sense in an actual game world (PIE or packaged) -
 	// never in the Editor-type Worlds FAutomationEditorCommonUtils::CreateNewMap()
 	// returns for KrowdKontrol.Unit.* tests, where OpenLevel would try to travel a

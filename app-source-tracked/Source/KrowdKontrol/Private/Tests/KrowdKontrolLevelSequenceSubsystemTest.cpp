@@ -16,10 +16,10 @@
 // longer calls UGameplayStatics::OpenLevel() itself. The actual map travel moved to
 // a new public AdvanceToNextLevel(), now only ever invoked by the post-run summary
 // screen's NEXT LEVEL button (KrowdKontrolPostRunSummaryNextLevelButtonTest.cpp),
-// not automatically on clear. No assertion below changed - every case here already
-// only asserted ComputeNextLevelMapName()/FinalMapName, since CreateNewMap() test
-// Worlds are never game worlds and the old OpenLevel() call was already unreachable
-// from this test's perspective.
+// not automatically on clear. Case (a) below asserts LastAdvanceAttemptedMapName
+// stays NAME_None after HandleLevelClear() runs, proving that split holds - a
+// regression that reintroduced auto-advance would fail it, since that seam is only
+// ever set from inside AdvanceToNextLevel() itself.
 //
 // Each case uses its own FAutomationEditorCommonUtils::CreateNewMap() World, per
 // this module's established per-scenario isolation convention (see
@@ -118,6 +118,16 @@ bool FKrowdKontrolLevelSequenceSubsystemTest::RunTest(const FString& Parameters)
 			SequenceSubsystem->ComputeNextLevelMapName(), FName(TEXT("L_Level02")));
 		TestEqual(TEXT("FinalMapName must stay untouched for a non-final clear"),
 			LifecycleSubsystem->FinalMapName, FName(NAME_None));
+
+		// Issue #321's critical fix: HandleLevelClear() (just exercised via the real
+		// OnLevelClear broadcast above) must never itself call AdvanceToNextLevel() -
+		// only the post-run summary screen's NEXT LEVEL button does that now. Asserting
+		// LastAdvanceAttemptedMapName stayed NAME_None here means a future regression
+		// that reintroduces auto-advance from HandleLevelClear() (via AdvanceToNextLevel(),
+		// the only path that sets this seam) would fail this test, closing the gap this
+		// fix would otherwise have zero automated regression protection for.
+		TestEqual(TEXT("HandleLevelClear must not itself trigger AdvanceToNextLevel() - only the NEXT LEVEL button click handler does"),
+			SequenceSubsystem->LastAdvanceAttemptedMapName, FName(NAME_None));
 	}
 
 	// (b) Final clear: the current map's row explicitly ends the sequence

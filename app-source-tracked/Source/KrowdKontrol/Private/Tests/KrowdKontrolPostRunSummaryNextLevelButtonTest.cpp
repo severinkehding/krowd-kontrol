@@ -4,11 +4,12 @@
 // path for each case:
 //
 // (a) Non-final level: ResolvedNextLevelMapName resolves to the configured next map,
-// the button label reads "NEXT LEVEL", and HandleNextLevelClicked() does not crash
-// (the real UGameplayStatics::OpenLevel() call inside AdvanceToNextLevel() is
-// unreachable here since CreateNewMap() test Worlds are never game worlds - same
-// documented limitation as every other reload test in this module, e.g.
-// KrowdKontrolLevelSequenceSubsystemTest.cpp).
+// the button label reads "NEXT LEVEL", and HandleNextLevelClicked() routes to
+// ULevelSequenceSubsystem::AdvanceToNextLevel(), proven via its
+// LastAdvanceAttemptedMapName seam (the real UGameplayStatics::OpenLevel() call
+// inside AdvanceToNextLevel() stays unreachable here since CreateNewMap() test Worlds
+// are never game worlds - same documented limitation as every other reload test in
+// this module, e.g. KrowdKontrolLevelSequenceSubsystemTest.cpp).
 //
 // (b) Final shipped level (NextLevelMapName == NAME_None): the button relabels to
 // "FINISH RUN (More Levels Coming)" and HandleNextLevelClicked() reruns the current
@@ -109,9 +110,12 @@ bool FKrowdKontrolPostRunSummaryNextLevelButtonTest::RunTest(const FString& Para
 			Widget->GetNextLevelButtonDisplayText().ToString(), FString(TEXT("NEXT LEVEL")));
 
 		// The test World is never a game world, so AdvanceToNextLevel()'s IsGameWorld()
-		// guard makes the real OpenLevel() unreachable here - only confirming this
-		// doesn't crash, same documented limitation as every other reload test.
+		// guard makes the real OpenLevel() unreachable here - but LastAdvanceAttemptedMapName
+		// is recorded before that guard, so this still proves the click handler actually
+		// routed to AdvanceToNextLevel() and it resolved the right map, not just "didn't crash".
 		Widget->HandleNextLevelClicked();
+		TestEqual(TEXT("Clicking NEXT LEVEL should route through AdvanceToNextLevel() to the configured next map"),
+			SequenceSubsystem->LastAdvanceAttemptedMapName, FName(TEXT("L_Level02")));
 	}
 
 	// (b) Final shipped level: the button relabels and reruns via the shared restart path.

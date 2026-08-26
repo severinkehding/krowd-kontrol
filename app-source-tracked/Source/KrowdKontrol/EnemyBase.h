@@ -192,13 +192,6 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// friend-class comment.
 	friend class FKrowdKontrolAbilityColourMatchTest;
 
-	// Same grant, for the teaching-prompt component's test (issue #219), which drives
-	// real AEnemyBase subclasses through Idle->Alert via the private TickCheckDetection
-	// before ReceiveControl()/TransitionToBanked(), to prove the "first hot enemy"/
-	// "first controlled enemy banked" prompt conditions fire off real state transitions,
-	// not synthetic ones. Non-transitive - see MusicSubsystem.h's friend-class comment.
-	friend class FKrowdKontrolTeachingPromptComponentTest;
-
 public:
 	AEnemyBase();
 

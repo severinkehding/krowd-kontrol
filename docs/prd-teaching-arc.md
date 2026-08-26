@@ -96,8 +96,10 @@ trigger. Room-cleared signal for REQ-3's prompt should bind to
 ## Existing surfaces to build on (do not reinvent)
 `ULevelLifecycleSubsystem` (`OnLevelClear`, final-map/run-complete config);
 `ULevelSequenceSubsystem` (`LevelSequenceTable` DataTable config,
-`ComputeNextLevelMapName()`, issue #216 — resolves/loads the next map on
-`OnLevelClear`, or sets `FinalMapName` at the sequence's end);
+`ComputeNextLevelMapName()`, issue #216 — resolves the next map name on
+`OnLevelClear`, or sets `FinalMapName` at the sequence's end; the actual
+`OpenLevel()` travel moved to a separate caller-triggered `AdvanceToNextLevel()`,
+issue #321, to avoid racing the post-run summary screen);
 `UAbilityUnlockComponent::NotifyLevelReached` (mapping merged; now called via
 `UAbilityUnlockLevelSubsystem`, #217 — level index is still map-name-derived,
 pending #217's reconciliation with `ULevelSequenceSubsystem`, issue #217);

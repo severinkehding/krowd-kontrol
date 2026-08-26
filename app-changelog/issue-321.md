@@ -44,6 +44,40 @@ tests' perspective. No existing assertion changed.
   same private-`TickCheckDetection()` access grant every sibling test in this family
   already has.
 
+## Post-review fixes
+
+Applied after the review pass on this PR (all still `GATE_OK`):
+
+- **Concurrent-task leakage removed from the tracked mirror.** The reviewed diff of
+  `app-source-tracked/Source/KrowdKontrol/EnemyBase.h` carried a second, unrelated
+  `friend class FKrowdKontrolTeachingPromptComponentTest;` grant for issue #219 (a
+  different, in-flight task) — leaked in through the shared `app/` symlink, exactly
+  the failure mode `[[feedback_check_diff_for_concurrent_task_leakage]]` describes.
+  Stripped from `app-source-tracked/EnemyBase.h` (this PR's tracked deliverable). Left
+  in place in the live `app/EnemyBase.h`, because issue #219's own in-progress work
+  in that shared, untracked project already has a `KrowdKontrolTeachingPromptComponentTest.cpp`
+  depending on it — confirmed by a real `C2248` compile failure when it was removed
+  from `app/` too. Issue #219's own PR will add this grant to the tracked mirror when
+  it lands.
+- `UPostRunSummaryWidget::HandleNextLevelClicked()`'s two silent-failure branches (bad
+  owning-player cast on the final-level path; missing `ULevelSequenceSubsystem` on the
+  advance path) and `HandleLevelClear()`'s missing-subsystem fallback now log a
+  one-shot `UE_LOG(LogTemp, Warning, ...)`, matching this file's own established
+  `bHasWarnedMissing...` idiom (`ResolveLevelClearTimeSubsystem()`) instead of failing
+  silently on a player-triggered action.
+- `ULevelSequenceSubsystem` gained a public `LastAdvanceAttemptedMapName` seam, set
+  unconditionally at the top of `AdvanceToNextLevel()` before its `IsGameWorld()`
+  guard. Closes two coverage gaps flagged by review: (1)
+  `KrowdKontrolPostRunSummaryNextLevelButtonTest.cpp` case (a) now asserts the click
+  handler actually routed to `AdvanceToNextLevel()` with the right map, not just "didn't
+  crash"; (2) `KrowdKontrolLevelSequenceSubsystemTest.cpp` case (a) now asserts
+  `HandleLevelClear()` itself never sets this seam — regression protection for this
+  issue's own "critical finding" (auto-advance no longer runs from `OnLevelClear`),
+  which previously had none.
+- `docs/prd-post-run-progression.md` REQ-3 and `docs/prd-teaching-arc.md`'s
+  `ULevelSequenceSubsystem` description updated to match the shipped behavior (see
+  review's docs-impact findings).
+
 ## Scope boundaries — explicitly not done here
 
 - **No real `LevelSequenceTable` Content DataTable asset.** Issue #216 already scoped
@@ -94,7 +128,7 @@ tests' perspective. No existing assertion changed.
 
 ## Validation evidence
 
-Full gate (`python harness/ci.py --mode=full`):
+Full gate (`python harness/ci.py --mode=full`), re-run after the post-review fixes above:
 
 ```
 HARNESS_START mode=full driver=cli
@@ -102,6 +136,8 @@ STATIC_SKIPPED no 'static' command in harness.config.json
 UNIT_PASSED tests=119
 PIE_PASSED tests=5
 APP_STARTED driver=cli
+UE_BUILD_START KrowdKontrolEditor Win64 Development
+UE_BUILD_OK
 UE_AUTOMATION_RESULT passed=1 total=1
 UE_AUTOMATION_OK
 E2E_PASSED steps=1
