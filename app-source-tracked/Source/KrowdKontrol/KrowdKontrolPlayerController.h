@@ -141,8 +141,9 @@ public:
 	// Called at the end of HandleLevelFailed() (issue #172, PRD REQ-4). Sets
 	// bRestartRequested and, only in a real game world, reloads the current map via
 	// UGameplayStatics::OpenLevel. Also called externally by
-	// UPostRunSummaryWidget::HandleNextLevelClicked() on the final shipped level
-	// (issue #321), reusing this same shared reload path instead of duplicating it.
+	// UPostRunSummaryWidget::HandleRerunClicked() (issue #320) and
+	// HandleNextLevelClicked() on the final shipped level (issue #321), both reusing
+	// this same shared reload path instead of duplicating it.
 	void RequestLevelRestart();
 
 protected:
