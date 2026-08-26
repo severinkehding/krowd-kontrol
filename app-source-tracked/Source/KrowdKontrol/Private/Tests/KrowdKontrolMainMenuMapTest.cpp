@@ -34,6 +34,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     "KrowdKontrol.Unit.MainMenuMapWiring",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
+template <typename T>
+static bool HasActorOfClass(UWorld* World)
+{
+    for (TActorIterator<T> It(World); It; ++It)
+    {
+        return true;
+    }
+    return false;
+}
+
 bool FKrowdKontrolMainMenuMapTest::RunTest(const FString& Parameters)
 {
     TestEqual(TEXT("Project's GameDefaultMap should resolve to L_MainMenu"),
@@ -57,16 +67,11 @@ bool FKrowdKontrolMainMenuMapTest::RunTest(const FString& Parameters)
     {
         return false;
     }
-    TestTrue(TEXT("L_MainMenu's WorldSettings should override GameMode to AMainMenuGameMode"),
-        WorldSettings->DefaultGameMode == AMainMenuGameMode::StaticClass());
+    TestEqual(TEXT("L_MainMenu's WorldSettings should override GameMode to AMainMenuGameMode"),
+        WorldSettings->DefaultGameMode, TSubclassOf<AGameModeBase>(AMainMenuGameMode::StaticClass()));
 
-    bool bHasEnemy = false;
-    for (TActorIterator<AEnemyBase> It(World); It; ++It) { bHasEnemy = true; break; }
-    TestFalse(TEXT("L_MainMenu should contain no enemy actors (AC #1)"), bHasEnemy);
-
-    bool bHasTargetZone = false;
-    for (TActorIterator<ATargetZone> It(World); It; ++It) { bHasTargetZone = true; break; }
-    TestFalse(TEXT("L_MainMenu should contain no target zone actors (AC #1)"), bHasTargetZone);
+    TestFalse(TEXT("L_MainMenu should contain no enemy actors (AC #1)"), HasActorOfClass<AEnemyBase>(World));
+    TestFalse(TEXT("L_MainMenu should contain no target zone actors (AC #1)"), HasActorOfClass<ATargetZone>(World));
 
     bool bHasPlayerControlledPawn = false;
     for (TActorIterator<APawn> It(World); It; ++It)
