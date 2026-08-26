@@ -22,6 +22,7 @@
 #include "EnemyBaseNoTrimLightTestActor.h"
 #include "EnemyBankedTestListener.h"
 #include "EnemyControlledExpiredTestListener.h"
+#include "EnemyAttackExpiredTestListener.h"
 #include "PlayerEnergyComponent.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
@@ -305,6 +306,41 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(BankedBeforeExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Banked));
 	TestEqual(TEXT("OnEnemyControlledExpired must never fire on the TransitionToBanked exit path"),
 		BankedBeforeExpiryListener->CallCount, 0);
+
+	// (i5) issue #313: Attack-duration expiry. An enemy driven into Attack (the
+	// state a player-contact/aggro advance lands it in) must revert to Alert on its
+	// own once the Attack-duration timeout elapses, with no ReceiveControl() call at
+	// all - this must fail against the pre-#313 codebase (Attack had no exit but
+	// ReceiveControl) and pass after the fix. Also fires OnEnemyAttackExpired
+	// exactly once, mirroring OnEnemyControlledExpired's (i2) coverage above.
+	AEnemyBaseTestActor* AttackExpiryEnemy = NewObject<AEnemyBaseTestActor>();
+	UEnemyAttackExpiredTestListener* AttackExpiryListener = NewObject<UEnemyAttackExpiredTestListener>();
+	AttackExpiryEnemy->OnEnemyAttackExpired.AddDynamic(AttackExpiryListener, &UEnemyAttackExpiredTestListener::HandleEnemyAttackExpired);
+	const FVector AttackZeroDistanceLocation(0.0f, 0.0f, 0.0f);
+	AttackExpiryEnemy->TickCheckDetection(AttackZeroDistanceLocation); // Idle -> Alert
+	AttackExpiryEnemy->TickCheckDetection(AttackZeroDistanceLocation); // Alert -> Attack
+	TestEqual(TEXT("TickCheckDetection should have advanced to Attack"),
+		static_cast<uint8>(AttackExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+
+	const float AttackDurationSeconds = AttackExpiryEnemy->GetAttackDurationSeconds();
+	AttackExpiryEnemy->TickAttackDuration(AttackDurationSeconds - 0.1f);
+	TestEqual(TEXT("Attack state should persist before the Attack-duration timeout elapses"),
+		static_cast<uint8>(AttackExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+	TestEqual(TEXT("OnEnemyAttackExpired must not fire before the timeout elapses"),
+		AttackExpiryListener->CallCount, 0);
+
+	AttackExpiryEnemy->TickAttackDuration(0.5f); // total elapsed now exceeds AttackDurationSeconds
+	TestEqual(TEXT("Attack-duration timeout elapsing should revert to Alert with no ReceiveControl() call"),
+		static_cast<uint8>(AttackExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("OnEnemyAttackExpired should fire exactly once when the timeout elapses"),
+		AttackExpiryListener->CallCount, 1);
+
+	// (i5b) re-entry: once back at Alert and back in range, TickCheckDetection can
+	// re-advance to Attack again (proves the enemy actually resumes its normal
+	// behaviour tree, per the AC, rather than being stuck at Alert forever instead).
+	AttackExpiryEnemy->TickCheckDetection(AttackZeroDistanceLocation);
+	TestEqual(TEXT("A re-expired Attack enemy back in range should be able to re-enter Attack"),
+		static_cast<uint8>(AttackExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 
 	// (i4) duration-expiry reversion driven through the real Tick() override, not just
 	// the friend-called TickControlledDuration helper directly (as (i2)/(i3) above do) -

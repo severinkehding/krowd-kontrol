@@ -39,6 +39,7 @@ enum class EEnemyState : uint8
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyBanked);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyControlledExpired);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyAttackExpired);
 
 // Shared, structurally-safe foundation for every core enemy type (SN-1PR, RU-NNR,
 // TR-UPR, B0-0MR - PRD 03): a linear Idle->Alert->Attack->Controlled->Banked state
@@ -215,6 +216,13 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Enemy")
 	FOnEnemyControlledExpired OnEnemyControlledExpired;
 
+	// Fires on the Attack -> Alert edge when the Attack-duration timeout elapses
+	// (see GetAttackDurationSeconds()/TickAttackDuration below) - issue #313's
+	// guaranteed, ability-independent exit from Attack. Mirrors
+	// OnEnemyControlledExpired's shape exactly.
+	UPROPERTY(BlueprintAssignable, Category = "Enemy")
+	FOnEnemyAttackExpired OnEnemyAttackExpired;
+
 	EEnemyState GetEnemyState() const { return CurrentState; }
 
 	// Only meaningful while GetEnemyState() == Controlled; retains its last value
@@ -382,6 +390,14 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) {}
 	virtual void OnAttackEntry() {}
 
+	// Fires on the Attack -> Alert edge when the Attack-duration timeout elapses
+	// (issue #313) - the equivalent of OnControlledExpired() for the Attack dead-end.
+	// A concrete subclass overrides this to reset its own attack-tell state (e.g.
+	// ASniperEnemy::bShotFiredForCurrentAttack) so a later re-entry into Attack via
+	// OnAttackEntry() isn't strictly required to do so alone, and to clear any tell
+	// visual/audio left over from an interrupted telegraph.
+	virtual void OnAttackExpired() {}
+
 	// Fires on every Controlled -> Alert edge (see the transition table above: both
 	// the natural-duration-expiry case and the issue #257 early-wake-on-other-ability
 	// case), right before OnEnemyControlledExpired broadcasts. Every other ability
@@ -397,6 +413,22 @@ protected:
 	// subclass returns a non-negative value to override it (e.g. ASniperEnemy for Sleep
 	// - see issue #121's SN-1PR/Sleep=7s case).
 	virtual float GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const { return -1.0f; }
+
+	// Issue #313's guaranteed, unconditional exit from Attack: how long an enemy may
+	// remain in Attack before it unconditionally reverts to Alert, regardless of
+	// whether any concrete subclass's own attack-telegraph logic ever completes or a
+	// player ever applies a control ability. Base default (2.5f) is deliberately
+	// longer than the longest existing concrete subclass's own AttackTelegraphSeconds
+	// (ABomberEnemy's 2.0f, BomberEnemy.h:73) plus a safety margin - see this issue's
+	// investigation artifact for why a value <= a subclass's own telegraph duration
+	// can silently suppress that subclass's shot (AEnemyBase::Tick's
+	// TickAttackDuration runs before each subclass's own Super::Tick-then-
+	// AdvanceAttackTelegraph override reaches its own countdown, so an equal-or-
+	// shorter base timeout wins the race and reverts state to Alert - which flips
+	// IsAttackBehaviorActive() false - before the subclass's own telegraph fires).
+	// A concrete subclass MAY override this (e.g. to tie it to its own
+	// AttackTelegraphSeconds + a margin) but is not required to.
+	virtual float GetAttackDurationSeconds() const { return 2.5f; }
 
 	// True while this enemy's attack behaviour (per-type telegraph/tell/fire loop)
 	// should keep running: always during Attack, and also during Controlled if
@@ -522,6 +554,11 @@ private:
 	// shape TickCheckDetection/TickChaseMovement already use.
 	void TickControlledDuration(float DeltaSeconds);
 
+	// Decrements RemainingAttackSeconds while CurrentState == Attack and reverts to
+	// Alert once it reaches zero - issue #313's Attack -> Alert edge, structurally
+	// identical to TickControlledDuration above. No-op in every other state.
+	void TickAttackDuration(float DeltaSeconds);
+
 	EEnemyState CurrentState = EEnemyState::Idle;
 
 	EAbilitySlot ControllingAbility = EAbilitySlot::Stun;
@@ -529,6 +566,10 @@ private:
 	float RemainingControlledSeconds = 0.0f;
 
 	float TotalControlledSeconds = 0.0f;
+
+	// Armed to GetAttackDurationSeconds() in AdvanceToAttack(), decremented by
+	// TickAttackDuration() - issue #313.
+	float RemainingAttackSeconds = 0.0f;
 
 	UPROPERTY()
 	TObjectPtr<UControlledDurationIndicatorComponent> ControlledDurationIndicatorComponent;
