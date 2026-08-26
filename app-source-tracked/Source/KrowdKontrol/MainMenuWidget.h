@@ -1,0 +1,72 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "MainMenuWidget.generated.h"
+
+class UBorder;
+class UTextBlock;
+class UButton;
+class USizeBox;
+
+// Main menu chrome (issue #324, docs/prd-main-menu.md REQ-3): title, Quit button, and
+// an anchored-but-empty region reserved for the mastery-display PRD's widget. Builds
+// its tree in C++ - same no-Widget-Blueprint pattern as
+// UPostRunSummaryWidget/UBriefingCardWidget. First UButton usage in this module (every
+// prior HUD widget is display-only); UPunishmentDebugMenuWidget's UCheckBox
+// OnCheckStateChanged.AddDynamic precedent is the closest existing analogue for
+// binding a UMG input delegate in C++.
+UCLASS()
+class KROWDKONTROL_API UMainMenuWidget : public UUserWidget
+{
+	GENERATED_BODY()
+
+	friend class FKrowdKontrolMainMenuWidgetTest;
+	friend class FKrowdKontrolReservedGameplayColoursTest;
+
+public:
+	// Fills the reserved mastery-display anchor (docs/prd-crowd-mastery-persistence.md)
+	// without any relayout - a later PRD's widget is the intended caller. No-op if
+	// Content is null or the anchor hasn't been built yet.
+	UFUNCTION(BlueprintCallable, Category = "Main Menu")
+	void SetMasteryDisplayContent(UWidget* Content);
+
+	UFUNCTION(BlueprintPure, Category = "Main Menu")
+	FText GetTitleDisplayText() const;
+
+protected:
+	virtual void NativeOnInitialized() override;
+	virtual bool Initialize() override;
+
+private:
+	void BuildWidgetTree();
+	void EnsureWidgetTreeBuilt();
+
+	// Bound to QuitButton->OnClicked. Delegates to UKismetSystemLibrary::QuitGame() -
+	// see MainMenuWidget.cpp for why that single call already does the right thing in
+	// both PIE and packaged/-game contexts, with no manual GIsEditor branching needed.
+	UFUNCTION()
+	void HandleQuitClicked();
+
+	UPROPERTY()
+	TObjectPtr<UBorder> RootBorder;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> TitleText;
+
+	UPROPERTY()
+	TObjectPtr<UButton> QuitButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> QuitButtonLabel;
+
+	// Reserved, explicitly-sized, empty region for the future Crowd Mastery display
+	// widget - see SetMasteryDisplayContent(). A USizeBox (not UNamedSlot - this project
+	// has no Widget Blueprint assets, so UNamedSlot's inheritance-override machinery has
+	// no consumer) so it occupies real layout space today even with no content.
+	UPROPERTY()
+	TObjectPtr<USizeBox> MasteryDisplayAnchor;
+
+	static constexpr float MasteryDisplayAnchorWidthPx = 320.0f;
+	static constexpr float MasteryDisplayAnchorHeightPx = 96.0f;
+};
