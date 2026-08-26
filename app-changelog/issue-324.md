@@ -122,6 +122,41 @@ Addressed all FIX-worthy findings from the multi-agent review of this PR:
   its Conventions section staying "TBD" - `CLAUDE.md` is a protected path the factory
   cannot self-edit.
 
+## Follow-up fixes (post-merge self-fix pass)
+
+PR #332 merged before the multi-agent review completed; the review ran post-hoc
+(verdict: APPROVE, no CRITICAL/merge-blocking issues) and this pass addresses its 2
+HIGH + 3 MEDIUM + 2 of 4 LOW findings in a follow-up PR built on top of `main`:
+
+- Restored the full "null Outer into `NewObject<T>()` is fatal" technical detail to
+  `EnsureWidgetTreeBuilt()`'s comment, matching `UPostRunSummaryWidget`/
+  `UOnScreenPromptWidget`'s exact wording (the changelog's "identical pattern" claim
+  above is now actually true).
+- Added the `ULocalPlayer::Exec_Editor()`/`LocalPlayer.cpp` citation for the PIE half
+  of `HandleQuitClicked()`'s Quit-safety comment, alongside the existing
+  `GameEngine.cpp` citation for the packaged-build half.
+- Split `SetMasteryDisplayContent()`'s combined null guard into two branches, each
+  logging a `Warning` on its own failure mode, matching `BriefingCardWidget`/
+  `EnergyMeterWidget`/`AbilityUnlockComponent`'s established convention.
+- Added an `UE_LOG` on `AMainMenuPlayerController::BeginPlay()`'s `CreateWidget`
+  failure path - previously silent, and this widget is the entire main menu screen.
+- Added test coverage for `EnsureWidgetTreeBuilt()`'s null-`WidgetTree` bypass branch
+  (block g, `NativeOnInitialized()` invoked directly via bare `NewObject()`) and for
+  `SetMasteryDisplayContent()`'s "anchor not built yet" no-op path (block f,
+  continued) - both mirroring `KrowdKontrolAbilityCooldownTrayWidgetTest.cpp`'s
+  established pattern.
+- Corrected `KrowdKontrolMainMenuGameModeTest.cpp`'s header comment (it wrongly
+  claimed `KrowdKontrolGameModeTest.cpp`'s per-level-override test shares this gap)
+  and added `FKrowdKontrolMainMenuGameModeLevelOverrideTest`, closing the real
+  coverage gap on `/Game/Maps/L_MainMenuTemp`'s WorldSettings GameMode override -
+  the actual issue #323 hand-off mechanism - using the same `LoadMap()` +
+  `GetWorldSettings()->DefaultGameMode` pattern already proven by
+  `FKrowdKontrolGameModeLevelOverrideTest`.
+- Replaced the dangling `implementation.md` "workflow run artifacts" reference in
+  Validation Evidence below with the actual in-repo evidence.
+- Not fixed (deferred, both flagged as operator-only/out-of-scope by the review
+  itself): `CLAUDE.md`'s Repo Layout gap (protected path).
+
 ## Files changed
 
 | File | Action | What it contains |
@@ -162,4 +197,5 @@ under `Content/`).
 
 ## Validation Evidence
 
-See `implementation.md` in the workflow run artifacts for the full validation record.
+`python harness/ci.py --quick` reports `GATE_OK mode=quick` (see Acceptance criteria
+above); automation test coverage for the new classes is listed under Files changed.
