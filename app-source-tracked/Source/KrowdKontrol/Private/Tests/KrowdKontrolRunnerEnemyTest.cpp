@@ -292,6 +292,20 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l-snare) The drain-ray should fire exactly once once cumulative quarter-speed elapsed time reaches AttackTelegraphSeconds"),
 		SnaredListener->CallCount, 1);
 
+	// (l-attack-expired) issue #313 pass-1 review follow-up (HIGH): OnAttackExpired
+	// must clear the tell light once the Attack-duration timeout reverts Attack ->
+	// Alert unconditionally, mid-telegraph - the same bug class the Controlled ->
+	// Alert edge's OnControlledExpired override exists to prevent, but for Attack.
+	ARunnerEnemy* ExpiredAttackRunner = NewObject<ARunnerEnemy>();
+	AdvanceToAttack(ExpiredAttackRunner, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-attack-expired) Attack tell should be visibly on before the Attack-duration timeout"),
+		ExpiredAttackRunner->AttackTellLightComponent->Intensity > 0.0f);
+	ExpiredAttackRunner->TickAttackDuration(ExpiredAttackRunner->GetAttackDurationSeconds());
+	TestEqual(TEXT("(l-attack-expired) Runner should be back to Alert once the Attack-duration timeout elapses"),
+		static_cast<uint8>(ExpiredAttackRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-attack-expired) OnAttackExpired should clear the tell light once the Attack-duration timeout elapses"),
+		ExpiredAttackRunner->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
 	// MovementSpeed (950.0f), not AEnemyBase's own base default (600.0f) - the direct
 	// proof that issue #122's "per-type speeds are actually read" holds for RU-NNR too.

@@ -221,6 +221,20 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l-root) OnControlledExpired should clear the tell light once Root's window ends"),
 		RootedBomber->AttackTellLightComponent->Intensity, 0.0f);
 
+	// (l-attack-expired) issue #313 pass-1 review follow-up (HIGH): OnAttackExpired
+	// must clear the tell light once the Attack-duration timeout reverts Attack ->
+	// Alert unconditionally, mid-telegraph - the same bug OnControlledExpired above
+	// exists to prevent, but for the Attack -> Alert edge instead of Controlled -> Alert.
+	ABomberEnemy* ExpiredAttackBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(ExpiredAttackBomber, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-attack-expired) Attack tell should be visibly on before the Attack-duration timeout"),
+		ExpiredAttackBomber->AttackTellLightComponent->Intensity > 0.0f);
+	ExpiredAttackBomber->TickAttackDuration(ExpiredAttackBomber->GetAttackDurationSeconds());
+	TestEqual(TEXT("(l-attack-expired) Bomber should be back to Alert once the Attack-duration timeout elapses"),
+		static_cast<uint8>(ExpiredAttackBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-attack-expired) OnAttackExpired should clear the tell light once the Attack-duration timeout elapses"),
+		ExpiredAttackBomber->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
 	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
 	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
@@ -277,6 +291,12 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			UBomberExplodedTestListener* TickedListener = NewObject<UBomberExplodedTestListener>();
 			TickedBomber->OnBomberExploded.AddDynamic(TickedListener, &UBomberExplodedTestListener::HandleBomberExploded);
 			TickedBomber->Tick(TickedBomber->AttackTelegraphSeconds);
+			// Issue #313 (test-coverage review): proves the base class's own
+			// TickAttackDuration (2.5s) hasn't already preempted this telegraph
+			// (2.0s) within this same Tick() call - the exact tick-order race the
+			// AttackDuration-vs-AttackTelegraphSeconds margin exists to avoid.
+			TestEqual(TEXT("Attack-duration timeout must not have preempted the telegraph"),
+				static_cast<uint8>(TickedBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 			TestEqual(TEXT("Tick() drives the telegraph through to firing"), TickedListener->CallCount, 1);
 		}
 		// (n) TriggerExplosion doesn't crash with no UWorld (GetWorld() null guard);

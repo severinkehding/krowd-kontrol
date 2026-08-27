@@ -26,6 +26,9 @@
 #include "AbilityData.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "Components/SceneComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -281,6 +284,20 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l2) The telegraph should keep re-arming and firing while Rooted, matching normal Attack behaviour"),
 		RootedListener->CallCount, 2);
 
+	// (l-attack-expired) issue #313 pass-1 review follow-up (HIGH): OnAttackExpired
+	// must clear the tell light once the Attack-duration timeout reverts Attack ->
+	// Alert unconditionally, mid-telegraph - the same bug class the Controlled ->
+	// Alert edge's OnControlledExpired override exists to prevent, but for Attack.
+	ATrooperEnemy* ExpiredAttackTrooper = NewObject<ATrooperEnemy>();
+	AdvanceToAttack(ExpiredAttackTrooper, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-attack-expired) Attack tell should be visibly on before the Attack-duration timeout"),
+		ExpiredAttackTrooper->AttackTellLightComponent->Intensity > 0.0f);
+	ExpiredAttackTrooper->TickAttackDuration(ExpiredAttackTrooper->GetAttackDurationSeconds());
+	TestEqual(TEXT("(l-attack-expired) Trooper should be back to Alert once the Attack-duration timeout elapses"),
+		static_cast<uint8>(ExpiredAttackTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-attack-expired) OnAttackExpired should clear the tell light once the Attack-duration timeout elapses"),
+		ExpiredAttackTrooper->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
 	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
 	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
@@ -319,6 +336,67 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 			TickedTrooper->Tick(TickedTrooper->AttackTelegraphSeconds);
 			TestEqual(TEXT("Two successive Tick() calls should each fire a ray, proving the rapid re-arm survives the real per-frame path"),
 				TickedListener->CallCount, 2);
+		}
+	}
+
+	// (m2) issue #313 follow-up (test-coverage review, MEDIUM finding): pins the
+	// disclosed cadence change - a Trooper's derived GetAttackDurationSeconds() is
+	// max(2.5s base floor, 0.4s telegraph + margin) = the 2.5s floor, so during
+	// sustained close-range engagement the timeout forces Attack -> Alert and, within
+	// that same Tick() call, TickCheckDetection immediately re-detects the still-in-range
+	// player back into Attack (replaying OnAttackEntry()'s attack tell) - instead of
+	// firing continuously forever the way Trooper's rapid re-arm did pre-#313. This is
+	// operator-ratified behaviour (2026-08-27 ruling on PR #336: repeating attacks are
+	// the intended enemy model) - pinning it here so a future change to this
+	// behaviour, deliberate or not, shows up as a named test result instead of only
+	// ever being caught by a live playtest.
+	UWorld* CadenceWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), CadenceWorld))
+	{
+		ATrooperEnemy* CadenceTrooper = CadenceWorld->SpawnActor<ATrooperEnemy>();
+		APawn* CadencePlayerPawn = CadenceWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("ATrooperEnemy should spawn into the test World"), CadenceTrooper)
+			&& TestNotNull(TEXT("APawn should spawn into the test World"), CadencePlayerPawn))
+		{
+			APlayerController* CadenceController = CadenceWorld->SpawnActor<APlayerController>();
+			if (!TestNotNull(TEXT("Should be able to spawn a controller to possess the pawn"), CadenceController))
+			{
+				return false;
+			}
+			CadenceController->Possess(CadencePlayerPawn);
+			CadenceWorld->AddController(CadenceController);
+
+			USceneComponent* CadencePlayerPawnRoot = NewObject<USceneComponent>(CadencePlayerPawn);
+			CadencePlayerPawnRoot->RegisterComponent();
+			CadencePlayerPawn->SetRootComponent(CadencePlayerPawnRoot);
+			CadencePlayerPawn->SetActorLocation(ZeroDistanceLocation); // stays within attack range throughout
+
+			AdvanceToAttack(CadenceTrooper, ZeroDistanceLocation);
+			UTrooperRayFiredTestListener* CadenceListener = NewObject<UTrooperRayFiredTestListener>();
+			CadenceTrooper->OnTrooperRayFired.AddDynamic(CadenceListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
+
+			// Tick through exactly one full Attack window, snapshot the fire count at
+			// the expiry boundary, then keep ticking - only a post-boundary INCREASE
+			// proves the ray survives the Attack -> Alert -> Attack cycle. (The old
+			// CallCount > 1 assertion was vacuous: the 0.4s telegraph fires ~5 times
+			// inside the first window alone, so it passed even if the cycle went
+			// permanently silent - PR #336 pass-2 escalation, MEDIUM finding.)
+			const float CadenceAttackDurationSeconds = CadenceTrooper->GetAttackDurationSeconds();
+			for (float Elapsed = 0.0f; Elapsed < CadenceAttackDurationSeconds + 0.25f; Elapsed += 0.5f)
+			{
+				CadenceTrooper->Tick(0.5f);
+			}
+			const int32 CallCountAtExpiryBoundary = CadenceListener->CallCount;
+
+			for (int32 PostBoundaryTick = 0; PostBoundaryTick < 4; ++PostBoundaryTick)
+			{
+				CadenceTrooper->Tick(0.5f);
+			}
+
+			TestEqual(TEXT("A Trooper kept in range should be back in Attack after the base timeout cycles it through Alert and back, same real Tick() path"),
+				static_cast<uint8>(CadenceTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+			TestTrue(TEXT("The attack-tell ray must fire again AFTER the expiry boundary, not go silent across the Attack -> Alert -> Attack cycle"),
+				CadenceListener->CallCount > CallCountAtExpiryBoundary);
 		}
 	}
 
