@@ -101,6 +101,13 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// Crowd-Mastery data. Non-transitive - see MusicSubsystem.h's friend-class comment.
 	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
 
+	// Same grant, for the post-run summary screen's NEXT LEVEL button test (issue
+	// #321), which drives the same real Idle->Alert->Attack->Controlled->Banked
+	// sequence to fire a real OnLevelClear so ULevelSequenceSubsystem::
+	// ComputeNextLevelMapName() resolves for real. Non-transitive - see
+	// MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolPostRunSummaryNextLevelButtonTest;
+
 	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
 	// sync test (issue #20), which drive a plain AEnemyBaseTestActor through the same
 	// Idle->Alert transition as FKrowdKontrolOvercrowdAudioSubsystemTest above.
@@ -188,6 +195,13 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// generic AEnemyBaseTestActor. Non-transitive - see MusicSubsystem.h's
 	// friend-class comment.
 	friend class FKrowdKontrolAbilityColourMatchTest;
+
+	// Same grant, for the teaching-prompt component's test (issue #219), which drives
+	// real AEnemyBase subclasses through Idle->Alert via the private TickCheckDetection
+	// before ReceiveControl()/TransitionToBanked(), to prove the "first hot enemy"/
+	// "first controlled enemy banked" prompt conditions fire off real state transitions,
+	// not synthetic ones. Non-transitive - see MusicSubsystem.h's friend-class comment.
+	friend class FKrowdKontrolTeachingPromptComponentTest;
 
 public:
 	AEnemyBase();
@@ -395,10 +409,13 @@ protected:
 
 	// Fires on the Attack -> Alert edge when the Attack-duration timeout elapses
 	// (issue #313) - the equivalent of OnControlledExpired() for the Attack dead-end.
-	// A concrete subclass overrides this to reset its own attack-tell state (e.g.
-	// ASniperEnemy::bShotFiredForCurrentAttack) so a later re-entry into Attack via
-	// OnAttackEntry() isn't strictly required to do so alone, and to clear any tell
-	// visual/audio left over from an interrupted telegraph.
+	// A concrete subclass overrides this to clear any tell visual/audio left over
+	// from an interrupted telegraph (all four existing overrides do exactly and only
+	// that). Per-attack fire guards (e.g. ASniperEnemy::bShotFiredForCurrentAttack)
+	// are deliberately NOT reset here - OnAttackEntry() owns those, so they reset on
+	// the next entry into Attack, never on the exit edge (PR #336 review: a type
+	// that could leave Attack without re-entering must not have its guard cleared
+	// early).
 	virtual void OnAttackExpired() {}
 
 	// Fires on every Controlled -> Alert edge (see the transition table above: both
@@ -420,18 +437,28 @@ protected:
 	// Issue #313's guaranteed, unconditional exit from Attack: how long an enemy may
 	// remain in Attack before it unconditionally reverts to Alert, regardless of
 	// whether any concrete subclass's own attack-telegraph logic ever completes or a
-	// player ever applies a control ability. Base default (2.5f) is deliberately
-	// longer than the longest existing concrete subclass's own AttackTelegraphSeconds
-	// (ABomberEnemy's 2.0f, BomberEnemy.h:73) plus a safety margin - see this issue's
-	// investigation artifact for why a value <= a subclass's own telegraph duration
-	// can silently suppress that subclass's shot (AEnemyBase::Tick's
-	// TickAttackDuration runs before each subclass's own Super::Tick-then-
-	// AdvanceAttackTelegraph override reaches its own countdown, so an equal-or-
-	// shorter base timeout wins the race and reverts state to Alert - which flips
-	// IsAttackBehaviorActive() false - before the subclass's own telegraph fires).
-	// A concrete subclass MAY override this (e.g. to tie it to its own
-	// AttackTelegraphSeconds + a margin) but is not required to.
+	// player ever applies a control ability. The window MUST outlast the subclass's
+	// own telegraph - see this issue's investigation artifact for why a value <= a
+	// subclass's telegraph duration can silently suppress that subclass's shot
+	// (AEnemyBase::Tick's TickAttackDuration runs before each subclass's own
+	// Super::Tick-then-AdvanceAttackTelegraph override reaches its own countdown, so
+	// an equal-or-shorter base timeout wins the race and reverts state to Alert -
+	// which flips IsAttackBehaviorActive() false - before the subclass's own
+	// telegraph fires). Because every AttackTelegraphSeconds is EditDefaultsOnly
+	// (Blueprint-tunable, no upper clamp), a fixed base constant can never guarantee
+	// that invariant - so every concrete subclass with a telegraph MUST override
+	// this with the derive-from-telegraph pattern:
+	//   FMath::Max(Super::GetAttackDurationSeconds(),
+	//              AttackTelegraphSeconds + AttackDurationTelegraphMarginSeconds)
+	// (PR #336 pass-2 escalation, HIGH finding). The base default (2.5f) stays as
+	// the window's floor and the value for any future telegraph-less type.
 	virtual float GetAttackDurationSeconds() const { return 2.5f; }
+
+	// Margin the derive-from-telegraph overrides add on top of the subclass's
+	// AttackTelegraphSeconds: covers TickAttackDuration's tick-ordering race plus
+	// the firing tick itself, so the shot lands strictly inside the Attack window.
+	// Shared here so the four subclasses can't drift apart.
+	static constexpr float AttackDurationTelegraphMarginSeconds = 0.5f;
 
 	// True while this enemy's attack behaviour (per-type telegraph/tell/fire loop)
 	// should keep running: always during Attack, and also during Controlled if

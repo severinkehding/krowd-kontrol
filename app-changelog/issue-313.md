@@ -105,3 +105,33 @@ Addressed all findings from validation pass-1:
 - Filed the Trooper cadence change as its own follow-up issue, per issue #313's
   acceptance criteria: [#337](https://github.com/severinkehding/krowd-kontrol/issues/337)
   (MEDIUM/scope) — previously only recorded inline above.
+
+## Operator resolution of the pass-2 escalation (2026-08-27)
+
+**Ruling (operator, on PR #336):** repeating attacks are the intended enemy
+model — the timeout re-entering Attack and re-arming each type's attack is
+correct behaviour, not a regression. Fire-once-per-encounter was an artifact of
+the pre-#313 freeze bug. **Full disclosure of the resulting cadence changes**
+(previously only Trooper's was disclosed): B0-0MR now re-telegraphs and
+re-explodes (full contact damage) every window while the player stays in range;
+SN-1PR re-fires its shot delegate and replays its tell each window; RU-NNR
+re-fires its drain the same way. Damage tuning, if a camped Bomber proves too
+lethal in playtests, is a follow-up knob — not part of this fix.
+
+**HIGH finding fixed — duration now derived from the telegraph:** all four
+concrete types override `GetAttackDurationSeconds()` with
+`max(base floor, AttackTelegraphSeconds + AttackDurationTelegraphMarginSeconds)`
+(margin shared on `AEnemyBase`), so a Blueprint-tuned telegraph above the old
+2.5s constant can no longer silently reintroduce the shot-suppression dead-end.
+Test (i5c) now also pins the tuned case (telegraph raised above the floor at
+runtime), not just C++ defaults.
+
+**MEDIUM finding fixed — (m2) cadence assertion made real:** it now snapshots
+the fire count at the expiry boundary and asserts a post-boundary increase;
+the old `CallCount > 1` passed even with the cycle permanently silent.
+
+**LOW finding fixed:** `OnAttackExpired()`'s doc no longer claims subclasses
+reset fire guards there (none do — `OnAttackEntry()` owns those; the doc now
+says why that split is deliberate).
+
+Verified: clean UBT build, full unit suite 121/121 headless.

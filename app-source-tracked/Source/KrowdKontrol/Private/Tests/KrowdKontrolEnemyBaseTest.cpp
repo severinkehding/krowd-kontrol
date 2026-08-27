@@ -347,13 +347,14 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(AttackExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 
 	// (i5c) issue #313 (test-coverage review, HIGH finding): the entire fix depends on
-	// one invariant - the base GetAttackDurationSeconds() timeout must stay strictly
-	// greater than every concrete subclass's own AttackTelegraphSeconds (EnemyBase.h's
+	// one invariant - every enemy's GetAttackDurationSeconds() must stay strictly
+	// greater than that enemy's own AttackTelegraphSeconds (EnemyBase.h's
 	// GetAttackDurationSeconds comment spells out why: TickAttackDuration runs before
 	// each subclass's own telegraph-advance and reverts Attack -> Alert first if it wins
-	// the race, silently suppressing that subclass's shot). Previously only a prose
-	// invariant; asserted directly here so a future balance change that violates it
-	// fails this test instead of surfacing as a live-PIE "enemy stopped attacking" bug.
+	// the race, silently suppressing that subclass's shot). Each subclass now derives
+	// its duration from its own telegraph + AttackDurationTelegraphMarginSeconds
+	// (PR #336 pass-2 escalation, HIGH finding), so the invariant holds for TUNED
+	// telegraphs, not just C++ defaults - asserted below for both.
 	UWorld* MarginWorld = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), MarginWorld))
 	{
@@ -377,6 +378,17 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 				MarginTrooper->GetAttackDurationSeconds() > MarginTrooper->AttackTelegraphSeconds);
 			TestTrue(TEXT("Base Attack-duration timeout must exceed ARunnerEnemy's own telegraph"),
 				MarginRunner->GetAttackDurationSeconds() > MarginRunner->AttackTelegraphSeconds);
+
+			// The tuned case the derive pattern exists for: a designer raising a
+			// Blueprint telegraph above the 2.5s base floor must widen the Attack
+			// window with it, never get silently cut off by it (PR #336 pass-2
+			// escalation, HIGH finding - previously only C++ defaults were pinned).
+			MarginBomber->AttackTelegraphSeconds = 3.5f;
+			TestTrue(TEXT("A telegraph tuned above the base floor must still fit inside the derived Attack window"),
+				MarginBomber->GetAttackDurationSeconds() > MarginBomber->AttackTelegraphSeconds);
+			TestEqual(TEXT("The derived Attack window should be telegraph + the shared margin once above the floor"),
+				MarginBomber->GetAttackDurationSeconds(),
+				MarginBomber->AttackTelegraphSeconds + AEnemyBase::AttackDurationTelegraphMarginSeconds);
 		}
 	}
 

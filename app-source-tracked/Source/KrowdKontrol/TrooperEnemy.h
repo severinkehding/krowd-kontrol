@@ -66,6 +66,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trooper", meta = (ClampMin = "0.0"))
 	float AttackTelegraphSeconds = 0.4f;
 
+	// Derive the Attack window from this type's own (Blueprint-tunable) telegraph so
+	// no tuning value can make the base timeout cut the telegraph short and silently
+	// suppress the shot - the invariant AEnemyBase::GetAttackDurationSeconds()'s
+	// comment documents (PR #336 pass-2 escalation, HIGH finding).
+	virtual float GetAttackDurationSeconds() const override
+	{
+		return FMath::Max(Super::GetAttackDurationSeconds(),
+			AttackTelegraphSeconds + AttackDurationTelegraphMarginSeconds);
+	}
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trooper")
 	float GlowBaselineIntensity = 800.0f;
 

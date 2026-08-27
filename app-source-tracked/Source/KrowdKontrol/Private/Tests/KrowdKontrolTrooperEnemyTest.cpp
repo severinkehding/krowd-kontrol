@@ -340,16 +340,16 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	}
 
 	// (m2) issue #313 follow-up (test-coverage review, MEDIUM finding): pins the
-	// disclosed cadence change - a Trooper has no GetAttackDurationSeconds() override,
-	// so it now inherits the base class's unconditional Attack-duration timeout (2.5s).
-	// During sustained close-range engagement this forces Attack -> Alert and, within
+	// disclosed cadence change - a Trooper's derived GetAttackDurationSeconds() is
+	// max(2.5s base floor, 0.4s telegraph + margin) = the 2.5s floor, so during
+	// sustained close-range engagement the timeout forces Attack -> Alert and, within
 	// that same Tick() call, TickCheckDetection immediately re-detects the still-in-range
 	// player back into Attack (replaying OnAttackEntry()'s attack tell) - instead of
 	// firing continuously forever the way Trooper's rapid re-arm did pre-#313. This is
-	// currently-intentional (app-changelog/issue-313.md's Follow-up note, pending a live
-	// PIE playtest call on whether it needs its own override) - pinning it here so a
-	// future change to this behaviour, deliberate or not, shows up as a named test
-	// result instead of only ever being caught by a live playtest.
+	// operator-ratified behaviour (2026-08-27 ruling on PR #336: repeating attacks are
+	// the intended enemy model) - pinning it here so a future change to this
+	// behaviour, deliberate or not, shows up as a named test result instead of only
+	// ever being caught by a live playtest.
 	UWorld* CadenceWorld = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), CadenceWorld))
 	{
@@ -375,16 +375,28 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 			UTrooperRayFiredTestListener* CadenceListener = NewObject<UTrooperRayFiredTestListener>();
 			CadenceTrooper->OnTrooperRayFired.AddDynamic(CadenceListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
 
+			// Tick through exactly one full Attack window, snapshot the fire count at
+			// the expiry boundary, then keep ticking - only a post-boundary INCREASE
+			// proves the ray survives the Attack -> Alert -> Attack cycle. (The old
+			// CallCount > 1 assertion was vacuous: the 0.4s telegraph fires ~5 times
+			// inside the first window alone, so it passed even if the cycle went
+			// permanently silent - PR #336 pass-2 escalation, MEDIUM finding.)
 			const float CadenceAttackDurationSeconds = CadenceTrooper->GetAttackDurationSeconds();
-			for (float Elapsed = 0.0f; Elapsed < CadenceAttackDurationSeconds + 1.0f; Elapsed += 0.5f)
+			for (float Elapsed = 0.0f; Elapsed < CadenceAttackDurationSeconds + 0.25f; Elapsed += 0.5f)
+			{
+				CadenceTrooper->Tick(0.5f);
+			}
+			const int32 CallCountAtExpiryBoundary = CadenceListener->CallCount;
+
+			for (int32 PostBoundaryTick = 0; PostBoundaryTick < 4; ++PostBoundaryTick)
 			{
 				CadenceTrooper->Tick(0.5f);
 			}
 
 			TestEqual(TEXT("A Trooper kept in range should be back in Attack after the base timeout cycles it through Alert and back, same real Tick() path"),
 				static_cast<uint8>(CadenceTrooper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
-			TestTrue(TEXT("The attack-tell ray should keep firing across the Attack -> Alert -> Attack cycle, not go silent"),
-				CadenceListener->CallCount > 1);
+			TestTrue(TEXT("The attack-tell ray must fire again AFTER the expiry boundary, not go silent across the Attack -> Alert -> Attack cycle"),
+				CadenceListener->CallCount > CallCountAtExpiryBoundary);
 		}
 	}
 
