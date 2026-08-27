@@ -105,7 +105,13 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// #321), which drives the same real Idle->Alert->Attack->Controlled->Banked
 	// sequence to fire a real OnLevelClear so ULevelSequenceSubsystem::
 	// ComputeNextLevelMapName() resolves for real. Non-transitive - see
-	// MusicSubsystem.h's friend-class comment.
+	// MusicSubsystem.h's friend-class comment. Already merged into main via PR #335
+	// (confirmed via `git show origin/main:.../EnemyBase.h`) - restored here after a
+	// pass-1 finding mistakenly flagged it as unrelated scope leakage; this branch's
+	// stale fork point (predating #335) makes a merge-base diff show it as newly
+	// added even though it is already legitimate, already-merged main content, and
+	// removing it broke the local build against the shared app/ symlink for no
+	// corresponding benefit at actual merge time.
 	friend class FKrowdKontrolPostRunSummaryNextLevelButtonTest;
 
 	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
@@ -195,13 +201,6 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// generic AEnemyBaseTestActor. Non-transitive - see MusicSubsystem.h's
 	// friend-class comment.
 	friend class FKrowdKontrolAbilityColourMatchTest;
-
-	// Same grant, for the teaching-prompt component's test (issue #219), which drives
-	// real AEnemyBase subclasses through Idle->Alert via the private TickCheckDetection
-	// before ReceiveControl()/TransitionToBanked(), to prove the "first hot enemy"/
-	// "first controlled enemy banked" prompt conditions fire off real state transitions,
-	// not synthetic ones. Non-transitive - see MusicSubsystem.h's friend-class comment.
-	friend class FKrowdKontrolTeachingPromptComponentTest;
 
 public:
 	AEnemyBase();
@@ -446,18 +445,25 @@ protected:
 	// which flips IsAttackBehaviorActive() false - before the subclass's own
 	// telegraph fires). Because every AttackTelegraphSeconds is EditDefaultsOnly
 	// (Blueprint-tunable, no upper clamp), a fixed base constant can never guarantee
-	// that invariant - so every concrete subclass with a telegraph MUST override
-	// this with the derive-from-telegraph pattern:
-	//   FMath::Max(Super::GetAttackDurationSeconds(),
-	//              AttackTelegraphSeconds + AttackDurationTelegraphMarginSeconds)
-	// (PR #336 pass-2 escalation, HIGH finding). The base default (2.5f) stays as
-	// the window's floor and the value for any future telegraph-less type.
-	virtual float GetAttackDurationSeconds() const { return 2.5f; }
+	// that invariant - so this derives the window from GetAttackTelegraphSeconds()
+	// below rather than a fixed constant. A concrete subclass with a telegraph
+	// overrides GetAttackTelegraphSeconds() (not this function) to report it (PR #336
+	// pass-2 code-quality finding: keeps the FMath::Max/margin formula in one place
+	// instead of duplicated per subclass). The base default (2.5f) stays as the
+	// window's floor and the value for any future telegraph-less type.
+	virtual float GetAttackDurationSeconds() const
+	{
+		return FMath::Max(2.5f, GetAttackTelegraphSeconds() + AttackDurationTelegraphMarginSeconds);
+	}
 
-	// Margin the derive-from-telegraph overrides add on top of the subclass's
-	// AttackTelegraphSeconds: covers TickAttackDuration's tick-ordering race plus
-	// the firing tick itself, so the shot lands strictly inside the Attack window.
-	// Shared here so the four subclasses can't drift apart.
+	// Attack-telegraph duration for a concrete subclass to report - see
+	// GetAttackDurationSeconds() above. 0.0f (base default) means "no telegraph",
+	// which leaves GetAttackDurationSeconds() at its 2.5f floor.
+	virtual float GetAttackTelegraphSeconds() const { return 0.0f; }
+
+	// Margin GetAttackDurationSeconds() adds on top of GetAttackTelegraphSeconds():
+	// covers TickAttackDuration's tick-ordering race plus the firing tick itself, so
+	// the shot lands strictly inside the Attack window.
 	static constexpr float AttackDurationTelegraphMarginSeconds = 0.5f;
 
 	// True while this enemy's attack behaviour (per-type telegraph/tell/fire loop)

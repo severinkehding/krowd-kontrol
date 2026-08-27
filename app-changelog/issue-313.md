@@ -46,10 +46,12 @@ Full gate (`harness/ci.py --full`): `GATE_OK mode=full` — `UNIT_PASSED tests=1
 `PIE_PASSED tests=5`, `UE_BUILD_OK`, `UE_AUTOMATION_OK` (`passed=1 total=1`),
 `E2E_PASSED steps=1`. Diff scope reviewed and confirmed limited to
 `app-source-tracked/Source/KrowdKontrol/` (EnemyBase.h/.cpp + 3 test files); no
-protected files touched. `app-source-tracked/` mirror cross-checked byte-for-byte
-against the live `app/` symlink, with two unrelated `friend class` grants from other
-concurrent in-flight factory work (issues #321, #219) confirmed excluded from this
-diff. No fixes required during validation — gate passed first run.
+protected files touched. Pass-1 review found two unrelated `friend class` grants from
+other concurrent in-flight factory work (issues #321, #219) that had leaked into
+`EnemyBase.h` via the shared `app/` symlink despite an earlier (incorrect) claim that
+they were already excluded; both were removed from `app/` and the
+`app-source-tracked/` mirror in the pass-1 fix cycle, and the mirror is byte-for-byte
+identical to the live `app/` symlink again.
 
 ## Follow-up (not blocking, flagged for playtest)
 
