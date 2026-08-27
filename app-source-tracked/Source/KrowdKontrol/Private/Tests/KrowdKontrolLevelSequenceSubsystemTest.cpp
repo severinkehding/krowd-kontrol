@@ -1,5 +1,5 @@
 // Confirms issue #216: ULevelSequenceSubsystem is the OnLevelClear consumer that
-// advances the run through a configured level sequence. Covers (a) a non-final
+// resolves the run's position in a configured level sequence. Covers (a) a non-final
 // level's clear resolving the next map from LevelSequenceTable without touching
 // ULevelLifecycleSubsystem::FinalMapName; (b) a level explicitly marked as the
 // sequence's end (NextLevelMapName == NAME_None) setting FinalMapName so the
@@ -10,6 +10,16 @@
 // (d) an entirely unset LevelSequenceTable - the system's actual current production
 // default until the real DataTable asset is authored - taking the same warn-once
 // no-op path via a distinct guard clause from case (c)'s "table set, no matching row".
+//
+// Issue #321 split this subsystem's responsibilities: HandleLevelClear() (exercised
+// below, via the real OnLevelClear broadcast) now only resolves/bookkeeps - it no
+// longer calls UGameplayStatics::OpenLevel() itself. The actual map travel moved to
+// a new public AdvanceToNextLevel(), now only ever invoked by the post-run summary
+// screen's NEXT LEVEL button (KrowdKontrolPostRunSummaryNextLevelButtonTest.cpp),
+// not automatically on clear. Case (a) below asserts LastAdvanceAttemptedMapName
+// stays NAME_None after HandleLevelClear() runs, proving that split holds - a
+// regression that reintroduced auto-advance would fail it, since that seam is only
+// ever set from inside AdvanceToNextLevel() itself.
 //
 // Each case uses its own FAutomationEditorCommonUtils::CreateNewMap() World, per
 // this module's established per-scenario isolation convention (see
@@ -108,6 +118,16 @@ bool FKrowdKontrolLevelSequenceSubsystemTest::RunTest(const FString& Parameters)
 			SequenceSubsystem->ComputeNextLevelMapName(), FName(TEXT("L_Level02")));
 		TestEqual(TEXT("FinalMapName must stay untouched for a non-final clear"),
 			LifecycleSubsystem->FinalMapName, FName(NAME_None));
+
+		// Issue #321's critical fix: HandleLevelClear() (just exercised via the real
+		// OnLevelClear broadcast above) must never itself call AdvanceToNextLevel() -
+		// only the post-run summary screen's NEXT LEVEL button does that now. Asserting
+		// LastAdvanceAttemptedMapName stayed NAME_None here means a future regression
+		// that reintroduces auto-advance from HandleLevelClear() (via AdvanceToNextLevel(),
+		// the only path that sets this seam) would fail this test, closing the gap this
+		// fix would otherwise have zero automated regression protection for.
+		TestEqual(TEXT("HandleLevelClear must not itself trigger AdvanceToNextLevel() - only the NEXT LEVEL button click handler does"),
+			SequenceSubsystem->LastAdvanceAttemptedMapName, FName(NAME_None));
 	}
 
 	// (b) Final clear: the current map's row explicitly ends the sequence

@@ -176,6 +176,8 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			AllReserved.Contains(SummaryWidget->ClearTimeText->GetColorAndOpacity().GetSpecifiedColor()));
 		TestFalse(TEXT("Crowd Mastery text colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(SummaryWidget->CrowdMasteryText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Next-level button label colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(SummaryWidget->NextLevelButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 	}
 
 	// (4) On-screen prompt widget audit (issue #34) - border and text colours,

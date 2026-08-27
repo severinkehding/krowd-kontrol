@@ -117,4 +117,12 @@ namespace AbilityData
 	// copy of either TMap).
 	KROWDKONTROL_API const FString& GetDisplayName(EAbilitySlot Ability);
 	KROWDKONTROL_API const FString& GetEnemyPluralDisplayName(EEnemyType EnemyType);
+
+	// Chain colour for the given enemy type (docs/prd-colour-coded-herding.md REQ-1,
+	// issue #315): the same FLinearColor as this enemy type's colour-matched ability
+	// (PR #303's CounteredEnemyType/Colour data above) - derived, not a second
+	// hardcoded table, so a future ability recolour can never drift this out of sync.
+	// Never returns White - Stun (bIsColourNeutral) has no enemy-type counter
+	// (MISSION.md Hard Invariant 4).
+	KROWDKONTROL_API FLinearColor GetChainColourForEnemyType(EEnemyType EnemyType);
 }

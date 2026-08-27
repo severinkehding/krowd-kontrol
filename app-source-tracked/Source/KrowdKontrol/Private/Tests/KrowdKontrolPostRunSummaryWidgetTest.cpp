@@ -26,7 +26,14 @@
 #include "Misc/AutomationTest.h"
 #include "PostRunSummaryWidget.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "Components/Button.h"
 #include "Engine/World.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/SizeBox.h"
+#include "Components/TextBlock.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -57,6 +64,16 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 		!Widget->GetBestClearTimeDisplayText().IsEmpty());
 	TestTrue(TEXT("Crowd Mastery text should be non-empty after construction"),
 		!Widget->GetCrowdMasteryDisplayText().IsEmpty());
+
+	// (a2) NextLevelButton is built, wired to HandleNextLevelClicked(), and defaults to
+	// "NEXT LEVEL" before any real level clear has resolved ResolvedNextLevelMapName
+	// (issue #321).
+	if (TestNotNull(TEXT("NextLevelButton should be non-null"), ToRawPtr(Widget->NextLevelButton)))
+	{
+		TestTrue(TEXT("NextLevelButton::OnClicked should be bound"), Widget->NextLevelButton->OnClicked.IsBound());
+	}
+	TestEqual(TEXT("Next-level button should default to NEXT LEVEL before any level clear"),
+		Widget->GetNextLevelButtonDisplayText().ToString(), FString(TEXT("NEXT LEVEL")));
 
 	// (b) SetSummaryValues is the real wiring point HandleLevelClear() uses - confirm
 	// all three fields reflect an explicit call with known values, not just whatever
@@ -149,6 +166,73 @@ bool FKrowdKontrolPostRunSummaryWidgetTest::RunTest(const FString& Parameters)
 		UnbuiltWidget->GetClearTimeDisplayText().IsEmpty());
 	TestTrue(TEXT("SetSummaryValues() on an unbuilt tree should leave best clear time empty too"),
 		UnbuiltWidget->GetBestClearTimeDisplayText().IsEmpty());
+
+	// (g) Centred anchoring (issue #319 / Post-Run Progression PRD REQ-1's locked
+	// 2026-08-26 operator design decision): the content block's UCanvasPanelSlot must
+	// be anchored and aligned to screen-centre on both axes, auto-sized so wrapped
+	// text grows the box instead of clipping - mirrors
+	// KrowdKontrolQuestTrackerWidgetTest.cpp's case (4)/(4b) (issue #310's pattern),
+	// adapted from corner to centre anchoring.
+	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(Widget->WidgetTree->RootWidget);
+	if (TestNotNull(TEXT("Widget root should be a UCanvasPanel"), RootCanvas))
+	{
+		TestEqual(TEXT("Root canvas should have exactly one child"), RootCanvas->GetChildrenCount(), 1);
+		if (RootCanvas->GetChildrenCount() == 1)
+		{
+			UCanvasPanelSlot* ContentSlot = Cast<UCanvasPanelSlot>(RootCanvas->GetChildAt(0)->Slot);
+			if (TestNotNull(TEXT("Content child's slot should be a UCanvasPanelSlot"), ContentSlot))
+			{
+				TestTrue(TEXT("Content block should be anchored to screen-centre on both axes"),
+					ContentSlot->GetAnchors() == FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+				TestTrue(TEXT("Content block should be aligned to its own centre"),
+					ContentSlot->GetAlignment() == FVector2D(0.5f, 0.5f));
+				TestTrue(TEXT("Content slot should auto-size so wrapped text grows the box, not off-screen (issue #319)"),
+					ContentSlot->GetAutoSize());
+			}
+			USizeBox* WidthCap = Cast<USizeBox>(RootCanvas->GetChildAt(0));
+			if (TestNotNull(TEXT("Root canvas child should be the width-capping USizeBox (issue #319)"), WidthCap))
+			{
+				TestEqual(TEXT("Width cap should hold ContentWidthPx"),
+					WidthCap->GetWidthOverride(), UPostRunSummaryWidget::ContentWidthPx);
+				TestEqual(TEXT("Height cap should hold ContentHeightPx"),
+					WidthCap->GetMaxDesiredHeight(), UPostRunSummaryWidget::ContentHeightPx);
+				TestEqual(TEXT("Width cap's content should be the chrome border, not detached from the live tree"),
+					Cast<UWidget>(WidthCap->GetContent()), Cast<UWidget>(Widget->RootBorder));
+			}
+		}
+	}
+
+	TestTrue(TEXT("Clear time text should auto-wrap inside the width cap (issue #319)"),
+		Widget->ClearTimeText->GetAutoWrapText());
+	TestTrue(TEXT("Best clear time text should auto-wrap inside the width cap (issue #319)"),
+		Widget->BestClearTimeText->GetAutoWrapText());
+	TestTrue(TEXT("Crowd Mastery text should auto-wrap inside the width cap (issue #319)"),
+		Widget->CrowdMasteryText->GetAutoWrapText());
+	TestTrue(TEXT("Rerun button label should auto-wrap inside the width cap (issue #319)"),
+		Widget->RerunButtonLabel->GetAutoWrapText());
+
+	// (h) Resolution-safety envelope, checked at this project's documented min/max
+	// target resolutions - same pair KrowdKontrolQuestTrackerWidgetTest.cpp's case (5)
+	// uses (issue #310's pattern, the one this issue's AC names explicitly). Unlike
+	// the quest tracker's corner-pinned footprint (which risks running off the RIGHT
+	// edge), a centred block's risk is running wider/taller than the viewport itself,
+	// so the check is "content width/height stay comfortably under full screen
+	// width/height" at both extremes rather than a corner-margin fraction. Height is
+	// checked here too (not just width) because AutoWrapText growing wrapped text
+	// taller is exactly what ContentHeightPx bounds, and the 1280x720 minimum is the
+	// tighter of the two resolutions for that bound.
+	const float MaxWidthFraction = 0.5f;
+	const float MaxHeightFraction = 0.5f;
+	const FVector2D TargetResolutions[] = { FVector2D(1280.0f, 720.0f), FVector2D(3840.0f, 2160.0f) };
+	for (const FVector2D& TargetResolution : TargetResolutions)
+	{
+		TestTrue(*FString::Printf(TEXT("Content block width should stay within %.0f%% of screen width at %dx%d"),
+			MaxWidthFraction * 100.0f, (int32)TargetResolution.X, (int32)TargetResolution.Y),
+			UPostRunSummaryWidget::ContentWidthPx <= TargetResolution.X * MaxWidthFraction);
+		TestTrue(*FString::Printf(TEXT("Content block height should stay within %.0f%% of screen height at %dx%d"),
+			MaxHeightFraction * 100.0f, (int32)TargetResolution.X, (int32)TargetResolution.Y),
+			UPostRunSummaryWidget::ContentHeightPx <= TargetResolution.Y * MaxHeightFraction);
+	}
 
 	return true;
 }

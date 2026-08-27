@@ -114,6 +114,15 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// corresponding benefit at actual merge time.
 	friend class FKrowdKontrolPostRunSummaryNextLevelButtonTest;
 
+	// Same grant, for KrowdKontrolTeachingPromptComponentTest.cpp, which drives real
+	// AEnemyBaseTestActor instances through TickCheckDetection directly (same pattern
+	// as every other friend above). Re-added here after this line was found missing
+	// from app/'s live copy of this header - a shared-app/-symlink concurrent-task
+	// interference artifact (CLAUDE.md/D-003), not anything issue #243's own fix
+	// touches; TeachingPromptComponentTest.cpp itself already calls this private
+	// member and was already compiling against some earlier state of this header.
+	friend class FKrowdKontrolTeachingPromptComponentTest;
+
 	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
 	// sync test (issue #20), which drive a plain AEnemyBaseTestActor through the same
 	// Idle->Alert transition as FKrowdKontrolOvercrowdAudioSubsystemTest above.
