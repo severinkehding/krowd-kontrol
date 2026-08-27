@@ -46,12 +46,18 @@ Full gate (`harness/ci.py --full`): `GATE_OK mode=full` — `UNIT_PASSED tests=1
 `PIE_PASSED tests=5`, `UE_BUILD_OK`, `UE_AUTOMATION_OK` (`passed=1 total=1`),
 `E2E_PASSED steps=1`. Diff scope reviewed and confirmed limited to
 `app-source-tracked/Source/KrowdKontrol/` (EnemyBase.h/.cpp + 3 test files); no
-protected files touched. Pass-1 review found two unrelated `friend class` grants from
-other concurrent in-flight factory work (issues #321, #219) that had leaked into
-`EnemyBase.h` via the shared `app/` symlink despite an earlier (incorrect) claim that
-they were already excluded; both were removed from `app/` and the
-`app-source-tracked/` mirror in the pass-1 fix cycle, and the mirror is byte-for-byte
-identical to the live `app/` symlink again.
+protected files touched. Pass-1 review found two `friend class` grants in
+`EnemyBase.h` despite an earlier (incorrect) claim that both were already excluded.
+Only one was a genuine scope leak: the issue #219 grant
+(`FKrowdKontrolTeachingPromptComponentTest`), which belongs to still-open, unmerged
+PR #306, and has been removed from both `app/` and the `app-source-tracked/` mirror.
+The issue #321 grant (`FKrowdKontrolPostRunSummaryNextLevelButtonTest`) was
+confirmed (via `git show origin/main:.../EnemyBase.h`) to already be legitimate,
+merged main content from PR #335 - this branch's fork point simply predates that
+merge, which made a stale-base diff show it as newly added. It has been kept;
+removing it broke the local build against the shared `app/` symlink for no benefit
+at actual merge time. The `app-source-tracked/` mirror is byte-for-byte identical
+to the live `app/` symlink.
 
 ## Follow-up (not blocking, flagged for playtest)
 
