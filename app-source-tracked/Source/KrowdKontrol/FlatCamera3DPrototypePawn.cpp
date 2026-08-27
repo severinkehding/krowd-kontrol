@@ -20,6 +20,7 @@
 #include "FirstStunBeaconComponent.h"
 #include "AbilityMatchupSignalComponent.h"
 #include "AbilityMatchupNudgeComponent.h"
+#include "TeachingPromptComponent.h"
 #include "PunishmentManagerComponent.h"
 #include "SpeedReductionPunishmentComponent.h"
 #include "PunishmentArbitrationComponent.h"
@@ -105,6 +106,9 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 
 	AbilityLockoutComponent = CreateDefaultSubobject<UAbilityLockoutComponent>(TEXT("AbilityLockoutComponent"));
 	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(AbilityLockoutComponent, &UAbilityLockoutComponent::HandleAbilityCastApplied);
+
+	TeachingPromptComponent = CreateDefaultSubobject<UTeachingPromptComponent>(TEXT("TeachingPromptComponent"));
+	AbilityCastComponent->OnAbilityCastApplied.AddDynamic(TeachingPromptComponent, &UTeachingPromptComponent::HandleAbilityCastApplied);
 
 	OvercrowdDetectionComponent = CreateDefaultSubobject<UOvercrowdDetectionComponent>(TEXT("OvercrowdDetectionComponent"));
 
