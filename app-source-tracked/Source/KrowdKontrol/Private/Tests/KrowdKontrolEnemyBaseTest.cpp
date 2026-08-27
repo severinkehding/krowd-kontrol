@@ -29,6 +29,8 @@
 #include "ReservedGameplayColours.h"
 #include "Components/PointLightComponent.h"
 #include "AbilityData.h"
+#include "BomberEnemy.h"
+#include "RoomActor.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -776,6 +778,63 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("(z-fear) A second Tick() after the player moves should flee away from the player's NEW position, not a cast-time snapshot"),
 				FVector::Dist(AfterSecondTick, FleePlayerPawn->GetActorLocation())
 					> FVector::Dist(AfterFirstTick, FleePlayerPawn->GetActorLocation()));
+		}
+	}
+
+	// (z2-fear) enemy-flee-vs-solid-wall regression (issue #243 Finding 3): once
+	// ARoomActor::SealRoomPerimeter() gives room walls real blocking collision, a
+	// Fear-Controlled enemy fleeing via the old *unswept* SetActorLocation could be
+	// teleported straight through a wall each tick, ending up outside the room where
+	// the player can no longer follow it - un-bankable forever, its gated door stuck
+	// shut. Proves TickFleeMovement now sweeps (bSweep=true) against that real
+	// collision, AND that the wall/flank's own CollisionObjectType is WorldStatic (see
+	// ARoomActor::ConfigureWorldDynamicBlockingCollision's comment) - the enemy root's
+	// own response to WorldDynamic is narrowed to Overlap for target-zone banking
+	// (issue #211), so a WorldDynamic-typed blocking volume can never stop its sweep
+	// regardless of bSweep; only the still-unmodified Block response to WorldStatic
+	// does (confirmed empirically against this exact headless Automation harness -
+	// bSweep=true alone was not sufficient). Uses a real ABomberEnemy, not
+	// AEnemyBaseTestActor (whose RootComponent is a plain USceneComponent with no
+	// collision shape to sweep against) and not ATrooperEnemy (whose Plane-mesh root
+	// has a genuinely zero-thickness collision axis after its 90-degree constructor
+	// rotation, which this harness silently treats as no collision) - ABomberEnemy's
+	// Sphere-mesh root always gets a real, non-degenerate 3D collision hull.
+	UWorld* FleeWallWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(z2-fear) CreateNewMap should return a valid World"), FleeWallWorld))
+	{
+		FleeWallWorld->InitializeActorsForPlay(FURL());
+		FleeWallWorld->SetBegunPlay(true);
+
+		// No connecting door -> SealRoomPerimeter() (called from BeginPlay) gives every
+		// wall real blocking collision, including the West wall this case flees into.
+		ARoomActor* FleeWallRoom = FleeWallWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector::ZeroVector));
+		if (TestNotNull(TEXT("(z2-fear) FleeWallRoom should spawn into the test World"), FleeWallRoom))
+		{
+			ABomberEnemy* WallFleer = FleeWallWorld->SpawnActor<ABomberEnemy>(FVector(-800.f, 0.f, 0.f), FRotator::ZeroRotator);
+			if (TestNotNull(TEXT("(z2-fear) WallFleer should spawn into the test World"), WallFleer))
+			{
+				WallFleer->TickCheckDetection(WallFleer->GetActorLocation()); // Idle -> Alert
+				WallFleer->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled
+
+				// WallFleerCasterLocation east of WallFleer, so AwayFromCaster points
+				// west, into the room's now-solid West wall (at local X =
+				// -RoomFloorExtent.X, +-RoomWallThickness/2). Ticks until the enemy's
+				// cumulative intended travel comfortably exceeds the ~200uu spawn-to-
+				// wall gap, regardless of this subclass's own (possibly slower, e.g.
+				// ABomberEnemy's 200 units/sec) GetEffectiveMovementSpeedUnitsPerSecond()
+				// - under the old unswept code this would send it thousands of units
+				// past the wall; under the fix it should stay pinned at the wall.
+				const FVector WallFleerCasterLocation(0.f, 0.f, 0.f);
+				const float WallFleerSpeed = WallFleer->GetEffectiveMovementSpeedUnitsPerSecond();
+				const int32 WallFleerTickCount = FMath::Max(5, FMath::CeilToInt(2000.f / FMath::Max(1.f, WallFleerSpeed)));
+				for (int32 TickIndex = 0; TickIndex < WallFleerTickCount; ++TickIndex)
+				{
+					WallFleer->TickFleeMovement(WallFleerCasterLocation, 1.0f);
+				}
+
+				TestTrue(TEXT("(z2-fear) A Feared enemy fleeing into a sealed room's wall should stay inside the room (issue #243 Finding 3 - swept SetActorLocation, not teleported through)"),
+					WallFleer->GetActorLocation().X >= -FleeWallRoom->RoomFloorExtent.X);
+			}
 		}
 	}
 

@@ -18,6 +18,7 @@
 #include "Engine/World.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/BoxComponent.h"
 #include "ReservedGameplayColours.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -63,6 +64,10 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		Door->DoorMarkerMeshComponent->IsVisible());
 	TestFalse(TEXT("Door marker light should start hidden before any rooms are assigned"),
 		Door->DoorMarkerLightComponent->IsVisible());
+	TestEqual(TEXT("Corridor guard rail A should be NoCollision before the door connects valid rooms (issue #243)"),
+		Door->CorridorGuardRailAComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestEqual(TEXT("Corridor guard rail B should be NoCollision before the door connects valid rooms (issue #243)"),
+		Door->CorridorGuardRailBComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	Door->RoomA = RoomOne;
 	TestFalse(TEXT("A door with only RoomA assigned should not connect valid rooms"),
@@ -98,6 +103,31 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Connector floor mesh's Z scale should be driven by ConnectorFloorThickness"),
 		FMath::IsNearlyEqual(Door->ConnectorFloorMeshComponent->GetComponentScale().Z, Door->ConnectorFloorThickness / 100.f, 0.01f));
 
+	TestEqual(TEXT("Corridor guard rail A should be QueryOnly once the door connects two valid rooms (issue #243)"),
+		Door->CorridorGuardRailAComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+	TestEqual(TEXT("Corridor guard rail A should Block ECC_WorldDynamic - the channel the real player pawn presents (issue #243)"),
+		Door->CorridorGuardRailAComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
+	TestEqual(TEXT("Corridor guard rail B should be QueryOnly once the door connects two valid rooms (issue #243)"),
+		Door->CorridorGuardRailBComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+	TestEqual(TEXT("Corridor guard rail B should Block ECC_WorldDynamic - the channel the real player pawn presents (issue #243)"),
+		Door->CorridorGuardRailBComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
+	const FVector GuardRailMidpoint =
+		(Door->CorridorGuardRailAComponent->GetComponentLocation() + Door->CorridorGuardRailBComponent->GetComponentLocation()) * 0.5f;
+	const FVector ExpectedConnectorMidpoint = (RoomOne->GetActorLocation() + RoomTwo->GetActorLocation()) * 0.5f;
+	TestTrue(TEXT("Corridor guard rails should be symmetric around the connector's midpoint (issue #243)"),
+		GuardRailMidpoint.Equals(ExpectedConnectorMidpoint, 0.1f));
+	// Regression (2026-08-26 operator playtest): rails must span only the corridor gap
+	// between the two room perimeters (1000cm in this setup), never the full
+	// centre-to-centre span - a full-span rail runs from room centre to room centre,
+	// carving an impassable channel through both room interiors.
+	const float ExpectedRailHalfLength =
+		((RoomTwo->GetActorLocation() - RoomOne->GetActorLocation()).Size()
+			- RoomOne->RoomFloorExtent.X - RoomTwo->RoomFloorExtent.X) * 0.5f;
+	TestTrue(TEXT("Corridor guard rail A should span only the gap between room perimeters, not the room interiors (2026-08-26 playtest)"),
+		FMath::IsNearlyEqual(Door->CorridorGuardRailAComponent->GetUnscaledBoxExtent().X, ExpectedRailHalfLength, 0.1f));
+	TestTrue(TEXT("Corridor guard rail B should span only the gap between room perimeters, not the room interiors (2026-08-26 playtest)"),
+		FMath::IsNearlyEqual(Door->CorridorGuardRailBComponent->GetUnscaledBoxExtent().X, ExpectedRailHalfLength, 0.1f));
+
 	TestTrue(TEXT("Door marker mesh should be visible once the door connects two valid rooms"),
 		Door->DoorMarkerMeshComponent->IsVisible());
 	TestEqual(TEXT("Door marker mesh should have no collision so it never blocks the connector path"),
@@ -131,6 +161,52 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		Door->DoorMarkerMeshComponent->IsVisible());
 	TestFalse(TEXT("Door marker light should be hidden again once the door no longer connects valid rooms"),
 		Door->DoorMarkerLightComponent->IsVisible());
+	TestEqual(TEXT("Corridor guard rail A should revert to NoCollision once the door no longer connects valid rooms (issue #243)"),
+		Door->CorridorGuardRailAComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestEqual(TEXT("Corridor guard rail B should revert to NoCollision once the door no longer connects valid rooms (issue #243)"),
+		Door->CorridorGuardRailBComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+
+	// Non-axis-aligned RoomA/RoomB pair - proves Finding 2b's ComputeAxisExitDistance
+	// fix. The axis-aligned pair above (Delta.Y == 0) can't distinguish the old
+	// support-function formula from the corrected ray-exit-distance formula - they're
+	// numerically identical for that case. Giving RoomB a diagonal offset makes them
+	// diverge.
+	ARoomActor* DiagonalRoomA = World->SpawnActor<ARoomActor>();
+	ARoomActor* DiagonalRoomB = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("Diagonal RoomA should spawn into the test World"), DiagonalRoomA) ||
+		!TestNotNull(TEXT("Diagonal RoomB should spawn into the test World"), DiagonalRoomB))
+	{
+		return false;
+	}
+	DiagonalRoomB->SetActorLocation(FVector(3000.f, 1000.f, 0.f));
+
+	ADoorConnectorActor* DiagonalDoor = World->SpawnActor<ADoorConnectorActor>();
+	if (!TestNotNull(TEXT("Diagonal ADoorConnectorActor should spawn into the test World"), DiagonalDoor))
+	{
+		return false;
+	}
+	DiagonalDoor->RoomA = DiagonalRoomA;
+	DiagonalDoor->RoomB = DiagonalRoomB;
+	DiagonalDoor->RecomputeConnectorGeometry();
+
+	const FVector DiagonalDelta = DiagonalRoomB->GetActorLocation() - DiagonalRoomA->GetActorLocation();
+	const float DiagonalLength = DiagonalDelta.Size();
+	const FVector2D DiagonalDirection2D(DiagonalDelta.X / DiagonalLength, DiagonalDelta.Y / DiagonalLength);
+	const float ExpectedExitDistance = ARoomActor::ComputeAxisExitDistance(DiagonalRoomA->RoomFloorExtent, DiagonalDirection2D);
+	const float ExpectedDiagonalGuardRailHalfLength = (DiagonalLength - 2.f * ExpectedExitDistance) * 0.5f;
+
+	// Sanity check that this case's geometry actually distinguishes the two formulas -
+	// otherwise the assertions below could pass even against the old (wrong) code.
+	const float OldSupportFunctionExtent =
+		FMath::Abs(DiagonalDirection2D.X) * DiagonalRoomA->RoomFloorExtent.X +
+		FMath::Abs(DiagonalDirection2D.Y) * DiagonalRoomA->RoomFloorExtent.Y;
+	TestTrue(TEXT("This diagonal case's corrected exit distance should differ from the old support-function value, or it can't distinguish the two formulas"),
+		!FMath::IsNearlyEqual(ExpectedExitDistance, OldSupportFunctionExtent, 1.f));
+
+	TestTrue(TEXT("Diagonal corridor guard rail A should match ComputeAxisExitDistance's half-length, not the old support-function overshoot (issue #243 Finding 2b)"),
+		FMath::IsNearlyEqual(DiagonalDoor->CorridorGuardRailAComponent->GetUnscaledBoxExtent().X, ExpectedDiagonalGuardRailHalfLength, 0.5f));
+	TestTrue(TEXT("Diagonal corridor guard rail B should match ComputeAxisExitDistance's half-length, not the old support-function overshoot (issue #243 Finding 2b)"),
+		FMath::IsNearlyEqual(DiagonalDoor->CorridorGuardRailBComponent->GetUnscaledBoxExtent().X, ExpectedDiagonalGuardRailHalfLength, 0.5f));
 
 	return true;
 }
