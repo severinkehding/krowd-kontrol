@@ -17,9 +17,11 @@ namespace
 		ARoomActor::ConfigureWorldDynamicBlockingCollision(GuardRail);
 		// Starts disabled/zero-sized like the door's other connector-span geometry -
 		// RecomputeConnectorGeometry() positions and enables it once RoomA/RoomB resolve to
-		// a valid span. Unlike GateBlockingComponent, never re-toggled after that - the
-		// corridor sides are always solid, not gated. Overrides the shared helper's
-		// QueryOnly default back to NoCollision, same as today's behavior.
+		// a valid span, and HideConnectorVisuals() force-disables it again whenever they stop
+		// resolving. Unlike GateBlockingComponent, never gated open/closed by room-clear
+		// state - the corridor sides are always solid or fully absent, never conditionally
+		// blocking. Overrides the shared helper's QueryOnly default back to NoCollision,
+		// same as today's behavior.
 		GuardRail->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 }

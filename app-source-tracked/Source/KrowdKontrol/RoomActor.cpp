@@ -46,8 +46,10 @@ namespace
 		float End;
 	};
 
-	// Builds 1..N+1 invisible blocking UBoxComponents covering Side's full tangent
-	// span EXCEPT the given gaps (sorted here, caller order irrelevant) - replaces the
+	// Builds 0..N+1 invisible blocking UBoxComponents covering Side's full tangent
+	// span EXCEPT the given gaps (sorted here, caller order irrelevant; can build zero
+	// if a gap consumes the entire span - see AddSegmentIfSolid's KINDA_SMALL_NUMBER
+	// guard below) - replaces the
 	// old per-door BuildWallGapFlanks, which built each door's flank pair independent
 	// of every other door on the same side and could seal one door's gap inside
 	// another door's "solid" flank (issue #243, PR #305 pass-1 rejection). Overlapping
@@ -123,7 +125,7 @@ float ARoomActor::ComputeAxisExitDistance(const FVector2D& HalfExtent, const FVe
 }
 
 // Mirrors ADoorConnectorActor::GateBlockingComponent's collision setup exactly
-// (DoorConnectorActor.cpp:81-87) - the real player pawn presents ECC_WorldDynamic/
+// (see that component's construction in ADoorConnectorActor's constructor) - the real player pawn presents ECC_WorldDynamic/
 // BlockAllDynamic (issue #218's "attempt 3" root-cause finding), not ECC_Pawn or
 // ECC_WorldStatic, so any new blocking volume must reuse this same response channel or
 // it silently fails to stop the player exactly like #218's first two attempts did.
@@ -313,6 +315,16 @@ void ARoomActor::SealRoomPerimeter()
 			? (Side == ERoomWallSide::East ? RoomFloorExtent.X : -RoomFloorExtent.X)
 			: (Side == ERoomWallSide::North ? RoomFloorExtent.Y : -RoomFloorExtent.Y);
 		const float WallNormalDelta = bEastWest ? Delta.X : Delta.Y;
+		if (FMath::IsNearlyZero(WallNormalDelta))
+		{
+			// Exactly-coincident room origins (issue #219's known co-located-rooms
+			// authoring failure mode) would otherwise divide by zero here and poison
+			// GapCenterOffset with NaN, which AddSegmentIfSolid's KINDA_SMALL_NUMBER
+			// guard can't catch (NaN comparisons are always false, so a NaN segment
+			// reads as "solid"). Fail open like this function's other degenerate cases
+			// instead: skip this door's gap rather than construct a NaN-poisoned box.
+			continue;
+		}
 		const float CrossingParam = FixedAxisPosition / WallNormalDelta;
 		const float GapCenterOffset = CrossingParam * (bEastWest ? Delta.Y : Delta.X);
 		const float GapHalfWidth = Door->ConnectorFloorWidth * 0.5f;

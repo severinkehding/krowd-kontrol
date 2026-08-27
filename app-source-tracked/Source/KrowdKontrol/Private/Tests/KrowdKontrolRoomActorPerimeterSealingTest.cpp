@@ -201,11 +201,11 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 	}
 
 	// (5): a door wide enough to reach/exceed the wall's tangent extent - the flank
-	// should gracefully skip (BuildWallGapFlanks's KINDA_SMALL_NUMBER guard) rather than
+	// should gracefully skip (BuildWallSideFlanks's KINDA_SMALL_NUMBER guard) rather than
 	// produce a negative/zero-extent box, matching the investigation doc's own named
 	// accepted risk ("that side ends up fully open rather than crashing"). For an
-	// East/West door, BuildWallGapFlanks's WallSpanHalfExtent is Room->RoomFloorExtent.Y
-	// (RoomActor.cpp:65) - not .X - so it's Y that must be narrowed to push the default
+	// East/West door, BuildWallSideFlanks's WallSpanHalfExtent local is Room->RoomFloorExtent.Y
+	// - not .X - so it's Y that must be narrowed to push the default
 	// ConnectorFloorWidth (300, GapHalfWidth=150) past the wall's own half-extent.
 	ARoomActor* NarrowRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(30000.f, 0.f, 0.f)));
 	if (!TestNotNull(TEXT("Narrow ARoomActor should spawn into the test World"), NarrowRoom))
@@ -239,7 +239,7 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 		NarrowRoom->WallEastMeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	// (6): a room with a door on its North side (neighbor at +Y) - exercises the
-	// North/South branch of Side selection and BuildWallGapFlanks's axis-swapped
+	// North/South branch of Side selection and BuildWallSideFlanks's axis-swapped
 	// geometry, never reached by any of the East/West cases above.
 	ARoomActor* NorthDoorRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(40000.f, 0.f, 0.f)));
 	if (!TestNotNull(TEXT("North-door ARoomActor should spawn into the test World"), NorthDoorRoom))
@@ -290,7 +290,7 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 	}
 
 	// (7): a room with two doors on the same (East) side - exercises
-	// BuildWallGapFlanks() being called once per door on a single side, rather than
+	// BuildWallSideFlanks() being called once per door on a single side, rather than
 	// once per side, so both doors' flank pairs must accumulate (not overwrite one
 	// another) in WallGapFlankComponents.
 	ARoomActor* MultiDoorRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(50000.f, 0.f, 0.f)));
@@ -366,6 +366,68 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 		IsPointBlockedByAnyFlank(FVector(MultiDoorRoom->RoomFloorExtent.X, 800.f / 3.f, 0.f)));
 	TestFalse(TEXT("Door B's own gap center should not be blocked by any flank (PR #305 pass-1 regression)"),
 		IsPointBlockedByAnyFlank(FVector(MultiDoorRoom->RoomFloorExtent.X, -800.f / 3.f, 0.f)));
+
+	// (7b): two doors on the same (East) side whose gaps overlap - exercises
+	// BuildWallSideFlanks's merge branch (RoomActor.cpp's MergedGaps loop), never
+	// reached by case (7)'s non-overlapping doors (issue #243 test-coverage Finding 2).
+	// CrossingParam = RoomFloorExtent.X / Delta.X = 1000/3000 = 1/3, so neighbors at
+	// Y=+-100 give gap centers +-33.333 (GapCenterOffset = 1/3 * +-100); with
+	// GapHalfWidth=150 the two gaps are [-116.667,183.333] and [-183.333,116.667] -
+	// overlapping by 233.333uu - which must merge into a single [-183.333,183.333] open
+	// span, leaving exactly 2 flanks (not 3) and both original gap centers walkable.
+	ARoomActor* OverlapDoorRoom = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(70000.f, 0.f, 0.f)));
+	if (!TestNotNull(TEXT("Overlap ARoomActor should spawn into the test World"), OverlapDoorRoom))
+	{
+		return false;
+	}
+	ARoomActor* OverlapNeighborA = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(73000.f, 100.f, 0.f)));
+	ARoomActor* OverlapNeighborB = World->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(73000.f, -100.f, 0.f)));
+	if (!TestNotNull(TEXT("Overlap East neighbor A ARoomActor should spawn into the test World"), OverlapNeighborA) ||
+		!TestNotNull(TEXT("Overlap East neighbor B ARoomActor should spawn into the test World"), OverlapNeighborB))
+	{
+		return false;
+	}
+
+	ADoorConnectorActor* OverlapDoorA = World->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	ADoorConnectorActor* OverlapDoorB = World->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+	if (!TestNotNull(TEXT("Overlap East door A should spawn into the test World"), OverlapDoorA) ||
+		!TestNotNull(TEXT("Overlap East door B should spawn into the test World"), OverlapDoorB))
+	{
+		return false;
+	}
+	OverlapDoorA->RoomA = OverlapDoorRoom;
+	OverlapDoorA->RoomB = OverlapNeighborA;
+	OverlapDoorA->FinishSpawning(FTransform::Identity);
+	OverlapDoorB->RoomA = OverlapDoorRoom;
+	OverlapDoorB->RoomB = OverlapNeighborB;
+	OverlapDoorB->FinishSpawning(FTransform::Identity);
+
+	OverlapDoorRoom->SealRoomPerimeter();
+
+	TArray<UBoxComponent*> OverlapFlanks;
+	OverlapDoorRoom->GetComponents<UBoxComponent>(OverlapFlanks);
+	if (TestEqual(TEXT("Two overlapping same-side gaps should merge into one open span, producing only 2 flanks (not 3) - issue #243 BuildWallSideFlanks merge branch"),
+		OverlapFlanks.Num(), 2))
+	{
+		auto IsOverlapPointBlockedByAnyFlank = [&OverlapFlanks](const FVector& LocalPoint) -> bool
+		{
+			for (UBoxComponent* Flank : OverlapFlanks)
+			{
+				const FVector LocalToFlank = Flank->GetRelativeLocation();
+				const FVector Extent = Flank->GetUnscaledBoxExtent();
+				if (FMath::Abs(LocalPoint.Y - LocalToFlank.Y) < Extent.Y &&
+					FMath::Abs(LocalPoint.X - LocalToFlank.X) < Extent.X)
+				{
+					return true;
+				}
+			}
+			return false;
+		};
+		TestFalse(TEXT("Door A's own gap center should stay walkable after the overlap merge"),
+			IsOverlapPointBlockedByAnyFlank(FVector(OverlapDoorRoom->RoomFloorExtent.X, 100.f / 3.f, 0.f)));
+		TestFalse(TEXT("Door B's own gap center should stay walkable after the overlap merge"),
+			IsOverlapPointBlockedByAnyFlank(FVector(OverlapDoorRoom->RoomFloorExtent.X, -100.f / 3.f, 0.f)));
+	}
 
 	// (8): a diagonal/asymmetric-extent room pair - proves Finding 2a's crossing-point
 	// fix actually changes the computed gap center for a non-collinear pair. Every case

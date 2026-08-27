@@ -111,6 +111,9 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		Door->CorridorGuardRailBComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
 	TestEqual(TEXT("Corridor guard rail B should Block ECC_WorldDynamic - the channel the real player pawn presents (issue #243)"),
 		Door->CorridorGuardRailBComponent->GetCollisionResponseToChannel(ECC_WorldDynamic), ECR_Block);
+	TestEqual(TEXT("GateBlockingComponent should be WorldStatic-typed so a fleeing enemy's "
+		"WorldDynamic-narrowed response (issue #211) can still be blocked by a closed gate (issue #243)"),
+		Door->GateBlockingComponent->GetCollisionObjectType(), ECC_WorldStatic);
 	const FVector GuardRailMidpoint =
 		(Door->CorridorGuardRailAComponent->GetComponentLocation() + Door->CorridorGuardRailBComponent->GetComponentLocation()) * 0.5f;
 	const FVector ExpectedConnectorMidpoint = (RoomOne->GetActorLocation() + RoomTwo->GetActorLocation()) * 0.5f;
@@ -207,6 +210,44 @@ bool FKrowdKontrolDoorConnectorActorTest::RunTest(const FString& Parameters)
 		FMath::IsNearlyEqual(DiagonalDoor->CorridorGuardRailAComponent->GetUnscaledBoxExtent().X, ExpectedDiagonalGuardRailHalfLength, 0.5f));
 	TestTrue(TEXT("Diagonal corridor guard rail B should match ComputeAxisExitDistance's half-length, not the old support-function overshoot (issue #243 Finding 2b)"),
 		FMath::IsNearlyEqual(DiagonalDoor->CorridorGuardRailBComponent->GetUnscaledBoxExtent().X, ExpectedDiagonalGuardRailHalfLength, 0.5f));
+
+	// Standalone, independently hand-computed case for ComputeAxisExitDistance (issue
+	// #243 code-review Finding 3) - decoupled from any ADoorConnectorActor, so a bug in
+	// the primitive itself (not just in how RecomputeConnectorGeometry() calls it) would
+	// be caught. HalfExtent=(300,200), Direction=(0.6,0.8) (a 3-4-5 triangle direction):
+	// ExitX = 300/0.6 = 500, ExitY = 200/0.8 = 250 - the ray exits through the box's
+	// top/bottom edge first, so the correct answer is the smaller of the two, 250.
+	const float StandaloneExitDistance = ARoomActor::ComputeAxisExitDistance(FVector2D(300.f, 200.f), FVector2D(0.6f, 0.8f));
+	TestTrue(TEXT("ComputeAxisExitDistance should return the ray-exit distance for an independently hand-computed 3-4-5 triangle direction (issue #243 code-review Finding 3)"),
+		FMath::IsNearlyEqual(StandaloneExitDistance, 250.f, 0.01f));
+
+	// Adjacent/overlapping RoomA/RoomB pair - GuardRailHalfLength <= 0 (room extents of
+	// 1000uu each side overshoot the 500uu gap between origins), so guard rails must
+	// disable rather than block inside a room (DoorConnectorActor.cpp's own
+	// degenerate-skip comment, mirroring BuildWallSideFlanks's KINDA_SMALL_NUMBER guard
+	// in RoomActor.cpp - issue #243 test-coverage Finding 3).
+	ARoomActor* AdjacentRoomA = World->SpawnActor<ARoomActor>();
+	ARoomActor* AdjacentRoomB = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("Adjacent RoomA should spawn into the test World"), AdjacentRoomA) ||
+		!TestNotNull(TEXT("Adjacent RoomB should spawn into the test World"), AdjacentRoomB))
+	{
+		return false;
+	}
+	AdjacentRoomB->SetActorLocation(FVector(500.f, 0.f, 0.f));
+
+	ADoorConnectorActor* AdjacentDoor = World->SpawnActor<ADoorConnectorActor>();
+	if (!TestNotNull(TEXT("Adjacent ADoorConnectorActor should spawn into the test World"), AdjacentDoor))
+	{
+		return false;
+	}
+	AdjacentDoor->RoomA = AdjacentRoomA;
+	AdjacentDoor->RoomB = AdjacentRoomB;
+	AdjacentDoor->RecomputeConnectorGeometry();
+
+	TestEqual(TEXT("Guard rail A should disable (not block) when rooms are too close to leave a corridor gap (issue #243)"),
+		AdjacentDoor->CorridorGuardRailAComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	TestEqual(TEXT("Guard rail B should disable (not block) when rooms are too close to leave a corridor gap (issue #243)"),
+		AdjacentDoor->CorridorGuardRailBComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
 	return true;
 }

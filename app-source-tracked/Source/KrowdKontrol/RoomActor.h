@@ -182,10 +182,12 @@ public:
 	// normalized), to where a ray in that exact direction exits the box - the correct
 	// primitive for "where does the corridor to my neighbor cross my own wall", not the
 	// box's support function (which measures maximum projection width, not ray-exit
-	// distance, and only agrees with it when Direction2D is axis-aligned). Shared by
-	// SealRoomPerimeter()'s own gap-centering math and
-	// ADoorConnectorActor::RecomputeConnectorGeometry()'s guard-rail span, both of which
-	// need the same "where does this room's actual wall sit along this line" answer.
+	// distance, and only agrees with it when Direction2D is axis-aligned). Used by
+	// ADoorConnectorActor::RecomputeConnectorGeometry()'s guard-rail span.
+	// SealRoomPerimeter()'s gap-centering math solves the same "where does this room's
+	// wall sit along this line" problem but with its own independent, hand-inlined
+	// CrossingParam/GapCenterOffset formula - the two are not shared, so a fix here
+	// does not automatically propagate there.
 	static float ComputeAxisExitDistance(const FVector2D& HalfExtent, const FVector2D& Direction2D);
 
 	// Shared #218-channel recipe (Block-only-ECC_WorldDynamic response, matching the

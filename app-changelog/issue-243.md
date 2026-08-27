@@ -58,6 +58,24 @@ own gap open, so the gated door becomes the only route between two connected roo
   formula; added an enemy-flee-into-solid-wall regression test. Adjusted one
   pre-existing banking-wiring test's spawn offsets, which had relied on walls being
   fully see-through to reach a target zone through what is now solid geometry.
+- **Review follow-up (self-fix pass)**: the door's `GateBlockingComponent` also
+  picked up `CollisionObjectType=ECC_WorldStatic` as a side effect of routing
+  through the shared `ConfigureWorldDynamicBlockingCollision` helper — previously
+  it kept the engine's unconfigured `WorldDynamic` default, so a closed gate could
+  be walked through by an enemy exactly like the pre-fix walls. Added an object-type
+  assertion plus a full enemy-flee-into-closed-gate regression test (mirroring the
+  wall case). Also added: a same-side overlapping-gap test exercising
+  `BuildWallSideFlanks`'s merge branch (the exact algorithm class PR #305 was
+  rejected for, previously untested here for the merge path specifically), a
+  degenerate/adjacent-rooms guard-rail-disable test, a standalone hand-computed
+  `ComputeAxisExitDistance` case, and a `FMath::IsNearlyZero` guard against
+  divide-by-zero/NaN for exactly-coincident room origins in `SealRoomPerimeter()`.
+  Corrected several inaccurate/stale comments (a doc comment claiming
+  `SealRoomPerimeter()` shares `ComputeAxisExitDistance` when it doesn't; a
+  guard-rail comment claiming "never re-toggled" contradicted by this same PR's own
+  `HideConnectorVisuals()` change; stale `BuildWallGapFlanks`/wrong-line-number
+  references in the new test file; a dangling cross-reference to a nonexistent
+  comment on `TickChaseMovement`).
 
 ## Acceptance criteria
 
@@ -81,5 +99,16 @@ difference is pre-existing, already-merged issue #313 content ahead of this
 branch's stale fork point (not part of this fix). No concurrent-task leakage found.
 No Hard Invariant implicated (collision-only change; no damage/death/destroy path
 touched).
+
+**Self-fix pass (2026-08-27):** re-ran the full gate after the review follow-up
+above — `KrowdKontrol.Unit.` `passed=121 total=121`, `KrowdKontrol.PIE.`
+`passed=5 total=5` (same automation-test count as before: new coverage was added
+as assertions/cases inside existing `IMPLEMENT_SIMPLE_AUTOMATION_TEST` functions,
+not new automation tests). Byte-diffed every touched file against `app/`'s live
+state again post-fix; `EnemyBase.cpp` and `KrowdKontrolEnemyBaseTest.cpp` needed
+manual reconciliation (see PR discussion) after an initial blanket-overwrite step
+briefly clobbered issue #313's live, unmerged `TickAttackDuration` content in
+`app/` — recovered from `archon/task-fix-issue-313`'s latest commit and re-verified
+by a clean rebuild + full green gate before proceeding.
 
 Fixes #243

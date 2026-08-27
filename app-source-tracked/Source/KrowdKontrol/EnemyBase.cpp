@@ -259,7 +259,8 @@ void AEnemyBase::TickFleeMovement(const FVector& CasterLocation, float DeltaSeco
 		return;
 	}
 	const float MoveDistance = GetEffectiveMovementSpeedUnitsPerSecond() * DeltaSeconds;
-	// Swept (unlike TickChaseMovement's unswept move, see that function's own comment):
+	// Swept (unlike TickChaseMovement's unswept move, see the ECC_WorldDynamic
+	// narrowing comment in BeginPlay() above for why that's currently safe):
 	// walls/flanks/guard rails are now real blocking geometry (issue #243), so an
 	// unswept teleport here could carry a fleeing enemy straight through a sealed wall
 	// into an unreachable, un-bankable dead zone - a new soft-lock, confirmed live by
