@@ -169,7 +169,10 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	// #243 code-review Finding 2b: the support function overshoots for any diagonal
 	// room-to-room pair, leaving unfenced stretches at the door mouths).
 	const FVector Direction = Delta / Length;
-	const FVector2D Direction2D(Direction.X, Direction.Y);
+	// Direction is 3D-unit, so dropping Z leaves a sub-unit 2D vector for any
+	// non-coplanar room pair - re-normalize so ComputeAxisExitDistance's exit-distance
+	// math (which assumes a unit 2D direction) stays correct off-plane too.
+	const FVector2D Direction2D = FVector2D(Direction.X, Direction.Y).GetSafeNormal();
 	const float GapStartDistance = ARoomActor::ComputeAxisExitDistance(RoomA->RoomFloorExtent, Direction2D);
 	const float GapEndDistance = Length - ARoomActor::ComputeAxisExitDistance(RoomB->RoomFloorExtent, Direction2D);
 	const float GuardRailHalfLength = (GapEndDistance - GapStartDistance) * 0.5f;
