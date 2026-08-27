@@ -96,6 +96,30 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("GetTitleDisplayText should degrade to empty text before the tree is built"),
 			UnbuiltWidget->GetTitleDisplayText().IsEmpty());
+
+		// (f) continued - SetMasteryDisplayContent() on an unbuilt widget (MasteryDisplayAnchor
+		// still null) must warn-and-no-op rather than crash - the other documented no-op
+		// condition, alongside the null-Content case already covered in block (d).
+		// Register the expected warning with a count (suite convention -
+		// LevelClearTimeSubsystemTest et al.) so the run doesn't park in
+		// succeededWithWarnings and the fired-exactly-once contract is asserted
+		// (PR #333 review).
+		AddExpectedError(TEXT("MasteryDisplayAnchor is null"), EAutomationExpectedErrorFlags::Contains, 1);
+		UTextBlock* UnusedContent = NewObject<UTextBlock>(UnbuiltWidget);
+		UnbuiltWidget->SetMasteryDisplayContent(UnusedContent);
+		TestTrue(TEXT("SetMasteryDisplayContent on an unbuilt widget should not crash"), true);
+	}
+
+	// (g) NativeOnInitialized() invoked directly, bypassing Initialize() - WidgetTree is
+	// still null at this point, exercising EnsureWidgetTreeBuilt()'s null-WidgetTree guard
+	// (issue #66 precedent, ported from UAbilityCooldownTrayWidget).
+	UMainMenuWidget* BypassWidget = NewObject<UMainMenuWidget>();
+	if (TestNotNull(TEXT("BypassWidget should construct"), BypassWidget))
+	{
+		BypassWidget->NativeOnInitialized();
+		TestNotNull(TEXT("TitleText should be built after direct NativeOnInitialized()"), ToRawPtr(BypassWidget->TitleText));
+		TestNotNull(TEXT("QuitButton should be built after direct NativeOnInitialized()"), ToRawPtr(BypassWidget->QuitButton));
+		TestNotNull(TEXT("MasteryDisplayAnchor should be built after direct NativeOnInitialized()"), ToRawPtr(BypassWidget->MasteryDisplayAnchor));
 	}
 
 	return true;

@@ -35,7 +35,10 @@ void UMainMenuWidget::EnsureWidgetTreeBuilt()
 		// it conditionally calls NativeOnInitialized()) - but NativeOnInitialized() can
 		// also be invoked directly, bypassing Initialize() entirely. WidgetTree would
 		// still be null in that case, and WidgetTree->ConstructWidget<T>() on a null
-		// WidgetTree crashes - same fix as UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()
+		// WidgetTree doesn't crash on the call itself - it silently passes a null Outer
+		// into NewObject<T>(), which the engine then treats as fatal. Mirror
+		// UUserWidget::Initialize()'s own lazy-creation exactly so this is safe regardless
+		// of call order - same fix as UAbilityCooldownTrayWidget::EnsureWidgetTreeBuilt()
 		// (issue #66).
 		if (!WidgetTree)
 		{
@@ -87,10 +90,21 @@ void UMainMenuWidget::BuildWidgetTree()
 
 void UMainMenuWidget::SetMasteryDisplayContent(UWidget* Content)
 {
-	if (MasteryDisplayAnchor && Content)
+	// Null-Content check FIRST: calling with nullptr on an unbuilt widget is the
+	// documented no-op, and warning "content dropped" there would send a log reader
+	// chasing a phantom bug when there was no content to drop (PR #333 review).
+	if (!Content)
 	{
-		MasteryDisplayAnchor->SetContent(Content);
+		return; // Documented no-op: called with nullptr, nothing to set.
 	}
+	if (!MasteryDisplayAnchor)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UMainMenuWidget::SetMasteryDisplayContent: MasteryDisplayAnchor is null on '%s' (tree not built?) - content dropped."),
+			*GetNameSafe(this));
+		return;
+	}
+	MasteryDisplayAnchor->SetContent(Content);
 }
 
 FText UMainMenuWidget::GetTitleDisplayText() const
@@ -102,12 +116,17 @@ void UMainMenuWidget::HandleQuitClicked()
 {
 	// UKismetSystemLibrary::QuitGame's underlying PlayerController->ConsoleCommand("quit")
 	// already does the right thing in both contexts this issue's AC calls out, with no
-	// manual GIsEditor/IsPlayInEditor() branching needed: inside a PIE session it ends
-	// PIE (never touches the running Editor process); in a packaged build or -game it
-	// exits the application (Engine/Private/GameEngine.cpp's EXIT/QUIT handling - this
-	// is the same "Quit Game" Blueprint node every UE main menu uses for exactly this
-	// reason) - hand-rolled GIsEditor/IsPlayInEditor() context detection was considered
-	// and rejected as redundant. GetOwningPlayer() resolves null in a bare
+	// manual GIsEditor/IsPlayInEditor() branching needed:
+	// - In PIE, GEngine is a UEditorEngine (not UGameEngine), so this never reaches
+	//   GameEngine.cpp's EXIT/QUIT handling. Instead ULocalPlayer::Exec_Editor()
+	//   (Engine/Private/LocalPlayer.cpp:1620-1623) matches "Exit"/"Quit" and calls
+	//   HandleExitCommand() -> ViewportClient->CloseRequested(...) (LocalPlayer.cpp:1333),
+	//   which ends PIE without touching the running Editor process.
+	// - In a packaged build or -game, GEngine is a UGameEngine, and
+	//   Engine/Private/GameEngine.cpp:1530's EXIT/QUIT handling exits the application.
+	// This is the same "Quit Game" Blueprint node every UE main menu uses for exactly
+	// this reason - hand-rolled GIsEditor/IsPlayInEditor() context detection was
+	// considered and rejected as redundant. GetOwningPlayer() resolves null in a bare
 	// CreateWidget<T>(World, ...) test construction, in which case QuitGame() is a
 	// guaranteed no-op (KismetSystemLibrary.cpp) - safe to call directly from a test.
 	UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, false);

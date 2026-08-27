@@ -15,5 +15,10 @@ void AMainMenuPlayerController::BeginPlay()
 		{
 			MainMenuWidgetInstance->AddToViewport();
 		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("AMainMenuPlayerController::BeginPlay: CreateWidget<UMainMenuWidget> returned null - main menu will not display."));
+		}
 	}
 }
