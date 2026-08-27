@@ -62,6 +62,24 @@ namespace
 		Test.TestTrue(FString::Printf(TEXT("%s flank gap's positive edge should match +ConnectorFloorWidth/2"), SideName),
 			FMath::IsNearlyEqual(GapMax, ConnectorFloorWidth * 0.5f, 0.1f));
 	}
+
+	// Shared by the multi-door and overlapping-gap cases below (7 and 7b), which each
+	// check that a specific gap-center point isn't covered by any of that room's own
+	// flank boxes.
+	bool IsPointBlockedByAnyFlank(const TArray<UBoxComponent*>& Flanks, const FVector& LocalPoint)
+	{
+		for (UBoxComponent* Flank : Flanks)
+		{
+			const FVector LocalToFlank = Flank->GetRelativeLocation();
+			const FVector Extent = Flank->GetUnscaledBoxExtent();
+			if (FMath::Abs(LocalPoint.Y - LocalToFlank.Y) < Extent.Y &&
+				FMath::Abs(LocalPoint.X - LocalToFlank.X) < Extent.X)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 }
 
 bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Parameters)
@@ -348,24 +366,10 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 	// CrossingParam = RoomFloorExtent.X / Delta.X = 1000/3000 = 1/3, GapCenterOffset =
 	// CrossingParam * Delta.Y = (1/3) * (+-800) = +-266.667 - not the old room-centres
 	// midpoint formula's +-400.
-	auto IsPointBlockedByAnyFlank = [&MultiDoorFlanks](const FVector& LocalPoint) -> bool
-	{
-		for (UBoxComponent* Flank : MultiDoorFlanks)
-		{
-			const FVector LocalToFlank = Flank->GetRelativeLocation();
-			const FVector Extent = Flank->GetUnscaledBoxExtent();
-			if (FMath::Abs(LocalPoint.Y - LocalToFlank.Y) < Extent.Y &&
-				FMath::Abs(LocalPoint.X - LocalToFlank.X) < Extent.X)
-			{
-				return true;
-			}
-		}
-		return false;
-	};
 	TestFalse(TEXT("Door A's own gap center should not be blocked by any flank (PR #305 pass-1 regression)"),
-		IsPointBlockedByAnyFlank(FVector(MultiDoorRoom->RoomFloorExtent.X, 800.f / 3.f, 0.f)));
+		IsPointBlockedByAnyFlank(MultiDoorFlanks, FVector(MultiDoorRoom->RoomFloorExtent.X, 800.f / 3.f, 0.f)));
 	TestFalse(TEXT("Door B's own gap center should not be blocked by any flank (PR #305 pass-1 regression)"),
-		IsPointBlockedByAnyFlank(FVector(MultiDoorRoom->RoomFloorExtent.X, -800.f / 3.f, 0.f)));
+		IsPointBlockedByAnyFlank(MultiDoorFlanks, FVector(MultiDoorRoom->RoomFloorExtent.X, -800.f / 3.f, 0.f)));
 
 	// (7b): two doors on the same (East) side whose gaps overlap - exercises
 	// BuildWallSideFlanks's merge branch (RoomActor.cpp's MergedGaps loop), never
@@ -409,24 +413,10 @@ bool FKrowdKontrolRoomActorPerimeterSealingTest::RunTest(const FString& Paramete
 	if (TestEqual(TEXT("Two overlapping same-side gaps should merge into one open span, producing only 2 flanks (not 3) - issue #243 BuildWallSideFlanks merge branch"),
 		OverlapFlanks.Num(), 2))
 	{
-		auto IsOverlapPointBlockedByAnyFlank = [&OverlapFlanks](const FVector& LocalPoint) -> bool
-		{
-			for (UBoxComponent* Flank : OverlapFlanks)
-			{
-				const FVector LocalToFlank = Flank->GetRelativeLocation();
-				const FVector Extent = Flank->GetUnscaledBoxExtent();
-				if (FMath::Abs(LocalPoint.Y - LocalToFlank.Y) < Extent.Y &&
-					FMath::Abs(LocalPoint.X - LocalToFlank.X) < Extent.X)
-				{
-					return true;
-				}
-			}
-			return false;
-		};
 		TestFalse(TEXT("Door A's own gap center should stay walkable after the overlap merge"),
-			IsOverlapPointBlockedByAnyFlank(FVector(OverlapDoorRoom->RoomFloorExtent.X, 100.f / 3.f, 0.f)));
+			IsPointBlockedByAnyFlank(OverlapFlanks, FVector(OverlapDoorRoom->RoomFloorExtent.X, 100.f / 3.f, 0.f)));
 		TestFalse(TEXT("Door B's own gap center should stay walkable after the overlap merge"),
-			IsOverlapPointBlockedByAnyFlank(FVector(OverlapDoorRoom->RoomFloorExtent.X, -100.f / 3.f, 0.f)));
+			IsPointBlockedByAnyFlank(OverlapFlanks, FVector(OverlapDoorRoom->RoomFloorExtent.X, -100.f / 3.f, 0.f)));
 	}
 
 	// (8): a diagonal/asymmetric-extent room pair - proves Finding 2a's crossing-point
