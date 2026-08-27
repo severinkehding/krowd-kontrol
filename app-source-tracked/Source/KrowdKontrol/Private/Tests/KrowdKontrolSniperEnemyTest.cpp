@@ -262,6 +262,20 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l2) The one-shot guard should still prevent a second shot while Rooted"),
 		RootedListener->CallCount, 1);
 
+	// (l-attack-expired) issue #313 pass-1 review follow-up (HIGH): OnAttackExpired
+	// must clear the tell light once the Attack-duration timeout reverts Attack ->
+	// Alert unconditionally, mid-telegraph - the same bug class the Controlled ->
+	// Alert edge's OnControlledExpired override exists to prevent, but for Attack.
+	ASniperEnemy* ExpiredAttackSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(ExpiredAttackSniper, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-attack-expired) Attack tell should be visibly on before the Attack-duration timeout"),
+		ExpiredAttackSniper->AttackTellLightComponent->Intensity > 0.0f);
+	ExpiredAttackSniper->TickAttackDuration(ExpiredAttackSniper->GetAttackDurationSeconds());
+	TestEqual(TEXT("(l-attack-expired) Sniper should be back to Alert once the Attack-duration timeout elapses"),
+		static_cast<uint8>(ExpiredAttackSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-attack-expired) OnAttackExpired should clear the tell light once the Attack-duration timeout elapses"),
+		ExpiredAttackSniper->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
 	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
 	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of

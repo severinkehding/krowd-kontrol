@@ -152,6 +152,7 @@ void AEnemyBase::AdvanceToAttack()
 		return;
 	}
 	CurrentState = EEnemyState::Attack;
+	RemainingAttackSeconds = GetAttackDurationSeconds();
 	OnAttackEntry();
 }
 
@@ -227,6 +228,30 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 		OnControlledExpired();
 		OnEnemyControlledExpired.Broadcast();
 		ControlledDurationIndicatorComponent->Hide();
+	}
+}
+
+void AEnemyBase::TickAttackDuration(float DeltaSeconds)
+{
+	if (CurrentState != EEnemyState::Attack)
+	{
+		return;
+	}
+	RemainingAttackSeconds = FMath::Max(0.0f, RemainingAttackSeconds - DeltaSeconds);
+	if (RemainingAttackSeconds <= 0.0f)
+	{
+		// Issue #313: an enemy's contact reaction (attack tell/fire/cooldown) must
+		// always end on its own, never requiring the player to spend a control
+		// ability just to unstick it. Reverting to Alert (not Idle) re-enters the
+		// same TickCheckDetection proximity check that got it here, so a player still
+		// standing in attack range gets re-triggered into Attack later in this same
+		// Tick() call (TickCheckDetection runs right after this, gated on a live
+		// player pawn same as every tick - see Tick()'s own pawn-lookup block) -
+		// this is what makes an enemy that keeps the player in range keep attacking,
+		// and one whose target retreats actually resume chasing.
+		CurrentState = EEnemyState::Alert;
+		OnAttackExpired();
+		OnEnemyAttackExpired.Broadcast();
 	}
 }
 
@@ -337,9 +362,10 @@ void AEnemyBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Not gated on a live player pawn below - the Controlled-duration timer isn't
-	// player-position-dependent, unlike detection/chase.
+	// Not gated on a live player pawn below - neither timer is player-position-
+	// dependent, unlike detection/chase.
 	TickControlledDuration(DeltaTime);
+	TickAttackDuration(DeltaTime);
 
 	// GetPlayerPawn returns nullptr in a headless Automation test with no
 	// PlayerController spawned - this is fine and expected; TickCheckDetection and

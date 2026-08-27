@@ -66,6 +66,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trooper", meta = (ClampMin = "0.0"))
 	float AttackTelegraphSeconds = 0.4f;
 
+	// Report this type's own (Blueprint-tunable) telegraph so
+	// AEnemyBase::GetAttackDurationSeconds() derives an Attack window no tuning value
+	// can make the base timeout cut short and silently suppress the shot (PR #336
+	// pass-2 escalation, HIGH finding; formula centralised in the base class per
+	// pass-2 code-quality finding).
+	virtual float GetAttackTelegraphSeconds() const override { return AttackTelegraphSeconds; }
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trooper")
 	float GlowBaselineIntensity = 800.0f;
 
@@ -100,6 +107,7 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;
 	virtual void OnControlledExpired() override;
+	virtual void OnAttackExpired() override;
 	virtual void Tick(float DeltaTime) override;
 
 	// Issue #65: TR-UPR is specifically countered by Root with an 8s lock vs the 5s

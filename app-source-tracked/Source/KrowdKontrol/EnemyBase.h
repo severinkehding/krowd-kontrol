@@ -19,6 +19,9 @@ class UControlledDurationIndicatorComponent;
 //   Alert -> Attack: player enters GetAttackRangeUnits() (overridable per concrete
 //     enemy type).
 //   Alert/Attack -> Controlled: ReceiveControl(EAbilitySlot) is called.
+//   Attack -> Alert: the Attack-duration timeout elapses before ReceiveControl() is
+//     called (issue #313's guaranteed, ability-independent exit from Attack - see
+//     GetAttackDurationSeconds()/TickAttackDuration).
 //   Controlled -> Banked: TransitionToBanked() is called.
 //   Controlled -> Alert: the Controlled-state duration elapses before
 //     TransitionToBanked() is called (operator decision, issue #138, 2026-08-18).
@@ -39,6 +42,7 @@ enum class EEnemyState : uint8
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyBanked);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyControlledExpired);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyAttackExpired);
 
 // Shared, structurally-safe foundation for every core enemy type (SN-1PR, RU-NNR,
 // TR-UPR, B0-0MR - PRD 03): a linear Idle->Alert->Attack->Controlled->Banked state
@@ -96,6 +100,28 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	// prove a real OnLevelClear broadcast reaches the widget with real clear-time/best/
 	// Crowd-Mastery data. Non-transitive - see MusicSubsystem.h's friend-class comment.
 	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
+
+	// Same grant, for the post-run summary screen's NEXT LEVEL button test (issue
+	// #321), which drives the same real Idle->Alert->Attack->Controlled->Banked
+	// sequence to fire a real OnLevelClear so ULevelSequenceSubsystem::
+	// ComputeNextLevelMapName() resolves for real. Non-transitive - see
+	// MusicSubsystem.h's friend-class comment. Already merged into main via PR #335
+	// (confirmed via `git show origin/main:.../EnemyBase.h`) - restored here after a
+	// pass-1 finding mistakenly flagged it as unrelated scope leakage; this branch's
+	// stale fork point (predating #335) makes a merge-base diff show it as newly
+	// added even though it is already legitimate, already-merged main content, and
+	// removing it broke the local build against the shared app/ symlink for no
+	// corresponding benefit at actual merge time.
+	friend class FKrowdKontrolPostRunSummaryNextLevelButtonTest;
+
+	// Same grant, for KrowdKontrolTeachingPromptComponentTest.cpp, which drives real
+	// AEnemyBaseTestActor instances through TickCheckDetection directly (same pattern
+	// as every other friend above). Re-added here after this line was found missing
+	// from app/'s live copy of this header - a shared-app/-symlink concurrent-task
+	// interference artifact (CLAUDE.md/D-003), not anything issue #243's own fix
+	// touches; TeachingPromptComponentTest.cpp itself already calls this private
+	// member and was already compiling against some earlier state of this header.
+	friend class FKrowdKontrolTeachingPromptComponentTest;
 
 	// Same grant, for UOvercrowdVisualEffectSubsystem's own test and the audio/visual
 	// sync test (issue #20), which drive a plain AEnemyBaseTestActor through the same
@@ -214,6 +240,13 @@ public:
 	// Banked edge (that's OnEnemyBanked's edge instead).
 	UPROPERTY(BlueprintAssignable, Category = "Enemy")
 	FOnEnemyControlledExpired OnEnemyControlledExpired;
+
+	// Fires on the Attack -> Alert edge when the Attack-duration timeout elapses
+	// (see GetAttackDurationSeconds()/TickAttackDuration below) - issue #313's
+	// guaranteed, ability-independent exit from Attack. Mirrors
+	// OnEnemyControlledExpired's shape exactly.
+	UPROPERTY(BlueprintAssignable, Category = "Enemy")
+	FOnEnemyAttackExpired OnEnemyAttackExpired;
 
 	EEnemyState GetEnemyState() const { return CurrentState; }
 
@@ -382,6 +415,17 @@ protected:
 	virtual void OnControlledEntry(EAbilitySlot Ability) {}
 	virtual void OnAttackEntry() {}
 
+	// Fires on the Attack -> Alert edge when the Attack-duration timeout elapses
+	// (issue #313) - the equivalent of OnControlledExpired() for the Attack dead-end.
+	// A concrete subclass overrides this to clear any tell visual/audio left over
+	// from an interrupted telegraph (all four existing overrides do exactly and only
+	// that). Per-attack fire guards (e.g. ASniperEnemy::bShotFiredForCurrentAttack)
+	// are deliberately NOT reset here - OnAttackEntry() owns those, so they reset on
+	// the next entry into Attack, never on the exit edge (PR #336 review: a type
+	// that could leave Attack without re-entering must not have its guard cleared
+	// early).
+	virtual void OnAttackExpired() {}
+
 	// Fires on every Controlled -> Alert edge (see the transition table above: both
 	// the natural-duration-expiry case and the issue #257 early-wake-on-other-ability
 	// case), right before OnEnemyControlledExpired broadcasts. Every other ability
@@ -397,6 +441,39 @@ protected:
 	// subclass returns a non-negative value to override it (e.g. ASniperEnemy for Sleep
 	// - see issue #121's SN-1PR/Sleep=7s case).
 	virtual float GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const { return -1.0f; }
+
+	// Issue #313's guaranteed, unconditional exit from Attack: how long an enemy may
+	// remain in Attack before it unconditionally reverts to Alert, regardless of
+	// whether any concrete subclass's own attack-telegraph logic ever completes or a
+	// player ever applies a control ability. The window MUST outlast the subclass's
+	// own telegraph - see this issue's investigation artifact for why a value <= a
+	// subclass's telegraph duration can silently suppress that subclass's shot
+	// (AEnemyBase::Tick's TickAttackDuration runs before each subclass's own
+	// Super::Tick-then-AdvanceAttackTelegraph override reaches its own countdown, so
+	// an equal-or-shorter base timeout wins the race and reverts state to Alert -
+	// which flips IsAttackBehaviorActive() false - before the subclass's own
+	// telegraph fires). Because every AttackTelegraphSeconds is EditDefaultsOnly
+	// (Blueprint-tunable, no upper clamp), a fixed base constant can never guarantee
+	// that invariant - so this derives the window from GetAttackTelegraphSeconds()
+	// below rather than a fixed constant. A concrete subclass with a telegraph
+	// overrides GetAttackTelegraphSeconds() (not this function) to report it (PR #336
+	// pass-2 code-quality finding: keeps the FMath::Max/margin formula in one place
+	// instead of duplicated per subclass). The base default (2.5f) stays as the
+	// window's floor and the value for any future telegraph-less type.
+	virtual float GetAttackDurationSeconds() const
+	{
+		return FMath::Max(2.5f, GetAttackTelegraphSeconds() + AttackDurationTelegraphMarginSeconds);
+	}
+
+	// Attack-telegraph duration for a concrete subclass to report - see
+	// GetAttackDurationSeconds() above. 0.0f (base default) means "no telegraph",
+	// which leaves GetAttackDurationSeconds() at its 2.5f floor.
+	virtual float GetAttackTelegraphSeconds() const { return 0.0f; }
+
+	// Margin GetAttackDurationSeconds() adds on top of GetAttackTelegraphSeconds():
+	// covers TickAttackDuration's tick-ordering race plus the firing tick itself, so
+	// the shot lands strictly inside the Attack window.
+	static constexpr float AttackDurationTelegraphMarginSeconds = 0.5f;
 
 	// True while this enemy's attack behaviour (per-type telegraph/tell/fire loop)
 	// should keep running: always during Attack, and also during Controlled if
@@ -522,6 +599,11 @@ private:
 	// shape TickCheckDetection/TickChaseMovement already use.
 	void TickControlledDuration(float DeltaSeconds);
 
+	// Decrements RemainingAttackSeconds while CurrentState == Attack and reverts to
+	// Alert once it reaches zero - issue #313's Attack -> Alert edge, structurally
+	// identical to TickControlledDuration above. No-op in every other state.
+	void TickAttackDuration(float DeltaSeconds);
+
 	EEnemyState CurrentState = EEnemyState::Idle;
 
 	EAbilitySlot ControllingAbility = EAbilitySlot::Stun;
@@ -529,6 +611,10 @@ private:
 	float RemainingControlledSeconds = 0.0f;
 
 	float TotalControlledSeconds = 0.0f;
+
+	// Armed to GetAttackDurationSeconds() in AdvanceToAttack(), decremented by
+	// TickAttackDuration() - issue #313.
+	float RemainingAttackSeconds = 0.0f;
 
 	UPROPERTY()
 	TObjectPtr<UControlledDurationIndicatorComponent> ControlledDurationIndicatorComponent;
