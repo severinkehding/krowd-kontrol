@@ -22,6 +22,12 @@ void UTeachingPromptComponent::BeginPlay()
 
 	UWorld* World = GetWorld();
 	bIsLevel1 = World && UAbilityUnlockLevelSubsystem::ParseLevelIndexFromMapName(FName(*World->GetMapName())) == 1;
+	// pass-1 validation feedback, PR #306: the E2E holdout could not confirm any of the
+	// four prompts fired in a live PIE session. This log line lets a follow-up E2E pass
+	// confirm via GetLogEntries whether the map was even resolved as Level 1 - ruling
+	// that in or out doesn't require catching a prompt's ~2s on-screen window.
+	UE_LOG(LogTemp, Log, TEXT("UTeachingPromptComponent: BeginPlay on map '%s' - bIsLevel1=%s"),
+		World ? *World->GetMapName() : TEXT("<no world>"), bIsLevel1 ? TEXT("true") : TEXT("false"));
 	if (!bIsLevel1)
 	{
 		SetComponentTickEnabled(false);
@@ -116,6 +122,12 @@ void UTeachingPromptComponent::CheckStunPromptFireCondition()
 			if (UOnScreenPromptWidget* Widget = ResolvePromptWidget())
 			{
 				bHasFiredStunPrompt = true;
+				// pass-1 validation feedback, PR #306: confirms the fire condition and
+				// ShowPrompt() call both actually ran in a live PIE session (via
+				// GetLogEntries), independent of whether the ~2s on-screen window was
+				// caught by visual polling.
+				UE_LOG(LogTemp, Log, TEXT("UTeachingPromptComponent: stun prompt shown for '%s' (GetThreatState() == Hot)"),
+					*GetNameSafe(*It));
 				Widget->ShowPrompt(NSLOCTEXT("TeachingPromptComponent", "StunPrompt", "STUN IT — PRESS 1"));
 			}
 			return;

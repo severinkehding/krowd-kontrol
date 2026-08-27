@@ -68,6 +68,16 @@ private:
 	// EThreatState::Hot. Polled from TickComponent (mirrors
 	// UMusicSubsystem::IsAnyEnemyInCombat()'s TActorIterator scan shape) since no
 	// "became hot" delegate exists.
+	//
+	// Deliberately NOT bound to UGizmoFirstContactComponent/UFirstStunBeaconComponent's
+	// first-cast signal (pass-1 validation feedback, PR #306): both of those fire only
+	// after the player's first successful Stun cast (see their own class comments -
+	// UGizmoFirstContactComponent::HandleAbilityCastApplied /
+	// UFirstStunBeaconComponent::HandleAbilityCastApplied are both bound to
+	// UAbilityCastComponent::OnAbilityCastApplied), which would make this prompt appear
+	// AFTER the player has already stunned something - inverting its teaching intent
+	// (the prompt must appear BEFORE the first cast, not after). Verified directly
+	// against both components' source before rejecting this alternative a second time.
 	void CheckStunPromptFireCondition();
 
 	// Dismiss condition for "IT FOLLOWS YOU - WALK": the tracked first-controlled
