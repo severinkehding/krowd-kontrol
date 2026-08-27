@@ -245,7 +245,8 @@ void AEnemyBase::TickAttackDuration(float DeltaSeconds)
 		// ability just to unstick it. Reverting to Alert (not Idle) re-enters the
 		// same TickCheckDetection proximity check that got it here, so a player still
 		// standing in attack range gets re-triggered into Attack later in this same
-		// Tick() call (TickCheckDetection runs unconditionally right after this) -
+		// Tick() call (TickCheckDetection runs right after this, gated on a live
+		// player pawn same as every tick - see Tick()'s own pawn-lookup block) -
 		// this is what makes an enemy that keeps the player in range keep attacking,
 		// and one whose target retreats actually resume chasing.
 		CurrentState = EEnemyState::Alert;

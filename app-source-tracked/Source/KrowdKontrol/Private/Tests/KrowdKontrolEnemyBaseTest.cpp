@@ -366,15 +366,17 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 			&& TestNotNull(TEXT("ATrooperEnemy should spawn into the test World"), MarginTrooper)
 			&& TestNotNull(TEXT("ARunnerEnemy should spawn into the test World"), MarginRunner))
 		{
-			const float BaseAttackDuration = MarginBomber->GetAttackDurationSeconds(); // same virtual default across all
+			// Each enemy's own GetAttackDurationSeconds() is read individually (not a
+			// single MarginBomber read reused for all four) so this invariant stays
+			// protected once a subclass overrides the base duration (issue #337).
 			TestTrue(TEXT("Base Attack-duration timeout must exceed ABomberEnemy's own telegraph"),
-				BaseAttackDuration > MarginBomber->AttackTelegraphSeconds);
+				MarginBomber->GetAttackDurationSeconds() > MarginBomber->AttackTelegraphSeconds);
 			TestTrue(TEXT("Base Attack-duration timeout must exceed ASniperEnemy's own telegraph"),
-				BaseAttackDuration > MarginSniper->AttackTelegraphSeconds);
+				MarginSniper->GetAttackDurationSeconds() > MarginSniper->AttackTelegraphSeconds);
 			TestTrue(TEXT("Base Attack-duration timeout must exceed ATrooperEnemy's own telegraph"),
-				BaseAttackDuration > MarginTrooper->AttackTelegraphSeconds);
+				MarginTrooper->GetAttackDurationSeconds() > MarginTrooper->AttackTelegraphSeconds);
 			TestTrue(TEXT("Base Attack-duration timeout must exceed ARunnerEnemy's own telegraph"),
-				BaseAttackDuration > MarginRunner->AttackTelegraphSeconds);
+				MarginRunner->GetAttackDurationSeconds() > MarginRunner->AttackTelegraphSeconds);
 		}
 	}
 
