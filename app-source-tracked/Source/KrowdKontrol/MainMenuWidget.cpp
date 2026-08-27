@@ -90,16 +90,19 @@ void UMainMenuWidget::BuildWidgetTree()
 
 void UMainMenuWidget::SetMasteryDisplayContent(UWidget* Content)
 {
+	// Null-Content check FIRST: calling with nullptr on an unbuilt widget is the
+	// documented no-op, and warning "content dropped" there would send a log reader
+	// chasing a phantom bug when there was no content to drop (PR #333 review).
+	if (!Content)
+	{
+		return; // Documented no-op: called with nullptr, nothing to set.
+	}
 	if (!MasteryDisplayAnchor)
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("UMainMenuWidget::SetMasteryDisplayContent: MasteryDisplayAnchor is null on '%s' (tree not built?) - content dropped."),
 			*GetNameSafe(this));
 		return;
-	}
-	if (!Content)
-	{
-		return; // Documented no-op: called with nullptr, nothing to set.
 	}
 	MasteryDisplayAnchor->SetContent(Content);
 }

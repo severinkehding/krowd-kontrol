@@ -199,3 +199,27 @@ under `Content/`).
 
 `python harness/ci.py --quick` reports `GATE_OK mode=quick` (see Acceptance criteria
 above); automation test coverage for the new classes is listed under Files changed.
+
+## Operator review-fix pass (PR #333, 2026-08-27)
+
+Corrections to this changelog's own earlier claims, plus the review fixes:
+
+- **Only the null-anchor branch logs a Warning.** The null-Content branch is a
+  silent documented no-op (and EnergyMeterWidget's unbuilt guards, cited above
+  as the convention source, are silent too). The earlier "two branches, each
+  logging a Warning" claim was wrong.
+- **Guard order swapped**: `!Content` (silent no-op) is now checked before the
+  null-anchor warning, so calling with nullptr on an unbuilt widget no longer
+  logs a misleading "content dropped".
+- **AddExpectedError added** to the unbuilt-widget test block with a count of 1,
+  per suite convention — the run no longer parks in succeededWithWarnings.
+- The stale `/Game/Maps/L_MainMenuTemp` test target was superseded by merging
+  main's retargeted copy (issue #323 deleted that map; the live test targets
+  `/Game/Maps/L_MainMenu` and its "mirrors exactly" comment was corrected to
+  "structurally follows ... but asserts strict equality").
+- The earlier "2 of 4 LOW findings fixed, both deferred flagged operator-only"
+  bullet named only one deferred item (CLAUDE.md's Repo Layout gap); the second
+  was never recorded and is unrecoverable from this document — treat this pass
+  as closing the ledger.
+
+Verified: clean UBT build, KrowdKontrol.Unit.MainMenu* 6/6 headless.

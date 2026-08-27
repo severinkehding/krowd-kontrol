@@ -98,8 +98,13 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 			UnbuiltWidget->GetTitleDisplayText().IsEmpty());
 
 		// (f) continued - SetMasteryDisplayContent() on an unbuilt widget (MasteryDisplayAnchor
-		// still null) must no-op rather than crash - the other documented no-op condition,
-		// alongside the null-Content case already covered in block (d).
+		// still null) must warn-and-no-op rather than crash - the other documented no-op
+		// condition, alongside the null-Content case already covered in block (d).
+		// Register the expected warning with a count (suite convention -
+		// LevelClearTimeSubsystemTest et al.) so the run doesn't park in
+		// succeededWithWarnings and the fired-exactly-once contract is asserted
+		// (PR #333 review).
+		AddExpectedError(TEXT("MasteryDisplayAnchor is null"), EAutomationExpectedErrorFlags::Contains, 1);
 		UTextBlock* UnusedContent = NewObject<UTextBlock>(UnbuiltWidget);
 		UnbuiltWidget->SetMasteryDisplayContent(UnusedContent);
 		TestTrue(TEXT("SetMasteryDisplayContent on an unbuilt widget should not crash"), true);
