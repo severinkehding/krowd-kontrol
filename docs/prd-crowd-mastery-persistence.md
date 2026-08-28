@@ -36,7 +36,7 @@ across runs.
 - Unit coverage: deposit-on-clear, accumulation across two simulated runs,
   and reset.
 
-### REQ-2: Menu display (P0)
+### REQ-2: Menu display (P0) — ✅ implemented, issue #328
 - The main menu's reserved region (main-menu PRD REQ-3) shows
   "CROWD MASTERY: <total>", updating on return from a run.
 - Chrome rules: neutral chrome; if the existing HUD has an established

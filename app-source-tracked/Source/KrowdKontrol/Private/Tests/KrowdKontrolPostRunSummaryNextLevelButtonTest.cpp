@@ -12,11 +12,12 @@
 // this module, e.g. KrowdKontrolLevelSequenceSubsystemTest.cpp).
 //
 // (b) Final shipped level (NextLevelMapName == NAME_None): the button relabels to
-// "FINISH RUN (More Levels Coming)" and HandleNextLevelClicked() reruns the current
-// level via the shared AKrowdKontrolPlayerController::RequestLevelRestart() reload
-// path (issue #223) instead of a parallel implementation - proven by asserting
-// WasRestartRequested() flips true, the same real accessor
-// KrowdKontrolLevelRestartTest.cpp/KrowdKontrolBossCheckpointRestartTest.cpp assert.
+// "FINISH RUN" and HandleNextLevelClicked() routes back to the main menu (issue #326)
+// by resolving UGameMapsSettings::GetGameDefaultMap() and (if IsGameWorld()) calling
+// UGameplayStatics::OpenLevel() to it - proven via the LastMainMenuLoadAttemptedMapName
+// seam, since the real OpenLevel() call stays unreachable in CreateNewMap() test
+// Worlds (same documented limitation as case (a) above). Also asserts the old
+// rerun-via-RequestLevelRestart() fallback (issue #321/#342) no longer fires.
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.Unit.* tests.
@@ -28,6 +29,7 @@
 #include "LevelSequenceSubsystem.h"
 #include "LevelSequenceData.h"
 #include "LevelLifecycleSubsystem.h"
+#include "GameMapsSettings.h"
 #include "EnemyBaseTestActor.h"
 #include "AbilitySlot.h"
 #include "Engine/DataTable.h"
@@ -169,18 +171,26 @@ bool FKrowdKontrolPostRunSummaryNextLevelButtonTest::RunTest(const FString& Para
 
 		TestEqual(TEXT("ResolvedNextLevelMapName should be NAME_None for the sequence's final level"),
 			Controller->PostRunSummaryWidgetInstance->ResolvedNextLevelMapName, FName(NAME_None));
-		TestEqual(TEXT("Final level should show the FINISH RUN placeholder label"),
+		TestEqual(TEXT("Final level should show the FINISH RUN label"),
 			Controller->PostRunSummaryWidgetInstance->GetNextLevelButtonDisplayText().ToString(),
-			FString(TEXT("FINISH RUN (More Levels Coming)")));
+			FString(TEXT("FINISH RUN")));
 
+		TestEqual(TEXT("LastMainMenuLoadAttemptedMapName should be NAME_None before the button is clicked"),
+			Controller->PostRunSummaryWidgetInstance->LastMainMenuLoadAttemptedMapName, FName(NAME_None));
 		TestFalse(TEXT("bRestartRequested should be false before the button is clicked"),
 			Controller->WasRestartRequested());
 		Controller->PostRunSummaryWidgetInstance->HandleNextLevelClicked();
-		// Issue #342: the final-level FINISH RUN fallback is a voluntary rerun, not a
-		// defeat-restart - same reasoning as KrowdKontrolPostRunSummaryRerunButtonTest.cpp.
-		TestTrue(TEXT("Clicking the button on the final level should invoke the shared RequestLevelRestart() path in fresh-run mode"),
+		// Issue #326: the final-level control now routes to the main menu instead of the
+		// old issue #321/#342 rerun-fallback - proven via LastMainMenuLoadAttemptedMapName
+		// (the real UGameplayStatics::OpenLevel() call stays unreachable here since
+		// CreateNewMap() test Worlds are never game worlds, same documented limitation as
+		// case (a) above) and by confirming the old rerun path no longer fires.
+		TestEqual(TEXT("Clicking the final-level control should resolve and attempt the project's GameDefaultMap"),
+			Controller->PostRunSummaryWidgetInstance->LastMainMenuLoadAttemptedMapName,
+			FName(*UGameMapsSettings::GetGameDefaultMap()));
+		TestFalse(TEXT("Clicking the final-level control must not invoke the old rerun path"),
 			Controller->WasFreshRunRequested());
-		TestFalse(TEXT("Clicking the button on the final level must not flip bRestartRequested - that invariant is defeat-path only"),
+		TestFalse(TEXT("Clicking the final-level control must not flip bRestartRequested either"),
 			Controller->WasRestartRequested());
 	}
 

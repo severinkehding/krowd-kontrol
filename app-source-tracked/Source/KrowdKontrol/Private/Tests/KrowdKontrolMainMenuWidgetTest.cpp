@@ -1,7 +1,8 @@
 // Confirms UMainMenuWidget (issue #324, docs/prd-main-menu.md REQ-3) builds a title
-// text block, a Quit button wired to HandleQuitClicked(), and an empty, explicitly-
-// sized mastery-display anchor region - and that SetMasteryDisplayContent() fills
-// that anchor without any change to the surrounding layout.
+// text block, a Quit button wired to HandleQuitClicked(), and an explicitly-sized
+// mastery-display anchor region - and that the anchor is auto-filled at construction
+// with the current Crowd Mastery total (issue #328), with SetMasteryDisplayContent()
+// remaining available as an external override.
 //
 // Deliberately does NOT let a real "quit" console command reach the Automation
 // Testing Framework's own UnrealEditor-Cmd.exe process: HandleQuitClicked()'s target
@@ -20,6 +21,8 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/SizeBox.h"
+#include "CrowdMasteryTotalSubsystem.h"
+#include "Engine/GameInstance.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -58,17 +61,23 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 		Widget->HandleQuitClicked();
 	}
 
-	// (d) Mastery-display anchor is reserved (explicit non-zero size) and starts empty;
-	// SetMasteryDisplayContent() fills it.
+	// (d) Mastery-display anchor is reserved (explicit non-zero size) and is filled at
+	// construction with the running Crowd Mastery total (issue #328,
+	// docs/prd-crowd-mastery-persistence.md REQ-2) - "0" here because this bare
+	// CreateNewMap() World has no GameInstance to read a real total from.
 	if (TestNotNull(TEXT("MasteryDisplayAnchor should be non-null"), ToRawPtr(Widget->MasteryDisplayAnchor)))
 	{
-		TestNull(TEXT("MasteryDisplayAnchor should start with no content"), Widget->MasteryDisplayAnchor->GetContent());
 		TestTrue(TEXT("MasteryDisplayAnchor should have an explicit width override"), Widget->MasteryDisplayAnchor->GetWidthOverride() > 0.0f);
 		TestTrue(TEXT("MasteryDisplayAnchor should have an explicit height override"), Widget->MasteryDisplayAnchor->GetHeightOverride() > 0.0f);
+		TestNotNull(TEXT("MasteryDisplayAnchor should already hold the mastery display text at construction"), Widget->MasteryDisplayAnchor->GetContent());
+		TestEqual(TEXT("Mastery display should read CROWD MASTERY: 0 with no GameInstance to read a real total from"),
+			Widget->GetMasteryDisplayText().ToString(), FString(TEXT("CROWD MASTERY: 0")));
 
+		// SetMasteryDisplayContent() remains a valid external override path - its
+		// documented contract is unchanged by this issue.
 		UTextBlock* PlaceholderMasteryContent = NewObject<UTextBlock>(Widget);
 		Widget->SetMasteryDisplayContent(PlaceholderMasteryContent);
-		TestEqual(TEXT("SetMasteryDisplayContent should fill the anchor"),
+		TestEqual(TEXT("SetMasteryDisplayContent should override the anchor's content"),
 			Widget->MasteryDisplayAnchor->GetContent(), Cast<UWidget>(PlaceholderMasteryContent));
 
 		// SetMasteryDisplayContent(nullptr) is documented as a no-op - must not clear
@@ -76,6 +85,45 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 		Widget->SetMasteryDisplayContent(nullptr);
 		TestEqual(TEXT("SetMasteryDisplayContent(nullptr) should not clear existing content"),
 			Widget->MasteryDisplayAnchor->GetContent(), Cast<UWidget>(PlaceholderMasteryContent));
+	}
+
+	// (d2) Injecting a real subsystem via the friend-accessible CachedMasteryTotalSubsystem
+	// seam and calling RefreshMasteryDisplayText() again proves GetAccumulatedTotal()'s
+	// value flows correctly into the formatted display text. Note: this exercises the
+	// already-cached fast path only (CachedMasteryTotalSubsystem set directly) - the cold
+	// GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>() lookup itself has no
+	// CreateNewMap()-World precedent to test against in this suite and is unverified here.
+	UMainMenuWidget* MasteryWidget = CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
+	if (TestNotNull(TEXT("MasteryWidget should construct"), MasteryWidget))
+	{
+		UGameInstance* GameInstanceOuter = NewObject<UGameInstance>();
+		UCrowdMasteryTotalSubsystem* InjectedSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(GameInstanceOuter);
+		InjectedSubsystem->DepositRunMastery(42);
+		MasteryWidget->CachedMasteryTotalSubsystem = InjectedSubsystem;
+		MasteryWidget->RefreshMasteryDisplayText();
+		TestEqual(TEXT("Mastery display should reflect the injected subsystem's real total"),
+			MasteryWidget->GetMasteryDisplayText().ToString(), FString(TEXT("CROWD MASTERY: 42")));
+	}
+
+	// (d3) NativeConstruct() (fired by AddToViewport()) must re-run RefreshMasteryDisplayText()
+	// so the display refreshes whenever the menu becomes visible again, not just once at
+	// construction (PR #350 review) - proven here by changing the injected subsystem's
+	// total between construction and a direct NativeConstruct() call.
+	UMainMenuWidget* ConstructRefreshWidget = CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
+	if (TestNotNull(TEXT("ConstructRefreshWidget should construct"), ConstructRefreshWidget))
+	{
+		UGameInstance* ConstructRefreshGameInstanceOuter = NewObject<UGameInstance>();
+		UCrowdMasteryTotalSubsystem* ConstructRefreshSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(ConstructRefreshGameInstanceOuter);
+		ConstructRefreshSubsystem->DepositRunMastery(7);
+		ConstructRefreshWidget->CachedMasteryTotalSubsystem = ConstructRefreshSubsystem;
+		ConstructRefreshWidget->RefreshMasteryDisplayText();
+		TestEqual(TEXT("Mastery display should read 7 before NativeConstruct()"),
+			ConstructRefreshWidget->GetMasteryDisplayText().ToString(), FString(TEXT("CROWD MASTERY: 7")));
+
+		ConstructRefreshSubsystem->DepositRunMastery(3);
+		ConstructRefreshWidget->NativeConstruct();
+		TestEqual(TEXT("NativeConstruct() should re-read the total, showing 10"),
+			ConstructRefreshWidget->GetMasteryDisplayText().ToString(), FString(TEXT("CROWD MASTERY: 10")));
 	}
 
 	// (e) Initialize() guard - must not rebuild the tree when NativeOnInitialized()
@@ -108,6 +156,12 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 		UTextBlock* UnusedContent = NewObject<UTextBlock>(UnbuiltWidget);
 		UnbuiltWidget->SetMasteryDisplayContent(UnusedContent);
 		TestTrue(TEXT("SetMasteryDisplayContent on an unbuilt widget should not crash"), true);
+
+		// (f) continued - RefreshMasteryDisplayText() on the same unbuilt widget
+		// (MasteryDisplayText still null) must degrade to a silent no-op rather than
+		// crash - mirrors the null-MasteryDisplayAnchor guard just above.
+		UnbuiltWidget->RefreshMasteryDisplayText();
+		TestTrue(TEXT("RefreshMasteryDisplayText on an unbuilt widget should not crash"), true);
 	}
 
 	// (g) NativeOnInitialized() invoked directly, bypassing Initialize() - WidgetTree is

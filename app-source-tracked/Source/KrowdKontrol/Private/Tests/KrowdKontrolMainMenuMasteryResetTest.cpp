@@ -14,6 +14,7 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Components/Button.h"
+#include "Components/TextBlock.h"
 #include "Components/Border.h"
 #include "Components/PanelWidget.h"
 #include "Components/SizeBox.h"
@@ -120,12 +121,23 @@ bool FKrowdKontrolMainMenuMasteryResetTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Sanity: injected subsystem should hold 7 before reset"), InjectedSubsystem->GetAccumulatedTotal(), 7);
 		SecondWidget->CachedMasteryTotalSubsystem = InjectedSubsystem;
 
+		// Display must reflect the reset immediately - the menu is already on screen
+		// when CONFIRM fires, so no on-show refresh will run for it (PR #349 pass-2
+		// escalation: the issue's 4th AC, buildable only once #328/PR #350 landed the
+		// display). Seed the display with the pre-reset total first so the assertion
+		// proves an actual refresh, not a never-populated default.
+		SecondWidget->RefreshMasteryDisplayText();
+		TestEqual(TEXT("Sanity: display should show the pre-reset total before CONFIRM"),
+			SecondWidget->MasteryDisplayText->GetText().ToString(), FString(TEXT("CROWD MASTERY: 7")));
+
 		SecondWidget->HandleMasteryResetClicked();
 		SecondWidget->HandleMasteryResetConfirmClicked();
 		TestEqual(TEXT("Confirming reset should zero the injected subsystem's total"),
 			InjectedSubsystem->GetAccumulatedTotal(), 0);
 		TestFalse(TEXT("bMasteryResetConfirmPending should be false after CONFIRM on SecondWidget"),
 			SecondWidget->bMasteryResetConfirmPending);
+		TestEqual(TEXT("Confirming reset should refresh the on-screen mastery display to 0 (issue #329 AC-4)"),
+			SecondWidget->MasteryDisplayText->GetText().ToString(), FString(TEXT("CROWD MASTERY: 0")));
 	}
 
 	// (f) RefreshMasteryResetVisibility()'s null-button guard on an unbuilt widget

@@ -32,6 +32,17 @@ bool UMainMenuWidget::Initialize()
 	return bNewlyInitialized;
 }
 
+void UMainMenuWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+	// AddToViewport() (and any future re-add of this same widget instance) fires
+	// NativeConstruct() - refreshing here too, not just at construction time inside
+	// BuildWidgetTree(), makes the mastery total an explicit refresh-on-show rather
+	// than relying on AMainMenuPlayerController::BeginPlay() always creating a fresh
+	// UMainMenuWidget per level visit (PR #350 review).
+	RefreshMasteryDisplayText();
+}
+
 void UMainMenuWidget::EnsureWidgetTreeBuilt()
 {
 	// Whichever of NativeOnInitialized()/Initialize() fires first builds the tree; the
@@ -87,6 +98,18 @@ void UMainMenuWidget::BuildWidgetTree()
 	MasteryDisplayAnchor->SetWidthOverride(MasteryDisplayAnchorWidthPx);
 	MasteryDisplayAnchor->SetHeightOverride(MasteryDisplayAnchorHeightPx);
 	Layout->AddChildToVerticalBox(MasteryDisplayAnchor);
+
+	// Crowd Mastery total display (issue #328, docs/prd-crowd-mastery-persistence.md
+	// REQ-2) - fills the anchor reserved above via the widget's own already-public
+	// SetMasteryDisplayContent() API (the seam #324 built specifically for this).
+	// TextColor here is the same HUDChromeColours::GetText() chrome colour already used
+	// by UPostRunSummaryWidget::CrowdMasteryText (PostRunSummaryWidget.cpp) for that
+	// screen's own Crowd Mastery stat - reusing it rather than introducing a new style.
+	MasteryDisplayText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryDisplayText"));
+	MasteryDisplayText->SetColorAndOpacity(TextColor);
+	MasteryDisplayText->SetAutoWrapText(true);
+	SetMasteryDisplayContent(MasteryDisplayText);
+	RefreshMasteryDisplayText();
 
 	// Reset control for the Crowd Mastery total (docs/prd-crowd-mastery-persistence.md
 	// REQ-3, issue #329) - RESET swaps to CONFIRM RESET/CANCEL on click, since the
@@ -270,6 +293,60 @@ void UMainMenuWidget::HandleMasteryResetConfirmClicked()
 	{
 		MasterySubsystem->ResetAccumulatedTotal();
 	}
+	// The reset happens while the menu is already on screen, so NativeConstruct()'s
+	// on-show refresh never re-runs - without this the display keeps showing the
+	// pre-reset total until the next menu visit (PR #349 pass-2 escalation: the
+	// issue's 4th AC, unbuildable until #328/PR #350 landed the display itself).
+	RefreshMasteryDisplayText();
+}
+
+void UMainMenuWidget::RefreshMasteryDisplayText()
+{
+	if (!MasteryDisplayText)
+	{
+		return;
+	}
+
+	// Deliberately does NOT call ResolveMasteryTotalSubsystem(): that resolver's
+	// warn-on-missing log is scoped to the reset flow, where a missing subsystem
+	// means a real user-initiated reset attempt silently failed. Here, a missing
+	// GameInstance just means "no GameInstance yet" (every KrowdKontrol.Unit.* test
+	// that constructs this widget via CreateNewMap() hits this, not just mastery
+	// tests) - 0 is the correct, unremarkable default and stays unlogged. A present
+	// GameInstance with no resolvable subsystem is a real failure, though, and is
+	// warned once below (bHasWarnedMissingMasteryTotalSubsystemOnDisplay, issue #328)
+	// - otherwise it's indistinguishable from a legitimate new-player zero.
+	int32 AccumulatedTotal = 0;
+	if (CachedMasteryTotalSubsystem)
+	{
+		AccumulatedTotal = CachedMasteryTotalSubsystem->GetAccumulatedTotal();
+	}
+	else if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UCrowdMasteryTotalSubsystem* MasterySubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>())
+		{
+			CachedMasteryTotalSubsystem = MasterySubsystem;
+			AccumulatedTotal = MasterySubsystem->GetAccumulatedTotal();
+		}
+		else if (!bHasWarnedMissingMasteryTotalSubsystemOnDisplay)
+		{
+			bHasWarnedMissingMasteryTotalSubsystemOnDisplay = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("UMainMenuWidget::RefreshMasteryDisplayText: no UCrowdMasteryTotalSubsystem available on '%s' - mastery display will show 0 instead of the real accumulated total."),
+				*GetNameSafe(this));
+		}
+	}
+
+	FNumberFormattingOptions NoGrouping;
+	NoGrouping.SetUseGrouping(false);
+	MasteryDisplayText->SetText(FText::Format(
+		NSLOCTEXT("MainMenuWidget", "CrowdMasteryTotalFormat", "CROWD MASTERY: {0}"),
+		FText::AsNumber(AccumulatedTotal, &NoGrouping)));
+}
+
+FText UMainMenuWidget::GetMasteryDisplayText() const
+{
+	return MasteryDisplayText ? MasteryDisplayText->GetText() : FText::GetEmpty();
 }
 
 UCrowdMasteryTotalSubsystem* UMainMenuWidget::ResolveMasteryTotalSubsystem()

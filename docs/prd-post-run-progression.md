@@ -41,17 +41,17 @@ contract:
 - Keyboard/mouse both work; the in-game cursor (issue #262) is already
   visible on this screen.
 
-### REQ-3: Next-level button (P0) — ✅ implemented, issue #321 / PR #335
-(mechanism only — `LevelSequenceTable` has no populated Content DataTable asset yet,
-so every real level currently shows the "FINISH RUN (More Levels Coming)" placeholder;
-follow-up issue recommended for real table content)
+### REQ-3: Next-level button (P0) — ✅ implemented, issue #321 / PR #335;
+final-level routing ✅ issue #326 / PR #351
+(the `LevelSequenceTable` still has no populated Content DataTable asset — that
+content-authoring gap is unchanged and separately tracked; unrelated to the
+final-level routing below)
 - Advances to the next level in the shipped sequence (L_Level01 → L_Level02 →
   L_Level03 today; the sequence definition must be data, not hardcoded ifs,
   so L4/L5 slot in when they land).
-- On the final shipped level, the button reads differently (e.g. "FINISH RUN")
-  and routes to the main menu once `docs/prd-main-menu.md` lands; until then
-  it may rerun the final level with a "more levels coming" label — pick the
-  cheaper, honest placeholder.
+- On the final shipped level, the button reads "FINISH RUN" and routes to
+  `docs/prd-main-menu.md`'s main menu (`UGameMapsSettings::GetGameDefaultMap()`,
+  `IsGameWorld()`-guarded `OpenLevel()`), issue #326.
 
 ### REQ-4: Button/summary layout integrity test (P1)
 - Automation coverage that the info block and the two buttons never overlap

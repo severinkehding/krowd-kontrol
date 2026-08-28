@@ -54,7 +54,7 @@ to start a playtest again.
 - HUD chrome rules apply (Hard Invariant 3 — neutral chrome, no reserved
   gameplay colours for decoration).
 
-### REQ-4: Clear screen returns here (P1)
+### REQ-4: Clear screen returns here (P1) — ✅ implemented, issue #326
 - Once this map exists, `docs/prd-post-run-progression.md`'s final-level
   routing and any "back to menu" affordance target this menu.
 
