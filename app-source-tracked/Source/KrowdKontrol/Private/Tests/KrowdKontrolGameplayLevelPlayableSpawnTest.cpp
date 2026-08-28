@@ -45,6 +45,7 @@ bool FKrowdKontrolGameplayLevelPlayableSpawnTest::RunTest(const FString& Paramet
 		TEXT("/Game/Maps/L_Level01"),
 		TEXT("/Game/Maps/L_Level02"),
 		TEXT("/Game/Maps/L_Level03"),
+		TEXT("/Game/Maps/L_Level04"),
 	};
 
 	for (const FString& MapPath : GameplayLevelMapPaths)
