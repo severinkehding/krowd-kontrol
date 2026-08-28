@@ -20,6 +20,115 @@ Root/Snare pattern exactly, reusing the file's own `AdvanceToAttack` helper. All
 abilities now have explicit `Controlled`-state regression coverage on an
 Attack-state sniper with no prior Stun cast.
 
+## Verifiable evidence (pass-1 review follow-up)
+
+Pass-1 review correctly noted this diff touches no production file, so the audit
+conclusion above can't be taken on faith from prose alone. Quoting the exact
+precondition logic at its current `file:line` in `app/` (the real Unreal project
+source; `app/` is a gitignored symlink per `CLAUDE.md` D-003, so it can't itself
+appear in the diff) so it's checkable directly against this changelog entry:
+
+**1. `AEnemyBase::ReceiveControl` — the only state gate, `Source/KrowdKontrol/EnemyBase.cpp:69,94-98`:**
+
+```cpp
+void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
+{
+    ...
+    if (CurrentState != EEnemyState::Alert && CurrentState != EEnemyState::Attack)
+    {
+        return;
+    }
+    CurrentState = EEnemyState::Controlled;
+```
+
+No `Ability`-identity check, no `ControllingAbility`-history check, no
+`EAbilitySlot::Stun` reference anywhere in the function. `ASniperEnemy` does not
+override `ReceiveControl`.
+
+**2. All 5 `TryCast*` entry points share one gate, `Source/KrowdKontrol/AbilityCastComponent.cpp:313-386`:**
+
+`TryCastAbility` (line 41), `TryCastThrownAbilityAtLocation` (line 76),
+`TryCastLineAbilityTowardLocation` (line 173), `TryCastConeAbilityTowardLocation`
+(line 252), and `TryCastSelfCircleAbility` (line 286) all call
+`ResolvePassedCastGates(Ability, ...)` first. Its full gate list, in order: world
+not paused, briefing card not visible, `Owner` non-null, ability unlocked
+(`UAbilityUnlockComponent`), ability not on cooldown (`UAbilityCooldownComponent`),
+ability not locked out (`UAbilityLockoutComponent`, optional). None of these six
+checks reference `EAbilitySlot::Stun`, `ControllingAbility`, or any other
+ability's prior application — they gate on cast eligibility of the ability being
+cast, never on what ability (if any) was cast before it.
+
+**3. The only enemy-state gate before `ReceiveControl` is called — Alert/Attack, same as inside `ReceiveControl` itself:**
+
+`TryCastAbility`'s single-target path, `FindNearestValidTarget`,
+`Source/KrowdKontrol/AbilityCastComponent.cpp:414-418`:
+```cpp
+    const EEnemyState State = It->GetEnemyState();
+    if (State != EEnemyState::Alert && State != EEnemyState::Attack)
+    {
+        continue;
+    }
+```
+
+The other 4 entry points' shared shape-application path,
+`ApplyControlToEnemiesInShape`, `Source/KrowdKontrol/AbilityCastComponent.cpp:440-441`:
+```cpp
+    const bool bWasFreshlyTargetable = (Enemy->GetEnemyState() == EEnemyState::Alert || Enemy->GetEnemyState() == EEnemyState::Attack);
+    Enemy->ReceiveControl(Ability);
+```
+
+**4. `AbilityData.cpp` (189 lines, full file audited) holds no gating logic at all** —
+it's a pure per-ability data table (duration, range, target shape, colour,
+countered enemy type, behaviour flags). No field or function anywhere in the file
+branches on `CurrentState`, `ControllingAbility`, or a prior cast of any other
+ability; `AbilityData::Get(EAbilitySlot::Stun)` returns a plain `FAbilityData`
+struct literal with no reference to any other ability.
+
+### Pre-existing Sleep/Root/Snare coverage (unmodified — quoted, not in diff)
+
+The other pass-1 follow-up flagged that this PR body cited stale line numbers
+(269-275, 306-312) for pre-existing Root/Snare coverage, and that none of the 3
+pre-existing per-ability assertions (Sleep, Root, Snare) are visible in the diff
+since this PR doesn't touch them. Corrected current line numbers, quoted verbatim
+so all 5 abilities' coverage is checkable from this changelog alone:
+
+**Sleep — `Private/Tests/KrowdKontrolSniperEnemyTest.cpp:437-446`:**
+```cpp
+ASniperEnemy* ExpirySniper = NewObject<ASniperEnemy>();
+AdvanceToAttack(ExpirySniper, ZeroDistanceLocation);
+ExpirySniper->ReceiveControl(EAbilitySlot::Sleep); // Attack -> Controlled, 7.0f override
+TestEqual(TEXT("GetTotalControlledSeconds should reflect the 7s Sleep override, not the base duration"),
+    ExpirySniper->GetTotalControlledSeconds(), 7.0f);
+...
+ExpirySniper->TickControlledDuration(6.9f);
+TestEqual(TEXT("Sniper should still be Controlled just under the 7s override"),
+    static_cast<uint8>(ExpirySniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+```
+
+**Root — `Private/Tests/KrowdKontrolSniperEnemyTest.cpp:287-293`:**
+```cpp
+ASniperEnemy* RootedSniper = NewObject<ASniperEnemy>();
+AdvanceToAttack(RootedSniper, ZeroDistanceLocation);
+TestTrue(TEXT("(l2) Attack tell should be visibly on before Root interrupts"),
+    RootedSniper->AttackTellLightComponent->Intensity > 0.0f);
+RootedSniper->ReceiveControl(EAbilitySlot::Root);
+TestEqual(TEXT("(l2) Sniper should be Controlled after Root"),
+    static_cast<uint8>(RootedSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+```
+
+**Snare — `Private/Tests/KrowdKontrolSniperEnemyTest.cpp:326-330`:**
+```cpp
+ASniperEnemy* SnaredSniper = NewObject<ASniperEnemy>();
+AdvanceToAttack(SnaredSniper, ZeroDistanceLocation);
+SnaredSniper->ReceiveControl(EAbilitySlot::Snare);
+TestEqual(TEXT("(m-snare) Sniper should be Controlled after Snare"),
+    static_cast<uint8>(SnaredSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+```
+
+Combined with this PR's new (d2) Stun (`:170-174`) and (d3) Fear (`:177-181`)
+cases (both fully visible in the diff), all 5 control abilities now have an
+explicit, verifiable `Attack -> Controlled` assertion with no prior Stun cast.
+
 ## Design decisions
 
 - **No production code changed.** The reported gate does not exist in
