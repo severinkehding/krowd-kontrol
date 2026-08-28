@@ -104,6 +104,44 @@ ever receiving one of them (the `bAcceptAnyEnemyType` guard in
 
 ---
 
+## Follow-up: review findings (PR #347 review pass)
+
+- `KrowdKontrolRoomActorBankingWiringTest.cpp` extended with two Hard-Invariant-3-
+  backing scenarios that had zero coverage: a fifth marker with a real `ATargetZone`
+  pre-attached before `FinishSpawning()` (left at `TargetZone.h`'s own
+  `bAcceptAnyEnemyType = true` default, simulating a hand-placed zone), asserting
+  `CurrentChainColour` stays `FLinearColor::Black`; and a sixth marker using a custom
+  `MarkerClass` (`APlaceholderCubeActor`), asserting `ApplyChainColourToMarker()`'s
+  `Cast<APlaceholderTargetZoneActor>` guard doesn't crash/miscast and the marker still
+  gets its own correctly colour-tagged `ATargetZone`.
+- Same test file: added `GetMaterial(0)` assertions on `BeaconMeshComponent`/
+  `BeaconColumnMeshComponent` for the RU_NNR marker, confirming the chain-colour MID
+  is actually assigned to both mesh components, not just reflected in
+  `CurrentChainColour`/the beacon light (which are set independently and wouldn't
+  catch a dropped `SetMaterial()` call).
+- `docs/prd-colour-coded-herding.md` REQ-3 heading marked `— ✅ implemented, issue
+  #317`, matching the convention PR #341/issue #315 set for REQ-1.
+- Left uncovered (per the reviewing agent's own recommendation): the failed-
+  material-load early-return in `ApplyChainColour()` — no injection seam exists for
+  `TSoftObjectPtr::LoadSynchronous()` failure in this codebase's test infrastructure,
+  and the ordering is already correct by inspection. Revisit if this MID-lazy-init
+  pattern gets a third caller.
+- `python harness/ci.py` (full) re-run after these additions: `GATE_OK` (see below).
+
+### Validation evidence (post-follow-up)
+
+```
+HARNESS_START mode=full driver=cli
+UNIT_PASSED tests=123
+PIE_PASSED tests=5
+UE_BUILD_OK
+UE_AUTOMATION_RESULT passed=1 total=1
+E2E_PASSED steps=1
+GATE_OK mode=full
+```
+
+---
+
 The real Unreal project stays under `app/` (gitignored, D-003) — this changelog and
 its matching `app-source-tracked/` copy are the tracked-repo record of that change,
 per D-009. Not a substitute for reading `app-source-tracked/` directly.

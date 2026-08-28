@@ -28,7 +28,9 @@
 #include "Engine/World.h"
 #include "Components/PrimitiveComponent.h"
 #include "PlaceholderTargetZoneActor.h"
+#include "PlaceholderCubeActor.h"
 #include "Components/PointLightComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "AbilityData.h"
 
 static ATargetZone* FindAttachedZone(AActor* Marker)
@@ -139,6 +141,40 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	}
 	FearMarker->SetActorLocation(FVector(5000.f, -5000.f, 0.f));
 
+	// Fifth marker: simulates a hand-placed zone (RoomActor.cpp's own
+	// EnsureBankingZonesWired() doc comment names this scenario explicitly) by
+	// pre-attaching a real ATargetZone *before* FinishSpawning(), left at
+	// TargetZone.h's own bAcceptAnyEnemyType default (true) rather than the
+	// freshly-spawned branch's hardcoded false. EnemyType passed to AddTargetZone()
+	// is irrelevant here - it only tags TargetZones, not the pre-attached zone.
+	// Proves MISSION.md Hard Invariant 3's five-colour lock: an any-type zone's
+	// marker must never receive one of the four locked types' reserved colours.
+	AActor* AnyTypeMarker = Room->AddTargetZone(EEnemyType::RU_NNR);
+	if (!TestNotNull(TEXT("Any-type marker should spawn"), AnyTypeMarker))
+	{
+		return false;
+	}
+	AnyTypeMarker->SetActorLocation(FVector(-5000.f, 0.f, 0.f));
+	ATargetZone* PreAttachedAnyTypeZone = World->SpawnActor<ATargetZone>(
+		AnyTypeMarker->GetActorLocation(), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Pre-attached any-type zone should spawn"), PreAttachedAnyTypeZone))
+	{
+		return false;
+	}
+	PreAttachedAnyTypeZone->AttachToActor(AnyTypeMarker, FAttachmentTransformRules::KeepWorldTransform);
+
+	// Sixth marker: a designer-supplied custom MarkerClass (APlaceholderCubeActor,
+	// already established for this purpose in KrowdKontrolRoomActorTest.cpp) driven
+	// through the real BeginPlay() -> EnsureBankingZonesWired() production path -
+	// proves ApplyChainColourToMarker()'s Cast<APlaceholderTargetZoneActor> guard
+	// leaves a non-placeholder marker alone instead of crashing or miscasting.
+	AActor* CustomClassMarker = Room->AddTargetZone(EEnemyType::SN_1PR, APlaceholderCubeActor::StaticClass());
+	if (!TestNotNull(TEXT("Custom-MarkerClass marker should spawn"), CustomClassMarker))
+	{
+		return false;
+	}
+	CustomClassMarker->SetActorLocation(FVector(-5000.f, 5000.f, 0.f));
+
 	Room->FinishSpawning(FTransform::Identity);
 
 	ATargetZone* BankingZone = FindAttachedZone(Marker);
@@ -155,6 +191,19 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 			PlaceholderMarker->CurrentChainColour.Equals(ExpectedColour, 0.01f));
 		TestTrue(TEXT("Marker's beacon light should render Purple for a RU-NNR zone"),
 			PlaceholderMarker->BeaconLightComponent->GetLightColor().Equals(ExpectedColour, 0.01f));
+		// Asserts the actual assigned mesh resource, not just derived/reflected state
+		// (CurrentChainColour/beacon light above) - a dropped or misindexed
+		// SetMaterial() call would leave a mesh silently un-tinted in-game while those
+		// other assertions still pass, since all three are set independently in
+		// ApplyChainColour(). One marker is sufficient: all four exercise the identical
+		// SetMaterial() code path, so this is a completeness check on the mechanism,
+		// not a per-colour check.
+		TestTrue(TEXT("Beacon disc mesh should have the chain-colour MID actually assigned"),
+			Cast<UMaterialInstanceDynamic>(PlaceholderMarker->BeaconMeshComponent->GetMaterial(0)) ==
+				PlaceholderMarker->ChainColourMaterialInstance.Get());
+		TestTrue(TEXT("Beacon column mesh should have the chain-colour MID actually assigned"),
+			Cast<UMaterialInstanceDynamic>(PlaceholderMarker->BeaconColumnMeshComponent->GetMaterial(0)) ==
+				PlaceholderMarker->ChainColourMaterialInstance.Get());
 	}
 
 	ATargetZone* SecondBankingZone = FindAttachedZone(SecondMarker);
@@ -203,6 +252,32 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 			PlaceholderMarker->CurrentChainColour.Equals(ExpectedColour, 0.01f));
 		TestTrue(TEXT("Marker's beacon light should render Orange for a B0_0MR zone"),
 			PlaceholderMarker->BeaconLightComponent->GetLightColor().Equals(ExpectedColour, 0.01f));
+	}
+
+	// Hard Invariant 3 guard: the pre-attached any-type zone's marker must never
+	// receive one of the four locked types' reserved chain colours - proves
+	// ApplyChainColourToMarker()'s bAcceptAnyEnemyType no-op guard actually reaches
+	// this marker via the ExistingZone branch of EnsureBankingZonesWired(), the only
+	// branch a hand-placed any-type zone can arrive through (the freshly-spawned
+	// branch always hardcodes bAcceptAnyEnemyType = false).
+	if (APlaceholderTargetZoneActor* AnyTypePlaceholder = Cast<APlaceholderTargetZoneActor>(AnyTypeMarker))
+	{
+		TestTrue(TEXT("An any-type zone's marker must never receive a reserved chain colour (Hard Invariant 3)"),
+			AnyTypePlaceholder->CurrentChainColour.Equals(FLinearColor::Black, 0.01f));
+	}
+
+	// Custom-MarkerClass guard: a designer-supplied non-placeholder marker must
+	// survive EnsureBankingZonesWired() untouched (no crash/miscast) and still get
+	// its own self-healed, correctly colour-tagged ATargetZone - proving
+	// ApplyChainColourToMarker()'s Cast<APlaceholderTargetZoneActor> guard is a
+	// pure no-op for this marker rather than an unchecked cast.
+	TestFalse(TEXT("A non-APlaceholderTargetZoneActor marker must not be miscast by ApplyChainColourToMarker"),
+		CustomClassMarker->IsA(APlaceholderTargetZoneActor::StaticClass()));
+	ATargetZone* CustomClassZone = FindAttachedZone(CustomClassMarker);
+	if (TestNotNull(TEXT("Custom-class marker should still get its self-healed ATargetZone"), CustomClassZone))
+	{
+		TestEqual(TEXT("Custom-class marker's zone should still be colour-tagged correctly (colour metadata is independent of visual application)"),
+			CustomClassZone->ZoneColourTag, ReservedGameplayColours::GetBlueTag());
 	}
 
 	// Calling EnsureBankingZonesWired() a second time must not double-spawn, for
