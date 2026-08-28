@@ -566,6 +566,43 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// (u2) issue #358 pass-1 review follow-up: the more literal reading of the issue's
+	// no-phantom-hit scenario - a target that WAS valid earlier in the telegraph (a live
+	// player pawn carrying UPlayerEnergyComponent) but is destroyed before the shot
+	// resolves. FindPlayerEnergyComponent() re-queries the World at resolution time
+	// rather than latching a target reference at telegraph start (see EnemyBase.cpp),
+	// so this must resolve exactly like (u)'s never-existed case: shot still fires
+	// exactly once, no crash, and - unlike (u), which has no energy component to
+	// observe - this asserts the surviving UPlayerEnergyComponent's CurrentEnergy is
+	// actually left unchanged, not just that the delegate still fires.
+	UWorld* DestroyedTargetWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(u2) CreateNewMap should return a valid World for the destroyed-target test"), DestroyedTargetWorld))
+	{
+		ASniperEnemy* DestroyedTargetSniper = DestroyedTargetWorld->SpawnActor<ASniperEnemy>();
+		APawn* DoomedPlayerPawn = DestroyedTargetWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(u2) ASniperEnemy should spawn into the destroyed-target test World"), DestroyedTargetSniper)
+			&& TestNotNull(TEXT("(u2) Player pawn should spawn into the destroyed-target test World"), DoomedPlayerPawn))
+		{
+			UPlayerEnergyComponent* DoomedEnergy = NewObject<UPlayerEnergyComponent>(DoomedPlayerPawn);
+			DoomedEnergy->RegisterComponent();
+			const float EnergyBeforeDestroy = DoomedEnergy->GetCurrentEnergy();
+
+			USniperShotFiredTestListener* DestroyedTargetListener = NewObject<USniperShotFiredTestListener>();
+			DestroyedTargetSniper->OnSniperShotFired.AddDynamic(DestroyedTargetListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+
+			AdvanceToAttack(DestroyedTargetSniper, ZeroDistanceLocation);
+			DestroyedTargetWorld->DestroyActor(DoomedPlayerPawn);
+
+			AddExpectedError(TEXT("found no APawn with a UPlayerEnergyComponent"), EAutomationExpectedErrorFlags::Contains, 1);
+			DestroyedTargetSniper->AdvanceAttackTelegraph(DestroyedTargetSniper->AttackTelegraphSeconds);
+
+			TestEqual(TEXT("(u2) The shot should still fire exactly once even though the target was destroyed mid-telegraph"),
+				DestroyedTargetListener->CallCount, 1);
+			TestEqual(TEXT("(u2) Player energy should be unchanged - the destroyed pawn's component must not receive damage"),
+				DoomedEnergy->GetCurrentEnergy(), EnergyBeforeDestroy);
+		}
+	}
+
 	return true;
 }
 
