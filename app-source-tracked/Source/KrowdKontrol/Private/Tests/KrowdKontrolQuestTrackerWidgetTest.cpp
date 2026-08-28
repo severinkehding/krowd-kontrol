@@ -16,7 +16,12 @@
 // when OnWaveSpawned fires, and (11) a widget created after OnLevelBegin already
 // broadcast (AKrowdKontrolPlayerController::CreateHUDWidgets() racing
 // ULevelLifecycleSubsystem::OnWorldBeginPlay(), issue #235's already-documented hazard)
-// still catches up to the real enemy count instead of staying stuck at "0/0".
+// still catches up to the real enemy count instead of staying stuck at "0/0", and
+// (12) issue #318 (PRD REQ-4): the suggested-ability text colour is asserted directly
+// against AbilityData::GetChainColourForEnemyType(EEnemyType::SN_1PR), the REQ-1
+// chain-colour authority (issue #315/PR #341), not only against
+// AbilityData::Get(Ability).Colour - pinning the widget to the authority itself, not
+// just to a same-value-today accessor.
 //
 // World->InitializeActorsForPlay(FURL()) is called up front, before spawning any
 // actor, purely defensively: KrowdKontrolDualZoneBossTest.cpp's own file comment
@@ -417,6 +422,14 @@ bool FKrowdKontrolQuestTrackerWidgetTest::RunTest(const FString& Parameters)
 							SuggestionWidget->GetSuggestedAbilityDisplayText().ToString(), FString(TEXT("SNIPERS → SLEEP (RMB)")));
 						TestEqual(TEXT("Suggested-ability text colour should match Sleep's reserved colour"),
 							SuggestionWidget->GetSuggestedAbilityTextColour(), AbilityData::Get(EAbilitySlot::Sleep).Colour);
+						// Issue #318 (PRD REQ-4): pin this directly to the REQ-1 chain-colour authority
+						// (issue #315/PR #341), not only to AbilityData::Get(Ability).Colour - the two
+						// are currently the same value by construction (GetChainColourForEnemyType
+						// derives from this exact field), but only this assertion actually fails if a
+						// future change makes the authority's derivation disagree with the ability's
+						// own Colour field.
+						TestEqual(TEXT("Suggested-ability text colour should match the REQ-1 chain-colour authority for Sniper"),
+							SuggestionWidget->GetSuggestedAbilityTextColour(), AbilityData::GetChainColourForEnemyType(EEnemyType::SN_1PR));
 
 						// (12b) Banking the only remaining Sniper - real Idle->Alert->
 						// Controlled->Banked progression (same sequence
