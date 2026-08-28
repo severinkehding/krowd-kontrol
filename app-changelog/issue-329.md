@@ -60,6 +60,16 @@ Targeted reruns:
 - `harness/run_ue_automation.sh KrowdKontrol.Unit.ReservedGameplayColours` -> `UE_AUTOMATION_RESULT passed=1 total=1`, `UE_AUTOMATION_OK`
 - `harness/run_ue_automation.sh KrowdKontrol.Unit.MainMenuWidget` -> `UE_AUTOMATION_RESULT passed=1 total=1`, `UE_AUTOMATION_OK`
 
+Post-review addendum: `KrowdKontrolMainMenuMasteryResetTest.cpp` was extended with
+`OnClicked.IsBound()` assertions for all three new buttons, a `GetChildIndex`-based
+ordering assertion proving `MasteryResetBox` sits directly after `MasteryDisplayAnchor`
+in `Layout`, a pre-reset sanity assertion in case (e), and an unbuilt-widget guard case
+for `RefreshMasteryResetVisibility()` - closing the four test-coverage gaps flagged by
+this PR's review. Rerun after the change: `harness/run_ue_automation.sh
+KrowdKontrol.Unit.MainMenuMasteryReset` -> `UE_AUTOMATION_RESULT passed=1 total=1`,
+`UE_AUTOMATION_OK`; full `KrowdKontrol.Unit.` -> `passed=124 total=124`; full
+`KrowdKontrol.PIE.` -> `passed=5 total=5`.
+
 Hard invariants (MISSION.md's 8): reviewed. Invariant #3 (5 reserved gameplay colours)
 explicitly re-audited by extending `KrowdKontrolReservedGameplayColoursTest.cpp`'s
 existing main-menu section with the 3 new label colours - no collision found.

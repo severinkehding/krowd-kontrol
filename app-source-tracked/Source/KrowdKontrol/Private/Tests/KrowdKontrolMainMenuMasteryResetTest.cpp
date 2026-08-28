@@ -14,6 +14,10 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Components/Button.h"
+#include "Components/Border.h"
+#include "Components/PanelWidget.h"
+#include "Components/SizeBox.h"
+#include "Components/HorizontalBox.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -48,6 +52,21 @@ bool FKrowdKontrolMainMenuMasteryResetTest::RunTest(const FString& Parameters)
 			Widget->MasteryResetConfirmButton->GetVisibility(), ESlateVisibility::Collapsed);
 		TestEqual(TEXT("MasteryResetCancelButton should start Collapsed"),
 			Widget->MasteryResetCancelButton->GetVisibility(), ESlateVisibility::Collapsed);
+		TestTrue(TEXT("MasteryResetButton::OnClicked should be bound"), Widget->MasteryResetButton->OnClicked.IsBound());
+		TestTrue(TEXT("MasteryResetConfirmButton::OnClicked should be bound"), Widget->MasteryResetConfirmButton->OnClicked.IsBound());
+		TestTrue(TEXT("MasteryResetCancelButton::OnClicked should be bound"), Widget->MasteryResetCancelButton->OnClicked.IsBound());
+	}
+
+	// (a2) MasteryResetBox should be positioned directly after MasteryDisplayAnchor in
+	// Layout - the PR's own checked-off acceptance criterion, verified the same way
+	// KrowdKontrolPostRunSummaryRerunButtonTest.cpp verifies RerunButton's position.
+	UPanelWidget* Layout = Widget->RootBorder ? Cast<UPanelWidget>(Widget->RootBorder->GetContent()) : nullptr;
+	if (TestNotNull(TEXT("RootBorder's content should be the layout panel widget"), Layout))
+	{
+		const int32 AnchorIndex = Layout->GetChildIndex(ToRawPtr(Widget->MasteryDisplayAnchor));
+		const int32 ResetBoxIndex = Layout->GetChildIndex(ToRawPtr(Widget->MasteryResetBox));
+		TestTrue(TEXT("MasteryResetBox should be positioned directly after MasteryDisplayAnchor"),
+			AnchorIndex >= 0 && ResetBoxIndex == AnchorIndex + 1);
 	}
 
 	// (b) Clicking RESET arms the confirm step.
@@ -98,6 +117,7 @@ bool FKrowdKontrolMainMenuMasteryResetTest::RunTest(const FString& Parameters)
 		UGameInstance* GameInstanceOuter = NewObject<UGameInstance>();
 		UCrowdMasteryTotalSubsystem* InjectedSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(GameInstanceOuter);
 		InjectedSubsystem->DepositRunMastery(7);
+		TestEqual(TEXT("Sanity: injected subsystem should hold 7 before reset"), InjectedSubsystem->GetAccumulatedTotal(), 7);
 		SecondWidget->CachedMasteryTotalSubsystem = InjectedSubsystem;
 
 		SecondWidget->HandleMasteryResetClicked();
@@ -106,6 +126,17 @@ bool FKrowdKontrolMainMenuMasteryResetTest::RunTest(const FString& Parameters)
 			InjectedSubsystem->GetAccumulatedTotal(), 0);
 		TestFalse(TEXT("bMasteryResetConfirmPending should be false after CONFIRM on SecondWidget"),
 			SecondWidget->bMasteryResetConfirmPending);
+	}
+
+	// (f) RefreshMasteryResetVisibility()'s null-button guard on an unbuilt widget
+	// (bare NewObject(), neither NativeOnInitialized() nor Initialize() called) - mirrors
+	// KrowdKontrolMainMenuWidgetTest.cpp block (f)'s identical "unbuilt widget degrades
+	// safely" convention for SetMasteryDisplayContent().
+	UMainMenuWidget* UnbuiltWidget = NewObject<UMainMenuWidget>();
+	if (TestNotNull(TEXT("UnbuiltWidget should construct"), UnbuiltWidget))
+	{
+		UnbuiltWidget->RefreshMasteryResetVisibility();
+		TestTrue(TEXT("RefreshMasteryResetVisibility on an unbuilt widget should not crash"), true);
 	}
 
 	return true;
