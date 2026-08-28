@@ -14,6 +14,22 @@ void ULevelSequenceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		{
 			LifecycleSubsystem->OnLevelClear.AddDynamic(this, &ULevelSequenceSubsystem::HandleLevelClear);
 		}
+
+		// Real game worlds (PIE/packaged) load the shipped LevelSequenceTable content
+		// asset from its fixed path here - gated the same way AdvanceToNextLevel()/
+		// UMainMenuWidget::HandleLevelSelected() already gate their own real-travel
+		// calls, so Automation's CreateNewMap() Editor Worlds (World->IsGameWorld() ==
+		// false there) never touch this and keep constructing the subsystem with
+		// LevelSequenceTable unset, matching every existing
+		// KrowdKontrolLevelSequenceSubsystemTest.cpp/KrowdKontrolMainMenuLevelSelectTest.cpp
+		// case that builds its own in-code table. Subsystems have no per-instance
+		// Details panel to hand-author this reference (issue #325's e2e gap - the
+		// main menu's level-select list was otherwise rendering zero buttons for a
+		// real player).
+		if (!LevelSequenceTable && World->IsGameWorld())
+		{
+			LevelSequenceTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Data/DT_LevelSequenceTable.DT_LevelSequenceTable"));
+		}
 	}
 }
 
@@ -69,6 +85,11 @@ void ULevelSequenceSubsystem::HandleLevelClear()
 		}
 		return;
 	}
+}
+
+TArray<FName> ULevelSequenceSubsystem::GetShippedLevelMapNames() const
+{
+	return LevelSequenceTable ? LevelSequenceTable->GetRowNames() : TArray<FName>();
 }
 
 void ULevelSequenceSubsystem::AdvanceToNextLevel()

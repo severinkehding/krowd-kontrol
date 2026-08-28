@@ -112,7 +112,11 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 
 	// (g) NativeOnInitialized() invoked directly, bypassing Initialize() - WidgetTree is
 	// still null at this point, exercising EnsureWidgetTreeBuilt()'s null-WidgetTree guard
-	// (issue #66 precedent, ported from UAbilityCooldownTrayWidget).
+	// (issue #66 precedent, ported from UAbilityCooldownTrayWidget). This bare NewObject()
+	// has no World, so PopulateLevelSelectButtons() (issue #325) also hits its
+	// no-ULevelSequenceSubsystem warning path here - registered below per suite convention
+	// (see block (f)'s identical AddExpectedError rationale).
+	AddExpectedError(TEXT("no ULevelSequenceSubsystem available"), EAutomationExpectedErrorFlags::Contains, 1);
 	UMainMenuWidget* BypassWidget = NewObject<UMainMenuWidget>();
 	if (TestNotNull(TEXT("BypassWidget should construct"), BypassWidget))
 	{
