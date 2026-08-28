@@ -35,6 +35,7 @@
 #include "TargetZoneBankedTestListener.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
+#include "Components/BoxComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -178,6 +179,16 @@ bool FKrowdKontrolTargetZoneTest::RunTest(const FString& Parameters)
 	MatchedActor->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
 	TestEqual(TEXT("OnActorBanked should fire again when an already-banked actor re-enters the zone"),
 		Listener->CallCount, 3);
+
+	// (g) GetBankingRadiusUnits() honesty (issue #365 REQ-3): reads
+	// ZoneCollisionComponent's real, live box extent - never a cached/hand-tuned
+	// duplicate - so a visual indicator built from this value can never silently
+	// drift from the actual banking-overlap volume.
+	TestEqual(TEXT("GetBankingRadiusUnits() should equal the constructor's default box extent"),
+		Zone->GetBankingRadiusUnits(), 150.0f);
+	Zone->ZoneCollisionComponent->SetBoxExtent(FVector(300.f, 300.f, 100.f));
+	TestEqual(TEXT("GetBankingRadiusUnits() should track a runtime box-extent change, not a cached value"),
+		Zone->GetBankingRadiusUnits(), 300.0f);
 
 	return true;
 }

@@ -26,6 +26,12 @@ ATargetZone::ATargetZone()
 	ZoneCollisionComponent->OnComponentBeginOverlap.AddUniqueDynamic(this, &ATargetZone::HandleZoneOverlap);
 }
 
+float ATargetZone::GetBankingRadiusUnits() const
+{
+	const FVector Extent = ZoneCollisionComponent->GetScaledBoxExtent();
+	return FMath::Max(Extent.X, Extent.Y);
+}
+
 void ATargetZone::HandleZoneOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	IHerdable* Herdable = Cast<IHerdable>(OtherActor);

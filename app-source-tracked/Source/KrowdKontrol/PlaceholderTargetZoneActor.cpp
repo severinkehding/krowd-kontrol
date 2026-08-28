@@ -7,6 +7,7 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "AbilityTargetingIndicatorComponent.h"
 
 APlaceholderTargetZoneActor::APlaceholderTargetZoneActor()
 {
@@ -79,6 +80,8 @@ APlaceholderTargetZoneActor::APlaceholderTargetZoneActor()
 	// Placeholder brightness/radius - not tuned against any real room scale yet.
 	BeaconLightComponent->SetIntensity(BeaconBaselineIntensity);
 	BeaconLightComponent->SetAttenuationRadius(900.0f);
+
+	BankingRadiusIndicatorComponent = CreateDefaultSubobject<UAbilityTargetingIndicatorComponent>(TEXT("BankingRadiusIndicatorComponent"));
 }
 
 void APlaceholderTargetZoneActor::IntensifyBeacon()
@@ -123,6 +126,19 @@ void APlaceholderTargetZoneActor::ApplyChainColour(FLinearColor Colour)
 	{
 		BeaconLightComponent->SetLightColor(Colour);
 	}
+}
+
+void APlaceholderTargetZoneActor::ShowBankingRadiusIndicator(float RadiusUnits, FLinearColor Colour)
+{
+	if (!BankingRadiusIndicatorComponent)
+	{
+		return;
+	}
+	FAbilityIndicatorShapeSpec ShapeSpec;
+	ShapeSpec.Kind = EAbilityIndicatorShapeKind::CircleAtActor;
+	ShapeSpec.Origin = GetActorLocation();
+	ShapeSpec.RangeUnits = RadiusUnits;
+	BankingRadiusIndicatorComponent->Show(ShapeSpec, Colour);
 }
 
 void APlaceholderTargetZoneActor::PostInitializeComponents()
