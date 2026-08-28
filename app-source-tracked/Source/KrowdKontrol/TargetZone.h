@@ -34,7 +34,7 @@ public:
 	// silently drift from the actual banking-overlap volume (issue #365 REQ-3). Uses
 	// Max(X, Y) since the box is authored square in XY but is EditAnywhere, so a
 	// placed instance could be scaled non-uniformly.
-	UFUNCTION(BlueprintCallable, Category = "Target Zone")
+	UFUNCTION(BlueprintPure, Category = "Target Zone")
 	float GetBankingRadiusUnits() const;
 
 	// Colour METADATA only - no longer gates acceptance (operator ruling 2026-08-22,

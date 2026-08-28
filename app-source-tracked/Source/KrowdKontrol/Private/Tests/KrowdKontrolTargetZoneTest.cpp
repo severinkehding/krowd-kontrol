@@ -190,6 +190,23 @@ bool FKrowdKontrolTargetZoneTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("GetBankingRadiusUnits() should track a runtime box-extent change, not a cached value"),
 		Zone->GetBankingRadiusUnits(), 300.0f);
 
+	// GetBankingRadiusUnits() must use Max(Extent.X, Extent.Y), not a plain Extent.X
+	// (or Extent.Y) read, since the box is EditAnywhere and a placed instance could be
+	// scaled non-uniformly - see the function's own header comment.
+	Zone->ZoneCollisionComponent->SetBoxExtent(FVector(500.f, 200.f, 100.f));
+	TestEqual(TEXT("GetBankingRadiusUnits() should return Max(X, Y), not X alone, for a non-uniformly-scaled box"),
+		Zone->GetBankingRadiusUnits(), 500.0f);
+	Zone->ZoneCollisionComponent->SetBoxExtent(FVector(200.f, 500.f, 100.f));
+	TestEqual(TEXT("GetBankingRadiusUnits() should return Max(X, Y) regardless of which axis is larger"),
+		Zone->GetBankingRadiusUnits(), 500.0f);
+
+	// GetBankingRadiusUnits() must read GetScaledBoxExtent(), not the unscaled extent,
+	// so a designer-scaled placed instance still gets an honest radius.
+	Zone->ZoneCollisionComponent->SetBoxExtent(FVector(200.f, 200.f, 100.f));
+	Zone->SetActorScale3D(FVector(2.f, 2.f, 1.f));
+	TestEqual(TEXT("GetBankingRadiusUnits() should read the scaled extent, not the unscaled one, for a scaled actor instance"),
+		Zone->GetBankingRadiusUnits(), 400.0f);
+
 	return true;
 }
 
