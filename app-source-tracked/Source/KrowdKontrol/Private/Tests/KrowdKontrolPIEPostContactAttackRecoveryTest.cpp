@@ -59,7 +59,7 @@ private:
 		ResolveTopology,
 		WaitForRoomActivated,
 		WaitForAttack,
-		RetreatPlayerAndBindListener,
+		RetreatPlayer,
 		WaitForAttackExpiry,
 		WaitForMovementResumption,
 		Done
@@ -108,7 +108,7 @@ bool FKrowdKontrolDriveEnemyIntoAttackAndRecoverCommand::Update()
 			return true;
 		}
 
-		// Bound here (not in RetreatPlayerAndBindListener) so no attack-expiry
+		// Bound here (not in RetreatPlayer) so no attack-expiry
 		// broadcast between now and the retreat phase can be missed.
 		TargetEnemy->OnEnemyAttackExpired.AddDynamic(Listener->Get(), &UEnemyAttackExpiredTestListener::HandleEnemyAttackExpired);
 
@@ -154,11 +154,11 @@ bool FKrowdKontrolDriveEnemyIntoAttackAndRecoverCommand::Update()
 		// distance, for any of the four concrete enemy types.
 		if (TargetEnemy->GetEnemyState() == EEnemyState::Attack)
 		{
-			Phase = EPhase::RetreatPlayerAndBindListener;
+			Phase = EPhase::RetreatPlayer;
 		}
 		return false;
 
-	case EPhase::RetreatPlayerAndBindListener:
+	case EPhase::RetreatPlayer:
 	{
 		// Listener is already bound (ResolveTopology) - this phase only retreats the
 		// player pawn, mirroring issue #313's own bug report framing ("player
