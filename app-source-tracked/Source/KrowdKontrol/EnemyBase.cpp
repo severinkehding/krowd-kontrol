@@ -11,6 +11,9 @@
 #include "RoomActor.h"
 #include "CoreGlobals.h"
 #include "ControlledDurationIndicatorComponent.h"
+#include "Components/MeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "EnemyTypeIndicatorComponent.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -48,6 +51,8 @@ void AEnemyBase::BeginPlay()
 	{
 		RootPrimitive->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
 	}
+
+	ApplyBodyChainColourTint();
 
 	// Issue #174 AC1: routes every real Controlled-state expiry into the Crowd
 	// Mastery running-max sample, the same production wiring
@@ -152,6 +157,7 @@ void AEnemyBase::AdvanceToAttack()
 		return;
 	}
 	CurrentState = EEnemyState::Attack;
+	RemainingAttackSeconds = GetAttackDurationSeconds();
 	OnAttackEntry();
 }
 
@@ -227,6 +233,30 @@ void AEnemyBase::TickControlledDuration(float DeltaSeconds)
 		OnControlledExpired();
 		OnEnemyControlledExpired.Broadcast();
 		ControlledDurationIndicatorComponent->Hide();
+	}
+}
+
+void AEnemyBase::TickAttackDuration(float DeltaSeconds)
+{
+	if (CurrentState != EEnemyState::Attack)
+	{
+		return;
+	}
+	RemainingAttackSeconds = FMath::Max(0.0f, RemainingAttackSeconds - DeltaSeconds);
+	if (RemainingAttackSeconds <= 0.0f)
+	{
+		// Issue #313: an enemy's contact reaction (attack tell/fire/cooldown) must
+		// always end on its own, never requiring the player to spend a control
+		// ability just to unstick it. Reverting to Alert (not Idle) re-enters the
+		// same TickCheckDetection proximity check that got it here, so a player still
+		// standing in attack range gets re-triggered into Attack later in this same
+		// Tick() call (TickCheckDetection runs right after this, gated on a live
+		// player pawn same as every tick - see Tick()'s own pawn-lookup block) -
+		// this is what makes an enemy that keeps the player in range keep attacking,
+		// and one whose target retreats actually resume chasing.
+		CurrentState = EEnemyState::Alert;
+		OnAttackExpired();
+		OnEnemyAttackExpired.Broadcast();
 	}
 }
 
@@ -343,9 +373,10 @@ void AEnemyBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Not gated on a live player pawn below - the Controlled-duration timer isn't
-	// player-position-dependent, unlike detection/chase.
+	// Not gated on a live player pawn below - neither timer is player-position-
+	// dependent, unlike detection/chase.
 	TickControlledDuration(DeltaTime);
+	TickAttackDuration(DeltaTime);
 
 	// GetPlayerPawn returns nullptr in a headless Automation test with no
 	// PlayerController spawned - this is fine and expected; TickCheckDetection and
@@ -415,4 +446,51 @@ float AEnemyBase::GetEffectiveMovementSpeedUnitsPerSecond() const
 float AEnemyBase::GetEffectiveFollowSpeedUnitsPerSecond() const
 {
 	return FollowSpeedUnitsPerSecond * (bIsElite ? EliteMovementSpeedMultiplier : 1.0f);
+}
+
+void AEnemyBase::ApplyBodyChainColourTint()
+{
+	UMeshComponent* BodyMesh = Cast<UMeshComponent>(GetRootComponent());
+	if (!BodyMesh)
+	{
+		// AEnemyBaseTestActor (and any other bare AEnemyBase test double) has a plain
+		// USceneComponent root, not a mesh - nothing to tint. Not a warning: this is a
+		// legitimate, exercised-by-tests shape, not a misconfiguration.
+		return;
+	}
+
+	const UEnemyTypeIndicatorComponent* TypeIndicator = FindComponentByClass<UEnemyTypeIndicatorComponent>();
+	if (!TypeIndicator)
+	{
+		// No type-tagged marker (e.g. the same test doubles above) - nothing to derive
+		// a chain colour from. Every real concrete subclass (Bomber/Sniper/Trooper/
+		// Runner) always has one, set in its own constructor (issue #77).
+		return;
+	}
+
+	if (!BodyChainColourMaterialInstance)
+	{
+		static const TSoftObjectPtr<UMaterialInterface> BaseMaterialSoftPtr(
+			FSoftObjectPath(TEXT("/Game/_Placeholder/Abilities/M_AbilityIndicator.M_AbilityIndicator")));
+		UMaterialInterface* BaseMaterial = BaseMaterialSoftPtr.LoadSynchronous();
+		if (!BaseMaterial)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("AEnemyBase: failed to load placeholder material '%s' on '%s' - body will keep its default tint."),
+				*BaseMaterialSoftPtr.ToString(), *GetNameSafe(this));
+			return;
+		}
+		BodyChainColourMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (!BodyChainColourMaterialInstance)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("AEnemyBase: UMaterialInstanceDynamic::Create() returned null on '%s' - body will keep its default tint."),
+				*GetNameSafe(this));
+			return;
+		}
+		BodyMesh->SetMaterial(0, BodyChainColourMaterialInstance);
+	}
+
+	CurrentBodyChainColour = AbilityData::GetChainColourForEnemyType(TypeIndicator->EnemyType);
+	BodyChainColourMaterialInstance->SetVectorParameterValue(TEXT("Colour"), CurrentBodyChainColour);
 }

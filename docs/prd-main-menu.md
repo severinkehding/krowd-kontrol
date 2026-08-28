@@ -31,14 +31,19 @@ to start a playtest again.
 - Editor workflow unaffected: opening a gameplay map directly and hitting PIE
   still works for development.
 
-### REQ-2: Level select (P0)
+### REQ-2: Level select (P0) — ✅ implemented, issue #325
 - The menu lists the shipped levels (L1–L3 today) and starts the chosen one.
 - Driven by the same level-sequence data as
   `docs/prd-post-run-progression.md` REQ-3 — one authority for "what levels
   exist and in what order," consumed by both the menu and the next-level
-  button.
+  button. Implemented as `ULevelSequenceSubsystem::GetShippedLevelMapNames()`,
+  extending the authority issue #321 established rather than duplicating it.
 - No lock/unlock gating yet: all shipped levels selectable (Alpha stance —
   gating is a future PRD once there's a reason for it).
+- Known gap: the real `LevelSequenceTable` content `DataTable` asset doesn't
+  exist yet (same gap #321 flagged), so the real in-game menu shows zero
+  level buttons until that content-authoring follow-up lands. Automation
+  tests inject their own in-code table to cover the logic in the meantime.
 
 ### REQ-3: Menu chrome and navigation (P0)
 - Title, level select, a Quit button (quits cleanly in packaged/-game; exits
@@ -49,7 +54,7 @@ to start a playtest again.
 - HUD chrome rules apply (Hard Invariant 3 — neutral chrome, no reserved
   gameplay colours for decoration).
 
-### REQ-4: Clear screen returns here (P1)
+### REQ-4: Clear screen returns here (P1) — ✅ implemented, issue #326
 - Once this map exists, `docs/prd-post-run-progression.md`'s final-level
   routing and any "back to menu" affordance target this menu.
 

@@ -31,6 +31,8 @@
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "EnemyTypeIndicatorComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -106,6 +108,26 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 			ReservedGameplayColours::GetAll().ContainsByPredicate(
 				[Sniper](const FLinearColor& Reserved) { return Reserved.Equals(Sniper->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 	}
+
+	// (b3) Body chain-colour tint (issue #316): SN-1PR's chain colour is Sleep's colour
+	// (AbilityData::GetChainColourForEnemyType), applied to MeshComponent via a lazily-
+	// created MID, and ApplyBodyChainColourTint() is idempotent (same MID instance,
+	// re-applying the same colour, on a second call).
+	Sniper->ApplyBodyChainColourTint();
+	const FLinearColor ExpectedBodyColour = AbilityData::GetChainColourForEnemyType(EEnemyType::SN_1PR);
+	TestTrue(TEXT("body chain colour matches AbilityData::GetChainColourForEnemyType(SN_1PR)"),
+		Sniper->CurrentBodyChainColour.Equals(ExpectedBodyColour, 0.01f));
+	UMaterialInstanceDynamic* FirstBodyMID = Sniper->BodyChainColourMaterialInstance;
+	if (TestNotNull(TEXT("BodyChainColourMaterialInstance should be created"), FirstBodyMID))
+	{
+		TestTrue(TEXT("MeshComponent's material 0 is the BodyChainColourMaterialInstance"),
+			Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) == FirstBodyMID);
+	}
+	Sniper->ApplyBodyChainColourTint();
+	TestTrue(TEXT("second call reuses the same MID instance"),
+		Sniper->BodyChainColourMaterialInstance.Get() == FirstBodyMID);
+	TestEqual(TEXT("EnemyTypeIndicatorComponent's own EnemyType is unchanged by the body tint"),
+		static_cast<uint8>(Sniper->EnemyTypeIndicatorComponent->EnemyType), static_cast<uint8>(EEnemyType::SN_1PR));
 
 	// Drives a sniper from Idle straight through to Attack via two zero/mid-distance
 	// detection checks (Idle -> Alert -> Attack) - shared by every case below that
@@ -262,6 +284,20 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l2) The one-shot guard should still prevent a second shot while Rooted"),
 		RootedListener->CallCount, 1);
 
+	// (l-attack-expired) issue #313 pass-1 review follow-up (HIGH): OnAttackExpired
+	// must clear the tell light once the Attack-duration timeout reverts Attack ->
+	// Alert unconditionally, mid-telegraph - the same bug class the Controlled ->
+	// Alert edge's OnControlledExpired override exists to prevent, but for Attack.
+	ASniperEnemy* ExpiredAttackSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(ExpiredAttackSniper, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-attack-expired) Attack tell should be visibly on before the Attack-duration timeout"),
+		ExpiredAttackSniper->AttackTellLightComponent->Intensity > 0.0f);
+	ExpiredAttackSniper->TickAttackDuration(ExpiredAttackSniper->GetAttackDurationSeconds());
+	TestEqual(TEXT("(l-attack-expired) Sniper should be back to Alert once the Attack-duration timeout elapses"),
+		static_cast<uint8>(ExpiredAttackSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-attack-expired) OnAttackExpired should clear the tell light once the Attack-duration timeout elapses"),
+		ExpiredAttackSniper->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
 	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
 	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
@@ -290,9 +326,26 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
 	{
+		// Issue #316 (test-coverage review): SpawnActor<>() alone does NOT run
+		// BeginPlay() on a bare CreateNewMap() world - both calls below are required
+		// (see KrowdKontrolTargetZoneTest.cpp's file comment for why neither alone
+		// suffices), made once up front so every actor spawned into World afterward
+		// auto-begins-play via the engine's normal flow.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
 		ASniperEnemy* TickedSniper = World->SpawnActor<ASniperEnemy>();
 		if (TestNotNull(TEXT("ASniperEnemy should spawn into the test World"), TickedSniper))
 		{
+			// The direct-invocation case above only proves ApplyBodyChainColourTint()
+			// works when called directly, not that BeginPlay() actually calls it - this
+			// proves the wiring.
+			TestNotNull(TEXT("BeginPlay() should have created BodyChainColourMaterialInstance"),
+				TickedSniper->BodyChainColourMaterialInstance.Get());
+			TestTrue(TEXT("BeginPlay() should have applied SN_1PR's chain colour"),
+				TickedSniper->CurrentBodyChainColour.Equals(
+					AbilityData::GetChainColourForEnemyType(EEnemyType::SN_1PR), 0.01f));
+
 			AdvanceToAttack(TickedSniper, ZeroDistanceLocation);
 			USniperShotFiredTestListener* TickedListener = NewObject<USniperShotFiredTestListener>();
 			TickedSniper->OnSniperShotFired.AddDynamic(TickedListener, &USniperShotFiredTestListener::HandleSniperShotFired);

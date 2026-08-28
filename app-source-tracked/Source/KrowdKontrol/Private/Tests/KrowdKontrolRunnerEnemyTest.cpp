@@ -35,6 +35,7 @@
 #include "BomberEnemy.h"
 #include "TrooperEnemy.h"
 #include "AbilityData.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -112,6 +113,26 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 			ReservedGameplayColours::GetAll().ContainsByPredicate(
 				[Runner](const FLinearColor& Reserved) { return Reserved.Equals(Runner->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 	}
+
+	// (b4) Body chain-colour tint (issue #316): RU-NNR's chain colour is Snare's colour
+	// (AbilityData::GetChainColourForEnemyType), applied to MeshComponent via a lazily-
+	// created MID, and ApplyBodyChainColourTint() is idempotent (same MID instance,
+	// re-applying the same colour, on a second call).
+	Runner->ApplyBodyChainColourTint();
+	const FLinearColor ExpectedBodyColour = AbilityData::GetChainColourForEnemyType(EEnemyType::RU_NNR);
+	TestTrue(TEXT("body chain colour matches AbilityData::GetChainColourForEnemyType(RU_NNR)"),
+		Runner->CurrentBodyChainColour.Equals(ExpectedBodyColour, 0.01f));
+	UMaterialInstanceDynamic* FirstBodyMID = Runner->BodyChainColourMaterialInstance;
+	if (TestNotNull(TEXT("BodyChainColourMaterialInstance should be created"), FirstBodyMID))
+	{
+		TestTrue(TEXT("MeshComponent's material 0 is the BodyChainColourMaterialInstance"),
+			Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) == FirstBodyMID);
+	}
+	Runner->ApplyBodyChainColourTint();
+	TestTrue(TEXT("second call reuses the same MID instance"),
+		Runner->BodyChainColourMaterialInstance.Get() == FirstBodyMID);
+	TestEqual(TEXT("EnemyTypeIndicatorComponent's own EnemyType is unchanged by the body tint"),
+		static_cast<uint8>(Runner->EnemyTypeIndicatorComponent->EnemyType), static_cast<uint8>(EEnemyType::RU_NNR));
 
 	// Drives a runner from Idle straight through to Attack via two zero/mid-distance
 	// detection checks (Idle -> Alert -> Attack) - shared by every case below that
@@ -292,6 +313,20 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l-snare) The drain-ray should fire exactly once once cumulative quarter-speed elapsed time reaches AttackTelegraphSeconds"),
 		SnaredListener->CallCount, 1);
 
+	// (l-attack-expired) issue #313 pass-1 review follow-up (HIGH): OnAttackExpired
+	// must clear the tell light once the Attack-duration timeout reverts Attack ->
+	// Alert unconditionally, mid-telegraph - the same bug class the Controlled ->
+	// Alert edge's OnControlledExpired override exists to prevent, but for Attack.
+	ARunnerEnemy* ExpiredAttackRunner = NewObject<ARunnerEnemy>();
+	AdvanceToAttack(ExpiredAttackRunner, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-attack-expired) Attack tell should be visibly on before the Attack-duration timeout"),
+		ExpiredAttackRunner->AttackTellLightComponent->Intensity > 0.0f);
+	ExpiredAttackRunner->TickAttackDuration(ExpiredAttackRunner->GetAttackDurationSeconds());
+	TestEqual(TEXT("(l-attack-expired) Runner should be back to Alert once the Attack-duration timeout elapses"),
+		static_cast<uint8>(ExpiredAttackRunner->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-attack-expired) OnAttackExpired should clear the tell light once the Attack-duration timeout elapses"),
+		ExpiredAttackRunner->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (l2) GetMovementSpeedUnitsPerSecond() override returns the declared
 	// MovementSpeed (950.0f), not AEnemyBase's own base default (600.0f) - the direct
 	// proof that issue #122's "per-type speeds are actually read" holds for RU-NNR too.
@@ -323,9 +358,26 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
 	{
+		// Issue #316 (test-coverage review): SpawnActor<>() alone does NOT run
+		// BeginPlay() on a bare CreateNewMap() world - both calls below are required
+		// (see KrowdKontrolTargetZoneTest.cpp's file comment for why neither alone
+		// suffices), made once up front so every actor spawned into World afterward
+		// auto-begins-play via the engine's normal flow.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
 		ARunnerEnemy* TickedRunner = World->SpawnActor<ARunnerEnemy>();
 		if (TestNotNull(TEXT("ARunnerEnemy should spawn into the test World"), TickedRunner))
 		{
+			// The direct-invocation case above only proves ApplyBodyChainColourTint()
+			// works when called directly, not that BeginPlay() actually calls it - this
+			// proves the wiring.
+			TestNotNull(TEXT("BeginPlay() should have created BodyChainColourMaterialInstance"),
+				TickedRunner->BodyChainColourMaterialInstance.Get());
+			TestTrue(TEXT("BeginPlay() should have applied RU_NNR's chain colour"),
+				TickedRunner->CurrentBodyChainColour.Equals(
+					AbilityData::GetChainColourForEnemyType(EEnemyType::RU_NNR), 0.01f));
+
 			AdvanceToAttack(TickedRunner, ZeroDistanceLocation);
 			UDrainRayFiredTestListener* TickedListener = NewObject<UDrainRayFiredTestListener>();
 			TickedRunner->OnRunnerDrainFired.AddDynamic(TickedListener, &UDrainRayFiredTestListener::HandleDrainRayFired);

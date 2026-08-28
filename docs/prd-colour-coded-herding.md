@@ -41,7 +41,7 @@ pole, done.
   Root's colour-match target is TR-UPR, then Trooper's chain colour is Root's
   colour, and so on for all matchups.
 
-### REQ-2: Enemies wear their chain colour solidly (P0)
+### REQ-2: Enemies wear their chain colour solidly (P0) — ✅ implemented, issue #316
 - The enemy's body reads as its chain colour at gameplay camera distance —
   material tint on the placeholder mesh is fine (placeholder-first), the
   existing small `EnemyTypeIndicatorComponent` marker is NOT sufficient alone
@@ -49,7 +49,7 @@ pole, done.
 - Status/effect indication (Controlled bar etc.) must remain readable on top
   of the new tint.
 
-### REQ-3: Pens/poles wear the chain colour of the type they accept (P0)
+### REQ-3: Pens/poles wear the chain colour of the type they accept (P0) — ✅ implemented, issue #317
 - Each type-keyed `ATargetZone` pole/marker renders solidly in its accepted
   type's chain colour (emissive or lit so it reads across the room).
 - A zone that accepts any type (if any such zone remains) uses the existing

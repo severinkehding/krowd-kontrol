@@ -292,6 +292,46 @@ bool FKrowdKontrolLevelSequenceSubsystemTest::RunTest(const FString& Parameters)
 			Listener->RunCompleteCallCount, 0);
 	}
 
+	// (e) GetShippedLevelMapNames(): issue #325's shared-authority enumeration. A
+	// multi-row table returns every row name in table order; an unset table (today's
+	// real production default, per case (d) above) returns an empty array rather than
+	// crashing or warning - this is a pure query, not the warn-once
+	// FindCurrentMapRow()/HandleLevelClear() path, so no AddExpectedError() is needed
+	// here.
+	{
+		UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+		if (!TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
+		{
+			return false;
+		}
+
+		ULevelSequenceSubsystem* SequenceSubsystem = World->GetSubsystem<ULevelSequenceSubsystem>();
+		if (!TestNotNull(TEXT("UWorld should auto-instantiate ULevelSequenceSubsystem"), SequenceSubsystem))
+		{
+			return false;
+		}
+
+		TestEqual(TEXT("GetShippedLevelMapNames should be empty with an unset LevelSequenceTable"),
+			SequenceSubsystem->GetShippedLevelMapNames().Num(), 0);
+
+		UDataTable* Table = NewObject<UDataTable>();
+		Table->RowStruct = FLevelSequenceRow::StaticStruct();
+		FLevelSequenceRow Row1; Row1.NextLevelMapName = FName(TEXT("L_Level02"));
+		Table->AddRow(FName(TEXT("L_Level01")), Row1);
+		FLevelSequenceRow Row2; Row2.NextLevelMapName = FName(TEXT("L_Level03"));
+		Table->AddRow(FName(TEXT("L_Level02")), Row2);
+		FLevelSequenceRow Row3; Row3.NextLevelMapName = NAME_None;
+		Table->AddRow(FName(TEXT("L_Level03")), Row3);
+		SequenceSubsystem->LevelSequenceTable = Table;
+
+		const TArray<FName> ShippedLevels = SequenceSubsystem->GetShippedLevelMapNames();
+		TestEqual(TEXT("GetShippedLevelMapNames should return all 3 configured rows"),
+			ShippedLevels.Num(), 3);
+		TestTrue(TEXT("GetShippedLevelMapNames should include L_Level01"), ShippedLevels.Contains(FName(TEXT("L_Level01"))));
+		TestTrue(TEXT("GetShippedLevelMapNames should include L_Level02"), ShippedLevels.Contains(FName(TEXT("L_Level02"))));
+		TestTrue(TEXT("GetShippedLevelMapNames should include L_Level03"), ShippedLevels.Contains(FName(TEXT("L_Level03"))));
+	}
+
 	return true;
 }
 

@@ -23,6 +23,8 @@
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "EnemyTypeIndicatorComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -83,6 +85,26 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			ReservedGameplayColours::GetAll().ContainsByPredicate(
 				[Bomber](const FLinearColor& Reserved) { return Reserved.Equals(Bomber->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 	}
+
+	// (b3) Body chain-colour tint (issue #316): B0-0MR's chain colour is Fear's colour
+	// (AbilityData::GetChainColourForEnemyType), applied to MeshComponent via a lazily-
+	// created MID, and ApplyBodyChainColourTint() is idempotent (same MID instance,
+	// re-applying the same colour, on a second call).
+	Bomber->ApplyBodyChainColourTint();
+	const FLinearColor ExpectedBodyColour = AbilityData::GetChainColourForEnemyType(EEnemyType::B0_0MR);
+	TestTrue(TEXT("body chain colour matches AbilityData::GetChainColourForEnemyType(B0_0MR)"),
+		Bomber->CurrentBodyChainColour.Equals(ExpectedBodyColour, 0.01f));
+	UMaterialInstanceDynamic* FirstBodyMID = Bomber->BodyChainColourMaterialInstance;
+	if (TestNotNull(TEXT("BodyChainColourMaterialInstance should be created"), FirstBodyMID))
+	{
+		TestTrue(TEXT("MeshComponent's material 0 is the BodyChainColourMaterialInstance"),
+			Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) == FirstBodyMID);
+	}
+	Bomber->ApplyBodyChainColourTint();
+	TestTrue(TEXT("second call reuses the same MID instance"),
+		Bomber->BodyChainColourMaterialInstance.Get() == FirstBodyMID);
+	TestEqual(TEXT("EnemyTypeIndicatorComponent's own EnemyType is unchanged by the body tint"),
+		static_cast<uint8>(Bomber->EnemyTypeIndicatorComponent->EnemyType), static_cast<uint8>(EEnemyType::B0_0MR));
 
 	// Drives Idle -> Alert -> Attack via two detection checks - shared below.
 	auto AdvanceToAttack = [](ABomberEnemy* TargetBomber, const FVector& PlayerLocation)
@@ -221,6 +243,20 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(l-root) OnControlledExpired should clear the tell light once Root's window ends"),
 		RootedBomber->AttackTellLightComponent->Intensity, 0.0f);
 
+	// (l-attack-expired) issue #313 pass-1 review follow-up (HIGH): OnAttackExpired
+	// must clear the tell light once the Attack-duration timeout reverts Attack ->
+	// Alert unconditionally, mid-telegraph - the same bug OnControlledExpired above
+	// exists to prevent, but for the Attack -> Alert edge instead of Controlled -> Alert.
+	ABomberEnemy* ExpiredAttackBomber = NewObject<ABomberEnemy>();
+	AdvanceToAttack(ExpiredAttackBomber, ZeroDistanceLocation);
+	TestTrue(TEXT("(l-attack-expired) Attack tell should be visibly on before the Attack-duration timeout"),
+		ExpiredAttackBomber->AttackTellLightComponent->Intensity > 0.0f);
+	ExpiredAttackBomber->TickAttackDuration(ExpiredAttackBomber->GetAttackDurationSeconds());
+	TestEqual(TEXT("(l-attack-expired) Bomber should be back to Alert once the Attack-duration timeout elapses"),
+		static_cast<uint8>(ExpiredAttackBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(l-attack-expired) OnAttackExpired should clear the tell light once the Attack-duration timeout elapses"),
+		ExpiredAttackBomber->AttackTellLightComponent->Intensity, 0.0f);
+
 	// (m-snare) issue #254: unlike Root above (which runs its attack unmodified), Snare
 	// scales the attack telegraph's elapsed time by ControlledSpeedMultiplier (0.5f) -
 	// a full AttackTelegraphSeconds' worth of ticks only advances the telegraph 50% of
@@ -270,13 +306,35 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
 	{
+		// Issue #316 (test-coverage review): SpawnActor<>() alone does NOT run
+		// BeginPlay() on a bare CreateNewMap() world - both calls below are required
+		// (see KrowdKontrolTargetZoneTest.cpp's file comment for why neither alone
+		// suffices), made once up front so every actor spawned into World afterward
+		// auto-begins-play via the engine's normal flow.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
 		ABomberEnemy* TickedBomber = World->SpawnActor<ABomberEnemy>();
 		if (TestNotNull(TEXT("ABomberEnemy should spawn into the test World"), TickedBomber))
 		{
+			// (b3) above only proves ApplyBodyChainColourTint() works when called
+			// directly, not that BeginPlay() actually calls it - this proves the wiring.
+			TestNotNull(TEXT("BeginPlay() should have created BodyChainColourMaterialInstance"),
+				TickedBomber->BodyChainColourMaterialInstance.Get());
+			TestTrue(TEXT("BeginPlay() should have applied B0_0MR's chain colour"),
+				TickedBomber->CurrentBodyChainColour.Equals(
+					AbilityData::GetChainColourForEnemyType(EEnemyType::B0_0MR), 0.01f));
+
 			AdvanceToAttack(TickedBomber, ZeroDistanceLocation);
 			UBomberExplodedTestListener* TickedListener = NewObject<UBomberExplodedTestListener>();
 			TickedBomber->OnBomberExploded.AddDynamic(TickedListener, &UBomberExplodedTestListener::HandleBomberExploded);
 			TickedBomber->Tick(TickedBomber->AttackTelegraphSeconds);
+			// Issue #313 (test-coverage review): proves the base class's own
+			// TickAttackDuration (2.5s) hasn't already preempted this telegraph
+			// (2.0s) within this same Tick() call - the exact tick-order race the
+			// AttackDuration-vs-AttackTelegraphSeconds margin exists to avoid.
+			TestEqual(TEXT("Attack-duration timeout must not have preempted the telegraph"),
+				static_cast<uint8>(TickedBomber->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 			TestEqual(TEXT("Tick() drives the telegraph through to firing"), TickedListener->CallCount, 1);
 		}
 		// (n) TriggerExplosion doesn't crash with no UWorld (GetWorld() null guard);

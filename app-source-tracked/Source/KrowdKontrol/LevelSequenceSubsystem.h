@@ -40,11 +40,12 @@ class KROWDKONTROL_API ULevelSequenceSubsystem : public UWorldSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	// Content asset: one row per level map name, authored EditDefaultsOnly -
-	// designer-set later, matching ULevelLifecycleSubsystem::FinalMapName /
-	// ULevelBriefingSubsystem::LevelBriefingTable's identical "designer sets this
-	// later" gap. Public, so Automation tests inject an in-code
-	// NewObject<UDataTable>() directly, no friendship needed.
+	// Content asset: one row per level map name. EditDefaultsOnly for the (never
+	// exercised by real WorldSubsystems, which have no per-instance Details panel)
+	// case some other system wants to override it directly; in practice Initialize()
+	// below auto-loads /Game/Data/DT_LevelSequenceTable for real game worlds. Public,
+	// so Automation tests inject an in-code NewObject<UDataTable>() directly, no
+	// friendship needed.
 	UPROPERTY(EditDefaultsOnly, Category = "Level Sequence")
 	TObjectPtr<UDataTable> LevelSequenceTable;
 
@@ -74,6 +75,18 @@ public:
 	// already the sequence's final level (NAME_None).
 	UFUNCTION(BlueprintCallable, Category = "Level Sequence")
 	void AdvanceToNextLevel();
+
+	// Returns every level map name configured in LevelSequenceTable (one row per
+	// shipped level, keyed by the level's own map name). LevelSequenceTable itself is
+	// the shared level-sequence authority both the main menu's level-select list
+	// (issue #325, via this function) and the post-run NEXT LEVEL button (issue #321,
+	// via the separate FindCurrentMapRow()-based ComputeNextLevelMapName()/
+	// AdvanceToNextLevel() above) read from - only the underlying data is shared, not
+	// a code path; the two features look it up differently. Row order matches
+	// LevelSequenceTable's authored/insertion order (UDataTable::GetRowNames()).
+	// Empty if LevelSequenceTable is unset.
+	UFUNCTION(BlueprintPure, Category = "Level Sequence")
+	TArray<FName> GetShippedLevelMapNames() const;
 
 	// Recorded unconditionally at the top of AdvanceToNextLevel(), before its
 	// IsGameWorld() guard - the real UGameplayStatics::OpenLevel() call stays

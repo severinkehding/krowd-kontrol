@@ -77,6 +77,7 @@ private:
 	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
 	friend class FKrowdKontrolPostRunSummaryRerunButtonTest;
 	friend class FKrowdKontrolPostRunSummaryNextLevelButtonTest;
+	friend class FKrowdKontrolPostRunSummaryLayoutIntegrityTest;
 
 	void BuildWidgetTree();
 
@@ -122,10 +123,11 @@ private:
 	void HandleRerunClicked();
 
 	// Bound to NextLevelButton->OnClicked. If ResolvedNextLevelMapName is NAME_None
-	// (this is the sequence's final shipped level), reruns the current level via the
-	// shared defeat-restart reload path (issue #223) - the "FINISH RUN (More Levels
-	// Coming)" placeholder behavior, per this issue's AC, since routing to a main
-	// menu is deferred to docs/prd-main-menu.md. Otherwise advances via
+	// (this is the sequence's final shipped level), routes back to the main menu
+	// (issue #326) by resolving UGameMapsSettings::GetGameDefaultMap() and (if
+	// IsGameWorld()) calling UGameplayStatics::OpenLevel() to it - replaces the
+	// issue #321-era "rerun the current level" placeholder now that
+	// docs/prd-main-menu.md's L_MainMenu exists. Otherwise advances via
 	// ULevelSequenceSubsystem::AdvanceToNextLevel().
 	UFUNCTION()
 	void HandleNextLevelClicked();
@@ -151,10 +153,9 @@ private:
 	// bHasWarnedMissingOwningControllerOnRerun's idiom above.
 	bool bHasWarnedMissingOwningControllerForFocus = false;
 
-	// One-shot warning guards for HandleNextLevelClicked()'s two dependency-lookup
-	// branches, mirroring bHasWarnedMissingLevelClearTimeSubsystem's idiom above -
-	// without these, a repeatedly-clicked dead button would otherwise spam the log.
-	bool bHasWarnedMissingOwningController = false;
+	// One-shot warning guard for HandleNextLevelClicked()'s sequence-subsystem
+	// lookup, mirroring bHasWarnedMissingLevelClearTimeSubsystem's idiom above -
+	// without this, a repeatedly-clicked dead button would otherwise spam the log.
 	bool bHasWarnedMissingSequenceSubsystemOnClick = false;
 
 	// Kept as a member (rather than a BuildWidgetTree() local) so
@@ -194,6 +195,15 @@ private:
 	// only ever called from this same click handler, never automatically).
 	UPROPERTY()
 	FName ResolvedNextLevelMapName = NAME_None;
+
+	// Recorded unconditionally at the top of HandleNextLevelClicked()'s final-level
+	// branch, before its IsGameWorld() guard - mirrors ULevelSequenceSubsystem::
+	// LastAdvanceAttemptedMapName's identical seam (issue #172's documented
+	// CreateNewMap()-Editor-World-hang hazard applies here too), so Automation tests
+	// can assert the click handler resolved and attempted the right main-menu map
+	// even though the real OpenLevel() call itself stays unreachable there.
+	UPROPERTY()
+	FName LastMainMenuLoadAttemptedMapName = NAME_None;
 
 	// Placeholder values only (issue #74) - shown until a real OnLevelClear broadcast
 	// calls SetSummaryValues() with real data (issue #175).

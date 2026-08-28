@@ -188,6 +188,26 @@ bool FKrowdKontrolControlledDurationIndicatorComponentTest::RunTest(const FStrin
 				WorldBomber->TickControlledDuration(FearDurationSeconds / 2.0f);
 				TestTrue(TEXT("(g3) FillMeshComponent's relative X should move negative (left) as FillFraction drains below 1.0"),
 					WorldIndicator->FillMeshComponent->GetRelativeLocation().X < RelativeXAtFullFraction);
+
+				// (g4) issue #316 readability guard: ApplyBodyChainColourTint() tints the
+				// enemy's root mesh via its own BodyChainColourMaterialInstance, a completely
+				// separate component and material instance from the Controlled-duration bar's
+				// FillMeshComponent/FillMaterialInstance - so the bar's rendered colour can
+				// never be affected by the body tint regardless of chain colour. This
+				// automated check stands in for the MCP-viewport-capture verification the
+				// issue calls for, which has no implementable path: no MCP primitive exists to
+				// drive a live PIE enemy into Controlled state (see this project's established
+				// holdout limitations).
+				WorldBomber->ApplyBodyChainColourTint();
+				if (TestNotNull(TEXT("(g4) WorldBomber's root mesh should be tinted after ApplyBodyChainColourTint()"), WorldBomber->BodyChainColourMaterialInstance.Get()))
+				{
+					TestNotEqual(TEXT("(g4) The body tint's material instance must be a distinct object from the Controlled-duration bar's own material instance"),
+						WorldBomber->BodyChainColourMaterialInstance.Get(), WorldIndicator->FillMaterialInstance.Get());
+					TestNotEqual(TEXT("(g4) The body tint is applied to the root mesh, never to the Controlled-duration bar's own mesh component"),
+						static_cast<UActorComponent*>(Cast<UMeshComponent>(WorldBomber->GetRootComponent())), static_cast<UActorComponent*>(WorldIndicator->FillMeshComponent.Get()));
+					TestTrue(TEXT("(g4) The Controlled-duration bar's colour must remain the controlling ability's colour, unaffected by the body tint"),
+						WorldIndicator->CurrentColour.Equals(AbilityData::Get(EAbilitySlot::Fear).Colour));
+				}
 			}
 		}
 	}

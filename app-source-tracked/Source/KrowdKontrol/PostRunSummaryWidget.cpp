@@ -17,7 +17,9 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "GameMapsSettings.h"
 #include "HAL/IConsoleManager.h"
+#include "Kismet/GameplayStatics.h"
 
 void UPostRunSummaryWidget::NativeOnInitialized()
 {
@@ -245,7 +247,7 @@ void UPostRunSummaryWidget::HandleLevelClear()
 			*GetNameSafe(this));
 	}
 	const FText NextLevelLabel = ResolvedNextLevelMapName == NAME_None
-		? NSLOCTEXT("PostRunSummaryWidget", "FinishRun", "FINISH RUN (More Levels Coming)")
+		? NSLOCTEXT("PostRunSummaryWidget", "FinishRun", "FINISH RUN")
 		: NSLOCTEXT("PostRunSummaryWidget", "NextLevel", "NEXT LEVEL");
 	SetTextBlockSafe(NextLevelButtonLabel, NextLevelLabel, TEXT("NextLevelButtonLabel"));
 
@@ -300,19 +302,27 @@ void UPostRunSummaryWidget::HandleNextLevelClicked()
 {
 	if (ResolvedNextLevelMapName == NAME_None)
 	{
-		if (AKrowdKontrolPlayerController* PlayerController = Cast<AKrowdKontrolPlayerController>(GetOwningPlayer()))
+		// Issue #326: the sequence's final shipped level has nowhere further to
+		// advance to - route back to the main menu (docs/prd-post-run-progression.md
+		// REQ-3, now that docs/prd-main-menu.md's L_MainMenu exists) instead of the
+		// previous "rerun the final level" placeholder (issue #321/#342).
+		// UGameMapsSettings::GetGameDefaultMap() is the same single authority
+		// KrowdKontrolMainMenuMapTest.cpp already verifies resolves to L_MainMenu
+		// (REQ-1) - not a second hardcoded literal, so this follows that setting for
+		// free if it ever repoints.
+		const FName MainMenuMapName(*UGameMapsSettings::GetGameDefaultMap());
+		LastMainMenuLoadAttemptedMapName = MainMenuMapName;
+
+		// Real map travel only makes sense in an actual game world (PIE or
+		// packaged) - never in the Editor-type Worlds
+		// FAutomationEditorCommonUtils::CreateNewMap() returns for
+		// KrowdKontrol.Unit.* tests, mirroring
+		// ULevelSequenceSubsystem::AdvanceToNextLevel()'s/
+		// UMainMenuWidget::HandleLevelSelected()'s identical guard (issue #172).
+		UWorld* World = GetWorld();
+		if (World && World->IsGameWorld())
 		{
-			// bFreshRun=true (issue #342): same "voluntary, not defeat" reasoning as
-			// HandleRerunClicked() above - the final-level FINISH RUN fallback reruns the
-			// current level, it is not a death.
-			PlayerController->RequestLevelRestart(/*bFreshRun=*/true);
-		}
-		else if (!bHasWarnedMissingOwningController)
-		{
-			bHasWarnedMissingOwningController = true;
-			UE_LOG(LogTemp, Warning,
-				TEXT("UPostRunSummaryWidget::HandleNextLevelClicked: owning player is not an AKrowdKontrolPlayerController on '%s' - final-level restart will not run."),
-				*GetNameSafe(this));
+			UGameplayStatics::OpenLevel(this, MainMenuMapName);
 		}
 		return;
 	}
