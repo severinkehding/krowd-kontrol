@@ -32,7 +32,7 @@ to start a playtest again.
   still works for development.
 
 ### REQ-2: Level select (P0) — ✅ implemented, issue #325
-- The menu lists the shipped levels (L1–L3 today) and starts the chosen one.
+- The menu lists the shipped levels (L1–L4 today) and starts the chosen one.
 - Driven by the same level-sequence data as
   `docs/prd-post-run-progression.md` REQ-3 — one authority for "what levels
   exist and in what order," consumed by both the menu and the next-level
