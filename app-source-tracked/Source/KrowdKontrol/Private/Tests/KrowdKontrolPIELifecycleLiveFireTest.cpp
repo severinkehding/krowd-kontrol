@@ -26,6 +26,19 @@
 //
 // #if-guarded so this compiles out of Shipping/packaged builds, same as the other
 // KrowdKontrol.* automation tests.
+//
+// Also pins issue #330's REQ-4 write-through path (PRD "Crowd Mastery Persistence"):
+// the final assertion block additionally confirms the real deposit chain
+// (UCrowdMasterySubsystem::HandleLevelClear -> UCrowdMasteryTotalSubsystem::
+// DepositRunMastery) raises GetAccumulatedTotal() above 0 in this same live PIE
+// session, not just in the Unit-tier NewObject<>() tests. Because this test's drive
+// loop calls ReceiveControl() directly rather than through a real
+// UAbilityCastComponent::ApplyAbility(), it also calls
+// UCrowdMasterySubsystem::SampleControlledCount() explicitly right after
+// ReceiveControl() (see FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()) -
+// without that, the OnAbilityCastApplied broadcast a real cast would trigger never
+// fires, RunningMaxControlledCount stays stuck at 0, and DepositRunMastery(0) would
+// make this assertion vacuous regardless of REQ-4's own correctness.
 
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
@@ -36,6 +49,9 @@
 #include "UObject/StrongObjectPtr.h"
 #include "LevelLifecycleSubsystem.h"
 #include "LevelClearTimeSubsystem.h"
+#include "LevelClearTimeSaveGame.h"
+#include "CrowdMasteryTotalSubsystem.h"
+#include "CrowdMasterySubsystem.h"
 #include "Tests/LevelLifecycleTestListener.h"
 #include "EnemyBase.h"
 #include "RoomActor.h"
@@ -227,6 +243,18 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 
 		case EEnemyPhase::ReceiveControl:
 			Enemy->ReceiveControl(EAbilitySlot::Stun);
+			// This drives ReceiveControl() directly rather than through a real
+			// UAbilityCastComponent::ApplyAbility() call, so the OnAbilityCastApplied
+			// broadcast that would normally trigger UCrowdMasterySubsystem::
+			// SampleControlledCount() (issue #174) never fires here - sample explicitly
+			// so the Crowd Mastery running-max this issue's #330 persistence assertion
+			// depends on reflects reality instead of staying stuck at 0. Uses the same
+			// public, test-drivable entry point SampleControlledCount()'s own doc
+			// comment already calls out for exactly this purpose.
+			if (UCrowdMasterySubsystem* CrowdMasterySubsystem = PIEWorld->GetSubsystem<UCrowdMasterySubsystem>())
+			{
+				CrowdMasterySubsystem->SampleControlledCount();
+			}
 			EnemyPhase = EEnemyPhase::TeleportOntoZone;
 			return false;
 
@@ -317,6 +345,31 @@ bool FKrowdKontrolPIELifecycleLiveFireTest::RunTest(const FString& Parameters)
 				ClearTimeSubsystem->GetBestClearTimeSeconds(MapID, BestSeconds)))
 			{
 				TestTrue(TEXT("The recorded clear time should be greater than zero"), BestSeconds > 0.0f);
+			}
+			UCrowdMasteryTotalSubsystem* MasteryTotalSubsystem = GameInstance ? GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>() : nullptr;
+			if (TestNotNull(TEXT("The real PIE GameInstance should carry a UCrowdMasteryTotalSubsystem"), MasteryTotalSubsystem))
+			{
+				// Real deposit-on-clear (UCrowdMasterySubsystem::HandleLevelClear) plus this
+				// issue's write-through persistence (UCrowdMasteryTotalSubsystem::
+				// PersistAccumulatedTotal, issue #330) - proves both REQ-1's accumulation and
+				// REQ-4's save-to-disk actually fire in a real PIE session, not just in the
+				// Unit-tier NewObject<>() tests, which never exercise the real deposit call
+				// chain (GetGameInstance() is null in CreateNewMap() worlds).
+				TestTrue(TEXT("The accumulated Crowd Mastery total should be greater than zero after a real level clear"),
+					MasteryTotalSubsystem->GetAccumulatedTotal() > 0);
+
+				// In-memory state alone doesn't prove REQ-4 (persistence) actually happened -
+				// DepositRunMastery() only logs a warning and continues if SaveGameToSlot
+				// fails, so confirm the write actually reached disk, same as the clear-time
+				// check above does.
+				if (USaveGame* MasteryLoaded = UGameplayStatics::LoadGameFromSlot(ULevelClearTimeSubsystem::SaveSlotName, 0))
+				{
+					if (ULevelClearTimeSaveGame* MasteryTyped = Cast<ULevelClearTimeSaveGame>(MasteryLoaded))
+					{
+						TestTrue(TEXT("AccumulatedCrowdMasteryTotal should be persisted to disk after a real level clear, not just held in memory"),
+							MasteryTyped->AccumulatedCrowdMasteryTotal > 0);
+					}
+				}
 			}
 			return true;
 		},
