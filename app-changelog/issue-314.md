@@ -48,8 +48,11 @@ new test.
 
 ## Validation evidence
 
-`harness/ci.py --quick` reports `GATE_OK` (inline sanity check only — full PIE/UBT
-validation, including the `PIE_PASSED` count increment, runs in the separate
-`dark-factory-validate` step, since compiling/running Unreal Automation Framework
-tests requires the Windows-side Editor/UnrealBuildTool, unavailable from this WSL
-session).
+Full validation gate (`harness/ci.py --full`) reports `GATE_OK`:
+
+- `PIE_PASSED tests=6` (one higher than PR #336's baseline of 5, confirming the new
+  test is picked up by the suite)
+- `UE_AUTOMATION_RESULT passed=1 total=1` — confirms
+  `KrowdKontrol.PIE.PostContactAttackRecovery` compiled and ran under
+  `UnrealEditor-Cmd.exe` on the Windows-side Editor/UnrealBuildTool, not just an
+  inline sanity check from WSL.
