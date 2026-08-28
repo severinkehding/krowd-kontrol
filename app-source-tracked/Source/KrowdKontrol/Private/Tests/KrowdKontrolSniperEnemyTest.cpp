@@ -462,6 +462,13 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 			TickedSniper->Tick(TickedSniper->AttackTelegraphSeconds);
 			TestEqual(TEXT("Tick() should drive the telegraph through to firing the shot"),
 				TickedListener->CallCount, 1);
+
+			// Issue #359 (test-coverage review): this World has no player controller/
+			// pawn spawned into it at all, exercising UpdateTelegraphIndicator()'s
+			// "real World, no resolvable player pawn" guard branch - proves it stays
+			// hidden rather than just not crashing.
+			TestFalse(TEXT("(m) issue #359: telegraph should stay hidden with no resolvable player pawn in this World"),
+				TickedSniper->TelegraphIndicatorComponent->bIsVisible);
 		}
 	}
 
@@ -672,6 +679,21 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		{
 			SpawnPossessedController(TelegraphWorld, TelegraphPlayerPawn);
 
+			// Issue #359 (test-coverage review): a raw APawn has no default
+			// RootComponent (unlike ACharacter/ADefaultPawn), so SetActorLocation() on
+			// one is a silent no-op (Actor.cpp early-outs when RootComponent is null) -
+			// same issue KrowdKontrolEnemyBaseTest.cpp case (t) and
+			// KrowdKontrolOvercrowdDetectionComponentTest.cpp's AEnemyBaseTestActor
+			// comment both document; give it a scene root so moving it to a distinct,
+			// non-zero location actually exercises UpdateTelegraphIndicator()'s
+			// Origin/FacingRotation/RangeUnits math below with a non-degenerate vector,
+			// not the zero vector every other AdvanceToAttack() case produces.
+			USceneComponent* TelegraphPlayerPawnRoot = NewObject<USceneComponent>(TelegraphPlayerPawn);
+			TelegraphPlayerPawnRoot->RegisterComponent();
+			TelegraphPlayerPawn->SetRootComponent(TelegraphPlayerPawnRoot);
+			const FVector TelegraphPlayerLocation(500.0f, 0.0f, 0.0f);
+			TelegraphPlayerPawn->SetActorLocation(TelegraphPlayerLocation);
+
 			AdvanceToAttack(TelegraphSniper, ZeroDistanceLocation);
 
 			UAbilityTargetingIndicatorComponent* Telegraph = TelegraphSniper->TelegraphIndicatorComponent;
@@ -686,6 +708,23 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 				TestFalse(TEXT("(z) Telegraph colour should not collide with a reserved gameplay-information colour"),
 					ReservedGameplayColours::GetAll().ContainsByPredicate(
 						[Telegraph](const FLinearColor& Reserved) { return Reserved.Equals(Telegraph->CurrentColour, 0.01f); }));
+				TestTrue(TEXT("(z) Telegraph origin should be the sniper's own location"),
+					Telegraph->CurrentShapeSpec.Origin.Equals(TelegraphSniper->GetActorLocation(), 0.01f));
+				TestTrue(TEXT("(z) Telegraph range should match the actual sniper-to-player distance"),
+					FMath::IsNearlyEqual(Telegraph->CurrentShapeSpec.RangeUnits,
+						(TelegraphPlayerLocation - TelegraphSniper->GetActorLocation()).Size(), 0.5f));
+
+				// Issue #359 (test-coverage review): proves the per-Tick refresh genuinely
+				// tracks the player's live position rather than freezing at the
+				// OnAttackEntry() snapshot - move the player pawn and Tick() again (a
+				// small DeltaTime, well short of firing the shot), expecting RangeUnits to
+				// follow the new distance.
+				const FVector MovedTelegraphPlayerLocation(1000.0f, 0.0f, 0.0f);
+				TelegraphPlayerPawn->SetActorLocation(MovedTelegraphPlayerLocation);
+				TelegraphSniper->Tick(0.1f);
+				TestTrue(TEXT("(z) Telegraph range should update on Tick() as the player pawn moves, proving live tracking"),
+					FMath::IsNearlyEqual(Telegraph->CurrentShapeSpec.RangeUnits,
+						(MovedTelegraphPlayerLocation - TelegraphSniper->GetActorLocation()).Size(), 0.5f));
 
 				// Teardown on shot-fire.
 				USniperShotFiredTestListener* TelegraphShotListener = NewObject<USniperShotFiredTestListener>();

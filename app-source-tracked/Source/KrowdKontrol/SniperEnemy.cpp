@@ -211,10 +211,33 @@ void ASniperEnemy::Tick(float DeltaTime)
 
 void ASniperEnemy::UpdateTelegraphIndicator()
 {
+	// GOTCHA: AEnemyBase::FindPlayerEnergyComponent() must NOT be used here instead -
+	// it UE_LOG(Warning, ...)s whenever it scans a World with no matching pawn, and
+	// several existing Sniper test cases spawn a World-backed Sniper with no
+	// player-energy-bearing pawn present; that warning would newly fail those tests.
+	// UGameplayStatics::GetPlayerPawn() (already used by AEnemyBase::Tick()) resolves
+	// the same "live player pawn" without that per-scan logging cost, which is what
+	// this every-Tick call site needs.
 	UWorld* World = GetWorld();
-	APawn* PlayerPawn = World ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
+	if (!World)
+	{
+		// No UWorld yet (e.g. a bare NewObject<>() test double) - benign, not an error.
+		return;
+	}
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(World, 0);
 	if (!PlayerPawn)
 	{
+		// A real World but no resolvable player pawn should never happen once the
+		// sniper is genuinely in Attack - unlike the !World case above, this is worth
+		// a one-time warning so a future "telegraph doesn't show up" report has a log
+		// trail to start from.
+		if (!bHasWarnedMissingTelegraphTarget)
+		{
+			bHasWarnedMissingTelegraphTarget = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("ASniperEnemy: UpdateTelegraphIndicator on '%s' found no resolvable player pawn while in Attack - telegraph will not show."),
+				*GetNameSafe(this));
+		}
 		return;
 	}
 	FAbilityIndicatorShapeSpec ShapeSpec;

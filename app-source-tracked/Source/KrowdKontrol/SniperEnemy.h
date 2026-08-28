@@ -138,9 +138,11 @@ private:
 	// Shows TelegraphIndicatorComponent as a Line from this sniper to the live
 	// player pawn's current location - no-ops safely (does not call Show()) if no
 	// player pawn is currently resolvable via UGameplayStatics::GetPlayerPawn(),
-	// which covers both "no UWorld yet" (bare NewObject<>() test doubles) and "no
-	// PlayerController possessing a pawn" (a CreateNewMap() test World with no
-	// controller wired up) without logging anything - see SniperEnemy.cpp's
+	// which covers both "no UWorld yet" (bare NewObject<>() test doubles - silent,
+	// benign) and "no PlayerController possessing a pawn" (a CreateNewMap() test
+	// World with no controller wired up - logged once via
+	// bHasWarnedMissingTelegraphTarget, since that case should never happen once
+	// the sniper is genuinely in Attack) - see SniperEnemy.cpp's
 	// UpdateTelegraphIndicator() GOTCHA comment for why
 	// AEnemyBase::FindPlayerEnergyComponent() must NOT be used here instead.
 	void UpdateTelegraphIndicator();
@@ -160,4 +162,10 @@ private:
 	// future change that made Attack re-enterable wouldn't silently start spamming this
 	// warning.
 	bool bHasWarnedMissingAttackTellSound = false;
+
+	// Warn-once guard for UpdateTelegraphIndicator()'s "real UWorld but no resolvable
+	// player pawn" branch - deliberately does NOT cover the benign "no UWorld yet" case
+	// (see UpdateTelegraphIndicator()'s GOTCHA comment), only the case that should never
+	// happen once the sniper is genuinely in Attack.
+	bool bHasWarnedMissingTelegraphTarget = false;
 };
