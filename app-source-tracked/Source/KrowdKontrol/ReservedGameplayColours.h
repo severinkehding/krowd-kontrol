@@ -50,6 +50,12 @@ namespace ReservedGameplayColours
 	// reserved colours are locked against, not a 6th reserved colour.
 	KROWDKONTROL_API FLinearColor GetBackground();
 
+	// Desaturated blue-grey for world-space markers that carry no type-specific
+	// information (issue #365 - the banking-radius ring on an any-type TargetZone).
+	// Deliberately NOT included in GetAll() and deliberately desaturated, so it can
+	// never read as a 6th saturated information colour (Hard Invariant 3).
+	KROWDKONTROL_API FLinearColor GetNeutralChrome();
+
 	// FName tag counterparts to the 5 FLinearColor accessors above, for consumers
 	// (IHerdable::GetHerdColourTag(), ATargetZone::ZoneColourTag) that match by a
 	// plain string tag rather than rendering a colour - issue #211. Tag text is the

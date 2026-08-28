@@ -28,6 +28,7 @@
 #include "Engine/World.h"
 #include "Components/PrimitiveComponent.h"
 #include "PlaceholderTargetZoneActor.h"
+#include "AbilityTargetingIndicatorComponent.h"
 #include "PlaceholderCubeActor.h"
 #include "Components/PointLightComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -204,6 +205,18 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Beacon column mesh should have the chain-colour MID actually assigned"),
 			Cast<UMaterialInstanceDynamic>(PlaceholderMarker->BeaconColumnMeshComponent->GetMaterial(0)) ==
 				PlaceholderMarker->ChainColourMaterialInstance.Get());
+
+		// Banking-radius ring honesty (issue #365 REQ-3): radius must equal the zone's
+		// own live-read extent, not a hardcoded literal; colour must equal the same
+		// chain colour driving the pole/beacon above.
+		TestTrue(TEXT("Marker's banking-radius ring should be visible"),
+			PlaceholderMarker->BankingRadiusIndicatorComponent->bIsVisible);
+		TestEqual(TEXT("Marker's banking-radius ring radius should equal the zone's real GetBankingRadiusUnits()"),
+			PlaceholderMarker->BankingRadiusIndicatorComponent->CurrentShapeSpec.RangeUnits,
+			BankingZone->GetBankingRadiusUnits());
+		TestTrue(TEXT("Marker's banking-radius ring colour should be Purple for a RU-NNR zone"),
+			PlaceholderMarker->BankingRadiusIndicatorComponent->CurrentColour.Equals(
+				AbilityData::GetChainColourForEnemyType(EEnemyType::RU_NNR), 0.01f));
 	}
 
 	ATargetZone* SecondBankingZone = FindAttachedZone(SecondMarker);
@@ -264,6 +277,20 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("An any-type zone's marker must never receive a reserved chain colour (Hard Invariant 3)"),
 			AnyTypePlaceholder->CurrentChainColour.Equals(FLinearColor::Black, 0.01f));
+
+		// The ring itself is still required for an any-type zone (issue #365) - only
+		// its colour differs, using the neutral-chrome accessor instead of a reserved
+		// chain colour (Hard Invariant 3). Proves the ring reaches this marker via the
+		// ExistingZone branch too, the only branch a hand-placed any-type zone can
+		// arrive through.
+		TestTrue(TEXT("An any-type zone's marker must still get a visible banking-radius ring"),
+			AnyTypePlaceholder->BankingRadiusIndicatorComponent->bIsVisible);
+		TestEqual(TEXT("An any-type zone's ring radius should equal the zone's real GetBankingRadiusUnits()"),
+			AnyTypePlaceholder->BankingRadiusIndicatorComponent->CurrentShapeSpec.RangeUnits,
+			PreAttachedAnyTypeZone->GetBankingRadiusUnits());
+		TestTrue(TEXT("An any-type zone's ring colour should be the neutral chrome, never a reserved colour (Hard Invariant 3)"),
+			AnyTypePlaceholder->BankingRadiusIndicatorComponent->CurrentColour.Equals(
+				ReservedGameplayColours::GetNeutralChrome(), 0.01f));
 	}
 
 	// Custom-MarkerClass guard: a designer-supplied non-placeholder marker must

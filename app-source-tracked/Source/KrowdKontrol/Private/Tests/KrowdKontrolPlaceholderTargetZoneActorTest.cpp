@@ -17,6 +17,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "PlaceholderTargetZoneActor.h"
+#include "AbilityTargetingIndicatorComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
@@ -125,6 +126,23 @@ bool FKrowdKontrolPlaceholderTargetZoneActorTest::RunTest(const FString& Paramet
 	Actor->IntensifyBeacon();
 	TestEqual(TEXT("Calling IntensifyBeacon a second time should remain safely idempotent"),
 		Light->Intensity, Actor->BeaconIntensifiedIntensity);
+
+	// BankingRadiusIndicatorComponent (issue #365): the ground-ring indicator of the
+	// co-located ATargetZone's real banking extent, reusing UAbilityTargetingIndicatorComponent
+	// (issue #264) verbatim.
+	UAbilityTargetingIndicatorComponent* RingIndicator = Actor->BankingRadiusIndicatorComponent;
+	if (!TestNotNull(TEXT("PlaceholderTargetZoneActor should have a BankingRadiusIndicatorComponent"), RingIndicator))
+	{
+		return false;
+	}
+	Actor->ShowBankingRadiusIndicator(250.0f, FLinearColor::White);
+	TestTrue(TEXT("ShowBankingRadiusIndicator should make the ring visible"), RingIndicator->bIsVisible);
+	TestEqual(TEXT("ShowBankingRadiusIndicator should set the ring's radius"),
+		RingIndicator->CurrentShapeSpec.RangeUnits, 250.0f);
+	TestTrue(TEXT("ShowBankingRadiusIndicator should draw a CircleAtActor shape"),
+		RingIndicator->CurrentShapeSpec.Kind == EAbilityIndicatorShapeKind::CircleAtActor);
+	TestTrue(TEXT("ShowBankingRadiusIndicator should set the ring's colour"),
+		RingIndicator->CurrentColour.Equals(FLinearColor::White, 0.01f));
 
 	return true;
 }

@@ -3,6 +3,7 @@
 #include "TargetZone.h"
 #include "EnemyBase.h"
 #include "AbilityData.h"
+#include "ReservedGameplayColours.h"
 #include "OnScreenPromptWidget.h"
 #include "KrowdKontrolPlayerController.h"
 #include "DoorConnectorActor.h"
@@ -428,6 +429,21 @@ void ARoomActor::ApplyChainColourToMarker(AActor* MarkerActor, const ATargetZone
 	}
 }
 
+void ARoomActor::ApplyBankingRadiusIndicatorToMarker(AActor* MarkerActor, const ATargetZone* Zone)
+{
+	if (!Zone)
+	{
+		return;
+	}
+	if (APlaceholderTargetZoneActor* Placeholder = Cast<APlaceholderTargetZoneActor>(MarkerActor))
+	{
+		const FLinearColor RingColour = Zone->bAcceptAnyEnemyType
+			? ReservedGameplayColours::GetNeutralChrome()
+			: AbilityData::GetChainColourForEnemyType(Zone->ZoneEnemyType);
+		Placeholder->ShowBankingRadiusIndicator(Zone->GetBankingRadiusUnits(), RingColour);
+	}
+}
+
 void ARoomActor::EnsureBankingZonesWired()
 {
 	UWorld* World = GetWorld();
@@ -473,6 +489,7 @@ void ARoomActor::EnsureBankingZonesWired()
 		{
 			ExistingZone->OnActorBanked.AddUniqueDynamic(this, &ARoomActor::HandleZoneActorBanked);
 			ApplyChainColourToMarker(Zone.MarkerActor, ExistingZone);
+			ApplyBankingRadiusIndicatorToMarker(Zone.MarkerActor, ExistingZone);
 			continue;
 		}
 
@@ -510,6 +527,7 @@ void ARoomActor::EnsureBankingZonesWired()
 		BankingZone->ZoneEnemyType = Zone.EnemyType;
 		BankingZone->OnActorBanked.AddUniqueDynamic(this, &ARoomActor::HandleZoneActorBanked);
 		ApplyChainColourToMarker(Zone.MarkerActor, BankingZone);
+		ApplyBankingRadiusIndicatorToMarker(Zone.MarkerActor, BankingZone);
 	}
 }
 

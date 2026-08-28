@@ -267,6 +267,15 @@ private:
 	// MarkerClass manages its own visuals - see AddTargetZone()'s MarkerClass param).
 	static void ApplyChainColourToMarker(AActor* MarkerActor, const ATargetZone* Zone);
 
+	// Applies Zone's marker's banking-radius ring (issue #365): reads the live radius
+	// from Zone->GetBankingRadiusUnits() and colours it via
+	// AbilityData::GetChainColourForEnemyType() (type-keyed zones) or
+	// ReservedGameplayColours::GetNeutralChrome() (any-type zones). Unlike
+	// ApplyChainColourToMarker() above, this applies to BOTH type-keyed and any-type
+	// zones - only the colour argument differs - since the ring itself is required
+	// for every zone. No-ops for marker classes other than APlaceholderTargetZoneActor.
+	static void ApplyBankingRadiusIndicatorToMarker(AActor* MarkerActor, const ATargetZone* Zone);
+
 	UFUNCTION()
 	void HandleOwnedEnemyBanked();
 

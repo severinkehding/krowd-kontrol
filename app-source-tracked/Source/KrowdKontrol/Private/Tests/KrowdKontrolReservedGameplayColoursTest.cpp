@@ -71,6 +71,18 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 		}
 	}
 
+	// GetNeutralChrome() (issue #365) is deliberately off-list - desaturated world-space
+	// chrome for any-type zones, not a 6th saturated information colour - so it must
+	// never appear in GetAll() (Hard Invariant 3) and must stay visually distinct from
+	// every reserved colour.
+	TestFalse(TEXT("GetAll() should not contain GetNeutralChrome() (Hard Invariant 3 - not a 6th reserved colour)"),
+		AllReserved.Contains(ReservedGameplayColours::GetNeutralChrome()));
+	for (int32 i = 0; i < AllReserved.Num(); ++i)
+	{
+		TestNotEqual(*FString::Printf(TEXT("GetNeutralChrome() should be distinct from reserved colour %d"), i),
+			ReservedGameplayColours::GetNeutralChrome(), AllReserved[i]);
+	}
+
 	// (1a) Each GetXTag() accessor's FName literal, pinned against its expected plain-
 	// English string - every other place these accessors are exercised (AbilityData,
 	// EnemyBase, RoomActor tests) only compares production output against a call to the
@@ -278,17 +290,14 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			AllReserved.Contains(MenuWidget->TitleText->GetColorAndOpacity().GetSpecifiedColor()));
 		TestFalse(TEXT("Main menu Quit button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->QuitButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
-<<<<<<< HEAD
+		TestFalse(TEXT("Main menu mastery-display text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MenuWidget->MasteryDisplayText->GetColorAndOpacity().GetSpecifiedColor()));
 		TestFalse(TEXT("Main menu mastery-reset button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->MasteryResetButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 		TestFalse(TEXT("Main menu mastery-reset confirm button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->MasteryResetConfirmButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 		TestFalse(TEXT("Main menu mastery-reset cancel button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->MasteryResetCancelButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
-=======
-		TestFalse(TEXT("Main menu mastery-display text colour should not collide with a reserved gameplay colour"),
-			AllReserved.Contains(MenuWidget->MasteryDisplayText->GetColorAndOpacity().GetSpecifiedColor()));
->>>>>>> origin/main
 
 		if (TestEqual(TEXT("Main menu should build exactly one level-select button from the injected table"),
 			MenuWidget->LevelSelectButtons.Num(), 1))

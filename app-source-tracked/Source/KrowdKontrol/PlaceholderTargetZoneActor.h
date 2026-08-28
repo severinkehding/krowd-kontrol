@@ -11,6 +11,7 @@ class UPointLightComponent;
 class USceneComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UAbilityTargetingIndicatorComponent;
 
 // Minimal placeholder-first actor (MISSION.md Quality Standards): a flattened mesh
 // disc plus a point light standing in for a world-space target-zone beacon, before
@@ -84,6 +85,20 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
 	TObjectPtr<UMaterialInstanceDynamic> ChainColourMaterialInstance;
+
+	// Persistent ground-ring indicator of the co-located ATargetZone's real banking
+	// extent (issue #365). Reuses UAbilityTargetingIndicatorComponent (issue #264)
+	// verbatim - same mesh/material technique as the 5 abilities' cast-preview
+	// circles - rather than new decal/mesh-rendering plumbing.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
+	TObjectPtr<UAbilityTargetingIndicatorComponent> BankingRadiusIndicatorComponent;
+
+	// Shows the banking-radius ring at RadiusUnits/Colour via BankingRadiusIndicatorComponent.
+	// Called externally by ARoomActor::EnsureBankingZonesWired() - same "called externally"
+	// idiom as ApplyChainColour() above. Never Hide()-den anywhere: the ring must stay
+	// visible during normal play, not gated behind a debug-view toggle (issue #365).
+	UFUNCTION(BlueprintCallable, Category = "Target Zone")
+	void ShowBankingRadiusIndicator(float RadiusUnits, FLinearColor Colour);
 
 protected:
 	// Self-heals actors placed in a level before this PR's component-hierarchy change

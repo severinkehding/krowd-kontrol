@@ -29,6 +29,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
 	TObjectPtr<UBoxComponent> ZoneCollisionComponent;
 
+	// Live read of ZoneCollisionComponent's real scaled box extent - never a cached or
+	// hand-tuned duplicate - so a visual indicator built from this value can never
+	// silently drift from the actual banking-overlap volume (issue #365 REQ-3). Uses
+	// Max(X, Y) since the box is authored square in XY but is EditAnywhere, so a
+	// placed instance could be scaled non-uniformly.
+	UFUNCTION(BlueprintPure, Category = "Target Zone")
+	float GetBankingRadiusUnits() const;
+
 	// Colour METADATA only - no longer gates acceptance (operator ruling 2026-08-22,
 	// PR #212 review, MISSION `02`: colour-matching is a bonus system - control
 	// duration - never the win-condition gate; "each ability viable solo at base

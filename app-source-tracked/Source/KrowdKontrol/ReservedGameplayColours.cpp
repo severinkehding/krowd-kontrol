@@ -35,6 +35,11 @@ FLinearColor ReservedGameplayColours::GetBackground()
 	return FLinearColor(0.02f, 0.02f, 0.03f, 1.0f);
 }
 
+FLinearColor ReservedGameplayColours::GetNeutralChrome()
+{
+	return FLinearColor(0.55f, 0.57f, 0.60f, 1.0f);
+}
+
 FName ReservedGameplayColours::GetPurpleTag()
 {
 	return FName(TEXT("Purple"));
