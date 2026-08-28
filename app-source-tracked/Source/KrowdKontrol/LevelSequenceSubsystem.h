@@ -76,11 +76,14 @@ public:
 	void AdvanceToNextLevel();
 
 	// Returns every level map name configured in LevelSequenceTable (one row per
-	// shipped level, keyed by the level's own map name) - the shared level-sequence
-	// authority both the main menu's level-select list (issue #325) and the post-run
-	// NEXT LEVEL button (issue #321, ComputeNextLevelMapName()/AdvanceToNextLevel()
-	// above) read from. Row order matches LevelSequenceTable's authored/insertion
-	// order (UDataTable::GetRowNames()). Empty if LevelSequenceTable is unset.
+	// shipped level, keyed by the level's own map name). LevelSequenceTable itself is
+	// the shared level-sequence authority both the main menu's level-select list
+	// (issue #325, via this function) and the post-run NEXT LEVEL button (issue #321,
+	// via the separate FindCurrentMapRow()-based ComputeNextLevelMapName()/
+	// AdvanceToNextLevel() above) read from - only the underlying data is shared, not
+	// a code path; the two features look it up differently. Row order matches
+	// LevelSequenceTable's authored/insertion order (UDataTable::GetRowNames()).
+	// Empty if LevelSequenceTable is unset.
 	UFUNCTION(BlueprintPure, Category = "Level Sequence")
 	TArray<FName> GetShippedLevelMapNames() const;
 

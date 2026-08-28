@@ -22,6 +22,8 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Engine/DataTable.h"
+#include "Components/Button.h"
+#include "Components/TextBlock.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -103,6 +105,10 @@ bool FKrowdKontrolMainMenuLevelSelectTest::RunTest(const FString& Parameters)
 						ButtonWidget->GetLevelMapName(), ExpectedOrder[Index]);
 					TestTrue(FString::Printf(TEXT("LevelSelectButtons[%d]::OnLevelSelected should be bound"), Index),
 						ButtonWidget->OnLevelSelected.IsBound());
+					TestTrue(FString::Printf(TEXT("LevelSelectButtons[%d]::LevelButton::OnClicked should be bound"), Index),
+						ButtonWidget->LevelButton->OnClicked.IsBound());
+					TestEqual(FString::Printf(TEXT("LevelSelectButtons[%d] label should show the target map's name"), Index),
+						ButtonWidget->LevelButtonLabel->GetText().ToString(), ExpectedOrder[Index].ToString());
 				}
 			}
 
@@ -113,6 +119,22 @@ bool FKrowdKontrolMainMenuLevelSelectTest::RunTest(const FString& Parameters)
 			MiddleButton->HandleClicked();
 			TestEqual(TEXT("HandleLevelSelected should record the middle button's target map"),
 				Widget->LastSelectedLevelMapName, FName(TEXT("L_Level02")));
+
+			// HandleLevelSelected(NAME_None) is the documented content-authoring-mistake
+			// guard (an empty/None DataTable row name) - must ignore the call and leave the
+			// previously-recorded target map untouched, not overwrite it with NAME_None.
+			Widget->HandleLevelSelected(NAME_None);
+			TestEqual(TEXT("HandleLevelSelected(NAME_None) should not change LastSelectedLevelMapName"),
+				Widget->LastSelectedLevelMapName, FName(TEXT("L_Level02")));
+
+			// EnsureWidgetTreeBuilt()'s "if (!TitleText)" build-once guard must also cover
+			// PopulateLevelSelectButtons() - a second Initialize() must not duplicate
+			// buttons or double-bind OnLevelSelected, mirroring KrowdKontrolMainMenuWidgetTest.cpp
+			// block (e)'s identical TitleText-identity guard check, extended here to the
+			// level-select list.
+			Widget->Initialize();
+			TestEqual(TEXT("LevelSelectButtons count should be unchanged after a second Initialize()"),
+				Widget->LevelSelectButtons.Num(), 3);
 		}
 	}
 
@@ -136,6 +158,21 @@ bool FKrowdKontrolMainMenuLevelSelectTest::RunTest(const FString& Parameters)
 		{
 			TestEqual(TEXT("LevelSelectButtons should be empty with an unset LevelSequenceTable"),
 				Widget->LevelSelectButtons.Num(), 0);
+		}
+	}
+
+	// (c) No World at all (bare NewObject(), mirrors KrowdKontrolMainMenuWidgetTest.cpp
+	// block (g)'s identical no-World construction) - PopulateLevelSelectButtons()'s
+	// !SequenceSubsystem branch must degrade to zero buttons, no crash, exactly one
+	// logged warning.
+	{
+		AddExpectedError(TEXT("no ULevelSequenceSubsystem available"), EAutomationExpectedErrorFlags::Contains, 1);
+		UMainMenuWidget* NoWorldWidget = NewObject<UMainMenuWidget>();
+		if (TestNotNull(TEXT("NoWorldWidget should construct"), NoWorldWidget))
+		{
+			NoWorldWidget->NativeOnInitialized();
+			TestEqual(TEXT("LevelSelectButtons should be empty with no World/subsystem available"),
+				NoWorldWidget->LevelSelectButtons.Num(), 0);
 		}
 	}
 

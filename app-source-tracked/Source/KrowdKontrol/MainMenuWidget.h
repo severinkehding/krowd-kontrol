@@ -12,7 +12,10 @@ class UVerticalBox;
 class UMainMenuLevelButtonWidget;
 
 // Main menu chrome (issue #324, docs/prd-main-menu.md REQ-3): title, Quit button, and
-// an anchored-but-empty region reserved for the mastery-display PRD's widget. Builds
+// an anchored-but-empty region reserved for the mastery-display PRD's widget. Also
+// builds the data-driven level-select list (issue #325, docs/prd-main-menu.md REQ-2)
+// - one UMainMenuLevelButtonWidget per ULevelSequenceSubsystem::
+// GetShippedLevelMapNames() entry, see PopulateLevelSelectButtons() below. Builds
 // its tree in C++ - same no-Widget-Blueprint pattern as
 // UPostRunSummaryWidget/UBriefingCardWidget. First UButton usage in this module (every
 // prior HUD widget is display-only); UPunishmentDebugMenuWidget's UCheckBox

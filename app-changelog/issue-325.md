@@ -85,7 +85,7 @@ around with a hardcoded fallback map list — that would violate this issue's ow
       table and that activating one targets the expected map
 - [x] `ULevelSequenceSubsystem::GetShippedLevelMapNames()` is the only new level-list
       data source
-- [x] `python harness/ci.py --quick` reports `GATE_OK`
+- [x] `python harness/ci.py` full mode reports `GATE_OK`
 - [ ] Real click-through in a live PIE session — **not automatable in this
       environment** (no ability-cast/click input primitive reaches real PIE input,
       same limitation `MainMenuWidgetTest.cpp`'s own header comment and PR #332's AC

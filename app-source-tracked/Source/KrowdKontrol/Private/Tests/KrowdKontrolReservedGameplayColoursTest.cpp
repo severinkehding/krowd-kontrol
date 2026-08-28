@@ -257,7 +257,8 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 	// Extended for issue #325: inject a single-row LevelSequenceTable before
 	// construction so LevelSelectButtons is non-empty, then audit the first button's
 	// label colour the same way QuitButtonLabel already is above.
-	if (ULevelSequenceSubsystem* SequenceSubsystem = World->GetSubsystem<ULevelSequenceSubsystem>())
+	ULevelSequenceSubsystem* SequenceSubsystem = World->GetSubsystem<ULevelSequenceSubsystem>();
+	if (TestNotNull(TEXT("UWorld should auto-instantiate ULevelSequenceSubsystem"), SequenceSubsystem))
 	{
 		UDataTable* Table = NewObject<UDataTable>();
 		Table->RowStruct = FLevelSequenceRow::StaticStruct();
@@ -278,7 +279,8 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 		TestFalse(TEXT("Main menu Quit button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->QuitButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 
-		if (MenuWidget->LevelSelectButtons.Num() > 0)
+		if (TestEqual(TEXT("Main menu should build exactly one level-select button from the injected table"),
+			MenuWidget->LevelSelectButtons.Num(), 1))
 		{
 			TestFalse(TEXT("Main menu level-select button label colour should not collide with a reserved gameplay colour"),
 				AllReserved.Contains(MenuWidget->LevelSelectButtons[0]->LevelButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));

@@ -100,6 +100,9 @@ void UMainMenuWidget::PopulateLevelSelectButtons()
 {
 	if (!LevelSelectBox)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UMainMenuWidget::PopulateLevelSelectButtons: LevelSelectBox is null on '%s' (tree not built?) - level-select list will be empty."),
+			*GetNameSafe(this));
 		return;
 	}
 
@@ -173,6 +176,9 @@ void UMainMenuWidget::HandleLevelSelected(FName MapName)
 {
 	if (MapName == NAME_None)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UMainMenuWidget::HandleLevelSelected: MapName is NAME_None on '%s' - level-select DataTable row likely has an empty/None row name; ignoring."),
+			*GetNameSafe(this));
 		return;
 	}
 
