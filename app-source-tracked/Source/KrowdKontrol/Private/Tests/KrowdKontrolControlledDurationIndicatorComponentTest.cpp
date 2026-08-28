@@ -20,6 +20,7 @@
 #include "ControlledDurationIndicatorComponent.h"
 #include "AbilityData.h"
 #include "BomberEnemy.h"
+#include "TrooperEnemy.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
@@ -65,6 +66,7 @@ bool FKrowdKontrolControlledDurationIndicatorComponentTest::RunTest(const FStrin
 	TestEqual(TEXT("FillFraction should be 1.0 immediately after ReceiveControl"), Indicator->FillFraction, 1.0f);
 	TestTrue(TEXT("CurrentColour should match AbilityData::Get(Sleep).Colour"),
 		Indicator->CurrentColour.Equals(AbilityData::Get(EAbilitySlot::Sleep).Colour));
+	TestFalse(TEXT("bIsColourMatchBonused should be false for a non-overridden application"), Indicator->bIsColourMatchBonused);
 
 	// (c) Repeated TickControlledDuration calls strictly decrease FillFraction while
 	// staying visible.
@@ -117,6 +119,7 @@ bool FKrowdKontrolControlledDurationIndicatorComponentTest::RunTest(const FStrin
 	NoWorldEnemy->ReceiveControl(EAbilitySlot::Root); // Alert -> Controlled
 	TestTrue(TEXT("(f) bIsVisible should be true after ReceiveControl even with no World"), NoWorldIndicator->bIsVisible);
 	TestEqual(TEXT("(f) FillFraction should be 1.0 after ReceiveControl even with no World"), NoWorldIndicator->FillFraction, 1.0f);
+	TestFalse(TEXT("(f) bIsColourMatchBonused should be false for AEnemyBaseTestActor, which never overrides duration"), NoWorldIndicator->bIsColourMatchBonused);
 	const float RootBaseDurationSeconds = AbilityData::Get(EAbilitySlot::Root).BaseDurationSeconds;
 	NoWorldEnemy->TickControlledDuration(RootBaseDurationSeconds); // exhaust -> Alert
 	TestEqual(TEXT("(f) NoWorldEnemy should have reverted to Alert once the duration is exhausted"),
@@ -207,6 +210,26 @@ bool FKrowdKontrolControlledDurationIndicatorComponentTest::RunTest(const FStrin
 						static_cast<UActorComponent*>(Cast<UMeshComponent>(WorldBomber->GetRootComponent())), static_cast<UActorComponent*>(WorldIndicator->FillMeshComponent.Get()));
 					TestTrue(TEXT("(g4) The Controlled-duration bar's colour must remain the controlling ability's colour, unaffected by the body tint"),
 						WorldIndicator->CurrentColour.Equals(AbilityData::Get(EAbilitySlot::Fear).Colour));
+				}
+
+				// (i) issue #357: a colour-match-bonused Controlled application (B0-0MR + Fear,
+				// issue #65) must both set bIsColourMatchBonused and render a visibly thicker bar
+				// than a non-bonused application in the same World - the fix's whole point is a
+				// perceivable difference, not just a reflected flag nobody renders.
+				ATrooperEnemy* WorldTrooperNonBonused = World->SpawnActor<ATrooperEnemy>();
+				if (TestNotNull(TEXT("(i) ATrooperEnemy should spawn into the test World"), WorldTrooperNonBonused))
+				{
+					WorldTrooperNonBonused->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+					WorldTrooperNonBonused->ReceiveControl(EAbilitySlot::Stun); // never bonused (PR #303 AC: Stun grants no bonus against TR-UPR)
+					UControlledDurationIndicatorComponent* NonBonusedIndicator = WorldTrooperNonBonused->GetControlledDurationIndicatorComponent();
+					if (TestNotNull(TEXT("(i) WorldTrooperNonBonused should own a ControlledDurationIndicatorComponent"), NonBonusedIndicator)
+						&& TestNotNull(TEXT("(i) NonBonusedIndicator->FillMeshComponent should be created in a World-backed context"), NonBonusedIndicator->FillMeshComponent.Get()))
+					{
+						TestFalse(TEXT("(i) bIsColourMatchBonused should be false for Stun on ATrooperEnemy"), NonBonusedIndicator->bIsColourMatchBonused);
+						TestTrue(TEXT("(i) bIsColourMatchBonused should be true for the earlier colour-matched Fear application on WorldBomber"), WorldIndicator->bIsColourMatchBonused);
+						TestTrue(TEXT("(i) The bonused bar's depth (Y scale) should be visibly larger than the non-bonused bar's, at the same FillFraction convention"),
+							WorldIndicator->FillMeshComponent->GetRelativeScale3D().Y > NonBonusedIndicator->FillMeshComponent->GetRelativeScale3D().Y);
+					}
 				}
 			}
 		}

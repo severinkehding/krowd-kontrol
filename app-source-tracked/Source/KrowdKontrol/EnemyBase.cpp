@@ -98,10 +98,11 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 	CurrentState = EEnemyState::Controlled;
 	ControllingAbility = Ability;
 	const float OverrideSeconds = GetControlledDurationOverrideSeconds(Ability);
-	RemainingControlledSeconds = OverrideSeconds >= 0.0f ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
+	const bool bIsColourMatchBonused = OverrideSeconds >= 0.0f;
+	RemainingControlledSeconds = bIsColourMatchBonused ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
 	TotalControlledSeconds = RemainingControlledSeconds;
 	OnControlledEntry(Ability);
-	ControlledDurationIndicatorComponent->Show(AbilityData::Get(Ability).Colour);
+	ControlledDurationIndicatorComponent->Show(AbilityData::Get(Ability).Colour, bIsColourMatchBonused);
 }
 
 bool AEnemyBase::IsAttackBehaviorActive() const
