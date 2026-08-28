@@ -33,6 +33,10 @@
 #include "AbilityData.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "EnemyTypeIndicatorComponent.h"
+#include "AbilityCastComponent.h"
+#include "AbilityUnlockComponent.h"
+#include "AbilityCooldownComponent.h"
+#include "GameFramework/Pawn.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -179,6 +183,41 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	FearedSniper->ReceiveControl(EAbilitySlot::Fear);
 	TestEqual(TEXT("(d3) Sniper should be Controlled after Fear, direct from Attack, no prior cast"),
 		static_cast<uint8>(FearedSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	// (d4) issue #361 pass-2 follow-up: (d2)/(d3) above prove ReceiveControl() itself
+	// has no gate, but not that the cast/targeting layer above it doesn't add one.
+	// Goes through the real player-facing entry point, UAbilityCastComponent::
+	// TryCastAbility, against an Attack-state sniper with no prior cast - same
+	// UWorld-spawning pattern KrowdKontrolAbilityCastComponentTest.cpp's cases use.
+	// Stun is used because it's the one ability unlocked by default
+	// (UAbilityUnlockComponent's construction), so no extra unlock setup is needed.
+	{
+		UWorld* CastWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		if (TestNotNull(TEXT("(d4) CreateNewMap should return a valid World"), CastWorld))
+		{
+			APawn* CastOwner = CastWorld->SpawnActor<APawn>();
+			UAbilityUnlockComponent* CastUnlockComponent = NewObject<UAbilityUnlockComponent>(CastOwner);
+			CastUnlockComponent->RegisterComponent();
+			UAbilityCooldownComponent* CastCooldownComponent = NewObject<UAbilityCooldownComponent>(CastOwner);
+			CastCooldownComponent->RegisterComponent();
+			UAbilityCastComponent* RealCastComponent = NewObject<UAbilityCastComponent>(CastOwner);
+			RealCastComponent->RegisterComponent();
+
+			ASniperEnemy* CastTargetSniper = CastWorld->SpawnActor<ASniperEnemy>();
+			if (TestNotNull(TEXT("(d4) ASniperEnemy should spawn into the test World"), CastTargetSniper))
+			{
+				AdvanceToAttack(CastTargetSniper, ZeroDistanceLocation);
+				TestEqual(TEXT("(d4) precondition: sniper should be in Attack before the real cast"),
+					static_cast<uint8>(CastTargetSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+
+				const bool bCastResult = RealCastComponent->TryCastAbility(EAbilitySlot::Stun);
+				TestTrue(TEXT("(d4) TryCastAbility(Stun) should succeed against an Attack-state sniper, no prior cast"),
+					bCastResult);
+				TestEqual(TEXT("(d4) Sniper should be Controlled after a real TryCastAbility(Stun) - no gate in the cast layer"),
+					static_cast<uint8>(CastTargetSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+			}
+		}
+	}
 
 	// (e)/(f) the attack tell is off until Attack is entered, and visibly on
 	// (before the shot fires) once it is - ordering proven explicitly below.

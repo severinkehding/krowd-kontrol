@@ -20,43 +20,141 @@ Root/Snare pattern exactly, reusing the file's own `AdvanceToAttack` helper. All
 abilities now have explicit `Controlled`-state regression coverage on an
 Attack-state sniper with no prior Stun cast.
 
-## Verifiable evidence (pass-1 review follow-up)
+Pass-2 follow-up also flagged that (d2)/(d3) (and the pre-existing Sleep/Root/Snare
+cases) all call `ReceiveControl()` directly rather than through a real player-facing
+cast entry point, leaving open the possibility of a gate living in the cast/
+targeting layer instead. Adds (d4): a real `UAbilityCastComponent::TryCastAbility(Stun)`
+call (the actual production entry point a player's cast key routes through) against
+an Attack-state sniper with no prior cast, spawned into a live `UWorld` the same way
+`KrowdKontrolAbilityCastComponentTest.cpp`'s existing cases do.
+
+## Verifiable evidence (pass-1 review follow-up, re-verified pass-2)
 
 Pass-1 review correctly noted this diff touches no production file, so the audit
-conclusion above can't be taken on faith from prose alone. Quoting the exact
-precondition logic at its current `file:line` in `app/` (the real Unreal project
-source; `app/` is a gitignored symlink per `CLAUDE.md` D-003, so it can't itself
-appear in the diff) so it's checkable directly against this changelog entry:
+conclusion above can't be taken on faith from prose alone. Pass-2 follow-up asked
+for the *full* current relevant function bodies, not truncated excerpts, with
+re-confirmed `file:line` references — every snippet below was re-read directly
+from the live `app/` source (the real Unreal project; `app/` is a gitignored
+symlink per `CLAUDE.md` D-003, so it can't itself appear in the diff) at the time
+this section was written, quoted in full with nothing load-bearing elided:
 
-**1. `AEnemyBase::ReceiveControl` — the only state gate, `Source/KrowdKontrol/EnemyBase.cpp:69,94-98`:**
+**1. `AEnemyBase::ReceiveControl` — the only state gate, full body, `Source/KrowdKontrol/EnemyBase.cpp:69-105`:**
 
 ```cpp
 void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 {
-    ...
+    if (CurrentState == EEnemyState::Controlled)
+    {
+        // Sleep-flavour early wake (issue #257): being hit by any OTHER ability's
+        // application while still Controlled by an ability flagged
+        // bWakesEarlyOnOtherAbilityHit ends that Controlled window immediately.
+        // Re-casting the SAME ability that's already controlling this enemy still
+        // no-ops here (Ability == ControllingAbility).
+        if (Ability != ControllingAbility && AbilityData::Get(ControllingAbility).bWakesEarlyOnOtherAbilityHit)
+        {
+            CurrentState = EEnemyState::Alert;
+            OnControlledExpired();
+            OnEnemyControlledExpired.Broadcast();
+            ControlledDurationIndicatorComponent->Hide();
+        }
+        return;
+    }
+
     if (CurrentState != EEnemyState::Alert && CurrentState != EEnemyState::Attack)
     {
         return;
     }
     CurrentState = EEnemyState::Controlled;
+    ControllingAbility = Ability;
+    const float OverrideSeconds = GetControlledDurationOverrideSeconds(Ability);
+    RemainingControlledSeconds = OverrideSeconds >= 0.0f ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
+    TotalControlledSeconds = RemainingControlledSeconds;
+    OnControlledEntry(Ability);
+    ControlledDurationIndicatorComponent->Show(AbilityData::Get(Ability).Colour);
+}
 ```
 
-No `Ability`-identity check, no `ControllingAbility`-history check, no
-`EAbilitySlot::Stun` reference anywhere in the function. `ASniperEnemy` does not
-override `ReceiveControl`.
+The only two branches that check anything are: (1) "already Controlled" —
+`Ability != ControllingAbility` there only decides whether a *second* cast wakes
+the target early, it does not block the second cast's own effect, since that
+branch always `return`s regardless; and (2) "not yet hot" —
+`CurrentState != Alert && CurrentState != Attack`. Neither branch, nor anything
+else in the function, checks `Ability == EAbilitySlot::Stun`, a prior-Stun flag,
+or any value of `ControllingAbility` that would gate a *first* cast on an
+Attack-state enemy. `ASniperEnemy` does not override `ReceiveControl`.
 
-**2. All 5 `TryCast*` entry points share one gate, `Source/KrowdKontrol/AbilityCastComponent.cpp:313-386`:**
+**2. All 5 `TryCast*` entry points share one gate, `ResolvePassedCastGates`, full body, `Source/KrowdKontrol/AbilityCastComponent.cpp:313-386`:**
 
-`TryCastAbility` (line 41), `TryCastThrownAbilityAtLocation` (line 76),
+`TryCastAbility` (call site line 41), `TryCastThrownAbilityAtLocation` (line 76),
 `TryCastLineAbilityTowardLocation` (line 173), `TryCastConeAbilityTowardLocation`
-(line 252), and `TryCastSelfCircleAbility` (line 286) all call
-`ResolvePassedCastGates(Ability, ...)` first. Its full gate list, in order: world
-not paused, briefing card not visible, `Owner` non-null, ability unlocked
-(`UAbilityUnlockComponent`), ability not on cooldown (`UAbilityCooldownComponent`),
-ability not locked out (`UAbilityLockoutComponent`, optional). None of these six
-checks reference `EAbilitySlot::Stun`, `ControllingAbility`, or any other
-ability's prior application — they gate on cast eligibility of the ability being
-cast, never on what ability (if any) was cast before it.
+(line 252), and `TryCastSelfCircleAbility` (line 286) all call this function first:
+
+```cpp
+UAbilityCooldownComponent* UAbilityCastComponent::ResolvePassedCastGates(EAbilitySlot Ability, const TCHAR* CallerLogContext) const
+{
+    // Issue #246: the briefing card pauses the world while shown; APlayerController
+    // still ticks/processes input while paused (engine default), so both the
+    // briefing's dismiss-bind and an ability-cast key can fire from the same
+    // keypress without this gate.
+    if (const UWorld* World = GetWorld())
+    {
+        if (World->IsPaused())
+        {
+            return nullptr;
+        }
+    }
+
+    // Belt-and-suspenders for the same-keypress race above: checks the briefing
+    // widget's own visibility directly rather than relying on World->IsPaused()'s
+    // per-frame ordering against the dismiss bind.
+    if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+    {
+        if (const AKrowdKontrolPlayerController* Controller = Cast<AKrowdKontrolPlayerController>(OwnerPawn->GetController()))
+        {
+            if (Controller->BriefingCardWidgetInstance && Controller->BriefingCardWidgetInstance->IsBriefingVisible())
+            {
+                return nullptr;
+            }
+        }
+    }
+
+    AActor* Owner = GetOwner();
+    if (!Owner)
+    {
+        return nullptr;
+    }
+
+    UAbilityUnlockComponent* UnlockComponent = Owner->FindComponentByClass<UAbilityUnlockComponent>();
+    if (!UnlockComponent || !UnlockComponent->IsAbilityUnlocked(Ability))
+    {
+        return nullptr;
+    }
+
+    UAbilityCooldownComponent* CooldownComponent = Owner->FindComponentByClass<UAbilityCooldownComponent>();
+    if (!CooldownComponent || CooldownComponent->IsOnCooldown(Ability))
+    {
+        return nullptr;
+    }
+
+    // Unlike Unlock/Cooldown above, a missing UAbilityLockoutComponent is NOT a gate
+    // failure - it's optional. Presence-and-locked blocks; absence does not.
+    UAbilityLockoutComponent* LockoutComponent = Owner->FindComponentByClass<UAbilityLockoutComponent>();
+    if (LockoutComponent && LockoutComponent->IsAbilityLocked(Ability))
+    {
+        return nullptr;
+    }
+
+    return CooldownComponent;
+}
+```
+
+(`UE_LOG` diagnostic lines at each early-return, present in the real file, are
+omitted here as non-load-bearing — they log and return `nullptr`, they don't add
+a condition.) Six checks total: world-paused, briefing-visible, `Owner` non-null,
+ability-unlocked, ability-on-cooldown, ability-locked-out. None reference
+`EAbilitySlot::Stun`, `ControllingAbility`, or any other ability's prior
+application — every one of them gates on cast eligibility of the ability *being
+cast*, never on what ability (if any) was cast before it.
 
 **3. The only enemy-state gate before `ReceiveControl` is called — Alert/Attack, same as inside `ReceiveControl` itself:**
 
@@ -77,20 +175,52 @@ The other 4 entry points' shared shape-application path,
     Enemy->ReceiveControl(Ability);
 ```
 
-**4. `AbilityData.cpp` (189 lines, full file audited) holds no gating logic at all** —
-it's a pure per-ability data table (duration, range, target shape, colour,
-countered enemy type, behaviour flags). No field or function anywhere in the file
-branches on `CurrentState`, `ControllingAbility`, or a prior cast of any other
-ability; `AbilityData::Get(EAbilitySlot::Stun)` returns a plain `FAbilityData`
-struct literal with no reference to any other ability.
+**4. `AbilityData.cpp`/`AbilityData.h` (189/121 lines, both fully audited) hold no gating logic at all** —
+it's a pure per-ability data table. Every field `FAbilityData` declares,
+`Source/KrowdKontrol/AbilityData.h:35-104` (struct closes at 104; fields after
+`bAllowsAttackWhileControlled` shown below are `bAllowsMovementWhileControlled`,
+`ControlledSpeedMultiplier`, `EffectDescription`, and `KeyBindingLabel` — display/
+tuning data, same as everything above them):
+
+```cpp
+struct FAbilityData
+{
+    EAbilitySlot Ability = EAbilitySlot::Stun;
+    float BaseDurationSeconds = 0.0f;
+    EAbilityRange Range = EAbilityRange::Short;
+    EAbilityTargetType TargetType = EAbilityTargetType::SelfCircle;
+    FLinearColor Colour = FLinearColor::Black;
+    FName ColourTag = NAME_None;
+    bool bIsColourNeutral = false;
+    EEnemyType CounteredEnemyType = EEnemyType::RU_NNR;
+    bool bWakesEarlyOnOtherAbilityHit = false;
+    bool bAllowsAttackWhileControlled = false;
+    bool bFleesFromCasterWhileControlled = false;
+    // ...remaining fields (behaviour flags, range/duration tuning) - none of
+    // these or the fields above are a CurrentState, ControllingAbility, or
+    // prior-cast reference either.
+};
+```
+
+No field is a `CurrentState`, `ControllingAbility`, or "was ability X cast
+before this one" value — the struct describes one ability in isolation, with no
+way to encode a dependency on another ability's prior activation even if
+`AbilityData.cpp`'s `Get()` functions wanted to (they don't:
+`AbilityData::Get(EAbilitySlot::Stun)` returns a plain `FAbilityData` struct
+literal with no reference to any other ability or to enemy state).
 
 ### Pre-existing Sleep/Root/Snare coverage (unmodified — quoted, not in diff)
 
 The other pass-1 follow-up flagged that this PR body cited stale line numbers
 (269-275, 306-312) for pre-existing Root/Snare coverage, and that none of the 3
 pre-existing per-ability assertions (Sleep, Root, Snare) are visible in the diff
-since this PR doesn't touch them. Corrected current line numbers, quoted verbatim
-so all 5 abilities' coverage is checkable from this changelog alone:
+since this PR doesn't touch them (a pre-existing passing test must not be
+modified just to force it into a diff — see `CLAUDE.md`'s fix-PR-issues rule 2).
+The quotes below were re-read directly against the live
+`Private/Tests/KrowdKontrolSniperEnemyTest.cpp` a second time for this pass-2
+follow-up; all three `file:line` references and code bodies below are
+byte-verbatim matches against the current file, not carried over unchecked from
+the earlier changelog draft:
 
 **Sleep — `Private/Tests/KrowdKontrolSniperEnemyTest.cpp:437-446`:**
 ```cpp
@@ -127,7 +257,27 @@ TestEqual(TEXT("(m-snare) Sniper should be Controlled after Snare"),
 
 Combined with this PR's new (d2) Stun (`:170-174`) and (d3) Fear (`:177-181`)
 cases (both fully visible in the diff), all 5 control abilities now have an
-explicit, verifiable `Attack -> Controlled` assertion with no prior Stun cast.
+explicit, verifiable `Attack -> Controlled` assertion with no prior Stun cast, via
+`ReceiveControl()` called directly.
+
+### New: a real cast-entry-point case, not just `ReceiveControl()` directly
+
+(d2)/(d3) above, like the pre-existing Sleep/Root/Snare cases, call
+`ReceiveControl()` directly. That proves the *effect-application* layer has no
+gate, but doesn't rule one out living earlier, in the cast/targeting layer
+(`TryCastAbility` itself, or `ResolvePassedCastGates`, or target-selection). New
+case (d4), fully visible in this diff at
+`Private/Tests/KrowdKontrolSniperEnemyTest.cpp:187-220`, closes that gap: it
+spawns a live `UWorld` (same pattern `KrowdKontrolAbilityCastComponentTest.cpp`'s
+existing cases use), spawns an `ASniperEnemy` and a cast-owner `APawn` with real
+`UAbilityUnlockComponent`/`UAbilityCooldownComponent`/`UAbilityCastComponent`
+instances, advances the sniper to Attack with no prior cast of any kind, then
+calls `UAbilityCastComponent::TryCastAbility(EAbilitySlot::Stun)` — the actual
+production entry point a player's cast key routes through — and asserts both
+that the cast succeeds and that the sniper ends up `Controlled`. Stun is used
+because it's the one ability `UAbilityUnlockComponent` unlocks by default
+(`AbilityUnlockComponent.cpp:25`), so the case needs no extra unlock setup beyond
+what every other `TryCastAbility` test in the codebase already relies on.
 
 ## Design decisions
 
@@ -157,14 +307,18 @@ explicit, verifiable `Attack -> Controlled` assertion with no prior Stun cast.
       to an Attack-state `ASniperEnemy` with no prior Stun cast -
       `KrowdKontrolSniperEnemyTest.cpp` cases (d2)/(d3) (Stun, Fear), joining the
       existing (l2)/(m-snare)/Sleep-expiry cases (Root, Snare, Sleep) for 5/5
-      coverage.
+      coverage. Case (d4) adds a real `TryCastAbility` cast-entry-point regression
+      on top, ruling out a gate in the cast/targeting layer specifically.
 - [x] PR body documents the "no gate found" conclusion and the range-mismatch
       explanation for the operator's observation, per the issue's required
       fallback - see PR description.
 - [x] Level 1-3 validation commands pass with exit 0 - `harness/ci.py` full mode,
       `GATE_OK`, see `validation.md`.
-- [x] No regressions in existing tests - `UNIT_PASSED tests=125` includes the 2 new
-      cases alongside all pre-existing ones, unmodified.
+- [x] No regressions in existing tests - `UNIT_PASSED tests=125` (unchanged: cases
+      d2/d3/d4 are new assertions inside the existing `KrowdKontrol.Unit.SniperEnemy`
+      automation test, not new registered test classes, so the discovered-test count
+      doesn't move; re-ran `harness/ci.py --quick` after this pass-2 change and it
+      still reports `UNIT_PASSED tests=125` / `GATE_OK`).
 
 ---
 
