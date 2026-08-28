@@ -306,9 +306,25 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
 	{
+		// Issue #316 (test-coverage review): SpawnActor<>() alone does NOT run
+		// BeginPlay() on a bare CreateNewMap() world - both calls below are required
+		// (see KrowdKontrolTargetZoneTest.cpp's file comment for why neither alone
+		// suffices), made once up front so every actor spawned into World afterward
+		// auto-begins-play via the engine's normal flow.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
 		ABomberEnemy* TickedBomber = World->SpawnActor<ABomberEnemy>();
 		if (TestNotNull(TEXT("ABomberEnemy should spawn into the test World"), TickedBomber))
 		{
+			// (b3) above only proves ApplyBodyChainColourTint() works when called
+			// directly, not that BeginPlay() actually calls it - this proves the wiring.
+			TestNotNull(TEXT("BeginPlay() should have created BodyChainColourMaterialInstance"),
+				TickedBomber->BodyChainColourMaterialInstance.Get());
+			TestTrue(TEXT("BeginPlay() should have applied B0_0MR's chain colour"),
+				TickedBomber->CurrentBodyChainColour.Equals(
+					AbilityData::GetChainColourForEnemyType(EEnemyType::B0_0MR), 0.01f));
+
 			AdvanceToAttack(TickedBomber, ZeroDistanceLocation);
 			UBomberExplodedTestListener* TickedListener = NewObject<UBomberExplodedTestListener>();
 			TickedBomber->OnBomberExploded.AddDynamic(TickedListener, &UBomberExplodedTestListener::HandleBomberExploded);

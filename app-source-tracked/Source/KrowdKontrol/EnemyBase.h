@@ -282,10 +282,9 @@ public:
 	// Chain-colour body tint (docs/prd-colour-coded-herding.md REQ-2, issue #316): the
 	// same FLinearColor as this enemy's own chain-colour (AbilityData::
 	// GetChainColourForEnemyType, issue #315), applied solidly to the root mesh via
-	// ApplyBodyChainColourTint() below. Reflected state (mirrors
-	// APlaceholderTargetZoneActor::CurrentChainColour/ChainColourMaterialInstance,
-	// issue #317's own body-tint sibling) - the Automation test, and any future MCP-
-	// driven holdout, asserts against these directly rather than any rendered output.
+	// ApplyBodyChainColourTint() below. Reflected state - the Automation test, and any
+	// future MCP-driven holdout, asserts against these directly rather than any
+	// rendered output.
 	// Stays at the default (Black) until ApplyBodyChainColourTint() first succeeds -
 	// e.g. AEnemyBaseTestActor, which has no mesh root and no
 	// UEnemyTypeIndicatorComponent to derive a type from.
@@ -354,8 +353,8 @@ public:
 	// UEnemyTypeIndicatorComponent::EnemyType (issue #242's marker - unchanged, never
 	// duplicated as a second field here). Lazily creates BodyChainColourMaterialInstance
 	// once, then just re-applies the parameter - same "safe to call repeatedly" MID
-	// pattern APlaceholderTargetZoneActor::ApplyChainColour() (issue #317) and
-	// UControlledDurationIndicatorComponent::InitializeIndicatorVisual() already use.
+	// pattern UControlledDurationIndicatorComponent::InitializeIndicatorVisual() already
+	// uses.
 	// Called automatically from BeginPlay(); exposed publicly (and idempotent) so the
 	// Automation test can drive it deterministically on a plain NewObject<>() actor with
 	// no UWorld, same rationale those two functions' own doc comments document. A true

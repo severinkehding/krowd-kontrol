@@ -10,8 +10,8 @@ enemy's own `EEnemyType` (read from its existing `UEnemyTypeIndicatorComponent::
 EnemyType`, never a new field). This satisfies PRD `docs/prd-colour-coded-herding.md`
 REQ-2 — the enemy's own body now reads solidly as its chain colour, complementing
 (not replacing) the existing `EnemyTypeIndicatorComponent` marker (issue #242,
-unchanged). Mirrors the MID-tint pattern issue #317 (PR #347) established on
-`APlaceholderTargetZoneActor::ApplyChainColour()`.
+unchanged). Mirrors the lazy-create-once/reapply-parameter MID-tint pattern already
+established by `UControlledDurationIndicatorComponent::InitializeIndicatorVisual()`.
 
 Called automatically from `BeginPlay()`; public and idempotent so the Automation
 tests can drive it deterministically on a plain `NewObject<>()` actor with no

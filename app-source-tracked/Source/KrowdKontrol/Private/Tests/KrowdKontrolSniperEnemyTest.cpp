@@ -326,9 +326,26 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
 	{
+		// Issue #316 (test-coverage review): SpawnActor<>() alone does NOT run
+		// BeginPlay() on a bare CreateNewMap() world - both calls below are required
+		// (see KrowdKontrolTargetZoneTest.cpp's file comment for why neither alone
+		// suffices), made once up front so every actor spawned into World afterward
+		// auto-begins-play via the engine's normal flow.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
 		ASniperEnemy* TickedSniper = World->SpawnActor<ASniperEnemy>();
 		if (TestNotNull(TEXT("ASniperEnemy should spawn into the test World"), TickedSniper))
 		{
+			// The direct-invocation case above only proves ApplyBodyChainColourTint()
+			// works when called directly, not that BeginPlay() actually calls it - this
+			// proves the wiring.
+			TestNotNull(TEXT("BeginPlay() should have created BodyChainColourMaterialInstance"),
+				TickedSniper->BodyChainColourMaterialInstance.Get());
+			TestTrue(TEXT("BeginPlay() should have applied SN_1PR's chain colour"),
+				TickedSniper->CurrentBodyChainColour.Equals(
+					AbilityData::GetChainColourForEnemyType(EEnemyType::SN_1PR), 0.01f));
+
 			AdvanceToAttack(TickedSniper, ZeroDistanceLocation);
 			USniperShotFiredTestListener* TickedListener = NewObject<USniperShotFiredTestListener>();
 			TickedSniper->OnSniperShotFired.AddDynamic(TickedListener, &USniperShotFiredTestListener::HandleSniperShotFired);

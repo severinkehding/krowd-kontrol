@@ -347,9 +347,26 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
 	{
+		// Issue #316 (test-coverage review): SpawnActor<>() alone does NOT run
+		// BeginPlay() on a bare CreateNewMap() world - both calls below are required
+		// (see KrowdKontrolTargetZoneTest.cpp's file comment for why neither alone
+		// suffices), made once up front so every actor spawned into World afterward
+		// auto-begins-play via the engine's normal flow.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
 		ATrooperEnemy* TickedTrooper = World->SpawnActor<ATrooperEnemy>();
 		if (TestNotNull(TEXT("ATrooperEnemy should spawn into the test World"), TickedTrooper))
 		{
+			// The direct-invocation case above only proves ApplyBodyChainColourTint()
+			// works when called directly, not that BeginPlay() actually calls it - this
+			// proves the wiring.
+			TestNotNull(TEXT("BeginPlay() should have created BodyChainColourMaterialInstance"),
+				TickedTrooper->BodyChainColourMaterialInstance.Get());
+			TestTrue(TEXT("BeginPlay() should have applied TR_UPR's chain colour"),
+				TickedTrooper->CurrentBodyChainColour.Equals(
+					AbilityData::GetChainColourForEnemyType(EEnemyType::TR_UPR), 0.01f));
+
 			AdvanceToAttack(TickedTrooper, ZeroDistanceLocation);
 			UTrooperRayFiredTestListener* TickedListener = NewObject<UTrooperRayFiredTestListener>();
 			TickedTrooper->OnTrooperRayFired.AddDynamic(TickedListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);
