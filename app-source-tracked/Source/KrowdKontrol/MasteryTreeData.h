@@ -74,7 +74,7 @@ struct FMasteryTreeNode : public FTableRowBase
 
 	// The prerequisite node's RowName - a later spend-logic issue only allows
 	// unlocking a bubble on this node once the parent node has at least one unlocked
-	// bubble (PRD: "unlock prerequisites (parent node must be reached)"). NAME_None
+	// bubble (issue #370: "unlock prerequisites (parent node must be reached)"). NAME_None
 	// marks a root node with no prerequisite, mirroring FLevelSequenceRow::
 	// NextLevelMapName's identical NAME_None-as-sentinel idiom.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mastery Tree")

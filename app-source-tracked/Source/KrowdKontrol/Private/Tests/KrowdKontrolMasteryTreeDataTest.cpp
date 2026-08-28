@@ -107,6 +107,7 @@ bool FKrowdKontrolMasteryTreeDataTest::RunTest(const FString& Parameters)
 			const TMap<FName, uint8*>& RowMap = RealTable->GetRowMap();
 			TestTrue(TEXT("DT_MasteryTreeTable should have at least 2 rows"), RowMap.Num() >= 2);
 
+			TSet<FName> SeenBubbleIds;
 			bool bFoundRealParentLink = false;
 			for (const TPair<FName, uint8*>& RowPair : RowMap)
 			{
@@ -118,10 +119,19 @@ bool FKrowdKontrolMasteryTreeDataTest::RunTest(const FString& Parameters)
 				{
 					TestNotEqual(*FString::Printf(TEXT("Row %s bubble %s EffectHookId should not be empty"), *RowPair.Key.ToString(), *Bubble.BubbleId.ToString()),
 						Bubble.EffectHookId, FName(NAME_None));
+					TestFalse(*FString::Printf(TEXT("Row %s bubble %s DisplayName should not be empty"), *RowPair.Key.ToString(), *Bubble.BubbleId.ToString()),
+						Bubble.DisplayName.IsEmpty());
+
+					bool bAlreadySeen = false;
+					SeenBubbleIds.Add(Bubble.BubbleId, &bAlreadySeen);
+					TestFalse(*FString::Printf(TEXT("BubbleId %s should be unique across the tree"), *Bubble.BubbleId.ToString()), bAlreadySeen);
 				}
 
-				if (Node->ParentNodeId != NAME_None && RowMap.Contains(Node->ParentNodeId))
+				if (Node->ParentNodeId != NAME_None)
 				{
+					TestTrue(*FString::Printf(TEXT("Row %s ParentNodeId '%s' should resolve to another row"),
+						*RowPair.Key.ToString(), *Node->ParentNodeId.ToString()),
+						RowMap.Contains(Node->ParentNodeId));
 					bFoundRealParentLink = true;
 				}
 			}
