@@ -9,7 +9,7 @@
 // it - exactly what happened to L_Level01/L_Level02 (issue #185, PRD "Level
 // Playability & Presentation" REQ-1).
 //
-// GameplayLevelMapPaths is the single point of extension for future L_Level03-05
+// GameplayLevelMapPaths is the single point of extension for future L_Level*
 // maps (MISSION.md's 5-level Alpha roster) - append their /Game/Maps path here,
 // nothing else in this file needs to change.
 //
@@ -40,11 +40,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FKrowdKontrolGameplayLevelPlayableSpawnTest::RunTest(const FString& Parameters)
 {
-	// Every shipped gameplay map - append future L_Level03-05 entries here as they ship.
+	// Every shipped gameplay map - append future L_Level* entries here as they ship.
 	static const TArray<FString> GameplayLevelMapPaths = {
 		TEXT("/Game/Maps/L_Level01"),
 		TEXT("/Game/Maps/L_Level02"),
 		TEXT("/Game/Maps/L_Level03"),
+		TEXT("/Game/Maps/L_Level04"),
 	};
 
 	for (const FString& MapPath : GameplayLevelMapPaths)

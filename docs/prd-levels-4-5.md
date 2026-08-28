@@ -24,7 +24,7 @@ existing final-level routing returns to the main menu (already shipped —
 
 ## Requirements
 
-### REQ-1: Level 4 (P0)
+### REQ-1: Level 4 (P0) — ✅ implemented, issue #367 / PR #383
 - Hand-authored `/Game/Maps/L_Level04` on the ARoomActor/ADoorConnectorActor
   foundation, following the shipped authoring pattern (headless pythonscript
   commandlet, same as #42/#43/#45).
