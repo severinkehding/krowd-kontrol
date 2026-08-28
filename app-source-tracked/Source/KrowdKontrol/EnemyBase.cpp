@@ -213,6 +213,18 @@ void AEnemyBase::TickCheckDetection(const FVector& PlayerLocation)
 	{
 		AdvanceToAttack();
 	}
+	else if (CurrentState == EEnemyState::Attack && Distance > GetAttackRangeUnits())
+	{
+		// Issue #360: symmetric to the Alert -> Attack branch above - leaving attack
+		// range while mid-telegraph cancels the in-progress shot (no per-type
+		// AdvanceXTelegraph can complete once IsAttackBehaviorActive() is false) and
+		// drops the enemy back into its normal Alert-state chase (TickChaseMovement,
+		// already gated on IsMovementBehaviorActive()), with no separate "chase"
+		// state needed. Re-entering range re-advances Alert -> Attack via this same
+		// function on a later call, and AdvanceToAttack() -> OnAttackEntry() restarts
+		// a fresh telegraph from scratch - no stored progress survives the round trip.
+		RevertAttackToAlert();
+	}
 }
 
 void AEnemyBase::TickControlledDuration(float DeltaSeconds)
@@ -245,19 +257,27 @@ void AEnemyBase::TickAttackDuration(float DeltaSeconds)
 	RemainingAttackSeconds = FMath::Max(0.0f, RemainingAttackSeconds - DeltaSeconds);
 	if (RemainingAttackSeconds <= 0.0f)
 	{
-		// Issue #313: an enemy's contact reaction (attack tell/fire/cooldown) must
-		// always end on its own, never requiring the player to spend a control
-		// ability just to unstick it. Reverting to Alert (not Idle) re-enters the
-		// same TickCheckDetection proximity check that got it here, so a player still
-		// standing in attack range gets re-triggered into Attack later in this same
-		// Tick() call (TickCheckDetection runs right after this, gated on a live
-		// player pawn same as every tick - see Tick()'s own pawn-lookup block) -
-		// this is what makes an enemy that keeps the player in range keep attacking,
-		// and one whose target retreats actually resume chasing.
-		CurrentState = EEnemyState::Alert;
-		OnAttackExpired();
-		OnEnemyAttackExpired.Broadcast();
+		RevertAttackToAlert();
 	}
+}
+
+void AEnemyBase::RevertAttackToAlert()
+{
+	// Issue #313: an enemy's contact reaction (attack tell/fire/cooldown) must
+	// always end on its own, never requiring the player to spend a control
+	// ability just to unstick it. Reverting to Alert (not Idle) re-enters the
+	// same TickCheckDetection proximity check that got it here, so a player still
+	// standing in attack range gets re-triggered into Attack later in this same
+	// Tick() call (TickCheckDetection runs right after this, gated on a live
+	// player pawn same as every tick - see Tick()'s own pawn-lookup block) -
+	// this is what makes an enemy that keeps the player in range keep attacking,
+	// and one whose target retreats actually resume chasing. Issue #360: this is
+	// now also called directly from TickCheckDetection's own Attack branch when the
+	// player leaves attack range mid-telegraph, so the timeout above is one of two
+	// independent triggers for this single shared exit.
+	CurrentState = EEnemyState::Alert;
+	OnAttackExpired();
+	OnEnemyAttackExpired.Broadcast();
 }
 
 void AEnemyBase::TickChaseMovement(const FVector& PlayerLocation, float DeltaSeconds)

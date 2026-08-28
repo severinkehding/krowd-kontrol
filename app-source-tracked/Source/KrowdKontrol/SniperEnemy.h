@@ -89,12 +89,37 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
 	TSoftObjectPtr<USoundBase> AttackTellSound;
 
+	// SN-1PR's first-pass per-hit damage value (issue #358) - deliberately at or below
+	// UPlayerEnergyComponent::MaxDamagePerHit (10.0f) so a landed shot always costs
+	// exactly this amount, not the clamp ceiling (contrast ABomberEnemy::
+	// ExplosionDamageAmount / ARootSurgeBoss::AttackDamageAmount, which both
+	// deliberately exceed the clamp instead). Subject to operator playtest tuning.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
+	float ShotDamageAmount = 8.0f;
+
+	// Issue #360: chase speed while closing distance back into range after a
+	// range-break (AEnemyBase::TickChaseMovement, driven while Alert) - SN-1PR
+	// previously had no override here since it never needed to chase (its attack range
+	// almost equals its detection range - see GetAttackRangeUnits() below), so
+	// AEnemyBase::GetMovementSpeedUnitsPerSecond()'s 600.0f base default sat unused.
+	// Named and tunable like every other concrete type's own chase-speed property
+	// (ABomberEnemy::MovementSpeed/ARunnerEnemy::MovementSpeed) rather than a bare
+	// literal, and deliberately below both AEnemyBase's own base-class default (600.0f)
+	// and the player pawn's own UFloatingPawnMovement::MaxSpeed (this project's
+	// unmodified engine default, 1200.0f - no C++ override exists anywhere in this
+	// module, confirmed by grep) so outrunning a chasing sniper is genuinely
+	// achievable, not just nominally possible. Subject to operator playtest tuning,
+	// same as ShotDamageAmount above.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
+	float MovementSpeed = 300.0f;
+
 	// Fires once the attack telegraph elapses.
 	UPROPERTY(BlueprintAssignable, Category = "Sniper")
 	FOnSniperShotFired OnSniperShotFired;
 
 protected:
 	virtual float GetAttackRangeUnits() const override;
+	virtual float GetMovementSpeedUnitsPerSecond() const override;
 	virtual UPointLightComponent* GetEliteTrimLightComponent() const override { return EliteTrimLightComponent; }
 	virtual void OnControlledEntry(EAbilitySlot Ability) override;
 	virtual void OnAttackEntry() override;

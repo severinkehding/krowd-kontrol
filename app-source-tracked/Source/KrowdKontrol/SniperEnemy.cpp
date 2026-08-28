@@ -4,6 +4,7 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
+#include "PlayerEnergyComponent.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
 #include "Sound/SoundBase.h"
@@ -87,6 +88,15 @@ float ASniperEnemy::GetAttackRangeUnits() const
 	return 1400.0f;
 }
 
+float ASniperEnemy::GetMovementSpeedUnitsPerSecond() const
+{
+	// Per-type override (issue #360, mirroring issue #122's precedent for the other
+	// three concrete types) - SN-1PR's chase speed while closing distance back into
+	// range after a range-break now actually drives AEnemyBase::TickChaseMovement,
+	// not just an inert inherited default.
+	return MovementSpeed;
+}
+
 void ASniperEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
 	// ReceiveControl only calls this from Alert/Attack, so any in-progress attack
@@ -164,6 +174,16 @@ void ASniperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 		// module's delegates.
 		bShotFiredForCurrentAttack = true;
 		OnSniperShotFired.Broadcast();
+
+		// Issue #358: the shot's actual consequence. FindPlayerEnergyComponent()
+		// tolerates a null GetWorld() (true for NewObject<>()-constructed test
+		// instances - see BomberEnemy.cpp's identical call site) by returning nullptr,
+		// so a shot resolving with no valid/present player target applies no damage -
+		// no phantom hits, no crash.
+		if (UPlayerEnergyComponent* Energy = FindPlayerEnergyComponent())
+		{
+			Energy->ApplyContactDamage(ShotDamageAmount, this);
+		}
 	}
 }
 
