@@ -89,6 +89,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
 	TSoftObjectPtr<USoundBase> AttackTellSound;
 
+	// SN-1PR's first-pass per-hit damage value (issue #358) - deliberately at or below
+	// UPlayerEnergyComponent::MaxDamagePerHit (10.0f) so a landed shot always costs
+	// exactly this amount, not the clamp ceiling (contrast ABomberEnemy::
+	// ExplosionDamageAmount / ARootSurgeBoss::AttackDamageAmount, which both
+	// deliberately exceed the clamp instead). Subject to operator playtest tuning.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
+	float ShotDamageAmount = 8.0f;
+
 	// Fires once the attack telegraph elapses.
 	UPROPERTY(BlueprintAssignable, Category = "Sniper")
 	FOnSniperShotFired OnSniperShotFired;

@@ -28,6 +28,7 @@
 #include "Engine/World.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "SniperShotFiredTestListener.h"
+#include "PlayerEnergyComponent.h"
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
@@ -512,6 +513,53 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	ExpirySniper->TickControlledDuration(0.2f); // total 7.1f, past the 7s override
 	TestEqual(TEXT("Sniper should revert to Alert once the 7s Sleep override elapses"),
 		static_cast<uint8>(ExpirySniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+	// (t) issue #358: a landed shot actually damages the player by exactly
+	// ShotDamageAmount - the sniper's attack tell/audio now represents a real cost,
+	// not just a visual/audio show. Real UWorld + manually-registered
+	// UPlayerEnergyComponent, mirroring KrowdKontrolRootSurgeBossTest.cpp's own
+	// damage-assertion scenario (Scenario 8) exactly.
+	UWorld* DamageWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(t) CreateNewMap should return a valid World for the damage test"), DamageWorld))
+	{
+		ASniperEnemy* DamageSniper = DamageWorld->SpawnActor<ASniperEnemy>();
+		APawn* DamagePlayerPawn = DamageWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(t) ASniperEnemy should spawn into the damage test World"), DamageSniper)
+			&& TestNotNull(TEXT("(t) Player pawn should spawn into the damage test World"), DamagePlayerPawn))
+		{
+			UPlayerEnergyComponent* DamageEnergy = NewObject<UPlayerEnergyComponent>(DamagePlayerPawn);
+			DamageEnergy->RegisterComponent();
+			const float EnergyBeforeShot = DamageEnergy->GetCurrentEnergy();
+
+			AdvanceToAttack(DamageSniper, ZeroDistanceLocation);
+			DamageSniper->AdvanceAttackTelegraph(DamageSniper->AttackTelegraphSeconds);
+
+			TestEqual(TEXT("(t) Player energy should drop by exactly ShotDamageAmount once the shot lands"),
+				DamageEnergy->GetCurrentEnergy(), EnergyBeforeShot - DamageSniper->ShotDamageAmount);
+		}
+	}
+
+	// (u) issue #358: a shot resolving with no player pawn present applies no damage
+	// and does not crash - FindPlayerEnergyComponent() returning nullptr (no
+	// UPlayerEnergyComponent-carrying pawn anywhere in the World) must be a safe
+	// no-op, and OnSniperShotFired must still fire exactly once regardless (the
+	// delegate's own firing behavior is unchanged by this issue).
+	UWorld* NoTargetWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(u) CreateNewMap should return a valid World for the no-target test"), NoTargetWorld))
+	{
+		ASniperEnemy* NoTargetSniper = NoTargetWorld->SpawnActor<ASniperEnemy>();
+		if (TestNotNull(TEXT("(u) ASniperEnemy should spawn into the no-target test World"), NoTargetSniper))
+		{
+			USniperShotFiredTestListener* NoTargetListener = NewObject<USniperShotFiredTestListener>();
+			NoTargetSniper->OnSniperShotFired.AddDynamic(NoTargetListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+
+			AdvanceToAttack(NoTargetSniper, ZeroDistanceLocation);
+			NoTargetSniper->AdvanceAttackTelegraph(NoTargetSniper->AttackTelegraphSeconds);
+
+			TestEqual(TEXT("(u) The shot should still fire exactly once with no player pawn present"),
+				NoTargetListener->CallCount, 1);
+		}
+	}
 
 	return true;
 }
