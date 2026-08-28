@@ -536,6 +536,11 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 
 			TestEqual(TEXT("(t) Player energy should drop by exactly ShotDamageAmount once the shot lands"),
 				DamageEnergy->GetCurrentEnergy(), EnergyBeforeShot - DamageSniper->ShotDamageAmount);
+
+			const float EnergyAfterFirstShot = DamageEnergy->GetCurrentEnergy();
+			DamageSniper->AdvanceAttackTelegraph(DamageSniper->AttackTelegraphSeconds);
+			TestEqual(TEXT("(t) The one-shot guard should prevent a second ApplyContactDamage call for the same attack"),
+				DamageEnergy->GetCurrentEnergy(), EnergyAfterFirstShot);
 		}
 	}
 
