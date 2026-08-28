@@ -10,6 +10,7 @@ class UButton;
 class USizeBox;
 class UVerticalBox;
 class UMainMenuLevelButtonWidget;
+class UCrowdMasteryTotalSubsystem;
 
 // Main menu chrome (issue #324, docs/prd-main-menu.md REQ-3): title, Quit button, and
 // an anchored-but-empty region reserved for the mastery-display PRD's widget. Also
@@ -40,9 +41,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Main Menu")
 	FText GetTitleDisplayText() const;
 
+	UFUNCTION(BlueprintPure, Category = "Main Menu")
+	FText GetMasteryDisplayText() const;
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual bool Initialize() override;
+
+	// Fires every time this widget is (re-)added to the viewport (AddToViewport()).
+	// Re-running RefreshMasteryDisplayText() here, on top of the construction-time read
+	// in BuildWidgetTree(), makes "refreshes whenever the menu is shown"
+	// (docs/prd-crowd-mastery-persistence.md REQ-2) an explicit, structural guarantee
+	// rather than depending on the unverified assumption that this widget is always
+	// destroyed and reconstructed on every L_MainMenu visit (PR #350 review).
+	virtual void NativeConstruct() override;
 
 private:
 	void BuildWidgetTree();
@@ -68,6 +80,11 @@ private:
 	UFUNCTION()
 	void HandleLevelSelected(FName MapName);
 
+	// Reads the current total from UCrowdMasteryTotalSubsystem and formats it into
+	// MasteryDisplayText. Called from BuildWidgetTree() at construction time, and again
+	// from NativeConstruct() above every time the menu becomes visible.
+	void RefreshMasteryDisplayText();
+
 	UPROPERTY()
 	TObjectPtr<UBorder> RootBorder;
 
@@ -86,6 +103,30 @@ private:
 	// no consumer) so it occupies real layout space today even with no content.
 	UPROPERTY()
 	TObjectPtr<USizeBox> MasteryDisplayAnchor;
+
+	// The Crowd Mastery total display (issue #328, docs/prd-crowd-mastery-persistence.md
+	// REQ-2) - built and slotted into MasteryDisplayAnchor via SetMasteryDisplayContent()
+	// inside BuildWidgetTree() itself, then populated by RefreshMasteryDisplayText().
+	UPROPERTY()
+	TObjectPtr<UTextBlock> MasteryDisplayText;
+
+	// Lazy cache of the GameInstance-scoped mastery-total subsystem, read by
+	// RefreshMasteryDisplayText(). A missing GameInstance during construction is an
+	// unremarkable, expected case (every KrowdKontrol.Unit.* test hits it) and stays
+	// unlogged - but a present GameInstance with no resolvable subsystem is a real
+	// failure and is warned once via bHasWarnedMissingMasteryTotalSubsystemOnDisplay
+	// below, mirroring UPostRunSummaryWidget::CachedLevelClearTimeSubsystem's sibling
+	// warn-once pattern.
+	UPROPERTY()
+	TObjectPtr<UCrowdMasteryTotalSubsystem> CachedMasteryTotalSubsystem;
+
+	// Warn-once flag for RefreshMasteryDisplayText()'s cold-path subsystem-resolution
+	// failure (GameInstance present, UCrowdMasteryTotalSubsystem not resolvable) -
+	// distinguishes a real bug from the unremarkable "no GameInstance yet" test case,
+	// which stays silent. Kept local rather than reusing the mastery-reset flow's
+	// resolver/flag to avoid coupling this PR to that flow's own test file.
+	UPROPERTY()
+	bool bHasWarnedMissingMasteryTotalSubsystemOnDisplay = false;
 
 	// Container for the data-driven level-select list (issue #325) - one
 	// UMainMenuLevelButtonWidget child per shipped level, populated by
