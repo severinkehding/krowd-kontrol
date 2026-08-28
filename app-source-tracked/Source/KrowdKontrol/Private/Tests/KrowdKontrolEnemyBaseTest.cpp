@@ -359,6 +359,43 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A re-expired Attack enemy back in range should be able to re-enter Attack"),
 		static_cast<uint8>(AttackExpiryEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
 
+	// (i6) issue #360: the player leaving attack range mid-Attack reverts Attack ->
+	// Alert via TickCheckDetection itself (not the #313 duration timeout), firing
+	// OnEnemyAttackExpired exactly once - proves the new branch is a genuinely
+	// independent second trigger for the same shared exit, not a duplicate of (i5).
+	AEnemyBaseTestActor* RangeBreakEnemy = NewObject<AEnemyBaseTestActor>();
+	UEnemyAttackExpiredTestListener* RangeBreakListener = NewObject<UEnemyAttackExpiredTestListener>();
+	RangeBreakEnemy->OnEnemyAttackExpired.AddDynamic(RangeBreakListener, &UEnemyAttackExpiredTestListener::HandleEnemyAttackExpired);
+	RangeBreakEnemy->TickCheckDetection(AttackZeroDistanceLocation); // Idle -> Alert
+	RangeBreakEnemy->TickCheckDetection(AttackZeroDistanceLocation); // Alert -> Attack (0.0f <= 0.0f)
+	TestEqual(TEXT("(i6) precondition: enemy should be in Attack"),
+		static_cast<uint8>(RangeBreakEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+
+	// (i6-boundary) issue #360 follow-up: Distance exactly AT GetAttackRangeUnits()
+	// (0.0f base default) must NOT trigger the range-break - the new branch's strict
+	// `>` (vs the entry branch's `<=`) is what prevents a same-tick double-transition
+	// at the boundary; this pins that asymmetry down.
+	RangeBreakEnemy->TickCheckDetection(AttackZeroDistanceLocation); // Distance == 0.0f == range
+	TestEqual(TEXT("(i6-boundary) Enemy exactly at GetAttackRangeUnits() should remain in Attack, not revert"),
+		static_cast<uint8>(RangeBreakEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+	TestEqual(TEXT("(i6-boundary) OnEnemyAttackExpired should not fire from a same-boundary call"),
+		RangeBreakListener->CallCount, 0);
+
+	const FVector BeyondBaseAttackRangeLocation(1.0f, 0.0f, 0.0f); // > 0.0f base GetAttackRangeUnits()
+	RangeBreakEnemy->TickCheckDetection(BeyondBaseAttackRangeLocation);
+	TestEqual(TEXT("(i6) Enemy should revert to Alert once the player leaves attack range, with no timeout elapsed"),
+		static_cast<uint8>(RangeBreakEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	TestEqual(TEXT("(i6) OnEnemyAttackExpired should fire exactly once on the range-break edge, same delegate as the timeout edge"),
+		RangeBreakListener->CallCount, 1);
+
+	// (i6b) re-entry: back in range, TickCheckDetection can re-advance to Attack again -
+	// mirrors (i5b)'s same assertion for the timeout trigger.
+	RangeBreakEnemy->TickCheckDetection(AttackZeroDistanceLocation);
+	TestEqual(TEXT("(i6b) A range-broken Attack enemy back in range should be able to re-enter Attack"),
+		static_cast<uint8>(RangeBreakEnemy->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+	TestEqual(TEXT("(i6b) OnEnemyAttackExpired should not fire again just from re-entering Attack"),
+		RangeBreakListener->CallCount, 1);
+
 	// (i5c) issue #313 (test-coverage review, HIGH finding): the entire fix depends on
 	// one invariant - every enemy's GetAttackDurationSeconds() must stay strictly
 	// greater than that enemy's own AttackTelegraphSeconds (EnemyBase.h's

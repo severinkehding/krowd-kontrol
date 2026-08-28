@@ -134,9 +134,11 @@ public:
 	// #122) - no longer a declared-but-inert value. Well below
 	// UCharacterMovementComponent's engine default MaxWalkSpeed (600.0f, also
 	// AEnemyBase::GetMovementSpeedUnitsPerSecond()'s own base default), the closest
-	// "normal" reference point available, since ASniperEnemy (long-range; never needs
-	// to close distance) deliberately keeps that base default rather than declaring
-	// its own override.
+	// "normal" reference point available. (Historical note: ASniperEnemy originally
+	// had no override here either, since it never needed to close distance - issue
+	// #360 gave it its own MovementSpeed once its Attack state became breakable by
+	// range, so ATrooperEnemy is now the only concrete type still inheriting the base
+	// default inertly.)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bomber", meta = (ClampMin = "0.0"))
 	float MovementSpeed = 200.0f;
 

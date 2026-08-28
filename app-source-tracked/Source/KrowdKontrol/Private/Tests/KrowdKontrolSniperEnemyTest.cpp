@@ -37,6 +37,7 @@
 #include "AbilityUnlockComponent.h"
 #include "AbilityCooldownComponent.h"
 #include "GameFramework/Pawn.h"
+#include "EnemyAttackExpiredTestListener.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -512,6 +513,111 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	ExpirySniper->TickControlledDuration(0.2f); // total 7.1f, past the 7s override
 	TestEqual(TEXT("Sniper should revert to Alert once the 7s Sleep override elapses"),
 		static_cast<uint8>(ExpirySniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+	// (v) issue #360: the player leaving attack range mid-telegraph cancels the shot
+	// - OnSniperShotFired never fires even once the (now-frozen) telegraph's remaining
+	// time is advanced well past its original duration - and reverts the sniper to
+	// Alert via the same shared RevertAttackToAlert()/OnAttackExpired() path the #313
+	// timeout uses (tell light clears; OnEnemyAttackExpired fires exactly once).
+	//
+	// Uses the OnSniperShotFired listener-count pattern (v) below already relies on for
+	// "shot cancelled", rather than a UPlayerEnergyComponent energy check: damage
+	// application is out of this issue's scope (see issue #358, tracked separately),
+	// so asserting on the delegate keeps this test meaningful regardless of which PR
+	// ends up owning the damage-application code path.
+	UWorld* RangeBreakWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(v) CreateNewMap should return a valid World for the range-break test"), RangeBreakWorld))
+	{
+		ASniperEnemy* RangeBreakSniper = RangeBreakWorld->SpawnActor<ASniperEnemy>();
+		APawn* RangeBreakPlayerPawn = RangeBreakWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(v) ASniperEnemy should spawn into the range-break test World"), RangeBreakSniper)
+			&& TestNotNull(TEXT("(v) Player pawn should spawn into the range-break test World"), RangeBreakPlayerPawn))
+		{
+			USniperShotFiredTestListener* RangeBreakShotListener = NewObject<USniperShotFiredTestListener>();
+			RangeBreakSniper->OnSniperShotFired.AddDynamic(RangeBreakShotListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+
+			UEnemyAttackExpiredTestListener* RangeBreakExpiredListener = NewObject<UEnemyAttackExpiredTestListener>();
+			RangeBreakSniper->OnEnemyAttackExpired.AddDynamic(RangeBreakExpiredListener, &UEnemyAttackExpiredTestListener::HandleEnemyAttackExpired);
+
+			AdvanceToAttack(RangeBreakSniper, ZeroDistanceLocation);
+			TestTrue(TEXT("(v) Attack tell should be visibly on before the range-break"),
+				RangeBreakSniper->AttackTellLightComponent->Intensity > 0.0f);
+
+			RangeBreakSniper->AdvanceAttackTelegraph(RangeBreakSniper->AttackTelegraphSeconds * 0.5f); // mid-telegraph
+
+			const FVector BeyondAttackRangeLocation(1500.0f, 0.0f, 0.0f); // > 1400.0f GetAttackRangeUnits()
+			RangeBreakSniper->TickCheckDetection(BeyondAttackRangeLocation);
+			TestEqual(TEXT("(v) Sniper should revert to Alert once the player leaves attack range mid-telegraph"),
+				static_cast<uint8>(RangeBreakSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+			TestEqual(TEXT("(v) Attack tell should be cleared by the shared OnAttackExpired hook"),
+				RangeBreakSniper->AttackTellLightComponent->Intensity, 0.0f);
+			TestEqual(TEXT("(v) OnEnemyAttackExpired should fire exactly once on the range-break"),
+				RangeBreakExpiredListener->CallCount, 1);
+
+			RangeBreakSniper->AdvanceAttackTelegraph(RangeBreakSniper->AttackTelegraphSeconds); // well past original duration
+			TestEqual(TEXT("(v) The shot must never fire - the range-broken telegraph must not resolve"),
+				RangeBreakShotListener->CallCount, 0);
+		}
+	}
+
+	// (w) issue #360: re-entering attack range after a range-break restarts the
+	// telegraph from zero - no partial credit from the aborted attempt survives.
+	ASniperEnemy* ReacquireSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(ReacquireSniper, ZeroDistanceLocation);
+	ReacquireSniper->AdvanceAttackTelegraph(ReacquireSniper->AttackTelegraphSeconds - 0.1f); // 0.1s from firing
+
+	const FVector ReacquireBeyondRangeLocation(1500.0f, 0.0f, 0.0f);
+	ReacquireSniper->TickCheckDetection(ReacquireBeyondRangeLocation); // Attack -> Alert (range-break)
+	TestEqual(TEXT("(w) Sniper should be back to Alert after the range-break"),
+		static_cast<uint8>(ReacquireSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+	ReacquireSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack, fresh OnAttackEntry()
+	TestEqual(TEXT("(w) Sniper should re-enter Attack once back in range"),
+		static_cast<uint8>(ReacquireSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+
+	USniperShotFiredTestListener* ReacquireListener = NewObject<USniperShotFiredTestListener>();
+	ReacquireSniper->OnSniperShotFired.AddDynamic(ReacquireListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+	// If the old progress had carried over, this small advance (well under a fresh
+	// AttackTelegraphSeconds) would be enough to fire, since the aborted attempt was
+	// only 0.1s from completion - it must NOT fire, proving the telegraph restarted
+	// from zero rather than resuming.
+	ReacquireSniper->AdvanceAttackTelegraph(0.2f);
+	TestEqual(TEXT("(w) The shot should not fire yet - the telegraph must restart from zero on re-acquire, not resume"),
+		ReacquireListener->CallCount, 0);
+
+	ReacquireSniper->AdvanceAttackTelegraph(ReacquireSniper->AttackTelegraphSeconds); // finish a full fresh telegraph
+	TestEqual(TEXT("(w) The shot should fire once a full fresh telegraph elapses after re-acquire"),
+		ReacquireListener->CallCount, 1);
+
+	// (x) issue #360: SN-1PR now has its own named, tunable chase-speed constant
+	// (MovementSpeed) driving GetMovementSpeedUnitsPerSecond() - below AEnemyBase's
+	// own base-class default (600.0f), and below the player pawn's own
+	// UFloatingPawnMovement MaxSpeed (this project's unmodified engine default,
+	// 1200.0f - no C++ override exists anywhere in this module), so outrunning a
+	// chasing sniper is achievable at the project's current move speeds.
+	ASniperEnemy* ChaseSpeedSniper = NewObject<ASniperEnemy>();
+	TestTrue(TEXT("(x) Sniper's chase speed should be a positive, tunable value"),
+		ChaseSpeedSniper->MovementSpeed > 0.0f);
+	TestTrue(TEXT("(x) Sniper's chase speed should be below AEnemyBase's own base-class default (600.0f)"),
+		ChaseSpeedSniper->MovementSpeed < 600.0f);
+	TestEqual(TEXT("(x) GetMovementSpeedUnitsPerSecond() should return the named MovementSpeed constant"),
+		ChaseSpeedSniper->GetMovementSpeedUnitsPerSecond(), ChaseSpeedSniper->MovementSpeed);
+
+	// (y) issue #360: driving TickChaseMovement directly (friend-accessible, same as
+	// TickCheckDetection) during Alert - e.g. right after a range-break - advances
+	// the sniper at exactly its own MovementSpeed, not the inherited 600.0f base,
+	// mirroring KrowdKontrolBomberEnemyTest.cpp's (l3) case exactly.
+	ASniperEnemy* ChasingSniper = NewObject<ASniperEnemy>();
+	const FVector FarSniperPlayerLocation(1000.0f, 0.0f, 0.0f);
+	const FVector AlertOnlyLocation(1450.0f, 0.0f, 0.0f); // > 1400.0f attack range, <= 1500.0f detection range
+	ChasingSniper->TickCheckDetection(AlertOnlyLocation); // Idle -> Alert (not Attack)
+	TestEqual(TEXT("(y) precondition: sniper is Alert"),
+		static_cast<uint8>(ChasingSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	const FVector BeforeChase = ChasingSniper->GetActorLocation();
+	ChasingSniper->TickChaseMovement(FarSniperPlayerLocation, 0.5f);
+	const float DistanceMoved = FVector::Dist(ChasingSniper->GetActorLocation(), BeforeChase);
+	TestEqual(TEXT("(y) sniper chase advances at its own MovementSpeed * DeltaSeconds"),
+		DistanceMoved, ChasingSniper->MovementSpeed * 0.5f);
 
 	return true;
 }
