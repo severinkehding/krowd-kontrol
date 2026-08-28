@@ -2,16 +2,19 @@
 #include "HUDChromeColours.h"
 #include "MainMenuLevelButtonWidget.h"
 #include "LevelSequenceSubsystem.h"
+#include "CrowdMasteryTotalSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelSlot.h"
 #include "Components/VerticalBox.h"
+#include "Components/HorizontalBox.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/SizeBox.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
 
 void UMainMenuWidget::NativeOnInitialized()
 {
@@ -84,6 +87,41 @@ void UMainMenuWidget::BuildWidgetTree()
 	MasteryDisplayAnchor->SetWidthOverride(MasteryDisplayAnchorWidthPx);
 	MasteryDisplayAnchor->SetHeightOverride(MasteryDisplayAnchorHeightPx);
 	Layout->AddChildToVerticalBox(MasteryDisplayAnchor);
+
+	// Reset control for the Crowd Mastery total (docs/prd-crowd-mastery-persistence.md
+	// REQ-3, issue #329) - RESET swaps to CONFIRM RESET/CANCEL on click, since the
+	// underlying reset is destructive. No modal/popup widget system exists in this
+	// codebase and there is exactly one caller, so this inline three-button row is the
+	// smallest addition that satisfies "explicit confirm, no partial resets" (see
+	// RefreshMasteryResetVisibility() below for the visibility toggle).
+	MasteryResetBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("MasteryResetBox"));
+	Layout->AddChildToVerticalBox(MasteryResetBox);
+
+	MasteryResetButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MasteryResetButton"));
+	MasteryResetButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleMasteryResetClicked);
+	MasteryResetButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryResetButtonLabel"));
+	MasteryResetButtonLabel->SetColorAndOpacity(TextColor);
+	MasteryResetButtonLabel->SetText(NSLOCTEXT("MainMenuWidget", "MasteryReset", "RESET"));
+	MasteryResetButton->SetContent(MasteryResetButtonLabel);
+	MasteryResetBox->AddChildToHorizontalBox(MasteryResetButton);
+
+	MasteryResetConfirmButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MasteryResetConfirmButton"));
+	MasteryResetConfirmButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleMasteryResetConfirmClicked);
+	MasteryResetConfirmButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryResetConfirmButtonLabel"));
+	MasteryResetConfirmButtonLabel->SetColorAndOpacity(TextColor);
+	MasteryResetConfirmButtonLabel->SetText(NSLOCTEXT("MainMenuWidget", "MasteryResetConfirm", "CONFIRM RESET"));
+	MasteryResetConfirmButton->SetContent(MasteryResetConfirmButtonLabel);
+	MasteryResetBox->AddChildToHorizontalBox(MasteryResetConfirmButton);
+
+	MasteryResetCancelButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MasteryResetCancelButton"));
+	MasteryResetCancelButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleMasteryResetCancelClicked);
+	MasteryResetCancelButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryResetCancelButtonLabel"));
+	MasteryResetCancelButtonLabel->SetColorAndOpacity(TextColor);
+	MasteryResetCancelButtonLabel->SetText(NSLOCTEXT("MainMenuWidget", "MasteryResetCancel", "CANCEL"));
+	MasteryResetCancelButton->SetContent(MasteryResetCancelButtonLabel);
+	MasteryResetBox->AddChildToHorizontalBox(MasteryResetCancelButton);
+
+	RefreshMasteryResetVisibility(); // establishes the initial RESET-only state
 
 	QuitButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MainMenuQuitButton"));
 	QuitButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleQuitClicked);
@@ -195,4 +233,61 @@ void UMainMenuWidget::HandleLevelSelected(FName MapName)
 	{
 		UGameplayStatics::OpenLevel(this, MapName);
 	}
+}
+
+void UMainMenuWidget::RefreshMasteryResetVisibility()
+{
+	if (!MasteryResetButton || !MasteryResetConfirmButton || !MasteryResetCancelButton)
+	{
+		return;
+	}
+	MasteryResetButton->SetVisibility(bMasteryResetConfirmPending ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	MasteryResetConfirmButton->SetVisibility(bMasteryResetConfirmPending ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	MasteryResetCancelButton->SetVisibility(bMasteryResetConfirmPending ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}
+
+void UMainMenuWidget::HandleMasteryResetClicked()
+{
+	bMasteryResetConfirmPending = true;
+	RefreshMasteryResetVisibility();
+}
+
+void UMainMenuWidget::HandleMasteryResetCancelClicked()
+{
+	bMasteryResetConfirmPending = false;
+	RefreshMasteryResetVisibility();
+}
+
+void UMainMenuWidget::HandleMasteryResetConfirmClicked()
+{
+	// Disarm and refresh visibility BEFORE touching the subsystem, so a warning-logging
+	// (or hypothetically slow) reset call can never leave the UI stuck showing
+	// CONFIRM/CANCEL.
+	bMasteryResetConfirmPending = false;
+	RefreshMasteryResetVisibility();
+
+	if (UCrowdMasteryTotalSubsystem* MasterySubsystem = ResolveMasteryTotalSubsystem())
+	{
+		MasterySubsystem->ResetAccumulatedTotal();
+	}
+}
+
+UCrowdMasteryTotalSubsystem* UMainMenuWidget::ResolveMasteryTotalSubsystem()
+{
+	if (CachedMasteryTotalSubsystem)
+	{
+		return CachedMasteryTotalSubsystem;
+	}
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		CachedMasteryTotalSubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>();
+	}
+	if (!CachedMasteryTotalSubsystem && !bHasWarnedMissingMasteryTotalSubsystem)
+	{
+		bHasWarnedMissingMasteryTotalSubsystem = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UMainMenuWidget::ResolveMasteryTotalSubsystem: no UCrowdMasteryTotalSubsystem available on '%s' - Crowd Mastery reset will not run."),
+			*GetNameSafe(this));
+	}
+	return CachedMasteryTotalSubsystem;
 }

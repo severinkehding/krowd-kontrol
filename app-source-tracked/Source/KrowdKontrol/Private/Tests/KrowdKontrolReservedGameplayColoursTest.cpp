@@ -256,7 +256,8 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 	// colour of its own (an empty USizeBox, no border/brush) - nothing to audit there.
 	// Extended for issue #325: inject a single-row LevelSequenceTable before
 	// construction so LevelSelectButtons is non-empty, then audit the first button's
-	// label colour the same way QuitButtonLabel already is above.
+	// label colour the same way QuitButtonLabel already is above. Extended for issue
+	// #329: audit the three new mastery-reset control labels (RESET/CONFIRM RESET/CANCEL).
 	ULevelSequenceSubsystem* SequenceSubsystem = World->GetSubsystem<ULevelSequenceSubsystem>();
 	if (TestNotNull(TEXT("UWorld should auto-instantiate ULevelSequenceSubsystem"), SequenceSubsystem))
 	{
@@ -278,6 +279,12 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			AllReserved.Contains(MenuWidget->TitleText->GetColorAndOpacity().GetSpecifiedColor()));
 		TestFalse(TEXT("Main menu Quit button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->QuitButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Main menu mastery-reset button label colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MenuWidget->MasteryResetButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Main menu mastery-reset confirm button label colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MenuWidget->MasteryResetConfirmButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Main menu mastery-reset cancel button label colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MenuWidget->MasteryResetCancelButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 
 		if (TestEqual(TEXT("Main menu should build exactly one level-select button from the injected table"),
 			MenuWidget->LevelSelectButtons.Num(), 1))
