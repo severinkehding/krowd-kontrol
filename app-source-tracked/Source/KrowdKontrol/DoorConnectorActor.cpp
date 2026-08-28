@@ -9,6 +9,23 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 
+namespace
+{
+	void ConfigureCorridorGuardRail(UBoxComponent* GuardRail, USceneComponent* Root)
+	{
+		GuardRail->SetupAttachment(Root);
+		ARoomActor::ConfigureWorldDynamicBlockingCollision(GuardRail);
+		// Starts disabled/zero-sized like the door's other connector-span geometry -
+		// RecomputeConnectorGeometry() positions and enables it once RoomA/RoomB resolve to
+		// a valid span, and HideConnectorVisuals() force-disables it again whenever they stop
+		// resolving. Unlike GateBlockingComponent, never gated open/closed by room-clear
+		// state - the corridor sides are always solid or fully absent, never conditionally
+		// blocking. Overrides the shared helper's QueryOnly default back to NoCollision,
+		// same as today's behavior.
+		GuardRail->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+}
+
 ADoorConnectorActor::ADoorConnectorActor()
 {
 	// Ticks (cheap, 4Hz) so the player-beyond-door term of RefreshGateState() tracks
@@ -78,13 +95,19 @@ ADoorConnectorActor::ADoorConnectorActor()
 	// Starts open (no collision) - matches bIsGateOpen's default and "ungated until a
 	// GatingRoom is assigned" behaviour; RefreshGateState() corrects this once real
 	// room/gating data is available (called from BeginPlay, after GatingRoom resolves).
+	// Unconfigured primitives default to BlockAllDynamic - the shared helper resets to
+	// Ignore-all first so the gate only ever blocks the one channel it's meant to (see
+	// RefreshGateState()'s comment below for why that channel is WorldDynamic, not
+	// WorldStatic or Pawn). Overrides the helper's QueryOnly default back to
+	// NoCollision, same as today's behavior.
+	ARoomActor::ConfigureWorldDynamicBlockingCollision(GateBlockingComponent);
 	GateBlockingComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	// Unconfigured primitives default to BlockAllDynamic - reset to Ignore-all first so
-	// the gate only ever blocks the one channel it's meant to (see RefreshGateState()'s
-	// comment below for why that channel is WorldDynamic, not WorldStatic or Pawn).
-	GateBlockingComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	GateBlockingComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	GateBlockingComponent->SetGenerateOverlapEvents(false);
+
+	CorridorGuardRailAComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CorridorGuardRailAComponent"));
+	ConfigureCorridorGuardRail(CorridorGuardRailAComponent, DoorConnectorRoot);
+
+	CorridorGuardRailBComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CorridorGuardRailBComponent"));
+	ConfigureCorridorGuardRail(CorridorGuardRailBComponent, DoorConnectorRoot);
 }
 
 void ADoorConnectorActor::HideConnectorVisuals()
@@ -92,6 +115,8 @@ void ADoorConnectorActor::HideConnectorVisuals()
 	ConnectorFloorMeshComponent->SetVisibility(false);
 	DoorMarkerMeshComponent->SetVisibility(false);
 	DoorMarkerLightComponent->SetVisibility(false);
+	CorridorGuardRailAComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CorridorGuardRailBComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	// Route through RefreshGateState() rather than hardcoding NoCollision, so a
 	// GatingRoom that's still un-cleared stays blocked even while the connector's visuals
 	// are hidden (e.g. RecomputeConnectorGeometry() called again post-placement with a
@@ -133,6 +158,43 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	GateBlockingComponent->SetWorldRotation(Delta.Rotation());
 	GateBlockingComponent->SetBoxExtent(FVector(
 		ConnectorFloorThickness, ConnectorFloorWidth * 0.5f, DoorMarkerHeight));
+
+	// The rails must span only the corridor gap BETWEEN the two room perimeters, never
+	// the full centre-to-centre distance: a Length*0.5 half-extent (2026-08-26 operator
+	// playtest) runs each rail from room centre to room centre, carving an impassable
+	// 320cm-wide channel through both room interiors that walls the player off from
+	// their own room. Clamp each end to the room's floor edge along the connector axis
+	// using the true ray-exit distance (ARoomActor::ComputeAxisExitDistance), not the
+	// box's support function - the two only agree for axis-aligned Direction (issue
+	// #243 code-review Finding 2b: the support function overshoots for any diagonal
+	// room-to-room pair, leaving unfenced stretches at the door mouths).
+	const FVector Direction = Delta / Length;
+	// Direction is 3D-unit, so dropping Z leaves a sub-unit 2D vector for any
+	// non-coplanar room pair - re-normalize so ComputeAxisExitDistance's exit-distance
+	// math (which assumes a unit 2D direction) stays correct off-plane too.
+	const FVector2D Direction2D = FVector2D(Direction.X, Direction.Y).GetSafeNormal();
+	const float GapStartDistance = ARoomActor::ComputeAxisExitDistance(RoomA->RoomFloorExtent, Direction2D);
+	const float GapEndDistance = Length - ARoomActor::ComputeAxisExitDistance(RoomB->RoomFloorExtent, Direction2D);
+	const float GuardRailHalfLength = (GapEndDistance - GapStartDistance) * 0.5f;
+
+	const FVector LateralDirection = FRotationMatrix(Delta.Rotation()).GetUnitAxis(EAxis::Y);
+	const float GuardRailOffset = ConnectorFloorWidth * 0.5f + CorridorGuardRailThickness * 0.5f;
+	const FVector GapMidpoint = LocationA + Direction * (GapStartDistance + GapEndDistance) * 0.5f;
+	const FVector GuardRailExtent(GuardRailHalfLength, CorridorGuardRailThickness * 0.5f, CorridorGuardRailHeight * 0.5f);
+
+	auto PlaceGuardRail = [&](UBoxComponent* GuardRail, const FVector& Location)
+	{
+		GuardRail->SetWorldLocation(Location);
+		GuardRail->SetWorldRotation(Delta.Rotation());
+		GuardRail->SetBoxExtent(GuardRailExtent);
+		// Overlapping/adjacent room floors leave no corridor gap - degenerate rails
+		// would sit inside a room, so disable them entirely rather than block there.
+		GuardRail->SetCollisionEnabled(GuardRailHalfLength > 0.f
+			? ECollisionEnabled::QueryOnly
+			: ECollisionEnabled::NoCollision);
+	};
+	PlaceGuardRail(CorridorGuardRailAComponent, GapMidpoint + LateralDirection * GuardRailOffset);
+	PlaceGuardRail(CorridorGuardRailBComponent, GapMidpoint - LateralDirection * GuardRailOffset);
 }
 
 void ADoorConnectorActor::OnConstruction(const FTransform& Transform)

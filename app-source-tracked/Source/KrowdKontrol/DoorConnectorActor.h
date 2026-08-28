@@ -77,6 +77,27 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
 	TObjectPtr<UBoxComponent> GateBlockingComponent;
 
+	// Issue #243 / PRD Room Encounter Flow REQ-1 AC2: height/thickness of the two
+	// always-on (never gated, unlike GateBlockingComponent) invisible blocking volumes
+	// flanking ConnectorFloorMeshComponent on either side, so the player can't drift
+	// sideways off the connector strip. They span only the corridor gap between the two
+	// rooms' floor perimeters (not the full centre-to-centre distance - see
+	// RecomputeConnectorGeometry()). Kept independently tunable rather than reading
+	// ARoomActor's RoomWallHeight/RoomWallThickness - same reasoning
+	// ConnectorFloorThickness/DoorMarkerHeight already use (a door can connect two
+	// rooms with different wall dimensions).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	float CorridorGuardRailHeight = 300.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	float CorridorGuardRailThickness = 20.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<UBoxComponent> CorridorGuardRailAComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<UBoxComponent> CorridorGuardRailBComponent;
+
 	// Positions/rotates/scales ConnectorFloorMeshComponent and DoorMarkerMeshComponent/
 	// DoorMarkerLightComponent to span/mark the straight line between RoomA and RoomB's
 	// live GetActorLocation(), or hides both if the door doesn't yet connect two valid,

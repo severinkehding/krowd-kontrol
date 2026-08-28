@@ -300,8 +300,12 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	// the colour-neutral starter ability must bank at a type-matched pen (MISSION
 	// "each ability viable solo at base effectiveness"), the exact case the old
 	// colour gate made impossible.
+	// Offset kept well inside Room's own +-1000uu wall bounds (issue #243: the room's
+	// perimeter is now real blocking geometry, not just visual - a +1000 offset used to
+	// be harmless but now lands the enemy behind/inside the East wall itself, blocking
+	// the sweep below before it ever reaches the zone).
 	ARunnerEnemy* Enemy = World->SpawnActor<ARunnerEnemy>(
-		BankingZone->GetActorLocation() + FVector(1000.f, 0.f, 0.f), FRotator::ZeroRotator);
+		BankingZone->GetActorLocation() + FVector(500.f, 0.f, 0.f), FRotator::ZeroRotator);
 	if (!TestNotNull(TEXT("Enemy should spawn"), Enemy))
 	{
 		return false;
@@ -340,8 +344,11 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	// A controlled enemy of the *wrong type* physically overlapping the zone should
 	// not bank - the pen takes Runners, a Trooper stays Controlled (type-keyed
 	// rejection; the ability used is irrelevant either way).
+	// Offset kept inside Room's own wall bounds - same reasoning as Enemy's spawn
+	// above; at the old +1000 offset this assertion passed for the wrong reason (the
+	// enemy never even reached the zone, blocked by the wall instead of by type).
 	ATrooperEnemy* MismatchedEnemy = World->SpawnActor<ATrooperEnemy>(
-		BankingZone->GetActorLocation() + FVector(1000.f, 500.f, 0.f), FRotator::ZeroRotator);
+		BankingZone->GetActorLocation() + FVector(500.f, 500.f, 0.f), FRotator::ZeroRotator);
 	if (TestNotNull(TEXT("Mismatched enemy should spawn"), MismatchedEnemy))
 	{
 		MismatchedEnemy->TickCheckDetection(MismatchedEnemy->GetActorLocation());
@@ -352,8 +359,9 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	}
 
 	// An uncontrolled enemy physically overlapping the zone should not bank.
+	// Offset kept inside Room's own wall bounds - same reasoning as Enemy's spawn above.
 	ATrooperEnemy* UncontrolledEnemy = World->SpawnActor<ATrooperEnemy>(
-		BankingZone->GetActorLocation() + FVector(1000.f, -500.f, 0.f), FRotator::ZeroRotator);
+		BankingZone->GetActorLocation() + FVector(500.f, -500.f, 0.f), FRotator::ZeroRotator);
 	if (TestNotNull(TEXT("Uncontrolled enemy should spawn"), UncontrolledEnemy))
 	{
 		UncontrolledEnemy->SetActorLocation(BankingZone->GetActorLocation(), /*bSweep=*/true);

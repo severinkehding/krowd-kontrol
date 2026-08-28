@@ -34,6 +34,9 @@
 #include "SniperEnemy.h"
 #include "TrooperEnemy.h"
 #include "RunnerEnemy.h"
+#include "RoomActor.h"
+#include "DoorConnectorActor.h"
+#include "Components/BoxComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -899,6 +902,142 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("(z-fear) A second Tick() after the player moves should flee away from the player's NEW position, not a cast-time snapshot"),
 				FVector::Dist(AfterSecondTick, FleePlayerPawn->GetActorLocation())
 					> FVector::Dist(AfterFirstTick, FleePlayerPawn->GetActorLocation()));
+		}
+	}
+
+	// (z2-fear) enemy-flee-vs-solid-wall regression (issue #243 Finding 3): once
+	// ARoomActor::SealRoomPerimeter() gives room walls real blocking collision, a
+	// Fear-Controlled enemy fleeing via the old *unswept* SetActorLocation could be
+	// teleported straight through a wall each tick, ending up outside the room where
+	// the player can no longer follow it - un-bankable forever, its gated door stuck
+	// shut. Proves TickFleeMovement now sweeps (bSweep=true) against that real
+	// collision, AND that the wall/flank's own CollisionObjectType is WorldStatic (see
+	// ARoomActor::ConfigureWorldDynamicBlockingCollision's comment) - the enemy root's
+	// own response to WorldDynamic is narrowed to Overlap for target-zone banking
+	// (issue #211), so a WorldDynamic-typed blocking volume can never stop its sweep
+	// regardless of bSweep; only the still-unmodified Block response to WorldStatic
+	// does (confirmed empirically against this exact headless Automation harness -
+	// bSweep=true alone was not sufficient). Uses a real ABomberEnemy, not
+	// AEnemyBaseTestActor (whose RootComponent is a plain USceneComponent with no
+	// collision shape to sweep against) and not ATrooperEnemy (whose Plane-mesh root
+	// has a genuinely zero-thickness collision axis after its 90-degree constructor
+	// rotation, which this harness silently treats as no collision) - ABomberEnemy's
+	// Sphere-mesh root always gets a real, non-degenerate 3D collision hull.
+	UWorld* FleeWallWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(z2-fear) CreateNewMap should return a valid World"), FleeWallWorld))
+	{
+		FleeWallWorld->InitializeActorsForPlay(FURL());
+		FleeWallWorld->SetBegunPlay(true);
+
+		// No connecting door -> SealRoomPerimeter() (called from BeginPlay) gives every
+		// wall real blocking collision, including the West wall this case flees into.
+		ARoomActor* FleeWallRoom = FleeWallWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector::ZeroVector));
+		if (TestNotNull(TEXT("(z2-fear) FleeWallRoom should spawn into the test World"), FleeWallRoom))
+		{
+			ABomberEnemy* WallFleer = FleeWallWorld->SpawnActor<ABomberEnemy>(FVector(-800.f, 0.f, 0.f), FRotator::ZeroRotator);
+			if (TestNotNull(TEXT("(z2-fear) WallFleer should spawn into the test World"), WallFleer))
+			{
+				WallFleer->TickCheckDetection(WallFleer->GetActorLocation()); // Idle -> Alert
+				WallFleer->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled
+
+				// WallFleerCasterLocation east of WallFleer, so AwayFromCaster points
+				// west, into the room's now-solid West wall (at local X =
+				// -RoomFloorExtent.X, +-RoomWallThickness/2). Ticks until the enemy's
+				// cumulative intended travel comfortably exceeds the ~200uu spawn-to-
+				// wall gap, regardless of this subclass's own (possibly slower, e.g.
+				// ABomberEnemy's 200 units/sec) GetEffectiveMovementSpeedUnitsPerSecond()
+				// - under the old unswept code this would send it thousands of units
+				// past the wall; under the fix it should stay pinned at the wall.
+				const FVector WallFleerCasterLocation(0.f, 0.f, 0.f);
+				const float WallFleerSpeed = WallFleer->GetEffectiveMovementSpeedUnitsPerSecond();
+				const int32 WallFleerTickCount = FMath::Max(5, FMath::CeilToInt(2000.f / FMath::Max(1.f, WallFleerSpeed)));
+				for (int32 TickIndex = 0; TickIndex < WallFleerTickCount; ++TickIndex)
+				{
+					WallFleer->TickFleeMovement(WallFleerCasterLocation, 1.0f);
+				}
+
+				TestTrue(TEXT("(z2-fear) A Feared enemy fleeing into a sealed room's wall should stay inside the room (issue #243 Finding 3 - swept SetActorLocation, not teleported through)"),
+					WallFleer->GetActorLocation().X >= -FleeWallRoom->RoomFloorExtent.X);
+			}
+		}
+	}
+
+	// (z3-gate-fear) enemy-flee-vs-closed-gate regression (issue #243 code-review/
+	// test-coverage Findings): GateBlockingComponent's construction now routes through
+	// the same ARoomActor::ConfigureWorldDynamicBlockingCollision helper as the wall
+	// flanks above, which (as a side effect of the dedup) also gives it
+	// CollisionObjectType=ECC_WorldStatic for the first time - previously it kept the
+	// engine's unconfigured WorldDynamic default, so a fleeing enemy's own
+	// WorldDynamic-narrowed response (issue #211) could pass straight through a closed
+	// gate even while blocking the real player. Mirrors (z2-fear)'s shape exactly, but
+	// drives the fleeing enemy into a closed door's GateBlockingComponent instead of a
+	// room wall - the room stays "uncleared" (gate closed) via a second, un-Banked
+	// owned enemy that never interacts with WallFleer's own path.
+	UWorld* GateFleeWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(z3-gate-fear) CreateNewMap should return a valid World"), GateFleeWorld))
+	{
+		GateFleeWorld->InitializeActorsForPlay(FURL());
+		GateFleeWorld->SetBegunPlay(true);
+
+		ARoomActor* GateFleeRoomA = GateFleeWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector::ZeroVector));
+		ARoomActor* GateFleeRoomB = GateFleeWorld->SpawnActor<ARoomActor>(ARoomActor::StaticClass(), FTransform(FVector(3000.f, 0.f, 0.f)));
+		if (TestNotNull(TEXT("(z3-gate-fear) GateFleeRoomA should spawn into the test World"), GateFleeRoomA) &&
+			TestNotNull(TEXT("(z3-gate-fear) GateFleeRoomB should spawn into the test World"), GateFleeRoomB))
+		{
+			// Keeps GateFleeRoomA (the door's auto-derived GatingRoom, the west/lower-X
+			// room) un-cleared for the whole test - positioned off the GateFleer<->gate
+			// line so it never physically interferes.
+			AEnemyBaseTestActor* GateGuardEnemy = GateFleeWorld->SpawnActor<AEnemyBaseTestActor>(AEnemyBaseTestActor::StaticClass(), FTransform(FVector(-500.f, 500.f, 0.f)));
+			if (TestNotNull(TEXT("(z3-gate-fear) GateGuardEnemy should spawn into the test World"), GateGuardEnemy))
+			{
+				GateFleeRoomA->AddOwnedEnemy(GateGuardEnemy);
+			}
+
+			// RoomA/RoomB set before FinishSpawning() so BeginPlay's GatingRoom
+			// auto-derivation and RecomputeConnectorGeometry() both observe a fully
+			// resolved door, same pattern as KrowdKontrolRoomActorDoorGatingTest.cpp.
+			ADoorConnectorActor* GateFleeDoor = GateFleeWorld->SpawnActorDeferred<ADoorConnectorActor>(ADoorConnectorActor::StaticClass(), FTransform::Identity);
+			if (TestNotNull(TEXT("(z3-gate-fear) GateFleeDoor should spawn into the test World"), GateFleeDoor))
+			{
+				GateFleeDoor->RoomA = GateFleeRoomA;
+				GateFleeDoor->RoomB = GateFleeRoomB;
+				GateFleeDoor->FinishSpawning(FTransform::Identity);
+
+				// GateFleeRoomA's own BeginPlay (SealRoomPerimeter) already ran with no
+				// door in the World yet, fully sealing its East wall - re-call now that
+				// GateFleeDoor exists so the East wall gets a real gap for it, isolating
+				// this test to the gate's own blocking behaviour rather than the wall's.
+				GateFleeRoomA->SealRoomPerimeter();
+
+				TestEqual(TEXT("(z3-gate-fear) Gate should be closed (QueryOnly) while GateGuardEnemy is un-Banked"),
+					GateFleeDoor->GateBlockingComponent->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+				TestEqual(TEXT("(z3-gate-fear) GateBlockingComponent should be WorldStatic-typed so a fleeing enemy's WorldDynamic-narrowed response (issue #211) can still be blocked by it (issue #243)"),
+					GateFleeDoor->GateBlockingComponent->GetCollisionObjectType(), ECC_WorldStatic);
+
+				ABomberEnemy* GateFleer = GateFleeWorld->SpawnActor<ABomberEnemy>(FVector(900.f, 0.f, 0.f), FRotator::ZeroRotator);
+				if (TestNotNull(TEXT("(z3-gate-fear) GateFleer should spawn into the test World"), GateFleer))
+				{
+					GateFleer->TickCheckDetection(GateFleer->GetActorLocation()); // Idle -> Alert
+					GateFleer->ReceiveControl(EAbilitySlot::Fear); // Alert -> Controlled
+
+					// Caster west of GateFleer, so AwayFromCaster points east - through
+					// GateFleeRoomA's now-open wall gap (centered at Y=0, matching this
+					// axis-aligned Delta.Y=0 setup) and into the closed gate at world
+					// X=1500 (the RoomA/RoomB midpoint). Same generous tick-count
+					// approach as (z2-fear): comfortably exceeds the ~580uu spawn-to-gate
+					// gap regardless of this subclass's own movement speed.
+					const FVector GateFleerCasterLocation(0.f, 0.f, 0.f);
+					const float GateFleerSpeed = GateFleer->GetEffectiveMovementSpeedUnitsPerSecond();
+					const int32 GateFleerTickCount = FMath::Max(5, FMath::CeilToInt(2000.f / FMath::Max(1.f, GateFleerSpeed)));
+					for (int32 TickIndex = 0; TickIndex < GateFleerTickCount; ++TickIndex)
+					{
+						GateFleer->TickFleeMovement(GateFleerCasterLocation, 1.0f);
+					}
+
+					TestTrue(TEXT("(z3-gate-fear) A Feared enemy fleeing into a closed gate should be blocked at the door, not pass through into the corridor (issue #243 GateBlockingComponent WorldStatic regression)"),
+						GateFleer->GetActorLocation().X < GateFleeDoor->GateBlockingComponent->GetComponentLocation().X);
+				}
+			}
 		}
 	}
 

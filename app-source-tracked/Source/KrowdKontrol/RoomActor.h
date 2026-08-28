@@ -8,7 +8,10 @@
 class APlaceholderTargetZoneActor;
 class ATargetZone;
 class UStaticMeshComponent;
+class UBoxComponent;
+class UPrimitiveComponent;
 class AEnemyBase;
+class ADoorConnectorActor;
 class UOnScreenPromptWidget;
 class AKrowdKontrolPlayerController;
 
@@ -72,6 +75,23 @@ public:
 	// idempotent entry point.
 	UFUNCTION(BlueprintCallable, Category = "Room")
 	void EnsureBankingZonesWired();
+
+	// Issue #243 / PRD Room Encounter Flow REQ-1: seals this room's 4-wall perimeter so
+	// the only walkable connection to an adjacent room is through a door actually
+	// connected to this room. A side with no connecting ADoorConnectorActor gets
+	// blocking collision on its existing wall mesh; a side with one gets a
+	// matching-width gap (flanked by two invisible blocking segments) so the doorway
+	// itself stays open for ADoorConnectorActor's own GateBlockingComponent to gate.
+	// Called from BeginPlay, on the same "every placed actor already exists in the
+	// World by the time any BeginPlay fires" assumption AddOwnedEnemy's own
+	// auto-discovery already relies on. Exposed publicly and idempotent (destroys and
+	// rebuilds its own flank components each call) so a test using the
+	// SpawnActor-after-play pattern - where BeginPlay dispatches immediately per-actor,
+	// before a later-spawned door exists - can call it again once the connecting
+	// door(s) are actually in the World, mirroring EnsureBankingZonesWired()'s own
+	// "safe to call more than once" contract.
+	UFUNCTION(BlueprintCallable, Category = "Room")
+	void SealRoomPerimeter();
 
 	// Enemies this room must clear before its gated door(s) open. Auto-discovered in
 	// BeginPlay via nearest-room-by-distance over every AEnemyBase in the world (issue
@@ -157,6 +177,28 @@ public:
 	// player pawn itself, and changing TickCheckDetection's signature to carry the
 	// pawn would ripple through ~150 existing Automation test call sites).
 	static ARoomActor* FindNearestRoom(const FVector& Location, const TArray<ARoomActor*>& Rooms);
+
+	// Distance from an axis-aligned box's centre, along Direction2D (need not be
+	// normalized), to where a ray in that exact direction exits the box - the correct
+	// primitive for "where does the corridor to my neighbor cross my own wall", not the
+	// box's support function (which measures maximum projection width, not ray-exit
+	// distance, and only agrees with it when Direction2D is axis-aligned). Used by
+	// ADoorConnectorActor::RecomputeConnectorGeometry()'s guard-rail span.
+	// SealRoomPerimeter()'s gap-centering math solves the same "where does this room's
+	// wall sit along this line" problem but with its own independent, hand-inlined
+	// CrossingParam/GapCenterOffset formula - the two are not shared, so a fix here
+	// does not automatically propagate there.
+	static float ComputeAxisExitDistance(const FVector2D& HalfExtent, const FVector2D& Direction2D);
+
+	// Shared #218-channel recipe (Block-only-ECC_WorldDynamic response, matching the
+	// real player pawn's presented channel; ECC_WorldStatic object type, matching
+	// static level geometry and, per issue #243 Finding 3, the one channel a fleeing
+	// enemy's own narrowed-for-banking response can still be blocked by - see the .cpp
+	// definition's comment) for every blocking volume this issue's fix creates or
+	// reuses: room wall-gap flanks, corridor guard rails, and the door's own
+	// GateBlockingComponent. A single place to change if #218/#243's channel findings
+	// are ever revisited.
+	static void ConfigureWorldDynamicBlockingCollision(UPrimitiveComponent* Component);
 
 	// Issue #274 code-review follow-up, promoted here from EnemyBase.cpp's own
 	// anonymous namespace by issue #245: without this cache, a per-frame caller
@@ -275,6 +317,12 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room", meta = (AllowPrivateAccess = "true"))
 	TArray<FRoomTargetZone> TargetZones;
+
+	// Flank collision volumes SealRoomPerimeter() creates for wall sides that have a
+	// connecting door - tracked so a repeat call can destroy and rebuild them instead
+	// of leaking components.
+	UPROPERTY()
+	TArray<TObjectPtr<UBoxComponent>> WallGapFlankComponents;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Room|Enemies", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<AEnemyBase>> OwnedEnemies;

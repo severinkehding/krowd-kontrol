@@ -5,9 +5,11 @@
 #include "AbilityData.h"
 #include "OnScreenPromptWidget.h"
 #include "KrowdKontrolPlayerController.h"
+#include "DoorConnectorActor.h"
 #include "Engine/World.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/BoxComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
@@ -19,9 +21,10 @@ namespace
 {
 	// Shared by all 4 wall mesh components below - the engine's
 	// /Engine/BasicShapes/Cube.Cube is a 100x100x100uu cube, so scale = desired
-	// size-in-cm / 100. Walls have collision disabled: ARoomActor has no per-door
-	// "which wall side" data, so a solid wall on all 4 sides would seal off the very
-	// connector paths this issue also requires to be walkable.
+	// size-in-cm / 100. Walls have collision disabled at construction time: real
+	// per-door wall-side blocking collision is applied later, in
+	// ARoomActor::SealRoomPerimeter() (issue #243), once every placed door in the
+	// World is discoverable.
 	void SetupWallMeshComponent(UStaticMeshComponent* WallMeshComponent, UStaticMesh* CubeMesh,
 		USceneComponent* RoomRoot, const FVector& Scale, const FVector& RelativeLocation)
 	{
@@ -34,6 +37,120 @@ namespace
 		WallMeshComponent->SetRelativeScale3D(Scale);
 		WallMeshComponent->SetRelativeLocation(RelativeLocation);
 	}
+
+	enum class ERoomWallSide : uint8 { North, South, East, West };
+
+	struct FWallGapSpan
+	{
+		float Start;
+		float End;
+	};
+
+	// Builds 0..N+1 invisible blocking UBoxComponents covering Side's full tangent
+	// span EXCEPT the given gaps (sorted here, caller order irrelevant; can build zero
+	// if a gap consumes the entire span - see AddSegmentIfSolid's KINDA_SMALL_NUMBER
+	// guard below) - replaces the
+	// old per-door BuildWallGapFlanks, which built each door's flank pair independent
+	// of every other door on the same side and could seal one door's gap inside
+	// another door's "solid" flank (issue #243, PR #305 pass-1 rejection). Overlapping
+	// gaps (e.g. two doors placed closer together than their combined half-widths) are
+	// merged into one wider open span rather than left to seal either doorway - an
+	// authoring conflict should fail open, not shut.
+	void BuildWallSideFlanks(ARoomActor* Room, ERoomWallSide Side, TArray<FWallGapSpan> Gaps,
+		TArray<TObjectPtr<UBoxComponent>>& OutFlanks)
+	{
+		Gaps.Sort([](const FWallGapSpan& A, const FWallGapSpan& B) { return A.Start < B.Start; });
+
+		TArray<FWallGapSpan> MergedGaps;
+		for (const FWallGapSpan& Gap : Gaps)
+		{
+			if (MergedGaps.Num() > 0 && Gap.Start <= MergedGaps.Last().End)
+			{
+				MergedGaps.Last().End = FMath::Max(MergedGaps.Last().End, Gap.End);
+			}
+			else
+			{
+				MergedGaps.Add(Gap);
+			}
+		}
+
+		const bool bEastWest = (Side == ERoomWallSide::East || Side == ERoomWallSide::West);
+		const float WallSpanHalfExtent = bEastWest ? Room->RoomFloorExtent.Y : Room->RoomFloorExtent.X;
+		const float FixedAxisPosition = bEastWest
+			? (Side == ERoomWallSide::East ? Room->RoomFloorExtent.X : -Room->RoomFloorExtent.X)
+			: (Side == ERoomWallSide::North ? Room->RoomFloorExtent.Y : -Room->RoomFloorExtent.Y);
+
+		auto AddSegmentIfSolid = [&](float SegmentStart, float SegmentEnd)
+		{
+			const float Length = SegmentEnd - SegmentStart;
+			if (Length <= KINDA_SMALL_NUMBER)
+			{
+				return;
+			}
+			const float Center = (SegmentStart + SegmentEnd) * 0.5f;
+
+			UBoxComponent* Flank = NewObject<UBoxComponent>(Room);
+			Flank->SetupAttachment(Room->GetRootComponent());
+			Flank->RegisterComponent();
+
+			const FVector RelativeLocation = bEastWest
+				? FVector(FixedAxisPosition, Center, Room->RoomWallHeight * 0.5f)
+				: FVector(Center, FixedAxisPosition, Room->RoomWallHeight * 0.5f);
+			const FVector BoxExtent = bEastWest
+				? FVector(Room->RoomWallThickness * 0.5f, Length * 0.5f, Room->RoomWallHeight * 0.5f)
+				: FVector(Length * 0.5f, Room->RoomWallThickness * 0.5f, Room->RoomWallHeight * 0.5f);
+
+			Flank->SetRelativeLocation(RelativeLocation);
+			Flank->SetBoxExtent(BoxExtent);
+			ARoomActor::ConfigureWorldDynamicBlockingCollision(Flank);
+
+			OutFlanks.Add(Flank);
+		};
+
+		float PrevEdge = -WallSpanHalfExtent;
+		for (const FWallGapSpan& Gap : MergedGaps)
+		{
+			AddSegmentIfSolid(PrevEdge, Gap.Start);
+			PrevEdge = Gap.End;
+		}
+		AddSegmentIfSolid(PrevEdge, WallSpanHalfExtent);
+	}
+}
+
+float ARoomActor::ComputeAxisExitDistance(const FVector2D& HalfExtent, const FVector2D& Direction2D)
+{
+	const float ExitX = FMath::IsNearlyZero(Direction2D.X) ? TNumericLimits<float>::Max() : HalfExtent.X / FMath::Abs(Direction2D.X);
+	const float ExitY = FMath::IsNearlyZero(Direction2D.Y) ? TNumericLimits<float>::Max() : HalfExtent.Y / FMath::Abs(Direction2D.Y);
+	return FMath::Min(ExitX, ExitY);
+}
+
+// Mirrors ADoorConnectorActor::GateBlockingComponent's collision setup exactly
+// (see that component's construction in ADoorConnectorActor's constructor) - the real player pawn presents ECC_WorldDynamic/
+// BlockAllDynamic (issue #218's "attempt 3" root-cause finding), not ECC_Pawn or
+// ECC_WorldStatic, so any new blocking volume must reuse this same response channel or
+// it silently fails to stop the player exactly like #218's first two attempts did.
+//
+// The component's own CollisionObjectType is set to ECC_WorldStatic (issue #243
+// Finding 3) - these are static level geometry (walls/flanks, corridor guard rails,
+// the gate), never itself an actor's moving root, so WorldStatic is also the
+// semantically correct channel. This matters beyond semantics: AEnemyBase::BeginPlay
+// narrows every enemy's own root response to ECC_WorldDynamic down to Overlap (issue
+// #211, so a regular enemy can physically enter an OverlapAllDynamic-profiled
+// ATargetZone instead of being blocked by it) but leaves its response to
+// ECC_WorldStatic at the unmodified Block default. A blocking volume left at
+// WorldDynamic (the default UPrimitiveComponent object type, unset by the response
+// calls above) is therefore a channel a fleeing enemy's own sweep silently classifies
+// as an Overlap - never a blocking hit, regardless of bSweep - and passes straight
+// through, confirmed empirically against this exact headless Automation harness.
+// Declaring these volumes WorldStatic instead sidesteps that narrowing entirely and
+// still blocks the player exactly as before (its own response was never narrowed).
+void ARoomActor::ConfigureWorldDynamicBlockingCollision(UPrimitiveComponent* Component)
+{
+	Component->SetCollisionObjectType(ECC_WorldStatic);
+	Component->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Component->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	Component->SetGenerateOverlapEvents(false);
+	Component->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 }
 
 ARoomActor::ARoomActor()
@@ -148,6 +265,90 @@ void ARoomActor::BeginPlay()
 		if (FindNearestRoom(Enemy, AllRooms) == this)
 		{
 			AddOwnedEnemy(Enemy);
+		}
+	}
+
+	SealRoomPerimeter();
+}
+
+void ARoomActor::SealRoomPerimeter()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TObjectPtr<UBoxComponent>& Flank : WallGapFlankComponents)
+	{
+		if (Flank)
+		{
+			Flank->DestroyComponent();
+		}
+	}
+	WallGapFlankComponents.Reset();
+
+	UStaticMeshComponent* WallBySide[4] = {
+		WallNorthMeshComponent, WallSouthMeshComponent, WallEastMeshComponent, WallWestMeshComponent };
+	TArray<FWallGapSpan> GapsBySide[4];
+
+	for (TActorIterator<ADoorConnectorActor> It(World); It; ++It)
+	{
+		ADoorConnectorActor* Door = *It;
+		if (!Door->ConnectsValidRooms() || (Door->RoomA != this && Door->RoomB != this))
+		{
+			continue;
+		}
+		ARoomActor* OtherRoom = (Door->RoomA == this) ? ToRawPtr(Door->RoomB) : ToRawPtr(Door->RoomA);
+
+		const FVector Delta = OtherRoom->GetActorLocation() - GetActorLocation();
+		const bool bEastWest = FMath::Abs(Delta.X) >= FMath::Abs(Delta.Y);
+		const ERoomWallSide Side = bEastWest
+			? (Delta.X >= 0.f ? ERoomWallSide::East : ERoomWallSide::West)
+			: (Delta.Y >= 0.f ? ERoomWallSide::North : ERoomWallSide::South);
+
+		// Where the line from this room's origin to OtherRoom's origin actually
+		// crosses this room's wall plane - not the room-centres midpoint, which is
+		// only correct when the wall sits exactly halfway between the two centres
+		// (issue #243, PR #305 code-review Finding 2).
+		const float FixedAxisPosition = bEastWest
+			? (Side == ERoomWallSide::East ? RoomFloorExtent.X : -RoomFloorExtent.X)
+			: (Side == ERoomWallSide::North ? RoomFloorExtent.Y : -RoomFloorExtent.Y);
+		const float WallNormalDelta = bEastWest ? Delta.X : Delta.Y;
+		if (FMath::IsNearlyZero(WallNormalDelta))
+		{
+			// Exactly-coincident room origins (issue #219's known co-located-rooms
+			// authoring failure mode) would otherwise divide by zero here and poison
+			// GapCenterOffset with NaN, which AddSegmentIfSolid's KINDA_SMALL_NUMBER
+			// guard can't catch (NaN comparisons are always false, so a NaN segment
+			// reads as "solid"). Fail open like this function's other degenerate cases
+			// instead: skip this door's gap rather than construct a NaN-poisoned box.
+			continue;
+		}
+		const float CrossingParam = FixedAxisPosition / WallNormalDelta;
+		const float GapCenterOffset = CrossingParam * (bEastWest ? Delta.Y : Delta.X);
+		const float GapHalfWidth = Door->ConnectorFloorWidth * 0.5f;
+
+		GapsBySide[static_cast<uint8>(Side)].Add(FWallGapSpan{ GapCenterOffset - GapHalfWidth, GapCenterOffset + GapHalfWidth });
+	}
+
+	for (uint8 SideIndex = 0; SideIndex < 4; ++SideIndex)
+	{
+		if (!WallBySide[SideIndex])
+		{
+			continue;
+		}
+		if (GapsBySide[SideIndex].Num() > 0)
+		{
+			// The full-span wall mesh stays visual-only on a gapped side - the solid
+			// segments built below (one per gap-free stretch) carry the real blocking
+			// collision instead, so each doorway's width stays walkable.
+			WallBySide[SideIndex]->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			BuildWallSideFlanks(this, static_cast<ERoomWallSide>(SideIndex), GapsBySide[SideIndex], WallGapFlankComponents);
+		}
+		else
+		{
+			ConfigureWorldDynamicBlockingCollision(WallBySide[SideIndex]);
 		}
 	}
 }
