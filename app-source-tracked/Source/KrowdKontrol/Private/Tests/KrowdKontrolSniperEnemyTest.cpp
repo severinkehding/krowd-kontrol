@@ -33,6 +33,10 @@
 #include "AbilityData.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "EnemyTypeIndicatorComponent.h"
+#include "AbilityCastComponent.h"
+#include "AbilityUnlockComponent.h"
+#include "AbilityCooldownComponent.h"
+#include "GameFramework/Pawn.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -161,6 +165,85 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Eye glow should stay at baseline intensity for a non-Sleep ability"),
 			NonSleepSniper->EyeGlowLightComponent->Intensity, NonSleepSniper->EyeGlowBaselineIntensity);
 	}
+
+	// (d2) issue #361: no Stun-first activation gate exists - Stun (like every other
+	// ability) applies its effect directly to a sniper already in Attack state, with no
+	// prior control cast of any kind. Audited: AEnemyBase::ReceiveControl gates only on
+	// CurrentState (Alert/Attack), never on ControllingAbility or a prior-Stun flag, and
+	// ASniperEnemy adds no override that changes this.
+	ASniperEnemy* StunnedSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(StunnedSniper, ZeroDistanceLocation);
+	StunnedSniper->ReceiveControl(EAbilitySlot::Stun);
+	TestEqual(TEXT("(d2) Sniper should be Controlled after Stun, direct from Attack, no prior cast"),
+		static_cast<uint8>(StunnedSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	// (d3) issue #361: same rule for Fear.
+	ASniperEnemy* FearedSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(FearedSniper, ZeroDistanceLocation);
+	FearedSniper->ReceiveControl(EAbilitySlot::Fear);
+	TestEqual(TEXT("(d3) Sniper should be Controlled after Fear, direct from Attack, no prior cast"),
+		static_cast<uint8>(FearedSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	// (d4) issue #361 pass-2 follow-up: (d2)/(d3) above prove ReceiveControl() itself
+	// has no gate, but not that the cast/targeting layer above it doesn't add one.
+	// Goes through the real player-facing entry point, UAbilityCastComponent::
+	// TryCastAbility, against an Attack-state sniper with no prior cast - same
+	// UWorld-spawning pattern KrowdKontrolAbilityCastComponentTest.cpp's cases use.
+	// Stun is used because it's the one ability unlocked by default
+	// (UAbilityUnlockComponent's construction), so no extra unlock setup is needed.
+	{
+		UWorld* CastWorld = FAutomationEditorCommonUtils::CreateNewMap();
+		if (TestNotNull(TEXT("(d4) CreateNewMap should return a valid World"), CastWorld))
+		{
+			APawn* CastOwner = CastWorld->SpawnActor<APawn>();
+			UAbilityUnlockComponent* CastUnlockComponent = NewObject<UAbilityUnlockComponent>(CastOwner);
+			CastUnlockComponent->RegisterComponent();
+			UAbilityCooldownComponent* CastCooldownComponent = NewObject<UAbilityCooldownComponent>(CastOwner);
+			CastCooldownComponent->RegisterComponent();
+			UAbilityCastComponent* RealCastComponent = NewObject<UAbilityCastComponent>(CastOwner);
+			RealCastComponent->RegisterComponent();
+
+			ASniperEnemy* CastTargetSniper = CastWorld->SpawnActor<ASniperEnemy>();
+			if (TestNotNull(TEXT("(d4) ASniperEnemy should spawn into the test World"), CastTargetSniper))
+			{
+				AdvanceToAttack(CastTargetSniper, ZeroDistanceLocation);
+				TestEqual(TEXT("(d4) precondition: sniper should be in Attack before the real cast"),
+					static_cast<uint8>(CastTargetSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+
+				const bool bCastResult = RealCastComponent->TryCastAbility(EAbilitySlot::Stun);
+				TestTrue(TEXT("(d4) TryCastAbility(Stun) should succeed against an Attack-state sniper, no prior cast"),
+					bCastResult);
+				TestEqual(TEXT("(d4) Sniper should be Controlled after a real TryCastAbility(Stun) - no gate in the cast layer"),
+					static_cast<uint8>(CastTargetSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+			}
+		}
+	}
+
+	// (d5) issue #361 pass-1 review follow-up: (d2)/(d3)/(d4) above cover Stun and
+	// Fear; the remaining 3 control abilities (Sleep, Root, Snare) already had
+	// equivalent Attack -> Controlled coverage elsewhere in this file (cases (c)/(s),
+	// (l2), (m-snare) respectively), but that coverage predates this PR and is
+	// therefore not diff-visible - added here, mirroring (d2)/(d3) exactly, so all 5
+	// control abilities have a diff-visible "no prior cast" regression case in this PR.
+	ASniperEnemy* SleepGateSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(SleepGateSniper, ZeroDistanceLocation);
+	SleepGateSniper->ReceiveControl(EAbilitySlot::Sleep);
+	TestEqual(TEXT("(d5) Sniper should be Controlled after Sleep, direct from Attack, no prior cast"),
+		static_cast<uint8>(SleepGateSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	// (d6) issue #361: same rule for Root.
+	ASniperEnemy* RootGateSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(RootGateSniper, ZeroDistanceLocation);
+	RootGateSniper->ReceiveControl(EAbilitySlot::Root);
+	TestEqual(TEXT("(d6) Sniper should be Controlled after Root, direct from Attack, no prior cast"),
+		static_cast<uint8>(RootGateSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	// (d7) issue #361: same rule for Snare.
+	ASniperEnemy* SnareGateSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(SnareGateSniper, ZeroDistanceLocation);
+	SnareGateSniper->ReceiveControl(EAbilitySlot::Snare);
+	TestEqual(TEXT("(d7) Sniper should be Controlled after Snare, direct from Attack, no prior cast"),
+		static_cast<uint8>(SnareGateSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
 
 	// (e)/(f) the attack tell is off until Attack is entered, and visibly on
 	// (before the shot fires) once it is - ordering proven explicitly below.
