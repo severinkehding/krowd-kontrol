@@ -2,6 +2,7 @@
 #include "HUDChromeColours.h"
 #include "MainMenuLevelButtonWidget.h"
 #include "LevelSequenceSubsystem.h"
+#include "CrowdMasteryTotalSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelSlot.h"
@@ -12,6 +13,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
 
 void UMainMenuWidget::NativeOnInitialized()
 {
@@ -85,6 +87,15 @@ void UMainMenuWidget::BuildWidgetTree()
 	MasteryDisplayAnchor->SetHeightOverride(MasteryDisplayAnchorHeightPx);
 	Layout->AddChildToVerticalBox(MasteryDisplayAnchor);
 
+	// Crowd Mastery total display (issue #328, docs/prd-crowd-mastery-persistence.md
+	// REQ-2) - fills the anchor reserved above via the widget's own already-public
+	// SetMasteryDisplayContent() API (the seam #324 built specifically for this).
+	MasteryDisplayText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryDisplayText"));
+	MasteryDisplayText->SetColorAndOpacity(TextColor);
+	MasteryDisplayText->SetAutoWrapText(true);
+	SetMasteryDisplayContent(MasteryDisplayText);
+	RefreshMasteryDisplayText();
+
 	QuitButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MainMenuQuitButton"));
 	QuitButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleQuitClicked);
 
@@ -150,6 +161,40 @@ void UMainMenuWidget::SetMasteryDisplayContent(UWidget* Content)
 FText UMainMenuWidget::GetTitleDisplayText() const
 {
 	return TitleText ? TitleText->GetText() : FText::GetEmpty();
+}
+
+void UMainMenuWidget::RefreshMasteryDisplayText()
+{
+	if (!MasteryDisplayText)
+	{
+		return;
+	}
+
+	// Silent resolution, deliberately no warn-on-missing: a missing GameInstance just
+	// means "no GameInstance yet" (every KrowdKontrol.Unit.* test that constructs this
+	// widget via CreateNewMap() hits this) - 0 is the correct, unremarkable default.
+	int32 AccumulatedTotal = 0;
+	if (CachedMasteryTotalSubsystem)
+	{
+		AccumulatedTotal = CachedMasteryTotalSubsystem->GetAccumulatedTotal();
+	}
+	else if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UCrowdMasteryTotalSubsystem* MasterySubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>())
+		{
+			CachedMasteryTotalSubsystem = MasterySubsystem;
+			AccumulatedTotal = MasterySubsystem->GetAccumulatedTotal();
+		}
+	}
+
+	MasteryDisplayText->SetText(FText::Format(
+		NSLOCTEXT("MainMenuWidget", "CrowdMasteryTotalFormat", "CROWD MASTERY: {0}"),
+		FText::AsNumber(FMath::Max(0, AccumulatedTotal))));
+}
+
+FText UMainMenuWidget::GetMasteryDisplayText() const
+{
+	return MasteryDisplayText ? MasteryDisplayText->GetText() : FText::GetEmpty();
 }
 
 void UMainMenuWidget::HandleQuitClicked()

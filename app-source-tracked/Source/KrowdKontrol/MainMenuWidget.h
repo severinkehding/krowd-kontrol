@@ -10,6 +10,7 @@ class UButton;
 class USizeBox;
 class UVerticalBox;
 class UMainMenuLevelButtonWidget;
+class UCrowdMasteryTotalSubsystem;
 
 // Main menu chrome (issue #324, docs/prd-main-menu.md REQ-3): title, Quit button, and
 // an anchored-but-empty region reserved for the mastery-display PRD's widget. Also
@@ -40,6 +41,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Main Menu")
 	FText GetTitleDisplayText() const;
 
+	UFUNCTION(BlueprintPure, Category = "Main Menu")
+	FText GetMasteryDisplayText() const;
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual bool Initialize() override;
@@ -68,6 +72,13 @@ private:
 	UFUNCTION()
 	void HandleLevelSelected(FName MapName);
 
+	// Reads the current total from UCrowdMasteryTotalSubsystem and formats it into
+	// MasteryDisplayText. Called once from BuildWidgetTree() - see MainMenuWidget.cpp
+	// for why a fresh read at construction already satisfies "refreshes whenever the
+	// menu is shown" in this codebase (the widget is rebuilt from scratch on every
+	// L_MainMenu visit).
+	void RefreshMasteryDisplayText();
+
 	UPROPERTY()
 	TObjectPtr<UBorder> RootBorder;
 
@@ -86,6 +97,20 @@ private:
 	// no consumer) so it occupies real layout space today even with no content.
 	UPROPERTY()
 	TObjectPtr<USizeBox> MasteryDisplayAnchor;
+
+	// The Crowd Mastery total display (issue #328, docs/prd-crowd-mastery-persistence.md
+	// REQ-2) - built and slotted into MasteryDisplayAnchor via SetMasteryDisplayContent()
+	// inside BuildWidgetTree() itself, then populated by RefreshMasteryDisplayText().
+	UPROPERTY()
+	TObjectPtr<UTextBlock> MasteryDisplayText;
+
+	// Lazy cache of the GameInstance-scoped mastery-total subsystem, read by
+	// RefreshMasteryDisplayText(). No warn-once flag here (unlike
+	// UPostRunSummaryWidget::CachedLevelClearTimeSubsystem's sibling pattern) - a
+	// missing GameInstance during construction is an unremarkable, expected case
+	// (every KrowdKontrol.Unit.* test hits it), not worth logging.
+	UPROPERTY()
+	TObjectPtr<UCrowdMasteryTotalSubsystem> CachedMasteryTotalSubsystem;
 
 	// Container for the data-driven level-select list (issue #325) - one
 	// UMainMenuLevelButtonWidget child per shipped level, populated by
