@@ -27,6 +27,9 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Components/PrimitiveComponent.h"
+#include "PlaceholderTargetZoneActor.h"
+#include "Components/PointLightComponent.h"
+#include "AbilityData.h"
 
 static ATargetZone* FindAttachedZone(AActor* Marker)
 {
@@ -145,6 +148,14 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Banking zone should be colour-tagged Purple for a RU-NNR marker"),
 		BankingZone->ZoneColourTag, ReservedGameplayColours::GetPurpleTag());
+	if (APlaceholderTargetZoneActor* PlaceholderMarker = Cast<APlaceholderTargetZoneActor>(Marker))
+	{
+		const FLinearColor ExpectedColour = AbilityData::GetChainColourForEnemyType(EEnemyType::RU_NNR);
+		TestTrue(TEXT("Marker's reflected chain colour should be Purple for a RU-NNR zone"),
+			PlaceholderMarker->CurrentChainColour.Equals(ExpectedColour, 0.01f));
+		TestTrue(TEXT("Marker's beacon light should render Purple for a RU-NNR zone"),
+			PlaceholderMarker->BeaconLightComponent->GetLightColor().Equals(ExpectedColour, 0.01f));
+	}
 
 	ATargetZone* SecondBankingZone = FindAttachedZone(SecondMarker);
 	if (!TestNotNull(TEXT("Second marker should have a self-healed ATargetZone attached via BeginPlay()"), SecondBankingZone))
@@ -153,6 +164,14 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Second banking zone should be colour-tagged Blue for an SN-1PR marker"),
 		SecondBankingZone->ZoneColourTag, ReservedGameplayColours::GetBlueTag());
+	if (APlaceholderTargetZoneActor* PlaceholderMarker = Cast<APlaceholderTargetZoneActor>(SecondMarker))
+	{
+		const FLinearColor ExpectedColour = AbilityData::GetChainColourForEnemyType(EEnemyType::SN_1PR);
+		TestTrue(TEXT("Marker's reflected chain colour should be Blue for an SN-1PR zone"),
+			PlaceholderMarker->CurrentChainColour.Equals(ExpectedColour, 0.01f));
+		TestTrue(TEXT("Marker's beacon light should render Blue for an SN-1PR zone"),
+			PlaceholderMarker->BeaconLightComponent->GetLightColor().Equals(ExpectedColour, 0.01f));
+	}
 
 	ATargetZone* TrooperBankingZone = FindAttachedZone(TrooperMarker);
 	if (!TestNotNull(TEXT("Trooper marker should have a self-healed ATargetZone attached via BeginPlay()"), TrooperBankingZone))
@@ -161,6 +180,14 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Trooper banking zone should be colour-tagged Teal for a TR_UPR marker"),
 		TrooperBankingZone->ZoneColourTag, ReservedGameplayColours::GetTealTag());
+	if (APlaceholderTargetZoneActor* PlaceholderMarker = Cast<APlaceholderTargetZoneActor>(TrooperMarker))
+	{
+		const FLinearColor ExpectedColour = AbilityData::GetChainColourForEnemyType(EEnemyType::TR_UPR);
+		TestTrue(TEXT("Marker's reflected chain colour should be Teal for a TR_UPR zone"),
+			PlaceholderMarker->CurrentChainColour.Equals(ExpectedColour, 0.01f));
+		TestTrue(TEXT("Marker's beacon light should render Teal for a TR_UPR zone"),
+			PlaceholderMarker->BeaconLightComponent->GetLightColor().Equals(ExpectedColour, 0.01f));
+	}
 
 	ATargetZone* FearBankingZone = FindAttachedZone(FearMarker);
 	if (!TestNotNull(TEXT("Fear marker should have a self-healed ATargetZone attached via BeginPlay()"), FearBankingZone))
@@ -169,6 +196,14 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("Fear banking zone should be colour-tagged Orange for a B0_0MR marker"),
 		FearBankingZone->ZoneColourTag, ReservedGameplayColours::GetOrangeTag());
+	if (APlaceholderTargetZoneActor* PlaceholderMarker = Cast<APlaceholderTargetZoneActor>(FearMarker))
+	{
+		const FLinearColor ExpectedColour = AbilityData::GetChainColourForEnemyType(EEnemyType::B0_0MR);
+		TestTrue(TEXT("Marker's reflected chain colour should be Orange for a B0_0MR zone"),
+			PlaceholderMarker->CurrentChainColour.Equals(ExpectedColour, 0.01f));
+		TestTrue(TEXT("Marker's beacon light should render Orange for a B0_0MR zone"),
+			PlaceholderMarker->BeaconLightComponent->GetLightColor().Equals(ExpectedColour, 0.01f));
+	}
 
 	// Calling EnsureBankingZonesWired() a second time must not double-spawn, for
 	// either marker.
@@ -177,6 +212,12 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 		CountAttachedZones(Marker), 1);
 	TestEqual(TEXT("EnsureBankingZonesWired should be idempotent for the second marker too"),
 		CountAttachedZones(SecondMarker), 1);
+	if (APlaceholderTargetZoneActor* PlaceholderMarker = Cast<APlaceholderTargetZoneActor>(Marker))
+	{
+		TestTrue(TEXT("A repeated EnsureBankingZonesWired pass should not corrupt the marker's chain colour"),
+			PlaceholderMarker->CurrentChainColour.Equals(
+				AbilityData::GetChainColourForEnemyType(EEnemyType::RU_NNR), 0.01f));
+	}
 
 	// Type-keyed acceptance (operator ruling 2026-08-22): the zone is a pen for the
 	// marker's EEnemyType, so the enemy's own type is what matters now - ARunnerEnemy

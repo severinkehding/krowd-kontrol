@@ -215,6 +215,18 @@ const TArray<ARoomActor*>& ARoomActor::GetCachedRoomList(UWorld* World)
 	return CachedRooms;
 }
 
+void ARoomActor::ApplyChainColourToMarker(AActor* MarkerActor, const ATargetZone* Zone)
+{
+	if (!Zone || Zone->bAcceptAnyEnemyType)
+	{
+		return;
+	}
+	if (APlaceholderTargetZoneActor* Placeholder = Cast<APlaceholderTargetZoneActor>(MarkerActor))
+	{
+		Placeholder->ApplyChainColour(AbilityData::GetChainColourForEnemyType(Zone->ZoneEnemyType));
+	}
+}
+
 void ARoomActor::EnsureBankingZonesWired()
 {
 	UWorld* World = GetWorld();
@@ -259,6 +271,7 @@ void ARoomActor::EnsureBankingZonesWired()
 		if (ExistingZone)
 		{
 			ExistingZone->OnActorBanked.AddUniqueDynamic(this, &ARoomActor::HandleZoneActorBanked);
+			ApplyChainColourToMarker(Zone.MarkerActor, ExistingZone);
 			continue;
 		}
 
@@ -295,6 +308,7 @@ void ARoomActor::EnsureBankingZonesWired()
 		BankingZone->bAcceptAnyEnemyType = false;
 		BankingZone->ZoneEnemyType = Zone.EnemyType;
 		BankingZone->OnActorBanked.AddUniqueDynamic(this, &ARoomActor::HandleZoneActorBanked);
+		ApplyChainColourToMarker(Zone.MarkerActor, BankingZone);
 	}
 }
 

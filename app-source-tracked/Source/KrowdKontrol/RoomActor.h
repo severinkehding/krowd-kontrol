@@ -217,6 +217,14 @@ private:
 	UFUNCTION()
 	void HandleZoneActorBanked(AActor* BankedActor);
 
+	// Applies Zone's marker's chain colour (docs/prd-colour-coded-herding.md REQ-3,
+	// issue #317) when Zone is type-keyed, reading the colour from
+	// AbilityData::GetChainColourForEnemyType(Zone->ZoneEnemyType) - never a local
+	// constant. No-ops for any-type zones (Zone->bAcceptAnyEnemyType == true) and for
+	// marker classes other than APlaceholderTargetZoneActor (a designer-supplied custom
+	// MarkerClass manages its own visuals - see AddTargetZone()'s MarkerClass param).
+	static void ApplyChainColourToMarker(AActor* MarkerActor, const ATargetZone* Zone);
+
 	UFUNCTION()
 	void HandleOwnedEnemyBanked();
 
