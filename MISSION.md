@@ -115,8 +115,13 @@ playtesting shows appetite:**
 - **Steam-specific integration work** (achievements, trading cards, Steamworks SDK)
   before the Itch.io release has actually met its own "overwhelmingly positive
   feedback" bar. Do not pre-build this speculatively.
-- **A skill-tree / ability-upgrade system**, or any new ability beyond the 5 already
-  locked (Stun, Sleep, Root, Fear, Snare). The roster is intentionally fixed.
+- **Any new ability beyond the 5 already locked** (Stun, Sleep, Root, Fear, Snare).
+  The roster is intentionally fixed. *(Amended by the operator, 2026-08-28: the
+  original blanket skill-tree exclusion is lifted — a Crowd Mastery skill tree is
+  now IN scope per `docs/prd-mastery-skill-tree.md`, decided during the 2026-08-28
+  playtest. The tree spends mastery on perks and slottable modifiers for the
+  existing systems; it must never add a 6th ability, which remains excluded by
+  this bullet.)*
 - **Any 5th (or additional) core enemy type.** The 4-type roster (RU-NNR, TR-UPR,
   B0-0MR, SN-1PR) plus elite reskins is deliberately locked — depth comes from density
   and mixing, not roster growth.
