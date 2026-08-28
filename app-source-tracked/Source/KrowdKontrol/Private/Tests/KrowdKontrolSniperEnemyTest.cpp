@@ -31,6 +31,8 @@
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "EnemyTypeIndicatorComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -106,6 +108,26 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 			ReservedGameplayColours::GetAll().ContainsByPredicate(
 				[Sniper](const FLinearColor& Reserved) { return Reserved.Equals(Sniper->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 	}
+
+	// (b3) Body chain-colour tint (issue #316): SN-1PR's chain colour is Sleep's colour
+	// (AbilityData::GetChainColourForEnemyType), applied to MeshComponent via a lazily-
+	// created MID, and ApplyBodyChainColourTint() is idempotent (same MID instance,
+	// re-applying the same colour, on a second call).
+	Sniper->ApplyBodyChainColourTint();
+	const FLinearColor ExpectedBodyColour = AbilityData::GetChainColourForEnemyType(EEnemyType::SN_1PR);
+	TestTrue(TEXT("body chain colour matches AbilityData::GetChainColourForEnemyType(SN_1PR)"),
+		Sniper->CurrentBodyChainColour.Equals(ExpectedBodyColour, 0.01f));
+	UMaterialInstanceDynamic* FirstBodyMID = Sniper->BodyChainColourMaterialInstance;
+	if (TestNotNull(TEXT("BodyChainColourMaterialInstance should be created"), FirstBodyMID))
+	{
+		TestTrue(TEXT("MeshComponent's material 0 is the BodyChainColourMaterialInstance"),
+			Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) == FirstBodyMID);
+	}
+	Sniper->ApplyBodyChainColourTint();
+	TestTrue(TEXT("second call reuses the same MID instance"),
+		Sniper->BodyChainColourMaterialInstance.Get() == FirstBodyMID);
+	TestEqual(TEXT("EnemyTypeIndicatorComponent's own EnemyType is unchanged by the body tint"),
+		static_cast<uint8>(Sniper->EnemyTypeIndicatorComponent->EnemyType), static_cast<uint8>(EEnemyType::SN_1PR));
 
 	// Drives a sniper from Idle straight through to Attack via two zero/mid-distance
 	// detection checks (Idle -> Alert -> Attack) - shared by every case below that

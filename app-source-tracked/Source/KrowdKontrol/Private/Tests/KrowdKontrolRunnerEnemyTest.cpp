@@ -35,6 +35,7 @@
 #include "BomberEnemy.h"
 #include "TrooperEnemy.h"
 #include "AbilityData.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -112,6 +113,26 @@ bool FKrowdKontrolRunnerEnemyTest::RunTest(const FString& Parameters)
 			ReservedGameplayColours::GetAll().ContainsByPredicate(
 				[Runner](const FLinearColor& Reserved) { return Reserved.Equals(Runner->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 	}
+
+	// (b4) Body chain-colour tint (issue #316): RU-NNR's chain colour is Snare's colour
+	// (AbilityData::GetChainColourForEnemyType), applied to MeshComponent via a lazily-
+	// created MID, and ApplyBodyChainColourTint() is idempotent (same MID instance,
+	// re-applying the same colour, on a second call).
+	Runner->ApplyBodyChainColourTint();
+	const FLinearColor ExpectedBodyColour = AbilityData::GetChainColourForEnemyType(EEnemyType::RU_NNR);
+	TestTrue(TEXT("body chain colour matches AbilityData::GetChainColourForEnemyType(RU_NNR)"),
+		Runner->CurrentBodyChainColour.Equals(ExpectedBodyColour, 0.01f));
+	UMaterialInstanceDynamic* FirstBodyMID = Runner->BodyChainColourMaterialInstance;
+	if (TestNotNull(TEXT("BodyChainColourMaterialInstance should be created"), FirstBodyMID))
+	{
+		TestTrue(TEXT("MeshComponent's material 0 is the BodyChainColourMaterialInstance"),
+			Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) == FirstBodyMID);
+	}
+	Runner->ApplyBodyChainColourTint();
+	TestTrue(TEXT("second call reuses the same MID instance"),
+		Runner->BodyChainColourMaterialInstance.Get() == FirstBodyMID);
+	TestEqual(TEXT("EnemyTypeIndicatorComponent's own EnemyType is unchanged by the body tint"),
+		static_cast<uint8>(Runner->EnemyTypeIndicatorComponent->EnemyType), static_cast<uint8>(EEnemyType::RU_NNR));
 
 	// Drives a runner from Idle straight through to Attack via two zero/mid-distance
 	// detection checks (Idle -> Alert -> Attack) - shared by every case below that

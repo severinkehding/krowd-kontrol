@@ -57,6 +57,16 @@ bool FKrowdKontrolEnemyBaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Default TotalControlledSeconds should be 0.0 before any Controlled entry"),
 		Enemy->GetTotalControlledSeconds(), 0.0f);
 
+	// Issue #316: ApplyBodyChainColourTint() must no-op safely (no crash, no material
+	// assigned, CurrentBodyChainColour left at its Black default) on the base class's
+	// own test double, which has a plain USceneComponent root (not a mesh) and no
+	// UEnemyTypeIndicatorComponent - both preconditions this method requires before it
+	// does any work.
+	Enemy->ApplyBodyChainColourTint();
+	TestTrue(TEXT("body chain colour stays at Black default with no mesh root"),
+		Enemy->CurrentBodyChainColour.Equals(FLinearColor::Black, 0.01f));
+	TestNull(TEXT("no MID created with no mesh root"), Enemy->BodyChainColourMaterialInstance.Get());
+
 	// (v)-(y) Elite state (issue #19). Checked here (early, on freshly-constructed
 	// actors) rather than at the end of this test after dozens more NewObject<>()
 	// instances and several CreateNewMap() calls have run - a NewObject<>()-constructed

@@ -23,6 +23,8 @@
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "EnemyTypeIndicatorComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -83,6 +85,26 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			ReservedGameplayColours::GetAll().ContainsByPredicate(
 				[Bomber](const FLinearColor& Reserved) { return Reserved.Equals(Bomber->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 	}
+
+	// (b3) Body chain-colour tint (issue #316): B0-0MR's chain colour is Fear's colour
+	// (AbilityData::GetChainColourForEnemyType), applied to MeshComponent via a lazily-
+	// created MID, and ApplyBodyChainColourTint() is idempotent (same MID instance,
+	// re-applying the same colour, on a second call).
+	Bomber->ApplyBodyChainColourTint();
+	const FLinearColor ExpectedBodyColour = AbilityData::GetChainColourForEnemyType(EEnemyType::B0_0MR);
+	TestTrue(TEXT("body chain colour matches AbilityData::GetChainColourForEnemyType(B0_0MR)"),
+		Bomber->CurrentBodyChainColour.Equals(ExpectedBodyColour, 0.01f));
+	UMaterialInstanceDynamic* FirstBodyMID = Bomber->BodyChainColourMaterialInstance;
+	if (TestNotNull(TEXT("BodyChainColourMaterialInstance should be created"), FirstBodyMID))
+	{
+		TestTrue(TEXT("MeshComponent's material 0 is the BodyChainColourMaterialInstance"),
+			Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) == FirstBodyMID);
+	}
+	Bomber->ApplyBodyChainColourTint();
+	TestTrue(TEXT("second call reuses the same MID instance"),
+		Bomber->BodyChainColourMaterialInstance.Get() == FirstBodyMID);
+	TestEqual(TEXT("EnemyTypeIndicatorComponent's own EnemyType is unchanged by the body tint"),
+		static_cast<uint8>(Bomber->EnemyTypeIndicatorComponent->EnemyType), static_cast<uint8>(EEnemyType::B0_0MR));
 
 	// Drives Idle -> Alert -> Attack via two detection checks - shared below.
 	auto AdvanceToAttack = [](ABomberEnemy* TargetBomber, const FVector& PlayerLocation)
