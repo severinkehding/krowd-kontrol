@@ -77,6 +77,7 @@ private:
 	friend class FKrowdKontrolPostRunSummaryWidgetWiringTest;
 	friend class FKrowdKontrolPostRunSummaryRerunButtonTest;
 	friend class FKrowdKontrolPostRunSummaryNextLevelButtonTest;
+	friend class FKrowdKontrolPostRunSummaryLayoutIntegrityTest;
 
 	void BuildWidgetTree();
 
