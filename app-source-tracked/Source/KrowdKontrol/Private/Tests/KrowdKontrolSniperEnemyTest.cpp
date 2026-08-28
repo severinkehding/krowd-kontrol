@@ -219,6 +219,32 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// (d5) issue #361 pass-1 review follow-up: (d2)/(d3)/(d4) above cover Stun and
+	// Fear; the remaining 3 control abilities (Sleep, Root, Snare) already had
+	// equivalent Attack -> Controlled coverage elsewhere in this file (cases (c)/(s),
+	// (l2), (m-snare) respectively), but that coverage predates this PR and is
+	// therefore not diff-visible - added here, mirroring (d2)/(d3) exactly, so all 5
+	// control abilities have a diff-visible "no prior cast" regression case in this PR.
+	ASniperEnemy* SleepGateSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(SleepGateSniper, ZeroDistanceLocation);
+	SleepGateSniper->ReceiveControl(EAbilitySlot::Sleep);
+	TestEqual(TEXT("(d5) Sniper should be Controlled after Sleep, direct from Attack, no prior cast"),
+		static_cast<uint8>(SleepGateSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	// (d6) issue #361: same rule for Root.
+	ASniperEnemy* RootGateSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(RootGateSniper, ZeroDistanceLocation);
+	RootGateSniper->ReceiveControl(EAbilitySlot::Root);
+	TestEqual(TEXT("(d6) Sniper should be Controlled after Root, direct from Attack, no prior cast"),
+		static_cast<uint8>(RootGateSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	// (d7) issue #361: same rule for Snare.
+	ASniperEnemy* SnareGateSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(SnareGateSniper, ZeroDistanceLocation);
+	SnareGateSniper->ReceiveControl(EAbilitySlot::Snare);
+	TestEqual(TEXT("(d7) Sniper should be Controlled after Snare, direct from Attack, no prior cast"),
+		static_cast<uint8>(SnareGateSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
 	// (e)/(f) the attack tell is off until Attack is entered, and visibly on
 	// (before the shot fires) once it is - ordering proven explicitly below.
 	ASniperEnemy* TellSniper = NewObject<ASniperEnemy>();
