@@ -22,4 +22,13 @@ public:
 	// the same save slot, not a separate save-game class.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd Mastery")
 	TMap<FName, int32> BestCrowdMasteryByLevel;
+
+	// Crowd Mastery accumulated total (PRD "Crowd Mastery Persistence" REQ-4, issue
+	// #330): the running Crowd Mastery total accumulated across every run cleared,
+	// this launch and every prior one - the persisted mirror of
+	// UCrowdMasteryTotalSubsystem::AccumulatedTotal. That subsystem remains the sole
+	// runtime authority; this field exists only so the total survives a fresh launch.
+	// Same shared save slot as the fields above, not a separate save-game class.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd Mastery")
+	int32 AccumulatedCrowdMasteryTotal = 0;
 };

@@ -6,12 +6,16 @@
 // No UWorld/CreateNewMap() needed - same "no engine-object dependency" rationale
 // KrowdKontrolLevelClearTimeSubsystemTest.cpp documents: this subsystem's public API
 // never calls GetWorld() or GetGameInstance(), so it's constructed directly via
-// NewObject<>(). Unlike that test, no on-disk save-file state exists here (REQ-4
-// persistence is out of scope for this issue), so there's nothing to clean up.
+// NewObject<>(). This test also exercises the save/reload round trip (PRD "Crowd
+// Mastery Persistence" REQ-4, issue #330) and cleans up the shared on-disk save slot
+// both before and after, matching KrowdKontrolLevelClearTimeSubsystemTest.cpp's own
+// precedent for that same shared slot.
 
 #include "Misc/AutomationTest.h"
 #include "CrowdMasteryTotalSubsystem.h"
 #include "Engine/GameInstance.h"
+#include "Kismet/GameplayStatics.h"
+#include "LevelClearTimeSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -22,6 +26,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Parameters)
 {
+	// Clean slate: this test now write-throughs to the same real on-disk slot
+	// KrowdKontrolLevelClearTimeSubsystemTest.cpp also uses - delete any leftover save
+	// data from a prior interrupted run before asserting starting state.
+	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);
+
 	UGameInstance* GameInstanceOuter = NewObject<UGameInstance>();
 	UCrowdMasteryTotalSubsystem* Subsystem = NewObject<UCrowdMasteryTotalSubsystem>(GameInstanceOuter);
 	if (!TestNotNull(TEXT("UCrowdMasteryTotalSubsystem should construct"), Subsystem))
@@ -57,6 +66,33 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Paramet
 	Subsystem->DepositRunMastery(2);
 	TestEqual(TEXT("A deposit after reset should be recorded normally"),
 		Subsystem->GetAccumulatedTotal(), 2);
+
+	// Save/reload cycle (PRD "Crowd Mastery Persistence" REQ-4, issue #330): a
+	// fresh, independently-constructed subsystem instance (simulating closing and
+	// reopening the game - a fresh UGameInstance/subsystem, sharing only the
+	// on-disk save slot) reads back the same accumulated total via
+	// LoadPersistedTotal(), the method the real Initialize() override calls at
+	// real GameInstance startup - called directly here since this test
+	// constructs the subsystem via NewObject<>() rather than through a live
+	// FSubsystemCollectionBase.
+	UGameInstance* SecondGameInstanceOuter = NewObject<UGameInstance>();
+	UCrowdMasteryTotalSubsystem* SecondSessionSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(SecondGameInstanceOuter);
+	if (!TestNotNull(TEXT("Second UCrowdMasteryTotalSubsystem should construct"), SecondSessionSubsystem))
+	{
+		UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);
+		return false;
+	}
+	TestEqual(TEXT("A freshly-constructed subsystem should start at 0 before LoadPersistedTotal is called"),
+		SecondSessionSubsystem->GetAccumulatedTotal(), 0);
+	SecondSessionSubsystem->LoadPersistedTotal();
+	TestEqual(TEXT("LoadPersistedTotal should read back the total the first session's last write-through persisted"),
+		SecondSessionSubsystem->GetAccumulatedTotal(), 2);
+
+	// Clean up all real on-disk state this test created, so a repeat run starts
+	// from the same clean slate this run began with - same cleanup obligation
+	// KrowdKontrolLevelClearTimeSubsystemTest.cpp documents for the same shared
+	// slot.
+	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);
 
 	return true;
 }
