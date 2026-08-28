@@ -88,8 +88,11 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 	}
 
 	// (d2) Injecting a real subsystem via the friend-accessible CachedMasteryTotalSubsystem
-	// seam and calling RefreshMasteryDisplayText() again proves the display actually reads
-	// through UCrowdMasteryTotalSubsystem::GetAccumulatedTotal(), not just the 0-default.
+	// seam and calling RefreshMasteryDisplayText() again proves GetAccumulatedTotal()'s
+	// value flows correctly into the formatted display text. Note: this exercises the
+	// already-cached fast path only (CachedMasteryTotalSubsystem set directly) - the cold
+	// GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>() lookup itself has no
+	// CreateNewMap()-World precedent to test against in this suite and is unverified here.
 	UMainMenuWidget* MasteryWidget = CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
 	if (TestNotNull(TEXT("MasteryWidget should construct"), MasteryWidget))
 	{
@@ -132,6 +135,12 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 		UTextBlock* UnusedContent = NewObject<UTextBlock>(UnbuiltWidget);
 		UnbuiltWidget->SetMasteryDisplayContent(UnusedContent);
 		TestTrue(TEXT("SetMasteryDisplayContent on an unbuilt widget should not crash"), true);
+
+		// (f) continued - RefreshMasteryDisplayText() on the same unbuilt widget
+		// (MasteryDisplayText still null) must degrade to a silent no-op rather than
+		// crash - mirrors the null-MasteryDisplayAnchor guard just above.
+		UnbuiltWidget->RefreshMasteryDisplayText();
+		TestTrue(TEXT("RefreshMasteryDisplayText on an unbuilt widget should not crash"), true);
 	}
 
 	// (g) NativeOnInitialized() invoked directly, bypassing Initialize() - WidgetTree is

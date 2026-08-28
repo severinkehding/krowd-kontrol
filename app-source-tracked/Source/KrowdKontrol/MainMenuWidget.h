@@ -105,12 +105,22 @@ private:
 	TObjectPtr<UTextBlock> MasteryDisplayText;
 
 	// Lazy cache of the GameInstance-scoped mastery-total subsystem, read by
-	// RefreshMasteryDisplayText(). No warn-once flag here (unlike
-	// UPostRunSummaryWidget::CachedLevelClearTimeSubsystem's sibling pattern) - a
-	// missing GameInstance during construction is an unremarkable, expected case
-	// (every KrowdKontrol.Unit.* test hits it), not worth logging.
+	// RefreshMasteryDisplayText(). A missing GameInstance during construction is an
+	// unremarkable, expected case (every KrowdKontrol.Unit.* test hits it) and stays
+	// unlogged - but a present GameInstance with no resolvable subsystem is a real
+	// failure and is warned once via bHasWarnedMissingMasteryTotalSubsystemOnDisplay
+	// below, mirroring UPostRunSummaryWidget::CachedLevelClearTimeSubsystem's sibling
+	// warn-once pattern.
 	UPROPERTY()
 	TObjectPtr<UCrowdMasteryTotalSubsystem> CachedMasteryTotalSubsystem;
+
+	// Warn-once flag for RefreshMasteryDisplayText()'s cold-path subsystem-resolution
+	// failure (GameInstance present, UCrowdMasteryTotalSubsystem not resolvable) -
+	// distinguishes a real bug from the unremarkable "no GameInstance yet" test case,
+	// which stays silent. Kept local rather than reusing the mastery-reset flow's
+	// resolver/flag to avoid coupling this PR to that flow's own test file.
+	UPROPERTY()
+	bool bHasWarnedMissingMasteryTotalSubsystemOnDisplay = false;
 
 	// Container for the data-driven level-select list (issue #325) - one
 	// UMainMenuLevelButtonWidget child per shipped level, populated by

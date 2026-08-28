@@ -170,9 +170,11 @@ void UMainMenuWidget::RefreshMasteryDisplayText()
 		return;
 	}
 
-	// Silent resolution, deliberately no warn-on-missing: a missing GameInstance just
-	// means "no GameInstance yet" (every KrowdKontrol.Unit.* test that constructs this
-	// widget via CreateNewMap() hits this) - 0 is the correct, unremarkable default.
+	// A missing GameInstance just means "no GameInstance yet" (every KrowdKontrol.Unit.*
+	// test that constructs this widget via CreateNewMap() hits this) - 0 is the correct,
+	// unremarkable default and stays unlogged. A present GameInstance with no resolvable
+	// UCrowdMasteryTotalSubsystem is a real failure, though, and is warned once below -
+	// otherwise it's indistinguishable from a legitimate new-player zero.
 	int32 AccumulatedTotal = 0;
 	if (CachedMasteryTotalSubsystem)
 	{
@@ -184,6 +186,13 @@ void UMainMenuWidget::RefreshMasteryDisplayText()
 		{
 			CachedMasteryTotalSubsystem = MasterySubsystem;
 			AccumulatedTotal = MasterySubsystem->GetAccumulatedTotal();
+		}
+		else if (!bHasWarnedMissingMasteryTotalSubsystemOnDisplay)
+		{
+			bHasWarnedMissingMasteryTotalSubsystemOnDisplay = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("UMainMenuWidget::RefreshMasteryDisplayText: no UCrowdMasteryTotalSubsystem available on '%s' - mastery display will show 0 instead of the real accumulated total."),
+				*GetNameSafe(this));
 		}
 	}
 

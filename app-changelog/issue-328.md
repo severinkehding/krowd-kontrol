@@ -63,6 +63,46 @@ merge conflict on `MainMenuWidget.h`/`.cpp` from both PRs independently introduc
 change. The real, compiled `app/` state (which the harness validates against) already
 has both features working together correctly.
 
+## Post-review fixes
+
+Review of this PR (code-review, error-handling, test-coverage, docs-impact agents)
+surfaced one HIGH and two MEDIUM/LOW findings, all addressed here:
+
+- **Silent subsystem-resolution failure (HIGH, error-handling).**
+  `RefreshMasteryDisplayText()`'s cold-path `GetGameInstance()->
+  GetSubsystem<UCrowdMasteryTotalSubsystem>()` lookup fell through to `0` with no log
+  line when a real `GameInstance` was present but the subsystem wasn't resolvable -
+  indistinguishable from a legitimate new-player zero. Added a local, independent
+  warn-once flag (`bHasWarnedMissingMasteryTotalSubsystemOnDisplay`) that logs once in
+  that specific case only; the "no `GameInstance` yet" test-construction case (every
+  `KrowdKontrol.Unit.*` test) stays silent as before. Deliberately not shared with
+  `ResolveMasteryTotalSubsystem()`'s own warn-once flag (#329/PR #349, unmerged) to
+  avoid coupling this PR's fix to that PR's resolver or test-file budget.
+- **Test (d2) overstated its own coverage (MEDIUM, code-review + test-coverage,
+  converged).** Softened the block's comment to accurately scope the claim to the
+  cached-fast-path only - the cold `GetSubsystem<>()` resolution itself has no
+  `CreateNewMap()`-World test precedent in this suite and remains unverified by unit
+  tests (a repo-wide, pre-existing gap, not unique to this change).
+- **PRD REQ-2 not marked implemented (MEDIUM, docs-impact).** Added
+  `— ✅ implemented, issue #328` to `docs/prd-crowd-mastery-persistence.md` REQ-2,
+  matching `docs/prd-main-menu.md`'s existing convention for shipped requirements.
+- **Null-`MasteryDisplayText` guard untested (LOW, test-coverage).** Added a 3-line
+  case alongside block (f)'s existing `UnbuiltWidget` pattern, calling
+  `RefreshMasteryDisplayText()` on an unbuilt widget and asserting it degrades safely.
+
+Skipped: test-coverage's Option A (a new `KrowdKontrol.PIE.*` main-menu test covering
+real `GameInstance` subsystem resolution end-to-end) - this is a repo-wide blind spot
+shared by every `Cached*Subsystem` friend-injection test, not introduced by this PR,
+and is a genuinely new test surface rather than a fix to what this PR touches. Filed
+as a follow-up instead of built here.
+
+Re-validated after these changes: `harness/run_ue_automation.sh
+KrowdKontrol.Unit.` -> `UE_AUTOMATION_RESULT passed=124 total=124`;
+`harness/run_ue_automation.sh KrowdKontrol.PIE.` -> `UE_AUTOMATION_RESULT passed=5
+total=5` - both unchanged from the pre-fix baseline, confirming the new warn-once
+branch isn't exercised by any existing test (as expected: block (d)/(d2)/(g) all
+construct via a `GameInstance`-less World or bare `NewObject()`).
+
 ## Files changed
 
 | File | Action | What it contains |
