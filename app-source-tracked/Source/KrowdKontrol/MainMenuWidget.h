@@ -32,6 +32,7 @@ class KROWDKONTROL_API UMainMenuWidget : public UUserWidget
 	friend class FKrowdKontrolReservedGameplayColoursTest;
 	friend class FKrowdKontrolMainMenuLevelSelectTest;
 	friend class FKrowdKontrolMainMenuMasteryResetTest;
+	friend class FKrowdKontrolPIEMenuEntryBriefingTest;
 
 public:
 	// Fills the reserved mastery-display anchor (docs/prd-crowd-mastery-persistence.md)
@@ -82,12 +83,20 @@ private:
 	UFUNCTION()
 	void HandleLevelSelected(FName MapName);
 
-<<<<<<< HEAD
 	// Toggles which of MasteryResetButton vs. (MasteryResetConfirmButton,
 	// MasteryResetCancelButton) is visible, based on bMasteryResetConfirmPending.
 	// Called once at the end of BuildWidgetTree() to establish the initial
 	// RESET-only state, and again after every click handler below.
 	void RefreshMasteryResetVisibility();
+
+	// Reads the current total from UCrowdMasteryTotalSubsystem and formats it into
+	// MasteryDisplayText. Called from BuildWidgetTree() at construction time, and again
+	// from NativeConstruct() above every time the menu becomes visible. Deliberately does
+	// NOT call ResolveMasteryTotalSubsystem() -
+	// that method's warn-on-missing side effect is reserved for the reset flow; see
+	// MainMenuWidget.cpp for why sharing it here would break existing warn-once test
+	// assertions in KrowdKontrolMainMenuMasteryResetTest.cpp.
+	void RefreshMasteryDisplayText();
 
 	// Bound to MasteryResetButton->OnClicked. Arms the confirm step - does not
 	// touch UCrowdMasteryTotalSubsystem.
@@ -108,12 +117,6 @@ private:
 	// Mirrors UPostRunSummaryWidget::ResolveLevelClearTimeSubsystem() exactly -
 	// see MainMenuWidget.cpp for the identical lazy-cache/warn-once shape.
 	UCrowdMasteryTotalSubsystem* ResolveMasteryTotalSubsystem();
-=======
-	// Reads the current total from UCrowdMasteryTotalSubsystem and formats it into
-	// MasteryDisplayText. Called from BuildWidgetTree() at construction time, and again
-	// from NativeConstruct() above every time the menu becomes visible.
-	void RefreshMasteryDisplayText();
->>>>>>> origin/main
 
 	UPROPERTY()
 	TObjectPtr<UBorder> RootBorder;
@@ -134,7 +137,12 @@ private:
 	UPROPERTY()
 	TObjectPtr<USizeBox> MasteryDisplayAnchor;
 
-<<<<<<< HEAD
+	// The Crowd Mastery total display (issue #328, docs/prd-crowd-mastery-persistence.md
+	// REQ-2) - built and slotted into MasteryDisplayAnchor via SetMasteryDisplayContent()
+	// inside BuildWidgetTree() itself, then populated by RefreshMasteryDisplayText().
+	UPROPERTY()
+	TObjectPtr<UTextBlock> MasteryDisplayText;
+
 	// Reset control for the Crowd Mastery total (docs/prd-crowd-mastery-persistence.md
 	// REQ-3, issue #329) - a RESET button that swaps to a CONFIRM RESET/CANCEL pair on
 	// click, since resetting the total is destructive and this codebase has no
@@ -173,31 +181,12 @@ private:
 	TObjectPtr<UCrowdMasteryTotalSubsystem> CachedMasteryTotalSubsystem;
 
 	bool bHasWarnedMissingMasteryTotalSubsystem = false;
-=======
-	// The Crowd Mastery total display (issue #328, docs/prd-crowd-mastery-persistence.md
-	// REQ-2) - built and slotted into MasteryDisplayAnchor via SetMasteryDisplayContent()
-	// inside BuildWidgetTree() itself, then populated by RefreshMasteryDisplayText().
-	UPROPERTY()
-	TObjectPtr<UTextBlock> MasteryDisplayText;
 
-	// Lazy cache of the GameInstance-scoped mastery-total subsystem, read by
-	// RefreshMasteryDisplayText(). A missing GameInstance during construction is an
-	// unremarkable, expected case (every KrowdKontrol.Unit.* test hits it) and stays
-	// unlogged - but a present GameInstance with no resolvable subsystem is a real
-	// failure and is warned once via bHasWarnedMissingMasteryTotalSubsystemOnDisplay
-	// below, mirroring UPostRunSummaryWidget::CachedLevelClearTimeSubsystem's sibling
-	// warn-once pattern.
-	UPROPERTY()
-	TObjectPtr<UCrowdMasteryTotalSubsystem> CachedMasteryTotalSubsystem;
-
-	// Warn-once flag for RefreshMasteryDisplayText()'s cold-path subsystem-resolution
-	// failure (GameInstance present, UCrowdMasteryTotalSubsystem not resolvable) -
-	// distinguishes a real bug from the unremarkable "no GameInstance yet" test case,
-	// which stays silent. Kept local rather than reusing the mastery-reset flow's
-	// resolver/flag to avoid coupling this PR to that flow's own test file.
-	UPROPERTY()
+	// Separate warn-once flag for RefreshMasteryDisplayText()'s own cold-path
+	// subsystem-resolution failure (issue #328) - kept independent of
+	// bHasWarnedMissingMasteryTotalSubsystem above so the display path's warning
+	// doesn't consume or interact with the reset flow's own warn-once budget/tests.
 	bool bHasWarnedMissingMasteryTotalSubsystemOnDisplay = false;
->>>>>>> origin/main
 
 	// Container for the data-driven level-select list (issue #325) - one
 	// UMainMenuLevelButtonWidget child per shipped level, populated by
