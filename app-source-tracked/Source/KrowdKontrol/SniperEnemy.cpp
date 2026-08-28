@@ -4,7 +4,6 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
-#include "PlayerEnergyComponent.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
 #include "Sound/SoundBase.h"
@@ -174,16 +173,6 @@ void ASniperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 		// module's delegates.
 		bShotFiredForCurrentAttack = true;
 		OnSniperShotFired.Broadcast();
-
-		// Issue #358: the shot's actual consequence. FindPlayerEnergyComponent()
-		// tolerates a null GetWorld() (true for NewObject<>()-constructed test
-		// instances - see BomberEnemy.cpp's identical call site) by returning nullptr,
-		// so a shot resolving with no valid/present player target applies no damage -
-		// no phantom hits, no crash.
-		if (UPlayerEnergyComponent* Energy = FindPlayerEnergyComponent())
-		{
-			Energy->ApplyContactDamage(ShotDamageAmount, this);
-		}
 	}
 }
 

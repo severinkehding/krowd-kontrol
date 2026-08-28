@@ -32,10 +32,11 @@ base class's inert 600.0f default. `BomberEnemy.h`'s stale comment claiming Snip
 ## Acceptance criteria
 
 - [x] **Leaving the sniper's attack range while a shot is telegraphing cancels the
-  shot (no damage applied) and drops the target.** Covered by test `(v)` in
-  `KrowdKontrolSniperEnemyTest.cpp` — breaks range mid-telegraph, asserts the tell
-  light clears, `OnEnemyAttackExpired` fires exactly once, and player energy is
-  unchanged even after advancing well past the original telegraph duration.
+  shot and drops the target.** Covered by test `(v)` in `KrowdKontrolSniperEnemyTest.cpp`
+  — breaks range mid-telegraph, asserts the tell light clears, `OnEnemyAttackExpired`
+  fires exactly once, and `OnSniperShotFired` never fires even after advancing well
+  past the original telegraph duration. (Damage application on a landed shot is
+  issue #358's scope, tracked separately in PR #385 — not part of this issue.)
 - [x] **On dropping its target, the sniper enters a chase state (reuses existing
   `Alert` + `TickChaseMovement`) and closes distance until back within attack range.**
   Covered by unit test `(y)` (drives `TickChaseMovement` directly, asserts distance
@@ -93,6 +94,32 @@ Individual filters:
   pre-existing `PostContactAttackRecovery` scenario, unaffected)
 
 `UE_BUILD_OK` (clean UBT compile, `KrowdKontrolEditor Win64 Development`) prior to the
-above. `app-source-tracked/` mirror diffed against the committed baseline and confirmed
-to contain only this issue's intended changes — no concurrent-task leakage from the
-shared `app/` symlink.
+above.
+
+## Post-review correction
+
+The PR's original `app-source-tracked/` mirror was diffed against the committed
+baseline and its Validation Evidence claimed "no concurrent-task leakage from the
+shared `app/` symlink" — that claim was false. The mirror actually contained the
+complete, undisclosed implementation of unrelated issue #358 (sniper contact damage:
+`ShotDamageAmount`, a `FindPlayerEnergyComponent()`/`ApplyContactDamage()` call in
+`AdvanceAttackTelegraph()`, and tests `(t)`/`(u)`/`(u2)`), picked up from the shared,
+gitignored `app/` symlink at mirror time from issue #358's own concurrent, independent
+work (already landing separately in PR #385). This was caught by code review
+(`code-review-findings.md`, CRITICAL) and independently corroborated by test-coverage
+review and the pre-review scope note.
+
+Fixed in the self-fix pass: stripped `ShotDamageAmount`, the `ApplyContactDamage` call
+block and its `#include "PlayerEnergyComponent.h"`, and tests `(t)`/`(u)`/`(u2)` from
+`SniperEnemy.h`/`.cpp`/`KrowdKontrolSniperEnemyTest.cpp`, leaving issue #358 to land
+through its own dedicated review in PR #385. Test `(v)`'s no-damage assertion, which
+was only meaningful because of the now-removed `ApplyContactDamage` call, was replaced
+with an `OnSniperShotFired` listener-count check (mirroring `(w)`'s existing pattern)
+so it stays a meaningful regression guard independent of which PR owns the
+damage-application code path. Also added test `(i6-boundary)` in
+`KrowdKontrolEnemyBaseTest.cpp`, pinning the `Distance == GetAttackRangeUnits()`
+exact-boundary case that the new branch's `>`/`<=` asymmetry depends on (test-coverage
+review, MEDIUM finding).
+
+Re-validated after the fix: `python harness/ci.py --quick` → `GATE_OK mode=quick`,
+`UNIT_PASSED tests=127`, `PIE_PASSED tests=8`.

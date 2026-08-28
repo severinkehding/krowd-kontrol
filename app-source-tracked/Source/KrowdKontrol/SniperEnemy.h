@@ -89,14 +89,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper")
 	TSoftObjectPtr<USoundBase> AttackTellSound;
 
-	// SN-1PR's first-pass per-hit damage value (issue #358) - deliberately at or below
-	// UPlayerEnergyComponent::MaxDamagePerHit (10.0f) so a landed shot always costs
-	// exactly this amount, not the clamp ceiling (contrast ABomberEnemy::
-	// ExplosionDamageAmount / ARootSurgeBoss::AttackDamageAmount, which both
-	// deliberately exceed the clamp instead). Subject to operator playtest tuning.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
-	float ShotDamageAmount = 8.0f;
-
 	// Issue #360: chase speed while closing distance back into range after a
 	// range-break (AEnemyBase::TickChaseMovement, driven while Alert) - SN-1PR
 	// previously had no override here since it never needed to chase (its attack range
@@ -108,8 +100,7 @@ public:
 	// and the player pawn's own UFloatingPawnMovement::MaxSpeed (this project's
 	// unmodified engine default, 1200.0f - no C++ override exists anywhere in this
 	// module, confirmed by grep) so outrunning a chasing sniper is genuinely
-	// achievable, not just nominally possible. Subject to operator playtest tuning,
-	// same as ShotDamageAmount above.
+	// achievable, not just nominally possible. Subject to operator playtest tuning.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
 	float MovementSpeed = 300.0f;
 

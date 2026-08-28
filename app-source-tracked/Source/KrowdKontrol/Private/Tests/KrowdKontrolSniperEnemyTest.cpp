@@ -28,7 +28,6 @@
 #include "Engine/World.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "SniperShotFiredTestListener.h"
-#include "PlayerEnergyComponent.h"
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
@@ -515,100 +514,17 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Sniper should revert to Alert once the 7s Sleep override elapses"),
 		static_cast<uint8>(ExpirySniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 
-	// (t) issue #358: a landed shot actually damages the player by exactly
-	// ShotDamageAmount - the sniper's attack tell/audio now represents a real cost,
-	// not just a visual/audio show. Real UWorld + manually-registered
-	// UPlayerEnergyComponent, mirroring KrowdKontrolRootSurgeBossTest.cpp's own
-	// damage-assertion scenario (Scenario 8) exactly.
-	UWorld* DamageWorld = FAutomationEditorCommonUtils::CreateNewMap();
-	if (TestNotNull(TEXT("(t) CreateNewMap should return a valid World for the damage test"), DamageWorld))
-	{
-		ASniperEnemy* DamageSniper = DamageWorld->SpawnActor<ASniperEnemy>();
-		APawn* DamagePlayerPawn = DamageWorld->SpawnActor<APawn>();
-		if (TestNotNull(TEXT("(t) ASniperEnemy should spawn into the damage test World"), DamageSniper)
-			&& TestNotNull(TEXT("(t) Player pawn should spawn into the damage test World"), DamagePlayerPawn))
-		{
-			UPlayerEnergyComponent* DamageEnergy = NewObject<UPlayerEnergyComponent>(DamagePlayerPawn);
-			DamageEnergy->RegisterComponent();
-			const float EnergyBeforeShot = DamageEnergy->GetCurrentEnergy();
-
-			AdvanceToAttack(DamageSniper, ZeroDistanceLocation);
-			DamageSniper->AdvanceAttackTelegraph(DamageSniper->AttackTelegraphSeconds);
-
-			TestEqual(TEXT("(t) Player energy should drop by exactly ShotDamageAmount once the shot lands"),
-				DamageEnergy->GetCurrentEnergy(), EnergyBeforeShot - DamageSniper->ShotDamageAmount);
-
-			const float EnergyAfterFirstShot = DamageEnergy->GetCurrentEnergy();
-			DamageSniper->AdvanceAttackTelegraph(DamageSniper->AttackTelegraphSeconds);
-			TestEqual(TEXT("(t) The one-shot guard should prevent a second ApplyContactDamage call for the same attack"),
-				DamageEnergy->GetCurrentEnergy(), EnergyAfterFirstShot);
-		}
-	}
-
-	// (u) issue #358: a shot resolving with no player pawn present applies no damage
-	// and does not crash - FindPlayerEnergyComponent() returning nullptr (no
-	// UPlayerEnergyComponent-carrying pawn anywhere in the World) must be a safe
-	// no-op, and OnSniperShotFired must still fire exactly once regardless (the
-	// delegate's own firing behavior is unchanged by this issue).
-	UWorld* NoTargetWorld = FAutomationEditorCommonUtils::CreateNewMap();
-	if (TestNotNull(TEXT("(u) CreateNewMap should return a valid World for the no-target test"), NoTargetWorld))
-	{
-		ASniperEnemy* NoTargetSniper = NoTargetWorld->SpawnActor<ASniperEnemy>();
-		if (TestNotNull(TEXT("(u) ASniperEnemy should spawn into the no-target test World"), NoTargetSniper))
-		{
-			USniperShotFiredTestListener* NoTargetListener = NewObject<USniperShotFiredTestListener>();
-			NoTargetSniper->OnSniperShotFired.AddDynamic(NoTargetListener, &USniperShotFiredTestListener::HandleSniperShotFired);
-
-			AdvanceToAttack(NoTargetSniper, ZeroDistanceLocation);
-			NoTargetSniper->AdvanceAttackTelegraph(NoTargetSniper->AttackTelegraphSeconds);
-
-			TestEqual(TEXT("(u) The shot should still fire exactly once with no player pawn present"),
-				NoTargetListener->CallCount, 1);
-		}
-	}
-
-	// (u2) issue #358 pass-1 review follow-up: the more literal reading of the issue's
-	// no-phantom-hit scenario - a target that WAS valid earlier in the telegraph (a live
-	// player pawn carrying UPlayerEnergyComponent) but is destroyed before the shot
-	// resolves. FindPlayerEnergyComponent() re-queries the World at resolution time
-	// rather than latching a target reference at telegraph start (see EnemyBase.cpp),
-	// so this must resolve exactly like (u)'s never-existed case: shot still fires
-	// exactly once, no crash, and - unlike (u), which has no energy component to
-	// observe - this asserts the surviving UPlayerEnergyComponent's CurrentEnergy is
-	// actually left unchanged, not just that the delegate still fires.
-	UWorld* DestroyedTargetWorld = FAutomationEditorCommonUtils::CreateNewMap();
-	if (TestNotNull(TEXT("(u2) CreateNewMap should return a valid World for the destroyed-target test"), DestroyedTargetWorld))
-	{
-		ASniperEnemy* DestroyedTargetSniper = DestroyedTargetWorld->SpawnActor<ASniperEnemy>();
-		APawn* DoomedPlayerPawn = DestroyedTargetWorld->SpawnActor<APawn>();
-		if (TestNotNull(TEXT("(u2) ASniperEnemy should spawn into the destroyed-target test World"), DestroyedTargetSniper)
-			&& TestNotNull(TEXT("(u2) Player pawn should spawn into the destroyed-target test World"), DoomedPlayerPawn))
-		{
-			UPlayerEnergyComponent* DoomedEnergy = NewObject<UPlayerEnergyComponent>(DoomedPlayerPawn);
-			DoomedEnergy->RegisterComponent();
-			const float EnergyBeforeDestroy = DoomedEnergy->GetCurrentEnergy();
-
-			USniperShotFiredTestListener* DestroyedTargetListener = NewObject<USniperShotFiredTestListener>();
-			DestroyedTargetSniper->OnSniperShotFired.AddDynamic(DestroyedTargetListener, &USniperShotFiredTestListener::HandleSniperShotFired);
-
-			AdvanceToAttack(DestroyedTargetSniper, ZeroDistanceLocation);
-			DestroyedTargetWorld->DestroyActor(DoomedPlayerPawn);
-
-			AddExpectedError(TEXT("found no APawn with a UPlayerEnergyComponent"), EAutomationExpectedErrorFlags::Contains, 1);
-			DestroyedTargetSniper->AdvanceAttackTelegraph(DestroyedTargetSniper->AttackTelegraphSeconds);
-
-			TestEqual(TEXT("(u2) The shot should still fire exactly once even though the target was destroyed mid-telegraph"),
-				DestroyedTargetListener->CallCount, 1);
-			TestEqual(TEXT("(u2) Player energy should be unchanged - the destroyed pawn's component must not receive damage"),
-				DoomedEnergy->GetCurrentEnergy(), EnergyBeforeDestroy);
-		}
-	}
-
 	// (v) issue #360: the player leaving attack range mid-telegraph cancels the shot
-	// - no damage lands even once the (now-frozen) telegraph's remaining time is
-	// advanced well past its original duration - and reverts the sniper to Alert via
-	// the same shared RevertAttackToAlert()/OnAttackExpired() path the #313 timeout
-	// uses (tell light clears; OnEnemyAttackExpired fires exactly once).
+	// - OnSniperShotFired never fires even once the (now-frozen) telegraph's remaining
+	// time is advanced well past its original duration - and reverts the sniper to
+	// Alert via the same shared RevertAttackToAlert()/OnAttackExpired() path the #313
+	// timeout uses (tell light clears; OnEnemyAttackExpired fires exactly once).
+	//
+	// Uses the OnSniperShotFired listener-count pattern (v) below already relies on for
+	// "shot cancelled", rather than a UPlayerEnergyComponent energy check: damage
+	// application is out of this issue's scope (see issue #358, tracked separately),
+	// so asserting on the delegate keeps this test meaningful regardless of which PR
+	// ends up owning the damage-application code path.
 	UWorld* RangeBreakWorld = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("(v) CreateNewMap should return a valid World for the range-break test"), RangeBreakWorld))
 	{
@@ -617,9 +533,8 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		if (TestNotNull(TEXT("(v) ASniperEnemy should spawn into the range-break test World"), RangeBreakSniper)
 			&& TestNotNull(TEXT("(v) Player pawn should spawn into the range-break test World"), RangeBreakPlayerPawn))
 		{
-			UPlayerEnergyComponent* RangeBreakEnergy = NewObject<UPlayerEnergyComponent>(RangeBreakPlayerPawn);
-			RangeBreakEnergy->RegisterComponent();
-			const float EnergyBeforeRangeBreak = RangeBreakEnergy->GetCurrentEnergy();
+			USniperShotFiredTestListener* RangeBreakShotListener = NewObject<USniperShotFiredTestListener>();
+			RangeBreakSniper->OnSniperShotFired.AddDynamic(RangeBreakShotListener, &USniperShotFiredTestListener::HandleSniperShotFired);
 
 			UEnemyAttackExpiredTestListener* RangeBreakExpiredListener = NewObject<UEnemyAttackExpiredTestListener>();
 			RangeBreakSniper->OnEnemyAttackExpired.AddDynamic(RangeBreakExpiredListener, &UEnemyAttackExpiredTestListener::HandleEnemyAttackExpired);
@@ -640,8 +555,8 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 				RangeBreakExpiredListener->CallCount, 1);
 
 			RangeBreakSniper->AdvanceAttackTelegraph(RangeBreakSniper->AttackTelegraphSeconds); // well past original duration
-			TestEqual(TEXT("(v) Player energy must be unchanged - the range-broken shot must never land"),
-				RangeBreakEnergy->GetCurrentEnergy(), EnergyBeforeRangeBreak);
+			TestEqual(TEXT("(v) The shot must never fire - the range-broken telegraph must not resolve"),
+				RangeBreakShotListener->CallCount, 0);
 		}
 	}
 
