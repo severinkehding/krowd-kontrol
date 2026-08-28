@@ -11,18 +11,19 @@ built and styled exactly like every other chrome text element on this widget (sh
 already-public `SetMasteryDisplayContent()` API, and populated once from
 `BuildWidgetTree()` via a new private `RefreshMasteryDisplayText()`.
 
-## Why construction-time-only, no tick/delegate refresh
+## Refresh-on-show: `NativeConstruct()`, not just construction time
 
-`AMainMenuPlayerController::BeginPlay()` constructs a brand-new `UMainMenuWidget`
-every time the main menu level loads - returning to the menu after a run means a real
-`UGameplayStatics::OpenLevel()` travel, which destroys the current World (widget
-included) and spins up a fresh one, triggering `BeginPlay()` and a fresh
-`BuildWidgetTree()` call again. `UCrowdMasteryTotalSubsystem`, by contrast, is
-GameInstance-scoped and survives that level transition. So "read once at
-construction" and "refresh every time the menu is shown" are the same event in this
-codebase - there is no code path where an existing `UMainMenuWidget` instance stays
-alive while the accumulated total changes underneath it. No `NativeOnActivated`/tick
-machinery was added for a case that cannot occur.
+Originally this relied on the fact that `AMainMenuPlayerController::BeginPlay()`
+constructs a brand-new `UMainMenuWidget` every time the main menu level loads, making
+"read once at construction" and "refresh every time the menu is shown" the same event
+in this codebase. PR #350 review (pass 1) correctly flagged that as an unverified
+assumption rather than a structural guarantee - nothing in `UMainMenuWidget` itself
+enforced the refresh if that controller-level behavior ever changed. Fixed by
+overriding `NativeConstruct()` (fired by `AddToViewport()`, and by any future re-add of
+the same widget instance) to call `RefreshMasteryDisplayText()` again, in addition to
+the existing construction-time read in `BuildWidgetTree()`. This makes the refresh a
+property of `UMainMenuWidget` itself, independent of how/when the owning controller
+chooses to create or reuse the widget instance.
 
 ## Why not reuse `ResolveMasteryTotalSubsystem()`
 
@@ -103,6 +104,34 @@ total=5` - both unchanged from the pre-fix baseline, confirming the new warn-onc
 branch isn't exercised by any existing test (as expected: block (d)/(d2)/(g) all
 construct via a `GameInstance`-less World or bare `NewObject()`).
 
+## Pass-2 fixes (dark-factory validation)
+
+Pass-1 validation (behavioral-validation + the independent E2E holdout, both agreeing)
+found the diff satisfied 3 of 4 acceptance criteria, but that the "refreshes whenever
+the menu is shown" requirement was only backed by the unverified assumption above, not
+a structural mechanism. `REQUEST_CHANGES` with three findings:
+
+- **Refresh-on-show not structurally implemented (HIGH, behavioral).** Fixed by adding
+  `UMainMenuWidget::NativeConstruct()` (see "Refresh-on-show" section above) - covered
+  by a new test case (d3) that injects a subsystem, reads the display, changes the
+  subsystem's total, then calls `NativeConstruct()` directly and asserts the display
+  picked up the new total.
+- **No evidence of checking for an existing post-run-summary Crowd Mastery style
+  (LOW, behavioral).** Confirmed: `UPostRunSummaryWidget::CrowdMasteryText`
+  (`PostRunSummaryWidget.cpp`) uses the same `HUDChromeColours::GetText()` chrome
+  colour this widget's `MasteryDisplayText` already used - no new style needed, no
+  discrepancy to fix. Added an explicit code comment cross-referencing the two so this
+  isn't only visible by diffing colour values.
+- **Locale-grouped number formatting (LOW, code_quality).** `RefreshMasteryDisplayText()`
+  used bare `FText::AsNumber(AccumulatedTotal)`, which would render `"1,000"` once the
+  total exceeds 999 - inconsistent with `QuestTrackerWidget.cpp`'s established
+  `FNumberFormattingOptions` `NoGrouping` convention for count-like displays. Matched it.
+
+Re-validated: `python harness/ci.py --quick` -> `UNIT_PASSED tests=124`,
+`PIE_PASSED tests=5`, `GATE_OK mode=quick` (same test/pass counts as before - the new
+(d3) case lives inside the existing `KrowdKontrol.Unit.MainMenuWidget` test function,
+not a new top-level test).
+
 ## Files changed
 
 | File | Action | What it contains |
@@ -118,7 +147,7 @@ construct via a `GameInstance`-less World or bare `NewObject()`).
 ## Acceptance criteria
 
 - [x] Main menu's `MasteryDisplayAnchor` shows `"CROWD MASTERY: <total>"`, `<total>` read from `UCrowdMasteryTotalSubsystem::GetAccumulatedTotal()`
-- [x] Display reflects the current total on every main-menu visit (structural: fresh widget construction + fresh subsystem read on every `L_MainMenu` load)
+- [x] Display reflects the current total on every main-menu visit (`RefreshMasteryDisplayText()` runs from both `BuildWidgetTree()` at construction and `NativeConstruct()` on every show)
 - [x] Chrome styling reuses `HUDChromeColours::GetText()` - no new colours introduced
 - [x] `KrowdKontrolReservedGameplayColoursTest.cpp` audits the new element against the five reserved gameplay colours
 - [x] `python harness/ci.py --quick` reports `GATE_OK mode=quick`

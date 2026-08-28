@@ -105,6 +105,27 @@ bool FKrowdKontrolMainMenuWidgetTest::RunTest(const FString& Parameters)
 			MasteryWidget->GetMasteryDisplayText().ToString(), FString(TEXT("CROWD MASTERY: 42")));
 	}
 
+	// (d3) NativeConstruct() (fired by AddToViewport()) must re-run RefreshMasteryDisplayText()
+	// so the display refreshes whenever the menu becomes visible again, not just once at
+	// construction (PR #350 review) - proven here by changing the injected subsystem's
+	// total between construction and a direct NativeConstruct() call.
+	UMainMenuWidget* ConstructRefreshWidget = CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
+	if (TestNotNull(TEXT("ConstructRefreshWidget should construct"), ConstructRefreshWidget))
+	{
+		UGameInstance* ConstructRefreshGameInstanceOuter = NewObject<UGameInstance>();
+		UCrowdMasteryTotalSubsystem* ConstructRefreshSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(ConstructRefreshGameInstanceOuter);
+		ConstructRefreshSubsystem->DepositRunMastery(7);
+		ConstructRefreshWidget->CachedMasteryTotalSubsystem = ConstructRefreshSubsystem;
+		ConstructRefreshWidget->RefreshMasteryDisplayText();
+		TestEqual(TEXT("Mastery display should read 7 before NativeConstruct()"),
+			ConstructRefreshWidget->GetMasteryDisplayText().ToString(), FString(TEXT("CROWD MASTERY: 7")));
+
+		ConstructRefreshSubsystem->DepositRunMastery(3);
+		ConstructRefreshWidget->NativeConstruct();
+		TestEqual(TEXT("NativeConstruct() should re-read the total, showing 10"),
+			ConstructRefreshWidget->GetMasteryDisplayText().ToString(), FString(TEXT("CROWD MASTERY: 10")));
+	}
+
 	// (e) Initialize() guard - must not rebuild the tree when NativeOnInitialized()
 	// (invoked synchronously by CreateWidget()) already built it.
 	UMainMenuWidget* GuardWidget = CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());

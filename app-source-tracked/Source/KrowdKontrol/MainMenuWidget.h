@@ -48,6 +48,14 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual bool Initialize() override;
 
+	// Fires every time this widget is (re-)added to the viewport (AddToViewport()).
+	// Re-running RefreshMasteryDisplayText() here, on top of the construction-time read
+	// in BuildWidgetTree(), makes "refreshes whenever the menu is shown"
+	// (docs/prd-crowd-mastery-persistence.md REQ-2) an explicit, structural guarantee
+	// rather than depending on the unverified assumption that this widget is always
+	// destroyed and reconstructed on every L_MainMenu visit (PR #350 review).
+	virtual void NativeConstruct() override;
+
 private:
 	void BuildWidgetTree();
 	void EnsureWidgetTreeBuilt();
@@ -73,10 +81,8 @@ private:
 	void HandleLevelSelected(FName MapName);
 
 	// Reads the current total from UCrowdMasteryTotalSubsystem and formats it into
-	// MasteryDisplayText. Called once from BuildWidgetTree() - see MainMenuWidget.cpp
-	// for why a fresh read at construction already satisfies "refreshes whenever the
-	// menu is shown" in this codebase (the widget is rebuilt from scratch on every
-	// L_MainMenu visit).
+	// MasteryDisplayText. Called from BuildWidgetTree() at construction time, and again
+	// from NativeConstruct() above every time the menu becomes visible.
 	void RefreshMasteryDisplayText();
 
 	UPROPERTY()

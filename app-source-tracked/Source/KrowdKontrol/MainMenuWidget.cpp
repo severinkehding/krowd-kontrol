@@ -31,6 +31,17 @@ bool UMainMenuWidget::Initialize()
 	return bNewlyInitialized;
 }
 
+void UMainMenuWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+	// AddToViewport() (and any future re-add of this same widget instance) fires
+	// NativeConstruct() - refreshing here too, not just at construction time inside
+	// BuildWidgetTree(), makes the mastery total an explicit refresh-on-show rather
+	// than relying on AMainMenuPlayerController::BeginPlay() always creating a fresh
+	// UMainMenuWidget per level visit (PR #350 review).
+	RefreshMasteryDisplayText();
+}
+
 void UMainMenuWidget::EnsureWidgetTreeBuilt()
 {
 	// Whichever of NativeOnInitialized()/Initialize() fires first builds the tree; the
@@ -90,6 +101,9 @@ void UMainMenuWidget::BuildWidgetTree()
 	// Crowd Mastery total display (issue #328, docs/prd-crowd-mastery-persistence.md
 	// REQ-2) - fills the anchor reserved above via the widget's own already-public
 	// SetMasteryDisplayContent() API (the seam #324 built specifically for this).
+	// TextColor here is the same HUDChromeColours::GetText() chrome colour already used
+	// by UPostRunSummaryWidget::CrowdMasteryText (PostRunSummaryWidget.cpp) for that
+	// screen's own Crowd Mastery stat - reusing it rather than introducing a new style.
 	MasteryDisplayText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryDisplayText"));
 	MasteryDisplayText->SetColorAndOpacity(TextColor);
 	MasteryDisplayText->SetAutoWrapText(true);
@@ -196,9 +210,11 @@ void UMainMenuWidget::RefreshMasteryDisplayText()
 		}
 	}
 
+	FNumberFormattingOptions NoGrouping;
+	NoGrouping.SetUseGrouping(false);
 	MasteryDisplayText->SetText(FText::Format(
 		NSLOCTEXT("MainMenuWidget", "CrowdMasteryTotalFormat", "CROWD MASTERY: {0}"),
-		FText::AsNumber(AccumulatedTotal)));
+		FText::AsNumber(AccumulatedTotal, &NoGrouping)));
 }
 
 FText UMainMenuWidget::GetMasteryDisplayText() const
