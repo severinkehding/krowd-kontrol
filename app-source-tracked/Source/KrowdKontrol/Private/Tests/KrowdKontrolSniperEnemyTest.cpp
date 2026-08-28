@@ -38,8 +38,34 @@
 #include "AbilityCooldownComponent.h"
 #include "GameFramework/Pawn.h"
 #include "EnemyAttackExpiredTestListener.h"
+#include "AbilityTargetingIndicatorComponent.h"
+#include "KrowdKontrolPlayerController.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/Engine.h"
+#include "GameFramework/PlayerController.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+
+namespace
+{
+	// Copied verbatim from KrowdKontrolLevelBriefingSubsystemTest.cpp's own helper -
+	// CreateNewMap() worlds skip PostInitializeComponents, so
+	// World->GetFirstPlayerController() (and thus UGameplayStatics::GetPlayerPawn())
+	// reads empty without this explicit registration step.
+	AKrowdKontrolPlayerController* SpawnPossessedController(UWorld* World, APawn* Pawn)
+	{
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!Controller)
+		{
+			return nullptr;
+		}
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		Controller->Possess(Pawn);
+		World->AddController(Controller);
+		return Controller;
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FKrowdKontrolSniperEnemyTest,
@@ -436,6 +462,13 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 			TickedSniper->Tick(TickedSniper->AttackTelegraphSeconds);
 			TestEqual(TEXT("Tick() should drive the telegraph through to firing the shot"),
 				TickedListener->CallCount, 1);
+
+			// Issue #359 (test-coverage review): this World has no player controller/
+			// pawn spawned into it at all, exercising UpdateTelegraphIndicator()'s
+			// "real World, no resolvable player pawn" guard branch - proves it stays
+			// hidden rather than just not crashing.
+			TestFalse(TEXT("(m) issue #359: telegraph should stay hidden with no resolvable player pawn in this World"),
+				TickedSniper->TelegraphIndicatorComponent->bIsVisible);
 		}
 	}
 
@@ -533,6 +566,12 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 		if (TestNotNull(TEXT("(v) ASniperEnemy should spawn into the range-break test World"), RangeBreakSniper)
 			&& TestNotNull(TEXT("(v) Player pawn should spawn into the range-break test World"), RangeBreakPlayerPawn))
 		{
+			// Issue #359: possessed so UGameplayStatics::GetPlayerPawn() actually resolves
+			// this pawn - without this, UpdateTelegraphIndicator()'s guard would no-op
+			// every Show() call and the bIsVisible assertions below would pass trivially
+			// (already false) rather than exercising the real teardown path.
+			SpawnPossessedController(RangeBreakWorld, RangeBreakPlayerPawn);
+
 			USniperShotFiredTestListener* RangeBreakShotListener = NewObject<USniperShotFiredTestListener>();
 			RangeBreakSniper->OnSniperShotFired.AddDynamic(RangeBreakShotListener, &USniperShotFiredTestListener::HandleSniperShotFired);
 
@@ -542,6 +581,8 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 			AdvanceToAttack(RangeBreakSniper, ZeroDistanceLocation);
 			TestTrue(TEXT("(v) Attack tell should be visibly on before the range-break"),
 				RangeBreakSniper->AttackTellLightComponent->Intensity > 0.0f);
+			TestTrue(TEXT("(v) issue #359: telegraph should be visible before the range-break"),
+				RangeBreakSniper->TelegraphIndicatorComponent->bIsVisible);
 
 			RangeBreakSniper->AdvanceAttackTelegraph(RangeBreakSniper->AttackTelegraphSeconds * 0.5f); // mid-telegraph
 
@@ -551,6 +592,8 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 				static_cast<uint8>(RangeBreakSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
 			TestEqual(TEXT("(v) Attack tell should be cleared by the shared OnAttackExpired hook"),
 				RangeBreakSniper->AttackTellLightComponent->Intensity, 0.0f);
+			TestFalse(TEXT("(v) issue #359: telegraph should be hidden by the shared OnAttackExpired hook"),
+				RangeBreakSniper->TelegraphIndicatorComponent->bIsVisible);
 			TestEqual(TEXT("(v) OnEnemyAttackExpired should fire exactly once on the range-break"),
 				RangeBreakExpiredListener->CallCount, 1);
 
@@ -618,6 +661,110 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	const float DistanceMoved = FVector::Dist(ChasingSniper->GetActorLocation(), BeforeChase);
 	TestEqual(TEXT("(y) sniper chase advances at its own MovementSpeed * DeltaSeconds"),
 		DistanceMoved, ChasingSniper->MovementSpeed * 0.5f);
+
+	// (z) issue #359: the world-space "shot incoming" telegraph line - spawn-on-
+	// acquisition (Line shape, non-reserved colour matching the attack tell light),
+	// teardown-on-shot-fire, and teardown-on-Controlled(Root) (the one ability that
+	// leaves AttackTellLightComponent lit, proving the telegraph's unconditional
+	// Hide() genuinely diverges from the light tell's own conditional clear).
+	// Teardown-on-range-break is covered by case (v) above, extended with the same
+	// bIsVisible assertions.
+	UWorld* TelegraphWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(z) CreateNewMap should return a valid World for the telegraph test"), TelegraphWorld))
+	{
+		ASniperEnemy* TelegraphSniper = TelegraphWorld->SpawnActor<ASniperEnemy>();
+		APawn* TelegraphPlayerPawn = TelegraphWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(z) ASniperEnemy should spawn into the telegraph test World"), TelegraphSniper)
+			&& TestNotNull(TEXT("(z) Player pawn should spawn into the telegraph test World"), TelegraphPlayerPawn))
+		{
+			SpawnPossessedController(TelegraphWorld, TelegraphPlayerPawn);
+
+			// Issue #359 (test-coverage review): a raw APawn has no default
+			// RootComponent (unlike ACharacter/ADefaultPawn), so SetActorLocation() on
+			// one is a silent no-op (Actor.cpp early-outs when RootComponent is null) -
+			// same issue KrowdKontrolEnemyBaseTest.cpp case (t) and
+			// KrowdKontrolOvercrowdDetectionComponentTest.cpp's AEnemyBaseTestActor
+			// comment both document; give it a scene root so moving it to a distinct,
+			// non-zero location actually exercises UpdateTelegraphIndicator()'s
+			// Origin/FacingRotation/RangeUnits math below with a non-degenerate vector,
+			// not the zero vector every other AdvanceToAttack() case produces.
+			USceneComponent* TelegraphPlayerPawnRoot = NewObject<USceneComponent>(TelegraphPlayerPawn);
+			TelegraphPlayerPawnRoot->RegisterComponent();
+			TelegraphPlayerPawn->SetRootComponent(TelegraphPlayerPawnRoot);
+			const FVector TelegraphPlayerLocation(500.0f, 0.0f, 0.0f);
+			TelegraphPlayerPawn->SetActorLocation(TelegraphPlayerLocation);
+
+			AdvanceToAttack(TelegraphSniper, ZeroDistanceLocation);
+
+			UAbilityTargetingIndicatorComponent* Telegraph = TelegraphSniper->TelegraphIndicatorComponent;
+			if (TestNotNull(TEXT("(z) ASniperEnemy should have a TelegraphIndicatorComponent"), Telegraph))
+			{
+				TestTrue(TEXT("(z) Telegraph should be visible once the sniper enters Attack against a resolvable player pawn"),
+					Telegraph->bIsVisible);
+				TestEqual(TEXT("(z) Telegraph should use the Line shape kind"),
+					static_cast<uint8>(Telegraph->CurrentShapeSpec.Kind), static_cast<uint8>(EAbilityIndicatorShapeKind::Line));
+				TestTrue(TEXT("(z) Telegraph colour should match the attack tell light's own (already-vetted) colour"),
+					Telegraph->CurrentColour.Equals(TelegraphSniper->AttackTellLightComponent->GetLightColor(), 0.01f));
+				TestFalse(TEXT("(z) Telegraph colour should not collide with a reserved gameplay-information colour"),
+					ReservedGameplayColours::GetAll().ContainsByPredicate(
+						[Telegraph](const FLinearColor& Reserved) { return Reserved.Equals(Telegraph->CurrentColour, 0.01f); }));
+				TestTrue(TEXT("(z) Telegraph origin should be the sniper's own location"),
+					Telegraph->CurrentShapeSpec.Origin.Equals(TelegraphSniper->GetActorLocation(), 0.01f));
+				TestTrue(TEXT("(z) Telegraph range should match the actual sniper-to-player distance"),
+					FMath::IsNearlyEqual(Telegraph->CurrentShapeSpec.RangeUnits,
+						(TelegraphPlayerLocation - TelegraphSniper->GetActorLocation()).Size(), 0.5f));
+
+				// Issue #359 (test-coverage review): proves the per-Tick refresh genuinely
+				// tracks the player's live position rather than freezing at the
+				// OnAttackEntry() snapshot - move the player pawn and Tick() again (a
+				// small DeltaTime, well short of firing the shot), expecting RangeUnits to
+				// follow the new distance.
+				const FVector MovedTelegraphPlayerLocation(1000.0f, 0.0f, 0.0f);
+				TelegraphPlayerPawn->SetActorLocation(MovedTelegraphPlayerLocation);
+				TelegraphSniper->Tick(0.1f);
+				TestTrue(TEXT("(z) Telegraph range should update on Tick() as the player pawn moves, proving live tracking"),
+					FMath::IsNearlyEqual(Telegraph->CurrentShapeSpec.RangeUnits,
+						(MovedTelegraphPlayerLocation - TelegraphSniper->GetActorLocation()).Size(), 0.5f));
+
+				// Teardown on shot-fire.
+				USniperShotFiredTestListener* TelegraphShotListener = NewObject<USniperShotFiredTestListener>();
+				TelegraphSniper->OnSniperShotFired.AddDynamic(TelegraphShotListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+				TelegraphSniper->AdvanceAttackTelegraph(TelegraphSniper->AttackTelegraphSeconds);
+				TestEqual(TEXT("(z) precondition: the shot should have fired"), TelegraphShotListener->CallCount, 1);
+				TestFalse(TEXT("(z) Telegraph should be hidden the instant the shot fires"),
+					Telegraph->bIsVisible);
+			}
+		}
+	}
+
+	// (z2) issue #359: teardown on Controlled by Root specifically - the one ability
+	// that leaves AttackTellLightComponent lit (bAllowsAttackWhileControlled), proving
+	// the telegraph's Hide() is unconditional, unlike the light tell's own guard.
+	UWorld* TelegraphRootWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(z2) CreateNewMap should return a valid World for the Root-Controlled telegraph test"), TelegraphRootWorld))
+	{
+		ASniperEnemy* TelegraphRootSniper = TelegraphRootWorld->SpawnActor<ASniperEnemy>();
+		APawn* TelegraphRootPlayerPawn = TelegraphRootWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(z2) ASniperEnemy should spawn into the Root-Controlled telegraph test World"), TelegraphRootSniper)
+			&& TestNotNull(TEXT("(z2) Player pawn should spawn into the Root-Controlled telegraph test World"), TelegraphRootPlayerPawn))
+		{
+			SpawnPossessedController(TelegraphRootWorld, TelegraphRootPlayerPawn);
+
+			AdvanceToAttack(TelegraphRootSniper, ZeroDistanceLocation);
+			UAbilityTargetingIndicatorComponent* RootTelegraph = TelegraphRootSniper->TelegraphIndicatorComponent;
+			if (TestNotNull(TEXT("(z2) ASniperEnemy should have a TelegraphIndicatorComponent"), RootTelegraph))
+			{
+				TestTrue(TEXT("(z2) precondition: telegraph should be visible before Root interrupts"),
+					RootTelegraph->bIsVisible);
+
+				TelegraphRootSniper->ReceiveControl(EAbilitySlot::Root);
+				TestTrue(TEXT("(z2) Attack tell light should stay on - Root does not clear it"),
+					TelegraphRootSniper->AttackTellLightComponent->Intensity > 0.0f);
+				TestFalse(TEXT("(z2) Telegraph should be hidden on Controlled entry even for Root, unlike the light tell"),
+					RootTelegraph->bIsVisible);
+			}
+		}
+	}
 
 	return true;
 }

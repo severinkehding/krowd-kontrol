@@ -9,6 +9,7 @@ class UPointLightComponent;
 class UEnemyTypeIndicatorComponent;
 class USoundBase;
 class UAudioComponent;
+class UAbilityTargetingIndicatorComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSniperShotFired);
 
@@ -45,6 +46,15 @@ public:
 	// Non-reserved placeholder colour, on during Attack.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
 	TObjectPtr<UPointLightComponent> AttackTellLightComponent;
+
+	// World-space "shot incoming" telegraph line from this sniper to the player -
+	// issue #359. Layered alongside (never replacing) AttackTellLightComponent/
+	// AttackTellSound above; reuses UAbilityTargetingIndicatorComponent's Line shape
+	// kind exactly as UAbilityPressHoldComponent's own cursor-aim line does
+	// (AbilityPressHoldComponent.cpp:30-43), refreshed every Tick while the
+	// telegraph is active so it tracks the player's live position.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
+	TObjectPtr<UAbilityTargetingIndicatorComponent> TelegraphIndicatorComponent;
 
 	// Elite configuration (PRD 03 REQ-4, issue #19): non-reserved secondary trim
 	// light, lit only while AEnemyBase::bIsElite is true - see
@@ -125,6 +135,18 @@ protected:
 private:
 	void AdvanceAttackTelegraph(float DeltaSeconds);
 
+	// Shows TelegraphIndicatorComponent as a Line from this sniper to the live
+	// player pawn's current location - no-ops safely (does not call Show()) if no
+	// player pawn is currently resolvable via UGameplayStatics::GetPlayerPawn(),
+	// which covers both "no UWorld yet" (bare NewObject<>() test doubles - silent,
+	// benign) and "no PlayerController possessing a pawn" (a CreateNewMap() test
+	// World with no controller wired up - logged once via
+	// bHasWarnedMissingTelegraphTarget, since that case should never happen once
+	// the sniper is genuinely in Attack) - see SniperEnemy.cpp's
+	// UpdateTelegraphIndicator() GOTCHA comment for why
+	// AEnemyBase::FindPlayerEnergyComponent() must NOT be used here instead.
+	void UpdateTelegraphIndicator();
+
 	float RemainingTelegraphSeconds = 0.0f;
 	bool bShotFiredForCurrentAttack = false;
 
@@ -140,4 +162,10 @@ private:
 	// future change that made Attack re-enterable wouldn't silently start spamming this
 	// warning.
 	bool bHasWarnedMissingAttackTellSound = false;
+
+	// Warn-once guard for UpdateTelegraphIndicator()'s "real UWorld but no resolvable
+	// player pawn" branch - deliberately does NOT cover the benign "no UWorld yet" case
+	// (see UpdateTelegraphIndicator()'s GOTCHA comment), only the case that should never
+	// happen once the sniper is genuinely in Attack.
+	bool bHasWarnedMissingTelegraphTarget = false;
 };
