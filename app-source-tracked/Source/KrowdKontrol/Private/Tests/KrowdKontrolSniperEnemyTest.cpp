@@ -162,6 +162,24 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 			NonSleepSniper->EyeGlowLightComponent->Intensity, NonSleepSniper->EyeGlowBaselineIntensity);
 	}
 
+	// (d2) issue #361: no Stun-first activation gate exists - Stun (like every other
+	// ability) applies its effect directly to a sniper already in Attack state, with no
+	// prior control cast of any kind. Audited: AEnemyBase::ReceiveControl gates only on
+	// CurrentState (Alert/Attack), never on ControllingAbility or a prior-Stun flag, and
+	// ASniperEnemy adds no override that changes this.
+	ASniperEnemy* StunnedSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(StunnedSniper, ZeroDistanceLocation);
+	StunnedSniper->ReceiveControl(EAbilitySlot::Stun);
+	TestEqual(TEXT("(d2) Sniper should be Controlled after Stun, direct from Attack, no prior cast"),
+		static_cast<uint8>(StunnedSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
+	// (d3) issue #361: same rule for Fear.
+	ASniperEnemy* FearedSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(FearedSniper, ZeroDistanceLocation);
+	FearedSniper->ReceiveControl(EAbilitySlot::Fear);
+	TestEqual(TEXT("(d3) Sniper should be Controlled after Fear, direct from Attack, no prior cast"),
+		static_cast<uint8>(FearedSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Controlled));
+
 	// (e)/(f) the attack tell is off until Attack is entered, and visibly on
 	// (before the shot fires) once it is - ordering proven explicitly below.
 	ASniperEnemy* TellSniper = NewObject<ASniperEnemy>();
