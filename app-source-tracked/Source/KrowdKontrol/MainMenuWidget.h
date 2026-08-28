@@ -175,8 +175,12 @@ private:
 	UPROPERTY()
 	bool bMasteryResetConfirmPending = false;
 
-	// Lazy cache + warn-once, mirroring UPostRunSummaryWidget::
-	// CachedLevelClearTimeSubsystem/bHasWarnedMissingLevelClearTimeSubsystem exactly.
+	// Lazy cache of the GameInstance-scoped mastery-total subsystem, shared by both
+	// ResolveMasteryTotalSubsystem() (reset flow) and RefreshMasteryDisplayText()
+	// (display flow, issue #328), which read/write it directly. Each flow has its own
+	// warn-once flag below (bHasWarnedMissingMasteryTotalSubsystem /
+	// bHasWarnedMissingMasteryTotalSubsystemOnDisplay) so a missing subsystem is
+	// reported once per flow, not once total.
 	UPROPERTY()
 	TObjectPtr<UCrowdMasteryTotalSubsystem> CachedMasteryTotalSubsystem;
 
