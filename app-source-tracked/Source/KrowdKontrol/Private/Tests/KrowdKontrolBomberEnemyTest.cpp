@@ -23,6 +23,8 @@
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "EnemyTypeIndicatorComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -83,6 +85,26 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 			ReservedGameplayColours::GetAll().ContainsByPredicate(
 				[Bomber](const FLinearColor& Reserved) { return Reserved.Equals(Bomber->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 	}
+
+	// (b3) Body chain-colour tint (issue #316): B0-0MR's chain colour is Fear's colour
+	// (AbilityData::GetChainColourForEnemyType), applied to MeshComponent via a lazily-
+	// created MID, and ApplyBodyChainColourTint() is idempotent (same MID instance,
+	// re-applying the same colour, on a second call).
+	Bomber->ApplyBodyChainColourTint();
+	const FLinearColor ExpectedBodyColour = AbilityData::GetChainColourForEnemyType(EEnemyType::B0_0MR);
+	TestTrue(TEXT("body chain colour matches AbilityData::GetChainColourForEnemyType(B0_0MR)"),
+		Bomber->CurrentBodyChainColour.Equals(ExpectedBodyColour, 0.01f));
+	UMaterialInstanceDynamic* FirstBodyMID = Bomber->BodyChainColourMaterialInstance;
+	if (TestNotNull(TEXT("BodyChainColourMaterialInstance should be created"), FirstBodyMID))
+	{
+		TestTrue(TEXT("MeshComponent's material 0 is the BodyChainColourMaterialInstance"),
+			Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) == FirstBodyMID);
+	}
+	Bomber->ApplyBodyChainColourTint();
+	TestTrue(TEXT("second call reuses the same MID instance"),
+		Bomber->BodyChainColourMaterialInstance.Get() == FirstBodyMID);
+	TestEqual(TEXT("EnemyTypeIndicatorComponent's own EnemyType is unchanged by the body tint"),
+		static_cast<uint8>(Bomber->EnemyTypeIndicatorComponent->EnemyType), static_cast<uint8>(EEnemyType::B0_0MR));
 
 	// Drives Idle -> Alert -> Attack via two detection checks - shared below.
 	auto AdvanceToAttack = [](ABomberEnemy* TargetBomber, const FVector& PlayerLocation)
@@ -284,9 +306,25 @@ bool FKrowdKontrolBomberEnemyTest::RunTest(const FString& Parameters)
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
 	{
+		// Issue #316 (test-coverage review): SpawnActor<>() alone does NOT run
+		// BeginPlay() on a bare CreateNewMap() world - both calls below are required
+		// (see KrowdKontrolTargetZoneTest.cpp's file comment for why neither alone
+		// suffices), made once up front so every actor spawned into World afterward
+		// auto-begins-play via the engine's normal flow.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
 		ABomberEnemy* TickedBomber = World->SpawnActor<ABomberEnemy>();
 		if (TestNotNull(TEXT("ABomberEnemy should spawn into the test World"), TickedBomber))
 		{
+			// (b3) above only proves ApplyBodyChainColourTint() works when called
+			// directly, not that BeginPlay() actually calls it - this proves the wiring.
+			TestNotNull(TEXT("BeginPlay() should have created BodyChainColourMaterialInstance"),
+				TickedBomber->BodyChainColourMaterialInstance.Get());
+			TestTrue(TEXT("BeginPlay() should have applied B0_0MR's chain colour"),
+				TickedBomber->CurrentBodyChainColour.Equals(
+					AbilityData::GetChainColourForEnemyType(EEnemyType::B0_0MR), 0.01f));
+
 			AdvanceToAttack(TickedBomber, ZeroDistanceLocation);
 			UBomberExplodedTestListener* TickedListener = NewObject<UBomberExplodedTestListener>();
 			TickedBomber->OnBomberExploded.AddDynamic(TickedListener, &UBomberExplodedTestListener::HandleBomberExploded);

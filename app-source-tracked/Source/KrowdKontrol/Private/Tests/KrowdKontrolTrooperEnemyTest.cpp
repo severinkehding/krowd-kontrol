@@ -26,6 +26,7 @@
 #include "AbilityData.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/SceneComponent.h"
@@ -113,6 +114,26 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 			ReservedGameplayColours::GetAll().ContainsByPredicate(
 				[Trooper](const FLinearColor& Reserved) { return Reserved.Equals(Trooper->EliteTrimLightComponent->GetLightColor(), 0.01f); }));
 	}
+
+	// (b3) Body chain-colour tint (issue #316): TR-UPR's chain colour is Root's colour
+	// (AbilityData::GetChainColourForEnemyType), applied to MeshComponent via a lazily-
+	// created MID, and ApplyBodyChainColourTint() is idempotent (same MID instance,
+	// re-applying the same colour, on a second call).
+	Trooper->ApplyBodyChainColourTint();
+	const FLinearColor ExpectedBodyColour = AbilityData::GetChainColourForEnemyType(EEnemyType::TR_UPR);
+	TestTrue(TEXT("body chain colour matches AbilityData::GetChainColourForEnemyType(TR_UPR)"),
+		Trooper->CurrentBodyChainColour.Equals(ExpectedBodyColour, 0.01f));
+	UMaterialInstanceDynamic* FirstBodyMID = Trooper->BodyChainColourMaterialInstance;
+	if (TestNotNull(TEXT("BodyChainColourMaterialInstance should be created"), FirstBodyMID))
+	{
+		TestTrue(TEXT("MeshComponent's material 0 is the BodyChainColourMaterialInstance"),
+			Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) == FirstBodyMID);
+	}
+	Trooper->ApplyBodyChainColourTint();
+	TestTrue(TEXT("second call reuses the same MID instance"),
+		Trooper->BodyChainColourMaterialInstance.Get() == FirstBodyMID);
+	TestEqual(TEXT("EnemyTypeIndicatorComponent's own EnemyType is unchanged by the body tint"),
+		static_cast<uint8>(Trooper->EnemyTypeIndicatorComponent->EnemyType), static_cast<uint8>(EEnemyType::TR_UPR));
 
 	// Drives a trooper from Idle straight through to Attack via two zero/mid-distance
 	// detection checks (Idle -> Alert -> Attack) - shared by every case below that
@@ -326,9 +347,26 @@ bool FKrowdKontrolTrooperEnemyTest::RunTest(const FString& Parameters)
 	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
 	if (TestNotNull(TEXT("CreateNewMap should return a valid World"), World))
 	{
+		// Issue #316 (test-coverage review): SpawnActor<>() alone does NOT run
+		// BeginPlay() on a bare CreateNewMap() world - both calls below are required
+		// (see KrowdKontrolTargetZoneTest.cpp's file comment for why neither alone
+		// suffices), made once up front so every actor spawned into World afterward
+		// auto-begins-play via the engine's normal flow.
+		World->InitializeActorsForPlay(FURL());
+		World->SetBegunPlay(true);
+
 		ATrooperEnemy* TickedTrooper = World->SpawnActor<ATrooperEnemy>();
 		if (TestNotNull(TEXT("ATrooperEnemy should spawn into the test World"), TickedTrooper))
 		{
+			// The direct-invocation case above only proves ApplyBodyChainColourTint()
+			// works when called directly, not that BeginPlay() actually calls it - this
+			// proves the wiring.
+			TestNotNull(TEXT("BeginPlay() should have created BodyChainColourMaterialInstance"),
+				TickedTrooper->BodyChainColourMaterialInstance.Get());
+			TestTrue(TEXT("BeginPlay() should have applied TR_UPR's chain colour"),
+				TickedTrooper->CurrentBodyChainColour.Equals(
+					AbilityData::GetChainColourForEnemyType(EEnemyType::TR_UPR), 0.01f));
+
 			AdvanceToAttack(TickedTrooper, ZeroDistanceLocation);
 			UTrooperRayFiredTestListener* TickedListener = NewObject<UTrooperRayFiredTestListener>();
 			TickedTrooper->OnTrooperRayFired.AddDynamic(TickedListener, &UTrooperRayFiredTestListener::HandleTrooperRayFired);

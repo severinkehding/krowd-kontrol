@@ -11,6 +11,8 @@ class UPlayerEnergyComponent;
 class UPointLightComponent;
 class ARoomActor;
 class UControlledDurationIndicatorComponent;
+class UMaterialInstanceDynamic;
+class UMeshComponent;
 
 // Idle -> Alert -> Attack -> Controlled -> Banked, with Banked as the only reachable
 // "defeated" state. Transition table (no other edges exist):
@@ -277,6 +279,21 @@ public:
 	// bIsVisible/FillFraction directly without needing friendship for this alone.
 	UControlledDurationIndicatorComponent* GetControlledDurationIndicatorComponent() const { return ControlledDurationIndicatorComponent; }
 
+	// Chain-colour body tint (docs/prd-colour-coded-herding.md REQ-2, issue #316): the
+	// same FLinearColor as this enemy's own chain-colour (AbilityData::
+	// GetChainColourForEnemyType, issue #315), applied solidly to the root mesh via
+	// ApplyBodyChainColourTint() below. Reflected state - the Automation test, and any
+	// future MCP-driven holdout, asserts against these directly rather than any
+	// rendered output.
+	// Stays at the default (Black) until ApplyBodyChainColourTint() first succeeds -
+	// e.g. AEnemyBaseTestActor, which has no mesh root and no
+	// UEnemyTypeIndicatorComponent to derive a type from.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Body Tint")
+	FLinearColor CurrentBodyChainColour = FLinearColor::Black;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Body Tint")
+	TObjectPtr<UMaterialInstanceDynamic> BodyChainColourMaterialInstance;
+
 	// Idle->Alert proximity radius. Base-defined, not overridden per concrete type -
 	// issue #12's AC only calls out attack range as the per-type-overridable one.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Detection")
@@ -328,6 +345,24 @@ public:
 	// target-zone logic here; that stays level/room scope.
 	UFUNCTION(BlueprintCallable, Category = "Enemy")
 	void TransitionToBanked();
+
+	// Tints this enemy's root mesh (every concrete subclass sets RootComponent to its
+	// own MeshComponent in its constructor - see BomberEnemy.cpp etc.) solidly in its
+	// own chain colour (docs/prd-colour-coded-herding.md REQ-2, issue #316), read
+	// exclusively from AbilityData::GetChainColourForEnemyType() via this actor's own
+	// UEnemyTypeIndicatorComponent::EnemyType (issue #242's marker - unchanged, never
+	// duplicated as a second field here). Lazily creates BodyChainColourMaterialInstance
+	// once, then just re-applies the parameter - same "safe to call repeatedly" MID
+	// pattern UControlledDurationIndicatorComponent::InitializeIndicatorVisual() already
+	// uses.
+	// Called automatically from BeginPlay(); exposed publicly (and idempotent) so the
+	// Automation test can drive it deterministically on a plain NewObject<>() actor with
+	// no UWorld, same rationale those two functions' own doc comments document. A true
+	// no-op (not a warning) if RootComponent isn't a UMeshComponent or no
+	// UEnemyTypeIndicatorComponent exists on this actor - both true for the base class's
+	// own AEnemyBaseTestActor test double, used by dozens of other AEnemyBase tests.
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Body Tint")
+	void ApplyBodyChainColourTint();
 
 	// Elite configuration (PRD 03 REQ-4, issue #19): a secondary, non-reserved trim
 	// colour plus a movement-speed multiplier layered on top of this type's own

@@ -41,7 +41,7 @@ pole, done.
   Root's colour-match target is TR-UPR, then Trooper's chain colour is Root's
   colour, and so on for all matchups.
 
-### REQ-2: Enemies wear their chain colour solidly (P0)
+### REQ-2: Enemies wear their chain colour solidly (P0) — ✅ implemented, issue #316
 - The enemy's body reads as its chain colour at gameplay camera distance —
   material tint on the placeholder mesh is fine (placeholder-first), the
   existing small `EnemyTypeIndicatorComponent` marker is NOT sufficient alone

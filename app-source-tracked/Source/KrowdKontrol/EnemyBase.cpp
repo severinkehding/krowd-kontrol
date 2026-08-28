@@ -11,6 +11,9 @@
 #include "RoomActor.h"
 #include "CoreGlobals.h"
 #include "ControlledDurationIndicatorComponent.h"
+#include "Components/MeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "EnemyTypeIndicatorComponent.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -48,6 +51,8 @@ void AEnemyBase::BeginPlay()
 	{
 		RootPrimitive->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
 	}
+
+	ApplyBodyChainColourTint();
 
 	// Issue #174 AC1: routes every real Controlled-state expiry into the Crowd
 	// Mastery running-max sample, the same production wiring
@@ -435,4 +440,51 @@ float AEnemyBase::GetEffectiveMovementSpeedUnitsPerSecond() const
 float AEnemyBase::GetEffectiveFollowSpeedUnitsPerSecond() const
 {
 	return FollowSpeedUnitsPerSecond * (bIsElite ? EliteMovementSpeedMultiplier : 1.0f);
+}
+
+void AEnemyBase::ApplyBodyChainColourTint()
+{
+	UMeshComponent* BodyMesh = Cast<UMeshComponent>(GetRootComponent());
+	if (!BodyMesh)
+	{
+		// AEnemyBaseTestActor (and any other bare AEnemyBase test double) has a plain
+		// USceneComponent root, not a mesh - nothing to tint. Not a warning: this is a
+		// legitimate, exercised-by-tests shape, not a misconfiguration.
+		return;
+	}
+
+	const UEnemyTypeIndicatorComponent* TypeIndicator = FindComponentByClass<UEnemyTypeIndicatorComponent>();
+	if (!TypeIndicator)
+	{
+		// No type-tagged marker (e.g. the same test doubles above) - nothing to derive
+		// a chain colour from. Every real concrete subclass (Bomber/Sniper/Trooper/
+		// Runner) always has one, set in its own constructor (issue #77).
+		return;
+	}
+
+	if (!BodyChainColourMaterialInstance)
+	{
+		static const TSoftObjectPtr<UMaterialInterface> BaseMaterialSoftPtr(
+			FSoftObjectPath(TEXT("/Game/_Placeholder/Abilities/M_AbilityIndicator.M_AbilityIndicator")));
+		UMaterialInterface* BaseMaterial = BaseMaterialSoftPtr.LoadSynchronous();
+		if (!BaseMaterial)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("AEnemyBase: failed to load placeholder material '%s' on '%s' - body will keep its default tint."),
+				*BaseMaterialSoftPtr.ToString(), *GetNameSafe(this));
+			return;
+		}
+		BodyChainColourMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (!BodyChainColourMaterialInstance)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("AEnemyBase: UMaterialInstanceDynamic::Create() returned null on '%s' - body will keep its default tint."),
+				*GetNameSafe(this));
+			return;
+		}
+		BodyMesh->SetMaterial(0, BodyChainColourMaterialInstance);
+	}
+
+	CurrentBodyChainColour = AbilityData::GetChainColourForEnemyType(TypeIndicator->EnemyType);
+	BodyChainColourMaterialInstance->SetVectorParameterValue(TEXT("Colour"), CurrentBodyChainColour);
 }
