@@ -24,8 +24,9 @@ non-overlapping rows by construction, so this ordering proof *is* the overlap
 guarantee. This extends `KrowdKontrolPostRunSummaryRerunButtonTest.cpp` case (c)'s
 existing `GetChildIndex()` check (which only covers `CrowdMasteryText`/`RerunButton`)
 to all five elements as its own dedicated contract. On-screen containment is proven
-analytically: the content block sits in a `USizeBox` capped at `ContentWidthPx` x
-`ContentHeightPx`, centred via a `UCanvasPanelSlot` with anchors/alignment
+analytically: the content block sits in a `USizeBox` with its width fixed and its
+height capped at `ContentWidthPx` x `ContentHeightPx` respectively, centred via a
+`UCanvasPanelSlot` with anchors/alignment
 `(0.5, 0.5)` (issue #319) — a rectangle of that size centred on a screen of size
 `(Sw, Sh)` stays within the screen bounds iff `ContentWidthPx <= Sw` and
 `ContentHeightPx <= Sh`, checked at both 1280x720 (minimum) and 3840x2160 (maximum)

@@ -22,7 +22,8 @@
 // elements as its own dedicated contract.
 //
 // (b) On-screen containment (analytical): the whole content block sits in a USizeBox
-// capped at ContentWidthPx x ContentHeightPx, centred via a UCanvasPanelSlot with
+// with its width fixed and its height capped at ContentWidthPx x ContentHeightPx
+// respectively, centred via a UCanvasPanelSlot with
 // anchors/alignment (0.5, 0.5) and AutoSize(true) (issue #319). A rectangle of size
 // (W, H) centred in a screen of size (Sw, Sh) has TopLeft = ((Sw-W)/2, (Sh-H)/2) and
 // BottomRight = ((Sw+W)/2, (Sh+H)/2); both stay within [0, Sw] x [0, Sh] iff W <= Sw
