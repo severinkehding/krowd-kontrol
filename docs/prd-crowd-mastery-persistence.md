@@ -43,9 +43,16 @@ across runs.
   mastery colour/style on the clear screen, reuse it — do not invent a new
   one.
 
-### REQ-3: Reset control (P1)
+### REQ-3: Reset control (P1) — ✅ implemented, issue #329
 - A menu control that zeroes the accumulated total after an explicit confirm
   step. No partial resets.
+- Implemented as an inline RESET / CONFIRM RESET / CANCEL button row on
+  `UMainMenuWidget`, next to the (still-empty) `MasteryDisplayAnchor` from
+  REQ-2. CONFIRM calls `UCrowdMasteryTotalSubsystem::ResetAccumulatedTotal()`
+  (REQ-1); CANCEL leaves the total untouched. Built in parallel with REQ-2
+  per this PRD's own allowance — REQ-2's menu display is still open, so
+  there is no live number on screen yet to visually confirm the reset
+  against in real PIE; that verification lands once REQ-2 ships.
 
 ### REQ-4: Save-file persistence (P2 — only if cheap)
 - If the existing save machinery (the lifecycle/PIE tests reference a save

@@ -7,6 +7,7 @@
 #include "Components/Border.h"
 #include "Components/PanelSlot.h"
 #include "Components/VerticalBox.h"
+#include "Components/HorizontalBox.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/SizeBox.h"
@@ -110,6 +111,41 @@ void UMainMenuWidget::BuildWidgetTree()
 	SetMasteryDisplayContent(MasteryDisplayText);
 	RefreshMasteryDisplayText();
 
+	// Reset control for the Crowd Mastery total (docs/prd-crowd-mastery-persistence.md
+	// REQ-3, issue #329) - RESET swaps to CONFIRM RESET/CANCEL on click, since the
+	// underlying reset is destructive. No modal/popup widget system exists in this
+	// codebase and there is exactly one caller, so this inline three-button row is the
+	// smallest addition that satisfies "explicit confirm, no partial resets" (see
+	// RefreshMasteryResetVisibility() below for the visibility toggle).
+	MasteryResetBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("MasteryResetBox"));
+	Layout->AddChildToVerticalBox(MasteryResetBox);
+
+	MasteryResetButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MasteryResetButton"));
+	MasteryResetButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleMasteryResetClicked);
+	MasteryResetButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryResetButtonLabel"));
+	MasteryResetButtonLabel->SetColorAndOpacity(TextColor);
+	MasteryResetButtonLabel->SetText(NSLOCTEXT("MainMenuWidget", "MasteryReset", "RESET"));
+	MasteryResetButton->SetContent(MasteryResetButtonLabel);
+	MasteryResetBox->AddChildToHorizontalBox(MasteryResetButton);
+
+	MasteryResetConfirmButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MasteryResetConfirmButton"));
+	MasteryResetConfirmButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleMasteryResetConfirmClicked);
+	MasteryResetConfirmButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryResetConfirmButtonLabel"));
+	MasteryResetConfirmButtonLabel->SetColorAndOpacity(TextColor);
+	MasteryResetConfirmButtonLabel->SetText(NSLOCTEXT("MainMenuWidget", "MasteryResetConfirm", "CONFIRM RESET"));
+	MasteryResetConfirmButton->SetContent(MasteryResetConfirmButtonLabel);
+	MasteryResetBox->AddChildToHorizontalBox(MasteryResetConfirmButton);
+
+	MasteryResetCancelButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MasteryResetCancelButton"));
+	MasteryResetCancelButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleMasteryResetCancelClicked);
+	MasteryResetCancelButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryResetCancelButtonLabel"));
+	MasteryResetCancelButtonLabel->SetColorAndOpacity(TextColor);
+	MasteryResetCancelButtonLabel->SetText(NSLOCTEXT("MainMenuWidget", "MasteryResetCancel", "CANCEL"));
+	MasteryResetCancelButton->SetContent(MasteryResetCancelButtonLabel);
+	MasteryResetBox->AddChildToHorizontalBox(MasteryResetCancelButton);
+
+	RefreshMasteryResetVisibility(); // establishes the initial RESET-only state
+
 	QuitButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MainMenuQuitButton"));
 	QuitButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleQuitClicked);
 
@@ -177,51 +213,6 @@ FText UMainMenuWidget::GetTitleDisplayText() const
 	return TitleText ? TitleText->GetText() : FText::GetEmpty();
 }
 
-void UMainMenuWidget::RefreshMasteryDisplayText()
-{
-	if (!MasteryDisplayText)
-	{
-		return;
-	}
-
-	// A missing GameInstance just means "no GameInstance yet" (every KrowdKontrol.Unit.*
-	// test that constructs this widget via CreateNewMap() hits this) - 0 is the correct,
-	// unremarkable default and stays unlogged. A present GameInstance with no resolvable
-	// UCrowdMasteryTotalSubsystem is a real failure, though, and is warned once below -
-	// otherwise it's indistinguishable from a legitimate new-player zero.
-	int32 AccumulatedTotal = 0;
-	if (CachedMasteryTotalSubsystem)
-	{
-		AccumulatedTotal = CachedMasteryTotalSubsystem->GetAccumulatedTotal();
-	}
-	else if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UCrowdMasteryTotalSubsystem* MasterySubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>())
-		{
-			CachedMasteryTotalSubsystem = MasterySubsystem;
-			AccumulatedTotal = MasterySubsystem->GetAccumulatedTotal();
-		}
-		else if (!bHasWarnedMissingMasteryTotalSubsystemOnDisplay)
-		{
-			bHasWarnedMissingMasteryTotalSubsystemOnDisplay = true;
-			UE_LOG(LogTemp, Warning,
-				TEXT("UMainMenuWidget::RefreshMasteryDisplayText: no UCrowdMasteryTotalSubsystem available on '%s' - mastery display will show 0 instead of the real accumulated total."),
-				*GetNameSafe(this));
-		}
-	}
-
-	FNumberFormattingOptions NoGrouping;
-	NoGrouping.SetUseGrouping(false);
-	MasteryDisplayText->SetText(FText::Format(
-		NSLOCTEXT("MainMenuWidget", "CrowdMasteryTotalFormat", "CROWD MASTERY: {0}"),
-		FText::AsNumber(AccumulatedTotal, &NoGrouping)));
-}
-
-FText UMainMenuWidget::GetMasteryDisplayText() const
-{
-	return MasteryDisplayText ? MasteryDisplayText->GetText() : FText::GetEmpty();
-}
-
 void UMainMenuWidget::HandleQuitClicked()
 {
 	// UKismetSystemLibrary::QuitGame's underlying PlayerController->ConsoleCommand("quit")
@@ -265,4 +256,115 @@ void UMainMenuWidget::HandleLevelSelected(FName MapName)
 	{
 		UGameplayStatics::OpenLevel(this, MapName);
 	}
+}
+
+void UMainMenuWidget::RefreshMasteryResetVisibility()
+{
+	if (!MasteryResetButton || !MasteryResetConfirmButton || !MasteryResetCancelButton)
+	{
+		return;
+	}
+	MasteryResetButton->SetVisibility(bMasteryResetConfirmPending ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	MasteryResetConfirmButton->SetVisibility(bMasteryResetConfirmPending ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	MasteryResetCancelButton->SetVisibility(bMasteryResetConfirmPending ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}
+
+void UMainMenuWidget::HandleMasteryResetClicked()
+{
+	bMasteryResetConfirmPending = true;
+	RefreshMasteryResetVisibility();
+}
+
+void UMainMenuWidget::HandleMasteryResetCancelClicked()
+{
+	bMasteryResetConfirmPending = false;
+	RefreshMasteryResetVisibility();
+}
+
+void UMainMenuWidget::HandleMasteryResetConfirmClicked()
+{
+	// Disarm and refresh visibility BEFORE touching the subsystem, so a warning-logging
+	// (or hypothetically slow) reset call can never leave the UI stuck showing
+	// CONFIRM/CANCEL.
+	bMasteryResetConfirmPending = false;
+	RefreshMasteryResetVisibility();
+
+	if (UCrowdMasteryTotalSubsystem* MasterySubsystem = ResolveMasteryTotalSubsystem())
+	{
+		MasterySubsystem->ResetAccumulatedTotal();
+	}
+	// The reset happens while the menu is already on screen, so NativeConstruct()'s
+	// on-show refresh never re-runs - without this the display keeps showing the
+	// pre-reset total until the next menu visit (PR #349 pass-2 escalation: the
+	// issue's 4th AC, unbuildable until #328/PR #350 landed the display itself).
+	RefreshMasteryDisplayText();
+}
+
+void UMainMenuWidget::RefreshMasteryDisplayText()
+{
+	if (!MasteryDisplayText)
+	{
+		return;
+	}
+
+	// Deliberately does NOT call ResolveMasteryTotalSubsystem(): that resolver's
+	// warn-on-missing log is scoped to the reset flow, where a missing subsystem
+	// means a real user-initiated reset attempt silently failed. Here, a missing
+	// GameInstance just means "no GameInstance yet" (every KrowdKontrol.Unit.* test
+	// that constructs this widget via CreateNewMap() hits this, not just mastery
+	// tests) - 0 is the correct, unremarkable default and stays unlogged. A present
+	// GameInstance with no resolvable subsystem is a real failure, though, and is
+	// warned once below (bHasWarnedMissingMasteryTotalSubsystemOnDisplay, issue #328)
+	// - otherwise it's indistinguishable from a legitimate new-player zero.
+	int32 AccumulatedTotal = 0;
+	if (CachedMasteryTotalSubsystem)
+	{
+		AccumulatedTotal = CachedMasteryTotalSubsystem->GetAccumulatedTotal();
+	}
+	else if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UCrowdMasteryTotalSubsystem* MasterySubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>())
+		{
+			CachedMasteryTotalSubsystem = MasterySubsystem;
+			AccumulatedTotal = MasterySubsystem->GetAccumulatedTotal();
+		}
+		else if (!bHasWarnedMissingMasteryTotalSubsystemOnDisplay)
+		{
+			bHasWarnedMissingMasteryTotalSubsystemOnDisplay = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("UMainMenuWidget::RefreshMasteryDisplayText: no UCrowdMasteryTotalSubsystem available on '%s' - mastery display will show 0 instead of the real accumulated total."),
+				*GetNameSafe(this));
+		}
+	}
+
+	FNumberFormattingOptions NoGrouping;
+	NoGrouping.SetUseGrouping(false);
+	MasteryDisplayText->SetText(FText::Format(
+		NSLOCTEXT("MainMenuWidget", "CrowdMasteryTotalFormat", "CROWD MASTERY: {0}"),
+		FText::AsNumber(AccumulatedTotal, &NoGrouping)));
+}
+
+FText UMainMenuWidget::GetMasteryDisplayText() const
+{
+	return MasteryDisplayText ? MasteryDisplayText->GetText() : FText::GetEmpty();
+}
+
+UCrowdMasteryTotalSubsystem* UMainMenuWidget::ResolveMasteryTotalSubsystem()
+{
+	if (CachedMasteryTotalSubsystem)
+	{
+		return CachedMasteryTotalSubsystem;
+	}
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		CachedMasteryTotalSubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>();
+	}
+	if (!CachedMasteryTotalSubsystem && !bHasWarnedMissingMasteryTotalSubsystem)
+	{
+		bHasWarnedMissingMasteryTotalSubsystem = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UMainMenuWidget::ResolveMasteryTotalSubsystem: no UCrowdMasteryTotalSubsystem available on '%s' - Crowd Mastery reset will not run."),
+			*GetNameSafe(this));
+	}
+	return CachedMasteryTotalSubsystem;
 }

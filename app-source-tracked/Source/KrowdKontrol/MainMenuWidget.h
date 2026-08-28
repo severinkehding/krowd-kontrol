@@ -9,6 +9,7 @@ class UTextBlock;
 class UButton;
 class USizeBox;
 class UVerticalBox;
+class UHorizontalBox;
 class UMainMenuLevelButtonWidget;
 class UCrowdMasteryTotalSubsystem;
 
@@ -30,6 +31,7 @@ class KROWDKONTROL_API UMainMenuWidget : public UUserWidget
 	friend class FKrowdKontrolMainMenuWidgetTest;
 	friend class FKrowdKontrolReservedGameplayColoursTest;
 	friend class FKrowdKontrolMainMenuLevelSelectTest;
+	friend class FKrowdKontrolMainMenuMasteryResetTest;
 
 public:
 	// Fills the reserved mastery-display anchor (docs/prd-crowd-mastery-persistence.md)
@@ -80,10 +82,38 @@ private:
 	UFUNCTION()
 	void HandleLevelSelected(FName MapName);
 
+<<<<<<< HEAD
+	// Toggles which of MasteryResetButton vs. (MasteryResetConfirmButton,
+	// MasteryResetCancelButton) is visible, based on bMasteryResetConfirmPending.
+	// Called once at the end of BuildWidgetTree() to establish the initial
+	// RESET-only state, and again after every click handler below.
+	void RefreshMasteryResetVisibility();
+
+	// Bound to MasteryResetButton->OnClicked. Arms the confirm step - does not
+	// touch UCrowdMasteryTotalSubsystem.
+	UFUNCTION()
+	void HandleMasteryResetClicked();
+
+	// Bound to MasteryResetCancelButton->OnClicked. Disarms the confirm step -
+	// does not touch UCrowdMasteryTotalSubsystem. Leaving the total untouched on
+	// cancel is this issue's own AC.
+	UFUNCTION()
+	void HandleMasteryResetCancelClicked();
+
+	// Bound to MasteryResetConfirmButton->OnClicked. The only path that calls
+	// ResetAccumulatedTotal() - disarms the confirm step either way.
+	UFUNCTION()
+	void HandleMasteryResetConfirmClicked();
+
+	// Mirrors UPostRunSummaryWidget::ResolveLevelClearTimeSubsystem() exactly -
+	// see MainMenuWidget.cpp for the identical lazy-cache/warn-once shape.
+	UCrowdMasteryTotalSubsystem* ResolveMasteryTotalSubsystem();
+=======
 	// Reads the current total from UCrowdMasteryTotalSubsystem and formats it into
 	// MasteryDisplayText. Called from BuildWidgetTree() at construction time, and again
 	// from NativeConstruct() above every time the menu becomes visible.
 	void RefreshMasteryDisplayText();
+>>>>>>> origin/main
 
 	UPROPERTY()
 	TObjectPtr<UBorder> RootBorder;
@@ -104,6 +134,46 @@ private:
 	UPROPERTY()
 	TObjectPtr<USizeBox> MasteryDisplayAnchor;
 
+<<<<<<< HEAD
+	// Reset control for the Crowd Mastery total (docs/prd-crowd-mastery-persistence.md
+	// REQ-3, issue #329) - a RESET button that swaps to a CONFIRM RESET/CANCEL pair on
+	// click, since resetting the total is destructive and this codebase has no
+	// modal/popup widget machinery to build a real confirm dialog on (see
+	// MainMenuWidget.cpp for the rejected alternatives). All three buttons are
+	// siblings in this one row; only one state is visible at a time.
+	UPROPERTY()
+	TObjectPtr<UHorizontalBox> MasteryResetBox;
+
+	UPROPERTY()
+	TObjectPtr<UButton> MasteryResetButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> MasteryResetButtonLabel;
+
+	UPROPERTY()
+	TObjectPtr<UButton> MasteryResetConfirmButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> MasteryResetConfirmButtonLabel;
+
+	UPROPERTY()
+	TObjectPtr<UButton> MasteryResetCancelButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> MasteryResetCancelButtonLabel;
+
+	// Test-observability seam (mirrors LastSelectedLevelMapName's precedent) - true
+	// while the CONFIRM/CANCEL row is showing instead of the RESET button.
+	UPROPERTY()
+	bool bMasteryResetConfirmPending = false;
+
+	// Lazy cache + warn-once, mirroring UPostRunSummaryWidget::
+	// CachedLevelClearTimeSubsystem/bHasWarnedMissingLevelClearTimeSubsystem exactly.
+	UPROPERTY()
+	TObjectPtr<UCrowdMasteryTotalSubsystem> CachedMasteryTotalSubsystem;
+
+	bool bHasWarnedMissingMasteryTotalSubsystem = false;
+=======
 	// The Crowd Mastery total display (issue #328, docs/prd-crowd-mastery-persistence.md
 	// REQ-2) - built and slotted into MasteryDisplayAnchor via SetMasteryDisplayContent()
 	// inside BuildWidgetTree() itself, then populated by RefreshMasteryDisplayText().
@@ -127,6 +197,7 @@ private:
 	// resolver/flag to avoid coupling this PR to that flow's own test file.
 	UPROPERTY()
 	bool bHasWarnedMissingMasteryTotalSubsystemOnDisplay = false;
+>>>>>>> origin/main
 
 	// Container for the data-driven level-select list (issue #325) - one
 	// UMainMenuLevelButtonWidget child per shipped level, populated by
