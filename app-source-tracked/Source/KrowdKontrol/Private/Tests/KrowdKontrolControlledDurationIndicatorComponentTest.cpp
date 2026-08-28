@@ -230,6 +230,19 @@ bool FKrowdKontrolControlledDurationIndicatorComponentTest::RunTest(const FStrin
 						TestTrue(TEXT("(i) The bonused bar's depth (Y scale) should be visibly larger than the non-bonused bar's, at the same FillFraction convention"),
 							WorldIndicator->FillMeshComponent->GetRelativeScale3D().Y > NonBonusedIndicator->FillMeshComponent->GetRelativeScale3D().Y);
 					}
+
+					// (j) Same-instance transition guard: bIsColourMatchBonused must not stay
+					// "stuck" true once a later, non-bonused application replaces a bonused one
+					// on the same component - Show() assigns the flag unconditionally today, but
+					// nothing else in this file would catch a future change making that
+					// assignment conditional/sticky, which would silently keep rendering a
+					// misleading colour-match signal (the exact perception failure issue #357
+					// was filed over).
+					WorldBomber->TickControlledDuration(WorldBomber->GetRemainingControlledSeconds()); // exhaust Fear -> Alert
+					WorldBomber->TickCheckDetection(ZeroDistanceLocation); // no-op: already Alert
+					WorldBomber->ReceiveControl(EAbilitySlot::Stun); // Bomber has no override for Stun -> not bonused
+					TestFalse(TEXT("(j) bIsColourMatchBonused should flip back to false when a later application on the same component is not bonused"),
+						WorldIndicator->bIsColourMatchBonused);
 				}
 			}
 		}
