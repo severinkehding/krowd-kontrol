@@ -18,6 +18,21 @@ void ULevelBriefingSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		{
 			LifecycleSubsystem->OnLevelBegin.AddDynamic(this, &ULevelBriefingSubsystem::HandleLevelBegin);
 		}
+
+		// Real game worlds (PIE/packaged) load the shipped LevelBriefingTable content
+		// asset from its fixed path here - mirrors
+		// ULevelSequenceSubsystem::Initialize()'s identical auto-load, gated the same
+		// way so Automation's CreateNewMap() Editor Worlds (World->IsGameWorld() ==
+		// false there) never touch this and keep constructing the subsystem with
+		// LevelBriefingTable unset, matching every existing
+		// KrowdKontrolLevelBriefingSubsystemTest.cpp case that builds its own in-code
+		// table. Subsystems have no per-instance Details panel to hand-author this
+		// reference (issue #356's e2e gap - real menu-entry travel left players with no
+		// briefing card).
+		if (!LevelBriefingTable && World->IsGameWorld())
+		{
+			LevelBriefingTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Data/DT_LevelBriefingTable.DT_LevelBriefingTable"));
+		}
 	}
 }
 

@@ -104,7 +104,13 @@ bool FKrowdKontrolPIEMenuEntryBriefingTest::RunTest(const FString& Parameters)
 	// (and therefore before ULevelBriefingSubsystem::Initialize()/HandleLevelBegin()
 	// run for that world) - the standard UE pattern for injecting test-only state into
 	// a world a test doesn't construct directly. Self-removes once it has injected
-	// into the destination world so it can't leak into a later test's world load.
+	// into the destination world, AND unconditionally removed again by the final
+	// cleanup latent command below - if the sequence times out before L_Level01 ever
+	// loads, the lambda's own self-removal never runs, and this delegate would
+	// otherwise stay registered for the rest of the Automation process and silently
+	// inject into every later test's L_Level01 load. FDelegateHandle::Remove() on an
+	// already-removed/never-added handle is a safe no-op, so both removal sites can
+	// coexist.
 	TSharedRef<FDelegateHandle> InjectorHandle = MakeShared<FDelegateHandle>();
 	*InjectorHandle = FWorldDelegates::OnPostWorldInitialization.AddLambda(
 		[InjectorHandle](UWorld* NewWorld, const UWorld::InitializationValues)
@@ -160,6 +166,17 @@ bool FKrowdKontrolPIEMenuEntryBriefingTest::RunTest(const FString& Parameters)
 		20.0f));
 
 	ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
+
+	// Unconditional cleanup - runs regardless of whether the lambda above ever fired
+	// (both FUntilCommand timeout branches above return true, so the sequence always
+	// reaches this point). Removing an already-self-removed handle is a safe no-op.
+	ADD_LATENT_AUTOMATION_COMMAND(FFunctionLatentCommand(
+		[InjectorHandle]() -> bool
+		{
+			FWorldDelegates::OnPostWorldInitialization.Remove(*InjectorHandle);
+			return true;
+		}));
+
 	return true;
 }
 

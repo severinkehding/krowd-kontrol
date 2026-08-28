@@ -17,7 +17,10 @@ class UTextBlock;
 // build shape and UOnScreenPromptWidget's self-driven countdown/dismiss idiom, but
 // with its own 8s cap and, unlike OnScreenPromptWidget's "never pause, never
 // intercept input" contract, this widget's safe state comes from pausing the world
-// (ShowBriefing()/DismissBriefing() call UGameplayStatics::SetGamePaused()).
+// (ShowBriefing()/DismissBriefing() call UGameplayStatics::SetGamePaused()) - for
+// real players only; both calls are GIsAutomationTesting-guarded no-ops under the
+// Automation Framework, since other KrowdKontrol.PIE.* tests drive real per-frame AI
+// ticking that a paused World would freeze (see BriefingCardWidget.cpp).
 UCLASS()
 class KROWDKONTROL_API UBriefingCardWidget : public UUserWidget
 {
