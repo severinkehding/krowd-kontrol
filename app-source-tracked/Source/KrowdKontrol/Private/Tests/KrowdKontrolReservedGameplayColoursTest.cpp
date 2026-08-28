@@ -30,6 +30,9 @@
 #include "OnScreenPromptWidget.h"
 #include "BriefingCardWidget.h"
 #include "MainMenuWidget.h"
+#include "MainMenuLevelButtonWidget.h"
+#include "LevelSequenceSubsystem.h"
+#include "LevelSequenceData.h"
 #include "AbilityTooltipWidget.h"
 #include "AbilityData.h"
 #include "Tests/AutomationEditorCommon.h"
@@ -251,6 +254,19 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 	// (8) Main menu widget audit (issue #324) - root border and title/Quit-label text
 	// colours, mirroring the other widgets' audits above. MasteryDisplayAnchor has no
 	// colour of its own (an empty USizeBox, no border/brush) - nothing to audit there.
+	// Extended for issue #325: inject a single-row LevelSequenceTable before
+	// construction so LevelSelectButtons is non-empty, then audit the first button's
+	// label colour the same way QuitButtonLabel already is above.
+	if (ULevelSequenceSubsystem* SequenceSubsystem = World->GetSubsystem<ULevelSequenceSubsystem>())
+	{
+		UDataTable* Table = NewObject<UDataTable>();
+		Table->RowStruct = FLevelSequenceRow::StaticStruct();
+		FLevelSequenceRow Row;
+		Row.NextLevelMapName = NAME_None;
+		Table->AddRow(FName(TEXT("L_Level01")), Row);
+		SequenceSubsystem->LevelSequenceTable = Table;
+	}
+
 	UMainMenuWidget* MenuWidget =
 		CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
 	if (TestNotNull(TEXT("UMainMenuWidget should construct"), MenuWidget))
@@ -261,6 +277,12 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			AllReserved.Contains(MenuWidget->TitleText->GetColorAndOpacity().GetSpecifiedColor()));
 		TestFalse(TEXT("Main menu Quit button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->QuitButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
+
+		if (MenuWidget->LevelSelectButtons.Num() > 0)
+		{
+			TestFalse(TEXT("Main menu level-select button label colour should not collide with a reserved gameplay colour"),
+				AllReserved.Contains(MenuWidget->LevelSelectButtons[0]->LevelButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
+		}
 	}
 
 	return true;

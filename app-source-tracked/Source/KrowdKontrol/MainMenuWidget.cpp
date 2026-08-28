@@ -1,5 +1,7 @@
 #include "MainMenuWidget.h"
 #include "HUDChromeColours.h"
+#include "MainMenuLevelButtonWidget.h"
+#include "LevelSequenceSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelSlot.h"
@@ -8,6 +10,8 @@
 #include "Components/Button.h"
 #include "Components/SizeBox.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
 
 void UMainMenuWidget::NativeOnInitialized()
 {
@@ -45,6 +49,7 @@ void UMainMenuWidget::EnsureWidgetTreeBuilt()
 			WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient);
 		}
 		BuildWidgetTree();
+		PopulateLevelSelectButtons();
 	}
 }
 
@@ -68,6 +73,9 @@ void UMainMenuWidget::BuildWidgetTree()
 	TitleText->SetText(NSLOCTEXT("MainMenuWidget", "Title", "KROWD KONTROL"));
 	Layout->AddChildToVerticalBox(TitleText);
 
+	LevelSelectBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MainMenuLevelSelectBox"));
+	Layout->AddChildToVerticalBox(LevelSelectBox);
+
 	// Reserved, empty region for the Crowd Mastery display PRD - fixed-size so it
 	// occupies real layout space today even though nothing has called
 	// SetMasteryDisplayContent() yet (an empty USizeBox with no override collapses to
@@ -86,6 +94,35 @@ void UMainMenuWidget::BuildWidgetTree()
 	QuitButton->SetContent(QuitButtonLabel); // UButton is a UContentWidget, not a UPanelWidget - SetContent(), not AddChild().
 
 	Layout->AddChildToVerticalBox(QuitButton);
+}
+
+void UMainMenuWidget::PopulateLevelSelectButtons()
+{
+	if (!LevelSelectBox)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	ULevelSequenceSubsystem* SequenceSubsystem = World ? World->GetSubsystem<ULevelSequenceSubsystem>() : nullptr;
+	if (!SequenceSubsystem)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UMainMenuWidget::PopulateLevelSelectButtons: no ULevelSequenceSubsystem available on '%s' - level-select list will be empty."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	for (const FName& LevelMapName : SequenceSubsystem->GetShippedLevelMapNames())
+	{
+		UMainMenuLevelButtonWidget* LevelButtonWidget = WidgetTree->ConstructWidget<UMainMenuLevelButtonWidget>(
+			UMainMenuLevelButtonWidget::StaticClass(),
+			*FString::Printf(TEXT("MainMenuLevelButton_%s"), *LevelMapName.ToString()));
+		LevelButtonWidget->SetLevelMapName(LevelMapName);
+		LevelButtonWidget->OnLevelSelected.AddDynamic(this, &UMainMenuWidget::HandleLevelSelected);
+		LevelSelectBox->AddChildToVerticalBox(LevelButtonWidget);
+		LevelSelectButtons.Add(LevelButtonWidget);
+	}
 }
 
 void UMainMenuWidget::SetMasteryDisplayContent(UWidget* Content)
@@ -130,4 +167,26 @@ void UMainMenuWidget::HandleQuitClicked()
 	// CreateWidget<T>(World, ...) test construction, in which case QuitGame() is a
 	// guaranteed no-op (KismetSystemLibrary.cpp) - safe to call directly from a test.
 	UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, false);
+}
+
+void UMainMenuWidget::HandleLevelSelected(FName MapName)
+{
+	if (MapName == NAME_None)
+	{
+		return;
+	}
+
+	LastSelectedLevelMapName = MapName;
+
+	// Real map travel only makes sense in an actual game world (PIE or packaged) -
+	// never in the Editor-type Worlds FAutomationEditorCommonUtils::CreateNewMap()
+	// returns for KrowdKontrol.Unit.* tests, where OpenLevel would try to travel a
+	// World that was never loaded from a real map package, hanging the Automation
+	// run (same hazard ULevelSequenceSubsystem::AdvanceToNextLevel() documents,
+	// issue #172).
+	UWorld* World = GetWorld();
+	if (World && World->IsGameWorld())
+	{
+		UGameplayStatics::OpenLevel(this, MapName);
+	}
 }

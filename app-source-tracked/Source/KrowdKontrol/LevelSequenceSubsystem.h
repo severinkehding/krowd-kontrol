@@ -75,6 +75,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Level Sequence")
 	void AdvanceToNextLevel();
 
+	// Returns every level map name configured in LevelSequenceTable (one row per
+	// shipped level, keyed by the level's own map name) - the shared level-sequence
+	// authority both the main menu's level-select list (issue #325) and the post-run
+	// NEXT LEVEL button (issue #321, ComputeNextLevelMapName()/AdvanceToNextLevel()
+	// above) read from. Row order matches LevelSequenceTable's authored/insertion
+	// order (UDataTable::GetRowNames()). Empty if LevelSequenceTable is unset.
+	UFUNCTION(BlueprintPure, Category = "Level Sequence")
+	TArray<FName> GetShippedLevelMapNames() const;
+
 	// Recorded unconditionally at the top of AdvanceToNextLevel(), before its
 	// IsGameWorld() guard - the real UGameplayStatics::OpenLevel() call stays
 	// unreachable in Automation's CreateNewMap() Editor Worlds (issue #172), but this

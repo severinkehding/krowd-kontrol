@@ -71,6 +71,11 @@ void ULevelSequenceSubsystem::HandleLevelClear()
 	}
 }
 
+TArray<FName> ULevelSequenceSubsystem::GetShippedLevelMapNames() const
+{
+	return LevelSequenceTable ? LevelSequenceTable->GetRowNames() : TArray<FName>();
+}
+
 void ULevelSequenceSubsystem::AdvanceToNextLevel()
 {
 	const FName NextLevelMapName = ComputeNextLevelMapName();
