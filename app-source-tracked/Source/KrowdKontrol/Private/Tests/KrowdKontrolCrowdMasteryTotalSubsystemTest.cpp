@@ -15,6 +15,7 @@
 #include "CrowdMasteryTotalSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
+#include "LevelClearTimeSaveGame.h"
 #include "LevelClearTimeSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -30,6 +31,20 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Paramet
 	// KrowdKontrolLevelClearTimeSubsystemTest.cpp also uses - delete any leftover save
 	// data from a prior interrupted run before asserting starting state.
 	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);
+
+	// Pre-populate the shared save object with unrelated stats before this subsystem
+	// ever touches the slot, mirroring KrowdKontrolLevelClearTimeSubsystemTest.cpp's
+	// own "sibling field survives unrelated writes" check added for issue #174 -
+	// proves PersistAccumulatedTotal()'s load-then-mutate-then-save discipline
+	// doesn't silently wipe BestClearTimesByLevel/BestCrowdMasteryByLevel.
+	const FName SiblingFieldLevelID(TEXT("KrowdKontrol.Unit.CrowdMasteryTotalSubsystem.SeedLevel"));
+	{
+		ULevelClearTimeSaveGame* SeedSaveGame = CastChecked<ULevelClearTimeSaveGame>(
+			UGameplayStatics::CreateSaveGameObject(ULevelClearTimeSaveGame::StaticClass()));
+		SeedSaveGame->BestClearTimesByLevel.Add(SiblingFieldLevelID, 42.0f);
+		SeedSaveGame->BestCrowdMasteryByLevel.Add(SiblingFieldLevelID, 7);
+		UGameplayStatics::SaveGameToSlot(SeedSaveGame, ULevelClearTimeSubsystem::SaveSlotName, 0);
+	}
 
 	UGameInstance* GameInstanceOuter = NewObject<UGameInstance>();
 	UCrowdMasteryTotalSubsystem* Subsystem = NewObject<UCrowdMasteryTotalSubsystem>(GameInstanceOuter);
@@ -87,6 +102,50 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Paramet
 	SecondSessionSubsystem->LoadPersistedTotal();
 	TestEqual(TEXT("LoadPersistedTotal should read back the total the first session's last write-through persisted"),
 		SecondSessionSubsystem->GetAccumulatedTotal(), 2);
+
+	// Confirm the seeded sibling fields survived every PersistAccumulatedTotal()
+	// write-through this test triggered above - the same property
+	// KrowdKontrolLevelClearTimeSubsystemTest.cpp:186-193 checks for issue #174.
+	if (USaveGame* Loaded = UGameplayStatics::LoadGameFromSlot(ULevelClearTimeSubsystem::SaveSlotName, 0))
+	{
+		if (ULevelClearTimeSaveGame* Typed = Cast<ULevelClearTimeSaveGame>(Loaded))
+		{
+			const float* SeedClearTime = Typed->BestClearTimesByLevel.Find(SiblingFieldLevelID);
+			TestTrue(TEXT("Seeded BestClearTimesByLevel entry should still exist after Crowd Mastery total writes"), SeedClearTime != nullptr);
+			if (SeedClearTime)
+			{
+				TestEqual(TEXT("Seeded BestClearTimesByLevel value should be unchanged by Crowd Mastery total writes"), *SeedClearTime, 42.0f);
+			}
+			const int32* SeedBest = Typed->BestCrowdMasteryByLevel.Find(SiblingFieldLevelID);
+			TestTrue(TEXT("Seeded BestCrowdMasteryByLevel entry should still exist after Crowd Mastery total writes"), SeedBest != nullptr);
+			if (SeedBest)
+			{
+				TestEqual(TEXT("Seeded BestCrowdMasteryByLevel value should be unchanged by Crowd Mastery total writes"), *SeedBest, 7);
+			}
+		}
+	}
+
+	// LoadOrCreateSaveGame()'s wrong-type fallback branch (test-coverage review LOW
+	// finding): saving a plain USaveGame (not a ULevelClearTimeSaveGame) to the slot
+	// should make LoadOrCreateSaveGame() fall through to CreateSaveGameObject() rather
+	// than crash on the failed Cast, leaving LoadPersistedTotal() at a safe 0. The
+	// sibling "LoadGameFromSlot returns nullptr despite DoesSaveGameExist reporting
+	// true" branch has no cheap way to force from a test (would need a corrupted file
+	// or a fake ISaveGameSystem), so it's left for the follow-up issue the review
+	// suggested rather than faked here.
+	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);
+	{
+		USaveGame* WrongTypeSaveGame = UGameplayStatics::CreateSaveGameObject(USaveGame::StaticClass());
+		UGameplayStatics::SaveGameToSlot(WrongTypeSaveGame, ULevelClearTimeSubsystem::SaveSlotName, 0);
+	}
+	UGameInstance* WrongTypeGameInstanceOuter = NewObject<UGameInstance>();
+	UCrowdMasteryTotalSubsystem* WrongTypeSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(WrongTypeGameInstanceOuter);
+	if (TestNotNull(TEXT("UCrowdMasteryTotalSubsystem should construct for the wrong-type fallback check"), WrongTypeSubsystem))
+	{
+		WrongTypeSubsystem->LoadPersistedTotal();
+		TestEqual(TEXT("LoadPersistedTotal should fall back to 0 when the save slot holds a non-ULevelClearTimeSaveGame object, not crash"),
+			WrongTypeSubsystem->GetAccumulatedTotal(), 0);
+	}
 
 	// Clean up all real on-disk state this test created, so a repeat run starts
 	// from the same clean slate this run began with - same cleanup obligation

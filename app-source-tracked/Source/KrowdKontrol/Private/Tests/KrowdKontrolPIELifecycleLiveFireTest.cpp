@@ -49,6 +49,7 @@
 #include "UObject/StrongObjectPtr.h"
 #include "LevelLifecycleSubsystem.h"
 #include "LevelClearTimeSubsystem.h"
+#include "LevelClearTimeSaveGame.h"
 #include "CrowdMasteryTotalSubsystem.h"
 #include "CrowdMasterySubsystem.h"
 #include "Tests/LevelLifecycleTestListener.h"
@@ -356,6 +357,19 @@ bool FKrowdKontrolPIELifecycleLiveFireTest::RunTest(const FString& Parameters)
 				// chain (GetGameInstance() is null in CreateNewMap() worlds).
 				TestTrue(TEXT("The accumulated Crowd Mastery total should be greater than zero after a real level clear"),
 					MasteryTotalSubsystem->GetAccumulatedTotal() > 0);
+
+				// In-memory state alone doesn't prove REQ-4 (persistence) actually happened -
+				// DepositRunMastery() only logs a warning and continues if SaveGameToSlot
+				// fails, so confirm the write actually reached disk, same as the clear-time
+				// check above does.
+				if (USaveGame* MasteryLoaded = UGameplayStatics::LoadGameFromSlot(ULevelClearTimeSubsystem::SaveSlotName, 0))
+				{
+					if (ULevelClearTimeSaveGame* MasteryTyped = Cast<ULevelClearTimeSaveGame>(MasteryLoaded))
+					{
+						TestTrue(TEXT("AccumulatedCrowdMasteryTotal should be persisted to disk after a real level clear, not just held in memory"),
+							MasteryTyped->AccumulatedCrowdMasteryTotal > 0);
+					}
+				}
 			}
 			return true;
 		},

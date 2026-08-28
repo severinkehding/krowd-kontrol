@@ -48,6 +48,36 @@ diverge from the in-memory authority.
 `UNIT_PASSED tests=125`, `PIE_PASSED tests=6`, `UE_AUTOMATION_OK passed=1 total=1`,
 `E2E_PASSED steps=1`.
 
+## Post-review test hardening
+
+A review pass on this PR flagged that neither new test proved
+`PersistAccumulatedTotal()`'s load-before-mutate discipline actually protects
+`BestClearTimesByLevel`/`BestCrowdMasteryByLevel` on the shared save object (the exact
+risk this issue's own investigation named as the top correctness concern), nor that the
+PIE test's assertion reached disk rather than just in-memory state. Both gaps are now
+closed:
+
+- `KrowdKontrol.Unit.CrowdMasteryTotalSubsystem` seeds the shared save slot with
+  unrelated `BestClearTimesByLevel`/`BestCrowdMasteryByLevel` entries before any
+  deposit, then re-reads them after the full deposit/reset/persist/reload sequence to
+  prove they survive untouched - mirroring the same "sibling field survives unrelated
+  writes" check issue #174 added to `KrowdKontrolLevelClearTimeSubsystemTest.cpp`. The
+  same test also now covers `LoadOrCreateSaveGame()`'s wrong-type fallback branch
+  (saving a plain `USaveGame` to the slot and confirming `LoadPersistedTotal()` falls
+  back to 0 instead of crashing on the failed cast).
+- `KrowdKontrol.PIE.LifecycleLiveFire`'s new assertion now also loads the save slot
+  back off disk and checks `AccumulatedCrowdMasteryTotal > 0` there, not just the live
+  subsystem's in-memory getter - matching the pre-existing `DoesSaveGameExist` pattern
+  the adjacent clear-time assertion already follows.
+
+`LoadOrCreateSaveGame()`'s other fallback branch (`LoadGameFromSlot` returning null
+despite `DoesSaveGameExist` reporting true) was left untested - there is no cheap way
+to force it without a corrupted save file or a fake `ISaveGameSystem`, and the review
+flagged it as LOW/non-blocking.
+
+Re-validated: `python harness/ci.py --mode full` -> `GATE_OK`,
+`UNIT_PASSED tests=125`, `PIE_PASSED tests=6`.
+
 ## Deviation from the investigation plan
 
 The plan's Task 5 assumed `KrowdKontrol.PIE.LifecycleLiveFire`'s existing drive loop
