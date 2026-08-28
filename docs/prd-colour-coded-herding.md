@@ -49,7 +49,7 @@ pole, done.
 - Status/effect indication (Controlled bar etc.) must remain readable on top
   of the new tint.
 
-### REQ-3: Pens/poles wear the chain colour of the type they accept (P0)
+### REQ-3: Pens/poles wear the chain colour of the type they accept (P0) — ✅ implemented, issue #317
 - Each type-keyed `ATargetZone` pole/marker renders solidly in its accepted
   type's chain colour (emissive or lit so it reads across the room).
 - A zone that accepts any type (if any such zone remains) uses the existing

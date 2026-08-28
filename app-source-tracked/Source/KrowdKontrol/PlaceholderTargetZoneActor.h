@@ -9,6 +9,8 @@
 class UStaticMeshComponent;
 class UPointLightComponent;
 class USceneComponent;
+class UMaterialInstanceDynamic;
+class UMaterialInterface;
 
 // Minimal placeholder-first actor (MISSION.md Quality Standards): a flattened mesh
 // disc plus a point light standing in for a world-space target-zone beacon, before
@@ -58,6 +60,30 @@ public:
 	// Stun cast of a session - mirrors AEnemyBase::ReceiveControl()'s "called
 	// externally by the cast component" idiom (see EnemyBase.h:98-99).
 	void IntensifyBeacon();
+
+	// Overrides this beacon's default placeholder-green tint with a type-keyed pen's
+	// chain colour (docs/prd-colour-coded-herding.md REQ-3, issue #317). Called only by
+	// ARoomActor::EnsureBankingZonesWired() for zones with bAcceptAnyEnemyType == false
+	// - never called for any-type zones, which must keep this class's constructor
+	// default green (MISSION.md Hard Invariant 3: an any-type marker must never wear
+	// one of the five reserved colours). Idempotent/safe to call more than once with the
+	// same or a different colour - lazily creates ChainColourMaterialInstance once, then
+	// just re-applies the parameter, same "safe to call repeatedly" contract every other
+	// lazy-init method in this module documents (EnsureBeaconHierarchy,
+	// InitializeMarkerVisual, InitializeIndicatorVisual).
+	UFUNCTION(BlueprintCallable, Category = "Target Zone")
+	void ApplyChainColour(FLinearColor Colour);
+
+	// Reflected state (mirrors UControlledDurationIndicatorComponent::CurrentColour) -
+	// the Automation test, and any future Unreal MCP-driven E2E holdout (which per this
+	// project's established convention can only read reflected UPROPERTY state, not GPU
+	// pixels), asserts against this directly rather than any rendered output. Stays at
+	// the default (Black) for any-type zones, which never call ApplyChainColour().
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
+	FLinearColor CurrentChainColour = FLinearColor::Black;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Target Zone")
+	TObjectPtr<UMaterialInstanceDynamic> ChainColourMaterialInstance;
 
 protected:
 	// Self-heals actors placed in a level before this PR's component-hierarchy change

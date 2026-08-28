@@ -6,6 +6,7 @@
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 APlaceholderTargetZoneActor::APlaceholderTargetZoneActor()
 {
@@ -83,6 +84,45 @@ APlaceholderTargetZoneActor::APlaceholderTargetZoneActor()
 void APlaceholderTargetZoneActor::IntensifyBeacon()
 {
 	BeaconLightComponent->SetIntensity(BeaconIntensifiedIntensity);
+}
+
+void APlaceholderTargetZoneActor::ApplyChainColour(FLinearColor Colour)
+{
+	if (!ChainColourMaterialInstance)
+	{
+		static const TSoftObjectPtr<UMaterialInterface> BaseMaterialSoftPtr(
+			FSoftObjectPath(TEXT("/Game/_Placeholder/Abilities/M_AbilityIndicator.M_AbilityIndicator")));
+		UMaterialInterface* BaseMaterial = BaseMaterialSoftPtr.LoadSynchronous();
+		if (!BaseMaterial)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("APlaceholderTargetZoneActor: failed to load placeholder material '%s' on '%s' - pole will keep its default tint."),
+				*BaseMaterialSoftPtr.ToString(), *GetNameSafe(this));
+			return;
+		}
+		ChainColourMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		if (!ChainColourMaterialInstance)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("APlaceholderTargetZoneActor: UMaterialInstanceDynamic::Create() returned null on '%s' - pole will keep its default tint."),
+				*GetNameSafe(this));
+			return;
+		}
+		if (BeaconMeshComponent)
+		{
+			BeaconMeshComponent->SetMaterial(0, ChainColourMaterialInstance);
+		}
+		if (BeaconColumnMeshComponent)
+		{
+			BeaconColumnMeshComponent->SetMaterial(0, ChainColourMaterialInstance);
+		}
+	}
+	ChainColourMaterialInstance->SetVectorParameterValue(TEXT("Colour"), Colour);
+	CurrentChainColour = Colour;
+	if (BeaconLightComponent)
+	{
+		BeaconLightComponent->SetLightColor(Colour);
+	}
 }
 
 void APlaceholderTargetZoneActor::PostInitializeComponents()
