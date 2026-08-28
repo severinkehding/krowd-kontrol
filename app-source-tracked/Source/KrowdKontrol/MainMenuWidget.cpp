@@ -198,7 +198,7 @@ void UMainMenuWidget::RefreshMasteryDisplayText()
 
 	MasteryDisplayText->SetText(FText::Format(
 		NSLOCTEXT("MainMenuWidget", "CrowdMasteryTotalFormat", "CROWD MASTERY: {0}"),
-		FText::AsNumber(FMath::Max(0, AccumulatedTotal))));
+		FText::AsNumber(AccumulatedTotal)));
 }
 
 FText UMainMenuWidget::GetMasteryDisplayText() const
