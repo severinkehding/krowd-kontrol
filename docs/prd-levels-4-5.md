@@ -38,7 +38,7 @@ existing final-level routing returns to the main menu (already shipped —
 - Structure test in the KrowdKontrolLevel0NTest lineage (room/zone/density
   assertions via `LevelStructureTestUtils`).
 
-### REQ-2: Level 5 (P0)
+### REQ-2: Level 5 (P0) — ✅ implemented, issue #368 / PR #392
 - Same pattern; strictly exceeds Level 4; Snare unlocks here. Registered
   after Level 4 in the table.
 - As the demo finale, its clear screen exercises the shipped FINISH-RUN →
