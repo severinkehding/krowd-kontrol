@@ -118,7 +118,17 @@ private:
 	// if MasteryTreeTable is unset or NodeRowName does not resolve to a row.
 	bool IsNodeReached(FName NodeRowName) const;
 
+	// Same rule as IsPrerequisiteMet(FName), for callers (TrySpendOnBubble) that
+	// have already resolved Node via FindBubbleAndOwningNode and shouldn't re-scan
+	// MasteryTreeTable to re-derive it.
+	bool IsPrerequisiteMetForNode(const FMasteryTreeNode& Node) const;
+
 	int32 AccumulatedTotal = 0;
 	int32 SpentPoints = 0;
 	TSet<FName> UnlockedBubbleIds;
+
+	// Warn-once guard so a missing/unassigned MasteryTreeTable logs a single
+	// diagnostic instead of spamming on every guarded call - same pattern as
+	// ULevelBriefingSubsystem::bHasWarnedMissingBriefingTable.
+	mutable bool bHasWarnedMissingMasteryTreeTable = false;
 };

@@ -61,6 +61,15 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemSpendTest::RunTest(const FString& Pa
 		return false;
 	}
 
+	// Unset-table fail-safe: every guarded entry point should fail closed, not crash,
+	// while MasteryTreeTable is still unassigned.
+	TestFalse(TEXT("TrySpendOnBubble should fail closed when MasteryTreeTable is unset"),
+		Subsystem->TrySpendOnBubble(FName(TEXT("Root_Bubble0"))));
+	TestFalse(TEXT("IsPrerequisiteMet should return false when MasteryTreeTable is unset"),
+		Subsystem->IsPrerequisiteMet(FName(TEXT("Root_Bubble0"))));
+	TestEqual(TEXT("GetUnlockedBubbles should be empty when MasteryTreeTable is unset"),
+		Subsystem->GetUnlockedBubbles().Num(), 0);
+
 	// Fixture tree: a root node (no prerequisite) and a child node whose prerequisite
 	// is the root, each with 4 bubbles costing 1/2/3/4 points.
 	UDataTable* Table = NewObject<UDataTable>();
@@ -125,6 +134,10 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemSpendTest::RunTest(const FString& Pa
 	// Unknown-bubble rejection.
 	TestFalse(TEXT("Spending on an unknown BubbleId should fail, not crash"),
 		Subsystem->TrySpendOnBubble(FName(TEXT("DoesNotExist"))));
+	TestEqual(TEXT("A rejected unknown-bubble spend should not mutate SpentPoints"), Subsystem->GetSpentPoints(), 5);
+	TestEqual(TEXT("A rejected unknown-bubble spend should not mutate UnlockedBubbles"), Subsystem->GetUnlockedBubbles().Num(), 2);
+	TestFalse(TEXT("IsPrerequisiteMet should return false for an unknown BubbleId"),
+		Subsystem->IsPrerequisiteMet(FName(TEXT("DoesNotExist"))));
 
 	// Full respec.
 	Subsystem->RefundAllAndClearUnlocks();

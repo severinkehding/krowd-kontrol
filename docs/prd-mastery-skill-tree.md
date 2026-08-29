@@ -38,7 +38,7 @@ The structure mirrors Lies of P's P-Organ (operator-supplied screenshots):
 
 ## Requirements
 
-### REQ-1: Tree data model (P0)
+### REQ-1: Tree data model (P0) — ⚠️ partially implemented, issue #371
 - Data-driven definition (DataTable/DataAsset in the established pattern):
   nodes, their 4 skill bubbles, per-bubble point cost, unlock prerequisites
   (parent node reached), phase/tier gating, and the modifier catalog
@@ -48,6 +48,11 @@ The structure mirrors Lies of P's P-Organ (operator-supplied screenshots):
   earned total so display and refund stay honest. Unit-tested: spend,
   insufficient-points rejection, prerequisite rejection, full respec refund,
   persistence round-trip.
+
+  Issue #371 shipped the DataTable-driven model, spend/refund/prerequisite
+  queries, and their unit tests as session-only state — persistence
+  round-trip is explicitly deferred to a follow-up issue (see
+  `app-changelog/issue-371.md`).
 
 ### REQ-2: Tree screen UI (P0)
 - New screen off the main menu ("MASTERY" entry): renders the node/bubble

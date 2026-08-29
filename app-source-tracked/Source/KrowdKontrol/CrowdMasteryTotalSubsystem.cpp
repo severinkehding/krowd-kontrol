@@ -75,11 +75,21 @@ bool UCrowdMasteryTotalSubsystem::FindBubbleAndOwningNode(FName BubbleId, const 
 	OutBubble = nullptr;
 	if (!MasteryTreeTable)
 	{
+		if (!bHasWarnedMissingMasteryTreeTable)
+		{
+			bHasWarnedMissingMasteryTreeTable = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("UCrowdMasteryTotalSubsystem: MasteryTreeTable is unset - all skill-tree spend/prerequisite lookups will fail until it is assigned."));
+		}
 		return false;
 	}
-	for (const TPair<FName, uint8*>& RowPair : MasteryTreeTable->GetRowMap())
+	for (const FName& RowName : MasteryTreeTable->GetRowNames())
 	{
-		const FMasteryTreeNode* Node = reinterpret_cast<const FMasteryTreeNode*>(RowPair.Value);
+		const FMasteryTreeNode* Node = MasteryTreeTable->FindRow<FMasteryTreeNode>(RowName, TEXT("UCrowdMasteryTotalSubsystem::FindBubbleAndOwningNode"));
+		if (!Node)
+		{
+			continue;
+		}
 		for (const FMasterySkillBubble& Bubble : Node->Bubbles)
 		{
 			if (Bubble.BubbleId == BubbleId)
@@ -97,6 +107,12 @@ bool UCrowdMasteryTotalSubsystem::IsNodeReached(FName NodeRowName) const
 {
 	if (!MasteryTreeTable)
 	{
+		if (!bHasWarnedMissingMasteryTreeTable)
+		{
+			bHasWarnedMissingMasteryTreeTable = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("UCrowdMasteryTotalSubsystem: MasteryTreeTable is unset - all skill-tree spend/prerequisite lookups will fail until it is assigned."));
+		}
 		return false;
 	}
 	const FMasteryTreeNode* Node = MasteryTreeTable->FindRow<FMasteryTreeNode>(NodeRowName, TEXT("UCrowdMasteryTotalSubsystem::IsNodeReached"));
@@ -114,6 +130,15 @@ bool UCrowdMasteryTotalSubsystem::IsNodeReached(FName NodeRowName) const
 	return false;
 }
 
+bool UCrowdMasteryTotalSubsystem::IsPrerequisiteMetForNode(const FMasteryTreeNode& Node) const
+{
+	if (Node.ParentNodeId == NAME_None)
+	{
+		return true;
+	}
+	return IsNodeReached(Node.ParentNodeId);
+}
+
 bool UCrowdMasteryTotalSubsystem::IsPrerequisiteMet(FName BubbleId) const
 {
 	const FMasteryTreeNode* Node = nullptr;
@@ -122,11 +147,7 @@ bool UCrowdMasteryTotalSubsystem::IsPrerequisiteMet(FName BubbleId) const
 	{
 		return false;
 	}
-	if (Node->ParentNodeId == NAME_None)
-	{
-		return true;
-	}
-	return IsNodeReached(Node->ParentNodeId);
+	return IsPrerequisiteMetForNode(*Node);
 }
 
 bool UCrowdMasteryTotalSubsystem::TrySpendOnBubble(FName BubbleId)
@@ -141,7 +162,7 @@ bool UCrowdMasteryTotalSubsystem::TrySpendOnBubble(FName BubbleId)
 	{
 		return false;
 	}
-	if (!IsPrerequisiteMet(BubbleId))
+	if (!IsPrerequisiteMetForNode(*Node))
 	{
 		return false;
 	}
