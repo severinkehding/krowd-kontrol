@@ -21,11 +21,13 @@ class KROWDKONTROL_API ULevelBriefingSubsystem : public UWorldSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	// Content asset: one row per level map name (e.g. "L_Level01"), authored
-	// EditDefaultsOnly - designer-set later, matching
-	// ULevelLifecycleSubsystem::FinalMapName's identical "designer sets this later"
-	// gap. Public, so Automation tests inject an in-code NewObject<UDataTable>()
-	// directly, no friendship needed.
+	// Content asset: one row per level map name (e.g. "L_Level01"), EditDefaultsOnly
+	// for the (never exercised by real WorldSubsystems, which have no per-instance
+	// Details panel) case some other system wants to override it directly; in practice
+	// Initialize() below auto-loads /Game/Data/DT_LevelBriefingTable for real game
+	// worlds, mirroring ULevelSequenceSubsystem::LevelSequenceTable's identical
+	// auto-load precedent. Public, so Automation tests inject an in-code
+	// NewObject<UDataTable>() directly, no friendship needed.
 	UPROPERTY(EditDefaultsOnly, Category = "Level Briefing")
 	TObjectPtr<UDataTable> LevelBriefingTable;
 

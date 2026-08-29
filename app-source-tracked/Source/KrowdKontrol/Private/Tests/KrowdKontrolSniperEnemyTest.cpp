@@ -21,6 +21,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "SniperEnemy.h"
+#include "PlayerEnergyComponent.h"
 #include "ReservedGameplayColours.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
@@ -28,7 +29,6 @@
 #include "Engine/World.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "SniperShotFiredTestListener.h"
-#include "PlayerEnergyComponent.h"
 #include "Sound/SoundWave.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
@@ -38,8 +38,35 @@
 #include "AbilityUnlockComponent.h"
 #include "AbilityCooldownComponent.h"
 #include "GameFramework/Pawn.h"
+#include "EnemyAttackExpiredTestListener.h"
+#include "AbilityTargetingIndicatorComponent.h"
+#include "KrowdKontrolPlayerController.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/Engine.h"
+#include "GameFramework/PlayerController.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+
+namespace
+{
+	// Copied verbatim from KrowdKontrolLevelBriefingSubsystemTest.cpp's own helper -
+	// CreateNewMap() worlds skip PostInitializeComponents, so
+	// World->GetFirstPlayerController() (and thus UGameplayStatics::GetPlayerPawn())
+	// reads empty without this explicit registration step.
+	AKrowdKontrolPlayerController* SpawnPossessedController(UWorld* World, APawn* Pawn)
+	{
+		AKrowdKontrolPlayerController* Controller = World->SpawnActor<AKrowdKontrolPlayerController>();
+		if (!Controller)
+		{
+			return nullptr;
+		}
+		Controller->Player = NewObject<ULocalPlayer>(GEngine);
+		Controller->SetAsLocalPlayerController();
+		Controller->Possess(Pawn);
+		World->AddController(Controller);
+		return Controller;
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FKrowdKontrolSniperEnemyTest,
@@ -436,6 +463,13 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 			TickedSniper->Tick(TickedSniper->AttackTelegraphSeconds);
 			TestEqual(TEXT("Tick() should drive the telegraph through to firing the shot"),
 				TickedListener->CallCount, 1);
+
+			// Issue #359 (test-coverage review): this World has no player controller/
+			// pawn spawned into it at all, exercising UpdateTelegraphIndicator()'s
+			// "real World, no resolvable player pawn" guard branch - proves it stays
+			// hidden rather than just not crashing.
+			TestFalse(TEXT("(m) issue #359: telegraph should stay hidden with no resolvable player pawn in this World"),
+				TickedSniper->TelegraphIndicatorComponent->bIsVisible);
 		}
 	}
 
@@ -513,6 +547,225 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	ExpirySniper->TickControlledDuration(0.2f); // total 7.1f, past the 7s override
 	TestEqual(TEXT("Sniper should revert to Alert once the 7s Sleep override elapses"),
 		static_cast<uint8>(ExpirySniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+	// (v) issue #360: the player leaving attack range mid-telegraph cancels the shot
+	// - OnSniperShotFired never fires even once the (now-frozen) telegraph's remaining
+	// time is advanced well past its original duration - and reverts the sniper to
+	// Alert via the same shared RevertAttackToAlert()/OnAttackExpired() path the #313
+	// timeout uses (tell light clears; OnEnemyAttackExpired fires exactly once).
+	//
+	// Uses the OnSniperShotFired listener-count pattern (v) below already relies on for
+	// "shot cancelled", rather than a UPlayerEnergyComponent energy check: damage
+	// application is out of this issue's scope (see issue #358, tracked separately),
+	// so asserting on the delegate keeps this test meaningful regardless of which PR
+	// ends up owning the damage-application code path.
+	UWorld* RangeBreakWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(v) CreateNewMap should return a valid World for the range-break test"), RangeBreakWorld))
+	{
+		ASniperEnemy* RangeBreakSniper = RangeBreakWorld->SpawnActor<ASniperEnemy>();
+		APawn* RangeBreakPlayerPawn = RangeBreakWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(v) ASniperEnemy should spawn into the range-break test World"), RangeBreakSniper)
+			&& TestNotNull(TEXT("(v) Player pawn should spawn into the range-break test World"), RangeBreakPlayerPawn))
+		{
+			// Issue #359: possessed so UGameplayStatics::GetPlayerPawn() actually resolves
+			// this pawn - without this, UpdateTelegraphIndicator()'s guard would no-op
+			// every Show() call and the bIsVisible assertions below would pass trivially
+			// (already false) rather than exercising the real teardown path.
+			SpawnPossessedController(RangeBreakWorld, RangeBreakPlayerPawn);
+
+			USniperShotFiredTestListener* RangeBreakShotListener = NewObject<USniperShotFiredTestListener>();
+			RangeBreakSniper->OnSniperShotFired.AddDynamic(RangeBreakShotListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+
+			UEnemyAttackExpiredTestListener* RangeBreakExpiredListener = NewObject<UEnemyAttackExpiredTestListener>();
+			RangeBreakSniper->OnEnemyAttackExpired.AddDynamic(RangeBreakExpiredListener, &UEnemyAttackExpiredTestListener::HandleEnemyAttackExpired);
+
+			AdvanceToAttack(RangeBreakSniper, ZeroDistanceLocation);
+			TestTrue(TEXT("(v) Attack tell should be visibly on before the range-break"),
+				RangeBreakSniper->AttackTellLightComponent->Intensity > 0.0f);
+			TestTrue(TEXT("(v) issue #359: telegraph should be visible before the range-break"),
+				RangeBreakSniper->TelegraphIndicatorComponent->bIsVisible);
+
+			RangeBreakSniper->AdvanceAttackTelegraph(RangeBreakSniper->AttackTelegraphSeconds * 0.5f); // mid-telegraph
+
+			const FVector BeyondAttackRangeLocation(1500.0f, 0.0f, 0.0f); // > 1400.0f GetAttackRangeUnits()
+			RangeBreakSniper->TickCheckDetection(BeyondAttackRangeLocation);
+			TestEqual(TEXT("(v) Sniper should revert to Alert once the player leaves attack range mid-telegraph"),
+				static_cast<uint8>(RangeBreakSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+			TestEqual(TEXT("(v) Attack tell should be cleared by the shared OnAttackExpired hook"),
+				RangeBreakSniper->AttackTellLightComponent->Intensity, 0.0f);
+			TestFalse(TEXT("(v) issue #359: telegraph should be hidden by the shared OnAttackExpired hook"),
+				RangeBreakSniper->TelegraphIndicatorComponent->bIsVisible);
+			TestEqual(TEXT("(v) OnEnemyAttackExpired should fire exactly once on the range-break"),
+				RangeBreakExpiredListener->CallCount, 1);
+
+			RangeBreakSniper->AdvanceAttackTelegraph(RangeBreakSniper->AttackTelegraphSeconds); // well past original duration
+			TestEqual(TEXT("(v) The shot must never fire - the range-broken telegraph must not resolve"),
+				RangeBreakShotListener->CallCount, 0);
+		}
+	}
+
+	// (w) issue #360: re-entering attack range after a range-break restarts the
+	// telegraph from zero - no partial credit from the aborted attempt survives.
+	ASniperEnemy* ReacquireSniper = NewObject<ASniperEnemy>();
+	AdvanceToAttack(ReacquireSniper, ZeroDistanceLocation);
+	ReacquireSniper->AdvanceAttackTelegraph(ReacquireSniper->AttackTelegraphSeconds - 0.1f); // 0.1s from firing
+
+	const FVector ReacquireBeyondRangeLocation(1500.0f, 0.0f, 0.0f);
+	ReacquireSniper->TickCheckDetection(ReacquireBeyondRangeLocation); // Attack -> Alert (range-break)
+	TestEqual(TEXT("(w) Sniper should be back to Alert after the range-break"),
+		static_cast<uint8>(ReacquireSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+
+	ReacquireSniper->TickCheckDetection(ZeroDistanceLocation); // Alert -> Attack, fresh OnAttackEntry()
+	TestEqual(TEXT("(w) Sniper should re-enter Attack once back in range"),
+		static_cast<uint8>(ReacquireSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Attack));
+
+	USniperShotFiredTestListener* ReacquireListener = NewObject<USniperShotFiredTestListener>();
+	ReacquireSniper->OnSniperShotFired.AddDynamic(ReacquireListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+	// If the old progress had carried over, this small advance (well under a fresh
+	// AttackTelegraphSeconds) would be enough to fire, since the aborted attempt was
+	// only 0.1s from completion - it must NOT fire, proving the telegraph restarted
+	// from zero rather than resuming.
+	ReacquireSniper->AdvanceAttackTelegraph(0.2f);
+	TestEqual(TEXT("(w) The shot should not fire yet - the telegraph must restart from zero on re-acquire, not resume"),
+		ReacquireListener->CallCount, 0);
+
+	ReacquireSniper->AdvanceAttackTelegraph(ReacquireSniper->AttackTelegraphSeconds); // finish a full fresh telegraph
+	TestEqual(TEXT("(w) The shot should fire once a full fresh telegraph elapses after re-acquire"),
+		ReacquireListener->CallCount, 1);
+
+	// (x) issue #360: SN-1PR now has its own named, tunable chase-speed constant
+	// (MovementSpeed) driving GetMovementSpeedUnitsPerSecond() - below AEnemyBase's
+	// own base-class default (600.0f), and below the player pawn's own
+	// UFloatingPawnMovement MaxSpeed (this project's unmodified engine default,
+	// 1200.0f - no C++ override exists anywhere in this module), so outrunning a
+	// chasing sniper is achievable at the project's current move speeds.
+	ASniperEnemy* ChaseSpeedSniper = NewObject<ASniperEnemy>();
+	TestTrue(TEXT("(x) Sniper's chase speed should be a positive, tunable value"),
+		ChaseSpeedSniper->MovementSpeed > 0.0f);
+	TestTrue(TEXT("(x) Sniper's chase speed should be below AEnemyBase's own base-class default (600.0f)"),
+		ChaseSpeedSniper->MovementSpeed < 600.0f);
+	TestEqual(TEXT("(x) GetMovementSpeedUnitsPerSecond() should return the named MovementSpeed constant"),
+		ChaseSpeedSniper->GetMovementSpeedUnitsPerSecond(), ChaseSpeedSniper->MovementSpeed);
+
+	// (y) issue #360: driving TickChaseMovement directly (friend-accessible, same as
+	// TickCheckDetection) during Alert - e.g. right after a range-break - advances
+	// the sniper at exactly its own MovementSpeed, not the inherited 600.0f base,
+	// mirroring KrowdKontrolBomberEnemyTest.cpp's (l3) case exactly.
+	ASniperEnemy* ChasingSniper = NewObject<ASniperEnemy>();
+	const FVector FarSniperPlayerLocation(1000.0f, 0.0f, 0.0f);
+	const FVector AlertOnlyLocation(1450.0f, 0.0f, 0.0f); // > 1400.0f attack range, <= 1500.0f detection range
+	ChasingSniper->TickCheckDetection(AlertOnlyLocation); // Idle -> Alert (not Attack)
+	TestEqual(TEXT("(y) precondition: sniper is Alert"),
+		static_cast<uint8>(ChasingSniper->GetEnemyState()), static_cast<uint8>(EEnemyState::Alert));
+	const FVector BeforeChase = ChasingSniper->GetActorLocation();
+	ChasingSniper->TickChaseMovement(FarSniperPlayerLocation, 0.5f);
+	const float DistanceMoved = FVector::Dist(ChasingSniper->GetActorLocation(), BeforeChase);
+	TestEqual(TEXT("(y) sniper chase advances at its own MovementSpeed * DeltaSeconds"),
+		DistanceMoved, ChasingSniper->MovementSpeed * 0.5f);
+
+	// (z) issue #359: the world-space "shot incoming" telegraph line - spawn-on-
+	// acquisition (Line shape, non-reserved colour matching the attack tell light),
+	// teardown-on-shot-fire, and teardown-on-Controlled(Root) (the one ability that
+	// leaves AttackTellLightComponent lit, proving the telegraph's unconditional
+	// Hide() genuinely diverges from the light tell's own conditional clear).
+	// Teardown-on-range-break is covered by case (v) above, extended with the same
+	// bIsVisible assertions.
+	UWorld* TelegraphWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(z) CreateNewMap should return a valid World for the telegraph test"), TelegraphWorld))
+	{
+		ASniperEnemy* TelegraphSniper = TelegraphWorld->SpawnActor<ASniperEnemy>();
+		APawn* TelegraphPlayerPawn = TelegraphWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(z) ASniperEnemy should spawn into the telegraph test World"), TelegraphSniper)
+			&& TestNotNull(TEXT("(z) Player pawn should spawn into the telegraph test World"), TelegraphPlayerPawn))
+		{
+			SpawnPossessedController(TelegraphWorld, TelegraphPlayerPawn);
+
+			// Issue #359 (test-coverage review): a raw APawn has no default
+			// RootComponent (unlike ACharacter/ADefaultPawn), so SetActorLocation() on
+			// one is a silent no-op (Actor.cpp early-outs when RootComponent is null) -
+			// same issue KrowdKontrolEnemyBaseTest.cpp case (t) and
+			// KrowdKontrolOvercrowdDetectionComponentTest.cpp's AEnemyBaseTestActor
+			// comment both document; give it a scene root so moving it to a distinct,
+			// non-zero location actually exercises UpdateTelegraphIndicator()'s
+			// Origin/FacingRotation/RangeUnits math below with a non-degenerate vector,
+			// not the zero vector every other AdvanceToAttack() case produces.
+			USceneComponent* TelegraphPlayerPawnRoot = NewObject<USceneComponent>(TelegraphPlayerPawn);
+			TelegraphPlayerPawnRoot->RegisterComponent();
+			TelegraphPlayerPawn->SetRootComponent(TelegraphPlayerPawnRoot);
+			const FVector TelegraphPlayerLocation(500.0f, 0.0f, 0.0f);
+			TelegraphPlayerPawn->SetActorLocation(TelegraphPlayerLocation);
+
+			AdvanceToAttack(TelegraphSniper, ZeroDistanceLocation);
+
+			UAbilityTargetingIndicatorComponent* Telegraph = TelegraphSniper->TelegraphIndicatorComponent;
+			if (TestNotNull(TEXT("(z) ASniperEnemy should have a TelegraphIndicatorComponent"), Telegraph))
+			{
+				TestTrue(TEXT("(z) Telegraph should be visible once the sniper enters Attack against a resolvable player pawn"),
+					Telegraph->bIsVisible);
+				TestEqual(TEXT("(z) Telegraph should use the Line shape kind"),
+					static_cast<uint8>(Telegraph->CurrentShapeSpec.Kind), static_cast<uint8>(EAbilityIndicatorShapeKind::Line));
+				TestTrue(TEXT("(z) Telegraph colour should match the attack tell light's own (already-vetted) colour"),
+					Telegraph->CurrentColour.Equals(TelegraphSniper->AttackTellLightComponent->GetLightColor(), 0.01f));
+				TestFalse(TEXT("(z) Telegraph colour should not collide with a reserved gameplay-information colour"),
+					ReservedGameplayColours::GetAll().ContainsByPredicate(
+						[Telegraph](const FLinearColor& Reserved) { return Reserved.Equals(Telegraph->CurrentColour, 0.01f); }));
+				TestTrue(TEXT("(z) Telegraph origin should be the sniper's own location"),
+					Telegraph->CurrentShapeSpec.Origin.Equals(TelegraphSniper->GetActorLocation(), 0.01f));
+				TestTrue(TEXT("(z) Telegraph range should match the actual sniper-to-player distance"),
+					FMath::IsNearlyEqual(Telegraph->CurrentShapeSpec.RangeUnits,
+						(TelegraphPlayerLocation - TelegraphSniper->GetActorLocation()).Size(), 0.5f));
+
+				// Issue #359 (test-coverage review): proves the per-Tick refresh genuinely
+				// tracks the player's live position rather than freezing at the
+				// OnAttackEntry() snapshot - move the player pawn and Tick() again (a
+				// small DeltaTime, well short of firing the shot), expecting RangeUnits to
+				// follow the new distance.
+				const FVector MovedTelegraphPlayerLocation(1000.0f, 0.0f, 0.0f);
+				TelegraphPlayerPawn->SetActorLocation(MovedTelegraphPlayerLocation);
+				TelegraphSniper->Tick(0.1f);
+				TestTrue(TEXT("(z) Telegraph range should update on Tick() as the player pawn moves, proving live tracking"),
+					FMath::IsNearlyEqual(Telegraph->CurrentShapeSpec.RangeUnits,
+						(MovedTelegraphPlayerLocation - TelegraphSniper->GetActorLocation()).Size(), 0.5f));
+
+				// Teardown on shot-fire.
+				USniperShotFiredTestListener* TelegraphShotListener = NewObject<USniperShotFiredTestListener>();
+				TelegraphSniper->OnSniperShotFired.AddDynamic(TelegraphShotListener, &USniperShotFiredTestListener::HandleSniperShotFired);
+				TelegraphSniper->AdvanceAttackTelegraph(TelegraphSniper->AttackTelegraphSeconds);
+				TestEqual(TEXT("(z) precondition: the shot should have fired"), TelegraphShotListener->CallCount, 1);
+				TestFalse(TEXT("(z) Telegraph should be hidden the instant the shot fires"),
+					Telegraph->bIsVisible);
+			}
+		}
+	}
+
+	// (z2) issue #359: teardown on Controlled by Root specifically - the one ability
+	// that leaves AttackTellLightComponent lit (bAllowsAttackWhileControlled), proving
+	// the telegraph's Hide() is unconditional, unlike the light tell's own guard.
+	UWorld* TelegraphRootWorld = FAutomationEditorCommonUtils::CreateNewMap();
+	if (TestNotNull(TEXT("(z2) CreateNewMap should return a valid World for the Root-Controlled telegraph test"), TelegraphRootWorld))
+	{
+		ASniperEnemy* TelegraphRootSniper = TelegraphRootWorld->SpawnActor<ASniperEnemy>();
+		APawn* TelegraphRootPlayerPawn = TelegraphRootWorld->SpawnActor<APawn>();
+		if (TestNotNull(TEXT("(z2) ASniperEnemy should spawn into the Root-Controlled telegraph test World"), TelegraphRootSniper)
+			&& TestNotNull(TEXT("(z2) Player pawn should spawn into the Root-Controlled telegraph test World"), TelegraphRootPlayerPawn))
+		{
+			SpawnPossessedController(TelegraphRootWorld, TelegraphRootPlayerPawn);
+
+			AdvanceToAttack(TelegraphRootSniper, ZeroDistanceLocation);
+			UAbilityTargetingIndicatorComponent* RootTelegraph = TelegraphRootSniper->TelegraphIndicatorComponent;
+			if (TestNotNull(TEXT("(z2) ASniperEnemy should have a TelegraphIndicatorComponent"), RootTelegraph))
+			{
+				TestTrue(TEXT("(z2) precondition: telegraph should be visible before Root interrupts"),
+					RootTelegraph->bIsVisible);
+
+				TelegraphRootSniper->ReceiveControl(EAbilitySlot::Root);
+				TestTrue(TEXT("(z2) Attack tell light should stay on - Root does not clear it"),
+					TelegraphRootSniper->AttackTellLightComponent->Intensity > 0.0f);
+				TestFalse(TEXT("(z2) Telegraph should be hidden on Controlled entry even for Root, unlike the light tell"),
+					RootTelegraph->bIsVisible);
+			}
+		}
+	}
 
 	// (t) issue #358: a landed shot actually damages the player by exactly
 	// ShotDamageAmount - the sniper's attack tell/audio now represents a real cost,

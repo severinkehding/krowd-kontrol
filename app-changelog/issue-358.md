@@ -139,3 +139,18 @@ no new case needed to prove it.
 The real Unreal project stays under `app/` (gitignored, D-003) - this changelog and
 its matching `app-source-tracked/` copy are the tracked-repo record of that change,
 per D-009. Not a substitute for reading `app-source-tracked/` directly.
+
+## Operator resolution of the pass-2 escalation (2026-08-29)
+
+**The E2E holdout was right — and the cause was concurrency, not this PR's
+code.** The concurrent #387/#388 sniper work (telegraph + range-break chase)
+rewrote `SniperEnemy.h/.cpp` in the shared `app/` after this branch diverged,
+erasing this PR's `ShotDamageAmount`/`ApplyContactDamage` wiring from the live
+build — which is exactly what the holdout's isolated test then observed as a
+confirmed full telegraph cycle with zero energy change. Resolution: the damage
+wiring and all three test cases ((t)/(u)/(u2)) were re-ported operator-side
+onto the current post-#388 code (fire block now hides the telegraph indicator,
+broadcasts, then applies damage), and the branch merged with main so the
+mirror matches the live union. Verified: clean build, sniper suite green, full
+unit suite 127/127. The Bomber-adjacent-spawn E2E confound in L_Level02 is
+noted for future holdout runs but needs no code change.

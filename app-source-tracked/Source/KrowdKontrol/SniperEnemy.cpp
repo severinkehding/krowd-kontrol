@@ -1,16 +1,17 @@
 #include "SniperEnemy.h"
+#include "PlayerEnergyComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ReservedGameplayColours.h"
-#include "PlayerEnergyComponent.h"
 #include "EnemyTypeIndicatorComponent.h"
 #include "EnemyType.h"
 #include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/AudioComponent.h"
 #include "AbilityData.h"
+#include "AbilityTargetingIndicatorComponent.h"
 
 ASniperEnemy::ASniperEnemy()
 {
@@ -61,6 +62,8 @@ ASniperEnemy::ASniperEnemy()
 	AttackTellLightComponent->SetIntensity(0.0f); // off until Attack entry
 	AttackTellLightComponent->SetAttenuationRadius(300.0f);
 
+	TelegraphIndicatorComponent = CreateDefaultSubobject<UAbilityTargetingIndicatorComponent>(TEXT("TelegraphIndicatorComponent"));
+
 	EnemyTypeIndicatorComponent = CreateDefaultSubobject<UEnemyTypeIndicatorComponent>(TEXT("EnemyTypeIndicatorComponent"));
 	EnemyTypeIndicatorComponent->EnemyType = EEnemyType::SN_1PR;
 
@@ -88,8 +91,24 @@ float ASniperEnemy::GetAttackRangeUnits() const
 	return 1400.0f;
 }
 
+float ASniperEnemy::GetMovementSpeedUnitsPerSecond() const
+{
+	// Per-type override (issue #360, mirroring issue #122's precedent for the other
+	// three concrete types) - SN-1PR's chase speed while closing distance back into
+	// range after a range-break now actually drives AEnemyBase::TickChaseMovement,
+	// not just an inert inherited default.
+	return MovementSpeed;
+}
+
 void ASniperEnemy::OnControlledEntry(EAbilitySlot Ability)
 {
+	// Issue #359: unlike AttackTellLightComponent below, the telegraph clears on
+	// EVERY Controlled entry, including Root (bAllowsAttackWhileControlled) - the
+	// issue's AC says "deactivates ... when Controlled by any ability" with no
+	// carve-out, a deliberate literal reading, not an oversight relative to the
+	// light tell's own Root exception.
+	TelegraphIndicatorComponent->Hide();
+
 	// ReceiveControl only calls this from Alert/Attack, so any in-progress attack
 	// telegraph is normally aborted the moment Controlled is entered - clear the tell
 	// regardless of which ability triggered this, so a sniper put to sleep/etc.
@@ -126,6 +145,10 @@ void ASniperEnemy::OnAttackExpired()
 	// the same bug OnControlledExpired above exists to prevent for the Controlled ->
 	// Alert edge (pass-1 review follow-up, issue #313).
 	AttackTellLightComponent->SetIntensity(0.0f);
+	// Issue #359/#360: this single hook already runs on both the #313 timeout revert
+	// and the #360 range-break revert (RevertAttackToAlert()), so this one call
+	// covers the entire "target cleared" half of the telegraph's AC.
+	TelegraphIndicatorComponent->Hide();
 }
 
 void ASniperEnemy::OnAttackEntry()
@@ -148,6 +171,8 @@ void ASniperEnemy::OnAttackEntry()
 			TEXT("ASniperEnemy: no AttackTellSound configured on '%s' - attack telegraph will be silent."),
 			*GetNameSafe(this));
 	}
+
+	UpdateTelegraphIndicator();
 }
 
 void ASniperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
@@ -164,13 +189,19 @@ void ASniperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 		// ABossBase::TransitionToBanked/FOnBossBanked already established for this
 		// module's delegates.
 		bShotFiredForCurrentAttack = true;
+		// Issue #359: the shot firing is the exclusive hook for the telegraph's
+		// "shot fires" half of the AC - hidden before the broadcast, though order
+		// doesn't matter since both run synchronously.
+		TelegraphIndicatorComponent->Hide();
 		OnSniperShotFired.Broadcast();
 
 		// Issue #358: the shot's actual consequence. FindPlayerEnergyComponent()
 		// tolerates a null GetWorld() (true for NewObject<>()-constructed test
 		// instances - see BomberEnemy.cpp's identical call site) by returning nullptr,
 		// so a shot resolving with no valid/present player target applies no damage -
-		// no phantom hits, no crash.
+		// no phantom hits, no crash. Re-ported 2026-08-29: the concurrent #387/#388
+		// sniper work clobbered this wiring out of the shared app/, which is exactly
+		// what PR #385's E2E holdout caught as a confirmed zero-damage shot.
 		if (UPlayerEnergyComponent* Energy = FindPlayerEnergyComponent())
 		{
 			Energy->ApplyContactDamage(ShotDamageAmount, this);
@@ -182,6 +213,53 @@ void ASniperEnemy::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	AdvanceAttackTelegraph(DeltaTime);
+	// Issue #359: refresh the telegraph every frame while it's genuinely active, so
+	// it tracks the player's live position rather than freezing at the OnAttackEntry
+	// snapshot - the sniper doesn't move during Attack, but the player can.
+	if (GetEnemyState() == EEnemyState::Attack && !bShotFiredForCurrentAttack)
+	{
+		UpdateTelegraphIndicator();
+	}
+}
+
+void ASniperEnemy::UpdateTelegraphIndicator()
+{
+	// GOTCHA: AEnemyBase::FindPlayerEnergyComponent() must NOT be used here instead -
+	// it UE_LOG(Warning, ...)s whenever it scans a World with no matching pawn, and
+	// several existing Sniper test cases spawn a World-backed Sniper with no
+	// player-energy-bearing pawn present; that warning would newly fail those tests.
+	// UGameplayStatics::GetPlayerPawn() (already used by AEnemyBase::Tick()) resolves
+	// the same "live player pawn" without that per-scan logging cost, which is what
+	// this every-Tick call site needs.
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		// No UWorld yet (e.g. a bare NewObject<>() test double) - benign, not an error.
+		return;
+	}
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(World, 0);
+	if (!PlayerPawn)
+	{
+		// A real World but no resolvable player pawn should never happen once the
+		// sniper is genuinely in Attack - unlike the !World case above, this is worth
+		// a one-time warning so a future "telegraph doesn't show up" report has a log
+		// trail to start from.
+		if (!bHasWarnedMissingTelegraphTarget)
+		{
+			bHasWarnedMissingTelegraphTarget = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("ASniperEnemy: UpdateTelegraphIndicator on '%s' found no resolvable player pawn while in Attack - telegraph will not show."),
+				*GetNameSafe(this));
+		}
+		return;
+	}
+	FAbilityIndicatorShapeSpec ShapeSpec;
+	ShapeSpec.Kind = EAbilityIndicatorShapeKind::Line;
+	ShapeSpec.Origin = GetActorLocation();
+	const FVector ToPlayer = PlayerPawn->GetActorLocation() - GetActorLocation();
+	ShapeSpec.FacingRotation = ToPlayer.Rotation();
+	ShapeSpec.RangeUnits = ToPlayer.Size();
+	TelegraphIndicatorComponent->Show(ShapeSpec, AttackTellLightComponent->GetLightColor());
 }
 
 float ASniperEnemy::GetControlledDurationOverrideSeconds(EAbilitySlot Ability) const

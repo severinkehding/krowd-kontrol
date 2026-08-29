@@ -20,10 +20,14 @@ class UMeshComponent;
 //     system, no pathfinding).
 //   Alert -> Attack: player enters GetAttackRangeUnits() (overridable per concrete
 //     enemy type).
+//   Attack -> Alert: the player leaves GetAttackRangeUnits() mid-Attack (proximity
+//     check in TickCheckDetection, symmetric to the Alert->Attack edge above) - issue
+//     #360. Shares RevertAttackToAlert()/OnAttackExpired()/OnEnemyAttackExpired with
+//     the Attack-duration-timeout edge below.
 //   Alert/Attack -> Controlled: ReceiveControl(EAbilitySlot) is called.
-//   Attack -> Alert: the Attack-duration timeout elapses before ReceiveControl() is
-//     called (issue #313's guaranteed, ability-independent exit from Attack - see
-//     GetAttackDurationSeconds()/TickAttackDuration).
+//   Attack -> Alert (timeout trigger): the Attack-duration timeout elapses before
+//     ReceiveControl() is called (issue #313's guaranteed, ability-independent exit
+//     from Attack - see GetAttackDurationSeconds()/TickAttackDuration).
 //   Controlled -> Banked: TransitionToBanked() is called.
 //   Controlled -> Alert: the Controlled-state duration elapses before
 //     TransitionToBanked() is called (operator decision, issue #138, 2026-08-18).
@@ -638,6 +642,16 @@ private:
 	// Alert once it reaches zero - issue #313's Attack -> Alert edge, structurally
 	// identical to TickControlledDuration above. No-op in every other state.
 	void TickAttackDuration(float DeltaSeconds);
+
+	// Issue #360: the range-break counterpart to TickAttackDuration's timeout-driven
+	// revert above - called from TickCheckDetection's new Attack branch when the
+	// player leaves attack range mid-telegraph, and from TickAttackDuration's own
+	// timeout branch, so both "how Attack ends without ReceiveControl()" triggers
+	// share one Attack -> Alert edge/broadcast/per-type OnAttackExpired() hook
+	// instead of two independent copies. TickChaseMovement (already gated on Alert
+	// via IsMovementBehaviorActive()) picks the enemy back up automatically once
+	// this returns - no separate "chase" state or flag is needed.
+	void RevertAttackToAlert();
 
 	EEnemyState CurrentState = EEnemyState::Idle;
 
