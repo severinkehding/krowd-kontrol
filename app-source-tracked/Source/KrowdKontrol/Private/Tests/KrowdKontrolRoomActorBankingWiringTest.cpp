@@ -27,6 +27,7 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/BoxComponent.h"
 #include "PlaceholderTargetZoneActor.h"
 #include "AbilityTargetingIndicatorComponent.h"
 #include "PlaceholderCubeActor.h"
@@ -307,6 +308,18 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 			CustomClassZone->ZoneColourTag, ReservedGameplayColours::GetBlueTag());
 	}
 
+	// Banking-radius ring honesty (issue #366): resize the second zone to a real,
+	// different extent (300x300, the same value KrowdKontrolTargetZoneTest.cpp's
+	// honesty sub-case (g) uses) before the repeated EnsureBankingZonesWired() call
+	// below. Its ExistingZone branch (RoomActor.cpp:488-492) unconditionally
+	// re-derives each marker's ring radius from the *live* GetBankingRadiusUnits() of
+	// its already-attached zone on every call, so this is the one path that can tell
+	// "ring genuinely derived from the zone" apart from "ring hardcoded to a constant
+	// that happens to match the shared 150.0f default" - both markers resolved to the
+	// same default radius above, so that comparison alone couldn't catch a hardcoded
+	// literal at RoomActor.cpp:443.
+	SecondBankingZone->ZoneCollisionComponent->SetBoxExtent(FVector(300.f, 300.f, 100.f));
+
 	// Calling EnsureBankingZonesWired() a second time must not double-spawn, for
 	// either marker.
 	Room->EnsureBankingZonesWired();
@@ -319,6 +332,17 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("A repeated EnsureBankingZonesWired pass should not corrupt the marker's chain colour"),
 			PlaceholderMarker->CurrentChainColour.Equals(
 				AbilityData::GetChainColourForEnemyType(EEnemyType::RU_NNR), 0.01f));
+
+		if (APlaceholderTargetZoneActor* SecondPlaceholderMarker = Cast<APlaceholderTargetZoneActor>(SecondMarker))
+		{
+			TestEqual(TEXT("Second marker's ring radius should track its zone's resized 300.0f extent, not stay at the original 150.0f"),
+				SecondPlaceholderMarker->BankingRadiusIndicatorComponent->CurrentShapeSpec.RangeUnits,
+				SecondBankingZone->GetBankingRadiusUnits());
+			TestTrue(TEXT("Two differently-sized zones' ring radii should differ, ruling out a shared hardcoded constant (issue #366)"),
+				!FMath::IsNearlyEqual(
+					PlaceholderMarker->BankingRadiusIndicatorComponent->CurrentShapeSpec.RangeUnits,
+					SecondPlaceholderMarker->BankingRadiusIndicatorComponent->CurrentShapeSpec.RangeUnits));
+		}
 	}
 
 	// Type-keyed acceptance (operator ruling 2026-08-22): the zone is a pen for the
