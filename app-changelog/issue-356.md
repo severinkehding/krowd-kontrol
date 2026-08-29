@@ -71,3 +71,16 @@ connection is reachable here (see `.factory/decisions.md` and repo memory), and
 
 - `Private/Tests/KrowdKontrolPIEMenuEntryBriefingTest.cpp` (NEW) - the regression test.
 - `MainMenuWidget.h` - added `friend class FKrowdKontrolPIEMenuEntryBriefingTest;`.
+
+## Correction (final commit ebec72d, recorded operator-side 2026-08-29)
+
+The two "Does not" bullets above described the pass-1 state and were left stale
+by the pass-2 fix commit, which DID both things: `ULevelBriefingSubsystem::
+Initialize()` gained a production `LoadObject` fallback resolving
+`/Game/Data/DT_LevelBriefingTable.DT_LevelBriefingTable`, and that content
+asset now exists with real rows (authored via the headless commandlet path,
+2026-08-29). Operator-side verification closing the escalation's AC1 gap: the
+asset is present on disk at `app/Content/Data/DT_LevelBriefingTable.uasset`
+and the LoadObject path string matches it exactly. The regression test's
+injected-table design remains intentional (headless determinism); the real
+asset path is covered by the production fallback it bypasses.
