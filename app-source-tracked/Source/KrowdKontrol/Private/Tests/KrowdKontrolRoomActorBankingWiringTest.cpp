@@ -332,9 +332,7 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("A repeated EnsureBankingZonesWired pass should not corrupt the marker's chain colour"),
 			PlaceholderMarker->CurrentChainColour.Equals(
 				AbilityData::GetChainColourForEnemyType(EEnemyType::RU_NNR), 0.01f));
-	}
-	if (APlaceholderTargetZoneActor* FirstPlaceholderMarker = Cast<APlaceholderTargetZoneActor>(Marker))
-	{
+
 		if (APlaceholderTargetZoneActor* SecondPlaceholderMarker = Cast<APlaceholderTargetZoneActor>(SecondMarker))
 		{
 			TestEqual(TEXT("Second marker's ring radius should track its zone's resized 300.0f extent, not stay at the original 150.0f"),
@@ -342,7 +340,7 @@ bool FKrowdKontrolRoomActorBankingWiringTest::RunTest(const FString& Parameters)
 				SecondBankingZone->GetBankingRadiusUnits());
 			TestTrue(TEXT("Two differently-sized zones' ring radii should differ, ruling out a shared hardcoded constant (issue #366)"),
 				!FMath::IsNearlyEqual(
-					FirstPlaceholderMarker->BankingRadiusIndicatorComponent->CurrentShapeSpec.RangeUnits,
+					PlaceholderMarker->BankingRadiusIndicatorComponent->CurrentShapeSpec.RangeUnits,
 					SecondPlaceholderMarker->BankingRadiusIndicatorComponent->CurrentShapeSpec.RangeUnits));
 		}
 	}
