@@ -69,18 +69,27 @@ void UCrowdMasteryTotalSubsystem::PersistAccumulatedTotal() const
 	}
 }
 
+bool UCrowdMasteryTotalSubsystem::HasMasteryTreeTable() const
+{
+	if (MasteryTreeTable)
+	{
+		return true;
+	}
+	if (!bHasWarnedMissingMasteryTreeTable)
+	{
+		bHasWarnedMissingMasteryTreeTable = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UCrowdMasteryTotalSubsystem: MasteryTreeTable is unset - all skill-tree spend/prerequisite lookups will fail until it is assigned."));
+	}
+	return false;
+}
+
 bool UCrowdMasteryTotalSubsystem::FindBubbleAndOwningNode(FName BubbleId, const FMasteryTreeNode*& OutNode, const FMasterySkillBubble*& OutBubble) const
 {
 	OutNode = nullptr;
 	OutBubble = nullptr;
-	if (!MasteryTreeTable)
+	if (!HasMasteryTreeTable())
 	{
-		if (!bHasWarnedMissingMasteryTreeTable)
-		{
-			bHasWarnedMissingMasteryTreeTable = true;
-			UE_LOG(LogTemp, Warning,
-				TEXT("UCrowdMasteryTotalSubsystem: MasteryTreeTable is unset - all skill-tree spend/prerequisite lookups will fail until it is assigned."));
-		}
 		return false;
 	}
 	for (const FName& RowName : MasteryTreeTable->GetRowNames())
@@ -105,14 +114,8 @@ bool UCrowdMasteryTotalSubsystem::FindBubbleAndOwningNode(FName BubbleId, const 
 
 bool UCrowdMasteryTotalSubsystem::IsNodeReached(FName NodeRowName) const
 {
-	if (!MasteryTreeTable)
+	if (!HasMasteryTreeTable())
 	{
-		if (!bHasWarnedMissingMasteryTreeTable)
-		{
-			bHasWarnedMissingMasteryTreeTable = true;
-			UE_LOG(LogTemp, Warning,
-				TEXT("UCrowdMasteryTotalSubsystem: MasteryTreeTable is unset - all skill-tree spend/prerequisite lookups will fail until it is assigned."));
-		}
 		return false;
 	}
 	const FMasteryTreeNode* Node = MasteryTreeTable->FindRow<FMasteryTreeNode>(NodeRowName, TEXT("UCrowdMasteryTotalSubsystem::IsNodeReached"));

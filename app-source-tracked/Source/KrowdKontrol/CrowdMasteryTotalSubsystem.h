@@ -123,6 +123,12 @@ private:
 	// MasteryTreeTable to re-derive it.
 	bool IsPrerequisiteMetForNode(const FMasteryTreeNode& Node) const;
 
+	// True if MasteryTreeTable is assigned; false otherwise, logging the
+	// missing-table warning exactly once via bHasWarnedMissingMasteryTreeTable.
+	// Shared by every guarded entry point (FindBubbleAndOwningNode, IsNodeReached)
+	// so the warn-once check and message live in one place.
+	bool HasMasteryTreeTable() const;
+
 	int32 AccumulatedTotal = 0;
 	int32 SpentPoints = 0;
 	TSet<FName> UnlockedBubbleIds;
