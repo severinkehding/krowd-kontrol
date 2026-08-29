@@ -100,8 +100,22 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 	const float OverrideSeconds = GetControlledDurationOverrideSeconds(Ability);
 	RemainingControlledSeconds = OverrideSeconds >= 0.0f ? OverrideSeconds : AbilityData::Get(Ability).BaseDurationSeconds;
 	TotalControlledSeconds = RemainingControlledSeconds;
+	// The bonus label derives from the MATCHUP AUTHORITY, never from OverrideSeconds
+	// >= 0: today every per-enemy override happens to be that enemy's countered
+	// ability, but the #121-lineage override point explicitly permits non-match
+	// tuning overrides, and such an override must never masquerade as a colour-match
+	// bonus on the indicator (PR #389 pass-2 escalation, HIGH finding). Same
+	// derivation idiom as UAbilityMatchupSignalComponent - display semantics
+	// coordinated with docs/prd-enemy-effect-indicator.md's legibility contract.
+	const FAbilityData& AbilityInfo = AbilityData::Get(Ability);
+	bool bIsColourMatchBonused = false;
+	if (const UEnemyTypeIndicatorComponent* TypeIndicator = FindComponentByClass<UEnemyTypeIndicatorComponent>())
+	{
+		bIsColourMatchBonused = !AbilityInfo.bIsColourNeutral
+			&& AbilityInfo.CounteredEnemyType == TypeIndicator->EnemyType;
+	}
 	OnControlledEntry(Ability);
-	ControlledDurationIndicatorComponent->Show(AbilityData::Get(Ability).Colour);
+	ControlledDurationIndicatorComponent->Show(AbilityInfo.Colour, bIsColourMatchBonused);
 }
 
 bool AEnemyBase::IsAttackBehaviorActive() const

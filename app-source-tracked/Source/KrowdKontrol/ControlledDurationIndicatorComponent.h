@@ -62,7 +62,7 @@ public:
 	// 1.0). Idempotent-safe to call InitializeIndicatorVisual() internally first, same
 	// shape as UAbilityTargetingIndicatorComponent::Show().
 	UFUNCTION(BlueprintCallable, Category = "Controlled Duration Indicator")
-	void Show(FLinearColor Colour);
+	void Show(FLinearColor Colour, bool bInIsColourMatchBonused = false);
 
 	UFUNCTION(BlueprintCallable, Category = "Controlled Duration Indicator")
 	void Hide();
@@ -90,6 +90,17 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Controlled Duration Indicator")
 	FLinearColor CurrentColour = FLinearColor::Black;
 
+	// True while this Controlled application's duration came from a per-enemy
+	// GetControlledDurationOverrideSeconds() colour-match bonus (issue #65) rather than
+	// AbilityData::BaseDurationSeconds unmodified - issue #357's legibility fix. Read-only
+	// signal, set only by Show(); never derived here (this component never re-derives the
+	// colour-matching rule itself, per its own "reads through Owner accessors only" contract
+	// above). Does NOT affect CurrentColour, which stays the pure ability colour regardless
+	// (see KrowdKontrolControlledDurationIndicatorComponentTest.cpp case g4) - this is a
+	// separate, additive visual channel (bar thickness - see ApplyVisualFillFraction()).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Controlled Duration Indicator")
+	bool bIsColourMatchBonused = false;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Controlled Duration Indicator")
 	TObjectPtr<UStaticMeshComponent> FillMeshComponent;
 
@@ -111,6 +122,14 @@ private:
 	// 1.0" convention (see .cpp's ApplyVisualFillFraction()).
 	static constexpr float BarWidthUnits = 120.0f;
 	static constexpr float BarDepthUnits = 24.0f;
+
+	// issue #357: a colour-match-bonused application renders as a visibly thicker bar than
+	// BarDepthUnits - the only visual difference from a base-duration application (colour
+	// and width behave identically either way). Chosen well above BarDepthUnits (24.0f) so
+	// the difference reads at gameplay camera distance without a second material/texture -
+	// same "placeholder-first, geometry over shaders" precedent InitializeIndicatorVisual()
+	// already sets for this whole component.
+	static constexpr float BarDepthUnitsBonused = 40.0f;
 
 	bool bHasInitializedIndicatorVisual = false;
 };

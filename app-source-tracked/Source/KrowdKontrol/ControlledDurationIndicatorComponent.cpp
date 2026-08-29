@@ -102,12 +102,13 @@ void UControlledDurationIndicatorComponent::InitializeIndicatorVisual()
 	}
 }
 
-void UControlledDurationIndicatorComponent::Show(FLinearColor Colour)
+void UControlledDurationIndicatorComponent::Show(FLinearColor Colour, bool bInIsColourMatchBonused)
 {
 	InitializeIndicatorVisual();
 
 	bIsVisible = true;
 	CurrentColour = Colour;
+	bIsColourMatchBonused = bInIsColourMatchBonused;
 
 	if (FillMaterialInstance)
 	{
@@ -152,7 +153,7 @@ void UControlledDurationIndicatorComponent::ApplyVisualFillFraction()
 	// 100 - same convention as RoomActor.cpp/DoorConnectorActor.cpp/
 	// AbilityTargetingIndicatorComponent.cpp.
 	const float WidthScale = (BarWidthUnits / 100.0f) * ClampedFraction;
-	const float DepthScale = BarDepthUnits / 100.0f;
+	const float DepthScale = (bIsColourMatchBonused ? BarDepthUnitsBonused : BarDepthUnits) / 100.0f;
 	FillMeshComponent->SetRelativeScale3D(FVector(WidthScale, DepthScale, 1.0f));
 	// Left-anchored drain: as ClampedFraction shrinks from 1 to 0, shift the (shrinking)
 	// mesh's centre left so its left edge stays fixed rather than shrinking
