@@ -31,7 +31,7 @@ colour stays a bonus) — that ruling is #212's fix scope, not this PRD's.
 
 ## Requirements
 
-### REQ-1: Level advance + ability unlock on clear (P0) — ✅ mechanism implemented, PR #298 (issue #216); real LevelSequenceTable content through L_Level04 shipped (issue #367 / PR #383), L_Level05 still pending
+### REQ-1: Level advance + ability unlock on clear (P0) — ✅ mechanism implemented, PR #298 (issue #216); real LevelSequenceTable content through L_Level05 shipped (issue #367 / PR #383, issue #368 / PR #392)
 - After level-clear (and summary dismissal once #175 lands), load the next level
   in the run sequence (L_Level01 → L_Level02 → … per MISSION's 5-level
   decision; final level instead fires the existing run-complete path).
