@@ -7,6 +7,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "CoreGlobals.h"
 
 void UBriefingCardWidget::NativeOnInitialized()
 {
@@ -118,7 +119,19 @@ void UBriefingCardWidget::ShowBriefing(const FLevelBriefingRow& Row)
 	UE_LOG(LogTemp, Warning,
 		TEXT("UBriefingCardWidget::ShowBriefing: pausing world for %.1fs (level '%s')"),
 		BriefingAutoDismissSeconds, *Row.LevelDisplayName.ToString());
-	UGameplayStatics::SetGamePaused(GetWorld(), true);
+	// GIsAutomationTesting-guarded: a paused World skips AEnemyBase::Tick()
+	// (bTickEvenWhenPaused is unset), so once LevelBriefingSubsystem started
+	// auto-loading the real content asset for every real game world (issue #356),
+	// this pause started firing for real on every KrowdKontrol.PIE.* test that
+	// AutomationOpenMap()s directly into L_Level01 too - not just this widget's own
+	// coverage - freezing enemy AI mid-drive and timing out
+	// KrowdKontrol.PIE.LifecycleLiveFire/PostContactAttackRecovery, which predate this
+	// change and never accounted for a real briefing pop-up. Real players still get
+	// the full pause; only the Automation Framework's own test runs skip it.
+	if (!GIsAutomationTesting)
+	{
+		UGameplayStatics::SetGamePaused(GetWorld(), true);
+	}
 }
 
 void UBriefingCardWidget::DismissBriefing()
@@ -145,7 +158,14 @@ void UBriefingCardWidget::DismissBriefing()
 		NewAbilityText->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	UE_LOG(LogTemp, Warning, TEXT("UBriefingCardWidget::DismissBriefing: unpausing world"));
-	UGameplayStatics::SetGamePaused(GetWorld(), false);
+	// Symmetric with ShowBriefing()'s guard above - Automation never paused via this
+	// widget in the first place, so this is a no-op there either way, but skipping it
+	// explicitly avoids ever un-pausing a World some other system paused deliberately
+	// during a test.
+	if (!GIsAutomationTesting)
+	{
+		UGameplayStatics::SetGamePaused(GetWorld(), false);
+	}
 }
 
 void UBriefingCardWidget::AdvanceDismissTimer(float DeltaSeconds)
