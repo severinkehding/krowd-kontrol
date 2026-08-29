@@ -90,6 +90,17 @@ executes inside the same first-creation branch as `CreateWidget`, directly visib
 in `HandleMasteryButtonClicked()`), and the pointer-identity assertion is what
 would catch a regression to that structure.
 
+## Post-review test addition
+
+`KrowdKontrolMasteryScreenWidgetTest.cpp` gained a block (h): bare
+`NewObject<UMasteryScreenWidget>()` + direct `NativeOnInitialized()` call, bypassing
+`Initialize()`, asserting `TitleText`/`PointsText`/`BackButton` are built. This closes
+the one place the PR's own "mirrors `KrowdKontrolMainMenuWidgetTest.cpp`" coverage
+claim was incomplete relative to that sibling's block (g) - `EnsureWidgetTreeBuilt()`'s
+null-`WidgetTree` lazy-creation branch was previously only ever exercised via
+`CreateWidget<>()`'s `Initialize()`-first call order, never the other one the function's
+own comment says it supports.
+
 ## Manual PIE sign-off still required
 
 Same standing limitation as every prior main-menu PR (#324, #329, #346): no

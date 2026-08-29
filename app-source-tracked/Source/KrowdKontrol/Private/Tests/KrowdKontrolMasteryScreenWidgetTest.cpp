@@ -108,6 +108,18 @@ bool FKrowdKontrolMasteryScreenWidgetTest::RunTest(const FString& Parameters)
 			ToRawPtr(GuardWidget->TitleText), FirstTitleText);
 	}
 
+	// (h) NativeOnInitialized() invoked directly, bypassing Initialize() - WidgetTree is
+	// still null at this point, exercising EnsureWidgetTreeBuilt()'s null-WidgetTree guard
+	// (mirrors KrowdKontrolMainMenuWidgetTest.cpp block (g)).
+	UMasteryScreenWidget* BypassWidget = NewObject<UMasteryScreenWidget>();
+	if (TestNotNull(TEXT("BypassWidget should construct"), BypassWidget))
+	{
+		BypassWidget->NativeOnInitialized();
+		TestNotNull(TEXT("TitleText should be built after direct NativeOnInitialized()"), ToRawPtr(BypassWidget->TitleText));
+		TestNotNull(TEXT("PointsText should be built after direct NativeOnInitialized()"), ToRawPtr(BypassWidget->PointsText));
+		TestNotNull(TEXT("BackButton should be built after direct NativeOnInitialized()"), ToRawPtr(BypassWidget->BackButton));
+	}
+
 	return true;
 }
 
