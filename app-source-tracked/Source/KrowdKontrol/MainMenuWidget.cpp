@@ -3,6 +3,7 @@
 #include "MainMenuLevelButtonWidget.h"
 #include "LevelSequenceSubsystem.h"
 #include "CrowdMasteryTotalSubsystem.h"
+#include "MasteryScreenWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/PanelSlot.h"
@@ -89,6 +90,17 @@ void UMainMenuWidget::BuildWidgetTree()
 
 	LevelSelectBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MainMenuLevelSelectBox"));
 	Layout->AddChildToVerticalBox(LevelSelectBox);
+
+	// Navigates to UMasteryScreenWidget (issue #373, docs/prd-mastery-skill-tree.md
+	// REQ-2 scaffolding) - grouped with the level-select list above as "places to
+	// navigate", ahead of the current-session stats/destructive-actions block below.
+	MasteryButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MasteryButton"));
+	MasteryButton->OnClicked.AddDynamic(this, &UMainMenuWidget::HandleMasteryButtonClicked);
+	MasteryButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MasteryButtonLabel"));
+	MasteryButtonLabel->SetColorAndOpacity(TextColor);
+	MasteryButtonLabel->SetText(NSLOCTEXT("MainMenuWidget", "Mastery", "MASTERY"));
+	MasteryButton->SetContent(MasteryButtonLabel);
+	Layout->AddChildToVerticalBox(MasteryButton);
 
 	// Reserved, empty region for the Crowd Mastery display PRD - fixed-size so it
 	// occupies real layout space today even though nothing has called
@@ -255,6 +267,42 @@ void UMainMenuWidget::HandleLevelSelected(FName MapName)
 	if (World && World->IsGameWorld())
 	{
 		UGameplayStatics::OpenLevel(this, MapName);
+	}
+}
+
+void UMainMenuWidget::HandleMasteryButtonClicked()
+{
+	if (!MasteryScreenWidgetInstance)
+	{
+		MasteryScreenWidgetInstance = CreateWidget<UMasteryScreenWidget>(this, UMasteryScreenWidget::StaticClass());
+		if (MasteryScreenWidgetInstance)
+		{
+			MasteryScreenWidgetInstance->OnBackRequested.AddDynamic(this, &UMainMenuWidget::HandleMasteryScreenBackRequested);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UMainMenuWidget::HandleMasteryButtonClicked: CreateWidget<UMasteryScreenWidget> returned null on '%s' - mastery screen will not display."),
+				*GetNameSafe(this));
+			return;
+		}
+	}
+	MasteryScreenWidgetInstance->AddToViewport();
+	if (RootBorder)
+	{
+		RootBorder->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UMainMenuWidget::HandleMasteryScreenBackRequested()
+{
+	if (MasteryScreenWidgetInstance)
+	{
+		MasteryScreenWidgetInstance->RemoveFromParent();
+	}
+	if (RootBorder)
+	{
+		RootBorder->SetVisibility(ESlateVisibility::Visible);
 	}
 }
 

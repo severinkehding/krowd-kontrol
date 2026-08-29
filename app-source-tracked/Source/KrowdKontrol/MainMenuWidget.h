@@ -12,6 +12,7 @@ class UVerticalBox;
 class UHorizontalBox;
 class UMainMenuLevelButtonWidget;
 class UCrowdMasteryTotalSubsystem;
+class UMasteryScreenWidget;
 
 // Main menu chrome (issue #324, docs/prd-main-menu.md REQ-3): title, Quit button, and
 // an anchored-but-empty region reserved for the mastery-display PRD's widget. Also
@@ -32,6 +33,7 @@ class KROWDKONTROL_API UMainMenuWidget : public UUserWidget
 	friend class FKrowdKontrolReservedGameplayColoursTest;
 	friend class FKrowdKontrolMainMenuLevelSelectTest;
 	friend class FKrowdKontrolMainMenuMasteryResetTest;
+	friend class FKrowdKontrolMainMenuMasteryScreenTest;
 	friend class FKrowdKontrolPIEMenuEntryBriefingTest;
 
 public:
@@ -82,6 +84,19 @@ private:
 	// mirroring ULevelSequenceSubsystem::AdvanceToNextLevel()'s identical guard.
 	UFUNCTION()
 	void HandleLevelSelected(FName MapName);
+
+	// Bound to MasteryButton->OnClicked. Lazily creates UMasteryScreenWidget (issue
+	// #373, docs/prd-mastery-skill-tree.md REQ-2 scaffolding) on first click, binds
+	// its OnBackRequested once inside this same first-creation branch (no duplicate
+	// bind on repeat clicks), then shows it and collapses RootBorder.
+	UFUNCTION()
+	void HandleMasteryButtonClicked();
+
+	// Bound to MasteryScreenWidgetInstance->OnBackRequested. Reverses
+	// HandleMasteryButtonClicked()'s swap - touches no subsystem state, per this
+	// issue's "no side effects" AC.
+	UFUNCTION()
+	void HandleMasteryScreenBackRequested();
 
 	// Toggles which of MasteryResetButton vs. (MasteryResetConfirmButton,
 	// MasteryResetCancelButton) is visible, based on bMasteryResetConfirmPending.
@@ -204,6 +219,20 @@ private:
 	// directly, mirroring UAbilityCooldownTrayWidget::SlotIconBorders's precedent.
 	UPROPERTY()
 	TArray<TObjectPtr<UMainMenuLevelButtonWidget>> LevelSelectButtons;
+
+	// Navigates to UMasteryScreenWidget (issue #373, docs/prd-mastery-skill-tree.md
+	// REQ-2 scaffolding) - sits between the level-select list and the mastery-display
+	// anchor, grouping "places to navigate" together.
+	UPROPERTY()
+	TObjectPtr<UButton> MasteryButton;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> MasteryButtonLabel;
+
+	// Lazily created on first MasteryButton click; reused on every subsequent click
+	// (see HandleMasteryButtonClicked()) so OnBackRequested is only ever bound once.
+	UPROPERTY()
+	TObjectPtr<UMasteryScreenWidget> MasteryScreenWidgetInstance;
 
 	// Test-observability seam (mirrors ULevelSequenceSubsystem::
 	// LastAdvanceAttemptedMapName) - records the last button activation's target map
