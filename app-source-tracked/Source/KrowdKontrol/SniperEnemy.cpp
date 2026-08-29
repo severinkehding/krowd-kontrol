@@ -1,4 +1,5 @@
 #include "SniperEnemy.h"
+#include "PlayerEnergyComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
@@ -193,6 +194,18 @@ void ASniperEnemy::AdvanceAttackTelegraph(float DeltaSeconds)
 		// doesn't matter since both run synchronously.
 		TelegraphIndicatorComponent->Hide();
 		OnSniperShotFired.Broadcast();
+
+		// Issue #358: the shot's actual consequence. FindPlayerEnergyComponent()
+		// tolerates a null GetWorld() (true for NewObject<>()-constructed test
+		// instances - see BomberEnemy.cpp's identical call site) by returning nullptr,
+		// so a shot resolving with no valid/present player target applies no damage -
+		// no phantom hits, no crash. Re-ported 2026-08-29: the concurrent #387/#388
+		// sniper work clobbered this wiring out of the shared app/, which is exactly
+		// what PR #385's E2E holdout caught as a confirmed zero-damage shot.
+		if (UPlayerEnergyComponent* Energy = FindPlayerEnergyComponent())
+		{
+			Energy->ApplyContactDamage(ShotDamageAmount, this);
+		}
 	}
 }
 
