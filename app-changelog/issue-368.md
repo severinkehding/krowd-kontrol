@@ -200,13 +200,56 @@ against, unlike a content-edit issue.
 - `PostRunSummaryWidget`'s FINISH-RUN -> main-menu routing is likewise already generic
   against `NextLevelMapName == NAME_None`, confirmed still passing against the real
   `L_Level05` final row, not re-implemented.
-- `LevelBriefingData` DataTable row authoring (content assets outside `app/Source/`) is
-  explicitly out of scope per the plan's "NOT Building" section and issue #356's
-  separate ownership of the pre-level-briefing regression.
 - Onboarding encounter for Snare (issue #31) is now reopenable per the PRD's note, since
   Level 5 exists - reopening/building it is not this issue's job.
 - Demo is now completable end-to-end across all 5 Alpha levels; all 5 abilities
   (Stun/Sleep/Root/Fear/Snare) are reachable in a real run for the first time.
+
+## Pass-1 validation fix: `DT_LevelBriefingTable` row for `L_Level05`
+
+The original pass authored this PR's "NOT Building" note above as "`LevelBriefingData`
+DataTable row authoring is explicitly out of scope... issue #356's separate ownership
+of the pre-level-briefing regression" - that assumption turned out to be wrong.
+Checked live: `/Game/Data/DT_LevelBriefingTable` already carries real, populated rows
+for `L_Level01`-`L_Level04` (issue #356's own resolution report is what's stale here -
+its "the real production LevelBriefingTable content asset is still unset" note predates
+whatever follow-up work populated levels 1-4; #356 itself never grew a numbered
+follow-up issue for this). So the missing `L_Level05` row wasn't pre-existing,
+separately-owned debt - it was this PR's own gap, exactly the kind of thing
+`ULevelBriefingSubsystem::HandleLevelBegin`'s existing `L_Level01`-`L_Level04` pattern
+should have been extended to cover.
+
+The E2E holdout (pass-1 validation) caught this live: booting PIE directly in
+`/Game/Maps/L_Level05` logged `ULevelBriefingSubsystem: no LevelBriefingTable row found
+for map 'L_Level05' - no pre-level briefing will show`.
+
+Fixed by adding a fifth row, `L_Level05`, to the live `DT_LevelBriefingTable` asset via
+the same headless `UnrealEditor-Cmd.exe -run=pythonscript` technique used throughout
+this issue - `export_to_json_string()` to read the table's exact existing JSON
+(preserving `L_Level01`-`L_Level04` verbatim, including their original localisation
+keys), appended a new `L_Level05` entry, and `fill_from_json_string()` to write it
+back, `EditorAssetLibrary.save_loaded_asset()` to persist, then re-read in a second,
+independent headless process to confirm exactly 5 rows and no changes to the first 4.
+Row content follows the established pattern exactly:
+
+- `LevelDisplayName`: `"LEVEL 5"`
+- `ObjectiveLines`: `["PACIFY ALL 14 ROBOTS", "HERD THEM TO THEIR PENS"]` - `14` matches
+  this level's real enemy count; the two-line, no-"STUN..."-prefix shape matches
+  `L_Level03`/`L_Level04`'s rows (the "STUN..."/"STUN OR SLEEP..." prefix only appears
+  on `L_Level01`/`L_Level02`, before the ability-unlock line carries that information).
+- `NewAbilityUnlockLine`: `"NEW: SNARE - PRESS 5 - STRONG VS RUNNERS"` - `Snare` is
+  level 5's unlock per `AbilityUnlockComponent.cpp`'s `GetLevelToAbilityMap()`; "STRONG
+  VS RUNNERS" matches `RunnerEnemy.cpp`'s own documented counter (issue #65: "RU-NNR is
+  specifically countered by Snare") and the exact string
+  `KrowdKontrolAbilityUnlockPromptComponentTest.cpp:96` already asserts elsewhere
+  (`"SNARE — PRESS 5 — STRONG VS RUNNERS"` for the on-screen prompt widget - same
+  content, this table's own established hyphen convention from the `L_Level02`-
+  `L_Level04` rows rather than that em-dash).
+
+This is a binary DataTable asset under `app/Content/Data/`, excluded from
+`app-source-tracked/` per the same mirror rules as `DT_LevelSequenceTable.uasset`
+above - no text diff can show it; the independently-checkable evidence is the
+`ULevelBriefingSubsystem` log line no longer firing for `L_Level05` on a real PIE boot.
 
 ---
 
