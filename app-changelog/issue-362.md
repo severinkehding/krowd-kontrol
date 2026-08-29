@@ -58,13 +58,46 @@ float ASniperEnemy::GetAttackRangeUnits() const
 }
 ```
 
-**Test `(j)` updated to assert against the property, `Source/KrowdKontrol/Private/Tests/KrowdKontrolSniperEnemyTest.cpp:343-345`:**
+**Test `(j)` updated to assert against the property, `Source/KrowdKontrol/Private/Tests/KrowdKontrolSniperEnemyTest.cpp:343-349`:**
 
 ```cpp
 	ASniperEnemy* LongRangeSniper = NewObject<ASniperEnemy>();
+	TestTrue(TEXT("(j) Sniper's attack range should be a positive, tunable value"),
+		LongRangeSniper->AttackRangeUnits > 0.0f);
+	TestTrue(TEXT("(j) Sniper's attack range should stay below the base DetectionRangeUnits default, the class's own design invariant"),
+		LongRangeSniper->AttackRangeUnits < LongRangeSniper->DetectionRangeUnits);
 	TestEqual(TEXT("(j) GetAttackRangeUnits() should return the named AttackRangeUnits constant"),
 		LongRangeSniper->GetAttackRangeUnits(), LongRangeSniper->AttackRangeUnits);
 ```
+
+(The two `TestTrue` bounds-sanity assertions and the `DetectionRangeUnits`-referencing comparison above were
+added in a pass-1 review follow-up, closing a coverage gap where no test caught `AttackRangeUnits` drifting to
+a nonsensical or invariant-breaking value, and removing a hardcoded `1500.0f` literal duplicate of
+`DetectionRangeUnits`'s own default.)
+
+**The other 2 of the 4 tunables, unchanged by this PR but already carrying the same treatment before
+it — confirmed by direct re-read of the current `app/` source, not asserted from memory —
+`Source/KrowdKontrol/SniperEnemy.h:120-143`:**
+
+```cpp
+	// SN-1PR's first-pass per-hit damage value (issue #358) - deliberately at or below
+	// UPlayerEnergyComponent::MaxDamagePerHit (10.0f) so a landed shot always costs
+	// exactly this amount, not the clamp ceiling (contrast ABomberEnemy::
+	// ExplosionDamageAmount / ARootSurgeBoss::AttackDamageAmount, which both
+	// deliberately exceed the clamp instead). Subject to operator playtest tuning.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
+	float ShotDamageAmount = 8.0f;
+
+	// Issue #360: chase speed while closing distance back into range after a
+	// range-break (AEnemyBase::TickChaseMovement, driven while Alert) - ...
+	// Subject to operator playtest tuning.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
+	float MovementSpeed = 300.0f;
+```
+
+Both already satisfy the issue's two requirements (single-location `UPROPERTY` on `ASniperEnemy`, inline
+comment with current baseline value plus "subject to operator playtest tuning" language) - this PR only
+had to close the gap for `AttackRangeUnits` (and add the missing sentence to `AttackTelegraphSeconds`).
 
 ## Current baseline values (for balance review)
 

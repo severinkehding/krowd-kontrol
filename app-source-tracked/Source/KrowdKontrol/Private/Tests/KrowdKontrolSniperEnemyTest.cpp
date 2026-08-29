@@ -343,8 +343,8 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	ASniperEnemy* LongRangeSniper = NewObject<ASniperEnemy>();
 	TestTrue(TEXT("(j) Sniper's attack range should be a positive, tunable value"),
 		LongRangeSniper->AttackRangeUnits > 0.0f);
-	TestTrue(TEXT("(j) Sniper's attack range should stay below the base DetectionRangeUnits default (1500.0f), the class's own design invariant"),
-		LongRangeSniper->AttackRangeUnits < 1500.0f);
+	TestTrue(TEXT("(j) Sniper's attack range should stay below the base DetectionRangeUnits default, the class's own design invariant"),
+		LongRangeSniper->AttackRangeUnits < LongRangeSniper->DetectionRangeUnits);
 	TestEqual(TEXT("(j) GetAttackRangeUnits() should return the named AttackRangeUnits constant"),
 		LongRangeSniper->GetAttackRangeUnits(), LongRangeSniper->AttackRangeUnits);
 	const FVector MidRangeLocation(800.0f, 0.0f, 0.0f);
