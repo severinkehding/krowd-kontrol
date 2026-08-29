@@ -9,8 +9,9 @@
 //
 // Widgets currently audited here: UAbilityCooldownTrayWidget, UPostRunSummaryWidget
 // (issue #74), UOnScreenPromptWidget (issue #34), UBriefingCardWidget (issue #246),
-// and UMainMenuWidget (issue #324). UEnergyMeterWidget is issue #64/PR #92's
-// deliverable and still isn't audited here - a pre-existing gap, not introduced by
+// UMainMenuWidget (issue #324), and UMasteryScreenWidget (issue #373).
+// UEnergyMeterWidget is issue #64/PR #92's deliverable and still isn't audited here -
+// a pre-existing gap, not introduced by
 // issue #74, tracked as a separate follow-up. Add any future HUD widget's chrome to
 // this list.
 //
@@ -31,6 +32,7 @@
 #include "BriefingCardWidget.h"
 #include "MainMenuWidget.h"
 #include "MainMenuLevelButtonWidget.h"
+#include "MasteryScreenWidget.h"
 #include "LevelSequenceSubsystem.h"
 #include "LevelSequenceData.h"
 #include "AbilityTooltipWidget.h"
@@ -298,6 +300,8 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			AllReserved.Contains(MenuWidget->MasteryResetConfirmButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 		TestFalse(TEXT("Main menu mastery-reset cancel button label colour should not collide with a reserved gameplay colour"),
 			AllReserved.Contains(MenuWidget->MasteryResetCancelButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Main menu mastery-navigation button label colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MenuWidget->MasteryButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 
 		if (TestEqual(TEXT("Main menu should build exactly one level-select button from the injected table"),
 			MenuWidget->LevelSelectButtons.Num(), 1))
@@ -305,6 +309,22 @@ bool FKrowdKontrolReservedGameplayColoursTest::RunTest(const FString& Parameters
 			TestFalse(TEXT("Main menu level-select button label colour should not collide with a reserved gameplay colour"),
 				AllReserved.Contains(MenuWidget->LevelSelectButtons[0]->LevelButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 		}
+	}
+
+	// (9) Mastery screen widget audit (issue #373) - root border and all three text/
+	// label fields, mirroring block (5)'s UBriefingCardWidget audit shape.
+	UMasteryScreenWidget* MasteryScreenWidget =
+		CreateWidget<UMasteryScreenWidget>(World, UMasteryScreenWidget::StaticClass());
+	if (TestNotNull(TEXT("UMasteryScreenWidget should construct"), MasteryScreenWidget))
+	{
+		TestFalse(TEXT("Mastery screen root border colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MasteryScreenWidget->RootBorder->GetBrushColor()));
+		TestFalse(TEXT("Mastery screen title text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MasteryScreenWidget->TitleText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Mastery screen points text colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MasteryScreenWidget->PointsText->GetColorAndOpacity().GetSpecifiedColor()));
+		TestFalse(TEXT("Mastery screen back button label colour should not collide with a reserved gameplay colour"),
+			AllReserved.Contains(MasteryScreenWidget->BackButtonLabel->GetColorAndOpacity().GetSpecifiedColor()));
 	}
 
 	return true;
