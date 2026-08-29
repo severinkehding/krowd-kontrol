@@ -243,6 +243,31 @@ bool FKrowdKontrolControlledDurationIndicatorComponentTest::RunTest(const FStrin
 					WorldBomber->ReceiveControl(EAbilitySlot::Stun); // Bomber has no override for Stun -> not bonused
 					TestFalse(TEXT("(j) bIsColourMatchBonused should flip back to false when a later application on the same component is not bonused"),
 						WorldIndicator->bIsColourMatchBonused);
+
+					// (k) The ambiguous case PR #389's pass-2 escalation flagged: a per-enemy
+					// duration OVERRIDE that is NOT a colour match must apply its duration but
+					// must NOT set the bonus label. No production class has such an override
+					// today (every override happens to be the countered ability), so the
+					// scenario is constructed by desyncing the type indicator: this Trooper's
+					// Root override (8s, issue #65) still fires on ability slot alone, but the
+					// matchup authority (Root counters TR-UPR) no longer agrees with the
+					// indicator's stated type - exactly the "override without match" shape the
+					// old OverrideSeconds >= 0 derivation mislabeled.
+					ATrooperEnemy* WorldTrooperDesynced = World->SpawnActor<ATrooperEnemy>();
+					if (TestNotNull(TEXT("(k) desynced ATrooperEnemy should spawn into the test World"), WorldTrooperDesynced))
+					{
+						WorldTrooperDesynced->FindComponentByClass<UEnemyTypeIndicatorComponent>()->EnemyType = EEnemyType::SN_1PR;
+						WorldTrooperDesynced->TickCheckDetection(ZeroDistanceLocation); // Idle -> Alert
+						WorldTrooperDesynced->ReceiveControl(EAbilitySlot::Root);
+						TestEqual(TEXT("(k) the per-enemy override duration must still apply (8s, issue #65) regardless of the matchup"),
+							WorldTrooperDesynced->GetTotalControlledSeconds(), 8.0f);
+						UControlledDurationIndicatorComponent* DesyncedIndicator = WorldTrooperDesynced->GetControlledDurationIndicatorComponent();
+						if (TestNotNull(TEXT("(k) desynced Trooper should own a ControlledDurationIndicatorComponent"), DesyncedIndicator))
+						{
+							TestFalse(TEXT("(k) an override WITHOUT a matchup agreement must not be labelled colour-match-bonused (PR #389 HIGH finding)"),
+								DesyncedIndicator->bIsColourMatchBonused);
+						}
+					}
 				}
 			}
 		}

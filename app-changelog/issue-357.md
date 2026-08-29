@@ -53,3 +53,18 @@ no new material, texture, or colour value anywhere in the diff.
 
 `app/` cross-checked byte-identical against `app-source-tracked/` for every
 changed file — no concurrent-task leakage into this PR's mirror.
+
+## Operator resolution of the pass-2 escalation (2026-08-29)
+
+**HIGH fixed — bonus label now derives from the matchup authority, not the
+override**: `ReceiveControl` labels a Controlled application colour-match-
+bonused only when `!bIsColourNeutral && CounteredEnemyType == ` the enemy's
+`UEnemyTypeIndicatorComponent::EnemyType` (the same idiom
+`UAbilityMatchupSignalComponent` uses), while the override still drives the
+duration independently. New test case (k) constructs the exact ambiguous
+scenario (override fires, matchup disagrees) and pins label=false.
+**MEDIUM addressed**: the display-semantics contract is now explicitly
+coordinated with `docs/prd-enemy-effect-indicator.md` (referenced at the
+derivation site). **LOW acknowledged**: the audit prose stands as recorded;
+the (k) scenario adds the verifiable teeth the escalation asked for.
+Verified: clean build, full unit suite 127/127.
