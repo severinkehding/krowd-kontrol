@@ -82,13 +82,9 @@ ASniperEnemy::ASniperEnemy()
 
 float ASniperEnemy::GetAttackRangeUnits() const
 {
-	// Deliberately close to DetectionRangeUnits's default (1500.0f, inherited
-	// unchanged), so SN-1PR enters Attack almost immediately after Alert, without
-	// needing to close distance. This is the mechanical definition of "long-range" in
-	// this state machine - SN-1PR doesn't chase, it just needs to be in Alert (i.e.
-	// the player already within DetectionRangeUnits) to also already be within attack
-	// range.
-	return 1400.0f;
+	// See AttackRangeUnits's own comment in SniperEnemy.h for the design rationale
+	// (issue #362).
+	return AttackRangeUnits;
 }
 
 float ASniperEnemy::GetMovementSpeedUnitsPerSecond() const

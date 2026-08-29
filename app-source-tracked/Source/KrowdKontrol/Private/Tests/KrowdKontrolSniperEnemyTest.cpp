@@ -341,8 +341,8 @@ bool FKrowdKontrolSniperEnemyTest::RunTest(const FString& Parameters)
 	// but still within the base DetectionRangeUnits default (1500.0f) still reaches
 	// Attack after the same two-step detection walk used in (c).
 	ASniperEnemy* LongRangeSniper = NewObject<ASniperEnemy>();
-	TestEqual(TEXT("GetAttackRangeUnits() should return SN-1PR's long-range value"),
-		LongRangeSniper->GetAttackRangeUnits(), 1400.0f);
+	TestEqual(TEXT("(j) GetAttackRangeUnits() should return the named AttackRangeUnits constant"),
+		LongRangeSniper->GetAttackRangeUnits(), LongRangeSniper->AttackRangeUnits);
 	const FVector MidRangeLocation(800.0f, 0.0f, 0.0f);
 	AdvanceToAttack(LongRangeSniper, MidRangeLocation); // Attack reached since 800 <= 1400
 	TestEqual(TEXT("Sniper's long attack range should reach Attack well beyond a short-range distance"),

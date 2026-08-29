@@ -68,8 +68,26 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sniper")
 	TObjectPtr<UEnemyTypeIndicatorComponent> EnemyTypeIndicatorComponent;
 
+	// Sniper engagement tunables (issue #362): all 4 first-pass balance numbers
+	// introduced by the SN-1PR sniper-shot PRD (#358 damage, #359 telegraph, #360
+	// chase speed/attack range) live in this class as EditDefaultsOnly UPROPERTYs -
+	// AttackTelegraphSeconds below, plus AttackRangeUnits, ShotDamageAmount, and
+	// MovementSpeed further down this file. None of these are final balance
+	// decisions; each is called out below with its current value.
+	// SN-1PR's first-pass telegraph duration (issue #359) - the countdown between
+	// entering Attack and the shot actually firing. Subject to operator playtest
+	// tuning.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
 	float AttackTelegraphSeconds = 1.2f;
+
+	// SN-1PR's first-pass attack-range value (issue #360's design context, formally
+	// named here for #362) - deliberately close to DetectionRangeUnits's default
+	// (1500.0f, inherited unchanged), so SN-1PR enters Attack almost immediately
+	// after Alert without needing to close distance first - the mechanical
+	// definition of "long-range" in this state machine. Subject to operator
+	// playtest tuning.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.0"))
+	float AttackRangeUnits = 1400.0f;
 
 	// Report this type's own (Blueprint-tunable) telegraph so
 	// AEnemyBase::GetAttackDurationSeconds() derives an Attack window no tuning value
