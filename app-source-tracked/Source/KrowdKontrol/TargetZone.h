@@ -80,6 +80,17 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Target Zone")
 	FOnActorBanked OnActorBanked;
 
+	// Re-evaluates one actor against this zone's banking rules RIGHT NOW - the same
+	// Controlled + type-keyed acceptance the overlap handler applies, callable from
+	// outside an overlap event. Exists because banking previously triggered ONLY on
+	// OnComponentBeginOverlap: an enemy already standing inside the zone when it
+	// became Controlled never re-fired that event and silently never banked. Latent
+	// since the zone shipped, but unreachable until issue #361's wake-and-control
+	// made stunning a stationary in-zone robot possible (2026-08-30 operator
+	// playtest). AEnemyBase::ReceiveControl() calls this for every zone the enemy
+	// overlaps at the moment it enters Controlled.
+	void EvaluateHerdableForBanking(AActor* OtherActor);
+
 private:
 	// Bound in the constructor, not BeginPlay() - most of this module's Automation
 	// Framework tests spawn actors into a UWorld that never runs World->BeginPlay()

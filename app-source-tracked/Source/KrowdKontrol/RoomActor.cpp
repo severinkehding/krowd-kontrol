@@ -211,6 +211,47 @@ ARoomActor::ARoomActor()
 	SetupWallMeshComponent(WallWestMeshComponent, CubeMesh, RoomRoot,
 		FVector(RoomWallThickness / 100.f, RoomFloorExtent.Y * 2.f / 100.f, RoomWallHeight / 100.f),
 		FVector(-RoomFloorExtent.X, 0.f, RoomWallHeight * 0.5f));
+
+	// Operator art pass (2026-08-30): surface-material defaults from the EnvKit
+	// content when present - see the header's FloorMaterial/WallMaterial comment.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FloorMatFinder(
+		TEXT("/Game/EnvKit/Materials/MIC_KitFloor.MIC_KitFloor"));
+	if (FloorMatFinder.Succeeded())
+	{
+		FloorMaterial = FloorMatFinder.Object;
+	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WallMatFinder(
+		TEXT("/Game/EnvKit/Materials/MIC_KitWall.MIC_KitWall"));
+	if (WallMatFinder.Succeeded())
+	{
+		WallMaterial = WallMatFinder.Object;
+	}
+	ApplyAppearanceMaterials();
+}
+
+void ARoomActor::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyAppearanceMaterials();
+}
+
+void ARoomActor::ApplyAppearanceMaterials()
+{
+	if (FloorMaterial && FloorMeshComponent)
+	{
+		FloorMeshComponent->SetMaterial(0, FloorMaterial);
+	}
+	if (WallMaterial)
+	{
+		for (UStaticMeshComponent* Wall : {WallNorthMeshComponent.Get(), WallSouthMeshComponent.Get(),
+			WallEastMeshComponent.Get(), WallWestMeshComponent.Get()})
+		{
+			if (Wall)
+			{
+				Wall->SetMaterial(0, WallMaterial);
+			}
+		}
+	}
 }
 
 AActor* ARoomActor::AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> MarkerClass)
@@ -246,6 +287,7 @@ AActor* ARoomActor::AddTargetZone(EEnemyType EnemyType, TSubclassOf<AActor> Mark
 void ARoomActor::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyAppearanceMaterials();
 	EnsureBankingZonesWired();
 
 	UWorld* World = GetWorld();

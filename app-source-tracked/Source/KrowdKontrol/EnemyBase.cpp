@@ -14,6 +14,7 @@
 #include "Components/MeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "EnemyTypeIndicatorComponent.h"
+#include "TargetZone.h"
 
 AEnemyBase::AEnemyBase()
 {
@@ -116,6 +117,28 @@ void AEnemyBase::ReceiveControl(EAbilitySlot Ability)
 	}
 	OnControlledEntry(Ability);
 	ControlledDurationIndicatorComponent->Show(AbilityInfo.Colour, bIsColourMatchBonused);
+
+	// Banking is otherwise begin-overlap-driven (ATargetZone binds only
+	// OnComponentBeginOverlap): an enemy ALREADY standing inside a zone when it
+	// becomes Controlled fires no new overlap and would silently never bank -
+	// latent since the zone shipped, unreachable until #361's wake-and-control let
+	// a stationary in-zone robot be stunned (2026-08-30 operator playtest). Runs
+	// LAST in this function so the zone's evaluation - and any OnEnemyBanked
+	// listener re-entering from the broadcast - observes a fully-initialized
+	// Controlled state (duration, indicator, entry hook all set).
+	TArray<AActor*> OverlappingZones;
+	GetOverlappingActors(OverlappingZones, ATargetZone::StaticClass());
+	for (AActor* ZoneActor : OverlappingZones)
+	{
+		if (ATargetZone* Zone = Cast<ATargetZone>(ZoneActor))
+		{
+			Zone->EvaluateHerdableForBanking(this);
+			if (CurrentState == EEnemyState::Banked)
+			{
+				break; // banked by the first accepting zone; nothing further to evaluate
+			}
+		}
+	}
 }
 
 bool AEnemyBase::IsAttackBehaviorActive() const

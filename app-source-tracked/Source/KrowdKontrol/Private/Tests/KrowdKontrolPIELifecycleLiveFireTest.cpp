@@ -122,6 +122,12 @@ private:
 	FAutomationTestBase* Test;
 	double DriveStartTime;
 	bool bTopologyResolved = false;
+	// Diagnosis seam (2026-08-30 art-pass gate failure): if the PIE world is torn
+	// down and replaced mid-drive (the player-defeat level restart is the only
+	// in-game path that does this), every cached Room/Zone pointer above dangles
+	// and the drive silently hangs until the 60s timeout. Detect it and fail with
+	// the actual reason instead.
+	TWeakObjectPtr<UWorld> ObservedWorld;
 	TArray<ARoomActor*> Rooms;
 	TMap<EEnemyType, ATargetZone*> ZoneByType;
 	int32 CurrentRoomIndex = 0;
@@ -145,9 +151,15 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 	{
 		return false;
 	}
+	if (bTopologyResolved && ObservedWorld.Get() != PIEWorld)
+	{
+		Test->AddError(TEXT("PIE world was replaced mid-drive (in-game level restart - i.e. the player pawn was defeated while the drive was still herding); cached room/zone topology is stale, aborting"));
+		return true;
+	}
 
 	if (!bTopologyResolved)
 	{
+		ObservedWorld = PIEWorld;
 		for (TActorIterator<ARoomActor> It(PIEWorld); It; ++It)
 		{
 			Rooms.Add(*It);
@@ -179,6 +191,7 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 			}
 		}
 		bTopologyResolved = true;
+		UE_LOG(LogTemp, Display, TEXT("LiveFireDrive: topology resolved - %d rooms, %d typed zones"), Rooms.Num(), ZoneByType.Num());
 	}
 
 	if (RoomPhase == ERoomPhase::Done || CurrentRoomIndex >= Rooms.Num())
@@ -205,6 +218,7 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 			return true;
 		}
 		PlayerPawn->SetActorLocation(CurrentRoom->GetActorLocation(), /*bSweep=*/false);
+		UE_LOG(LogTemp, Display, TEXT("LiveFireDrive: player moved to room %d ('%s'), waiting for activation"), CurrentRoomIndex, *CurrentRoom->GetActorLabel());
 		RoomPhase = ERoomPhase::WaitForRoomActivated;
 		return false;
 	}
@@ -212,6 +226,7 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 	{
 		if (CurrentRoom->IsRoomActivated())
 		{
+			UE_LOG(LogTemp, Display, TEXT("LiveFireDrive: room %d activated, driving %d enemies"), CurrentRoomIndex, CurrentRoom->GetOwnedEnemies().Num());
 			RoomPhase = ERoomPhase::DriveRoomEnemies;
 		}
 		return false;
@@ -237,6 +252,7 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 			// reached.
 			if (Enemy->GetEnemyState() == EEnemyState::Alert || Enemy->GetEnemyState() == EEnemyState::Attack)
 			{
+				UE_LOG(LogTemp, Display, TEXT("LiveFireDrive: enemy %d/'%s' detected (state=%d), issuing control"), EnemyIndexInRoom, *Enemy->GetActorLabel(), static_cast<int32>(Enemy->GetEnemyState()));
 				EnemyPhase = EEnemyPhase::ReceiveControl;
 			}
 			return false;
@@ -260,6 +276,7 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 
 		case EEnemyPhase::TeleportOntoZone:
 		{
+			UE_LOG(LogTemp, Display, TEXT("LiveFireDrive: pre-sweep enemy %d/'%s' at %s (state=%d)"), EnemyIndexInRoom, *Enemy->GetActorLabel(), *Enemy->GetActorLocation().ToCompactString(), static_cast<int32>(Enemy->GetEnemyState()));
 			// Resolve via the enemy's own type, never a fixed room->zone mapping - a
 			// wrong-type zone silently no-ops the bank (ATargetZone::HandleZoneOverlap).
 			const UEnemyTypeIndicatorComponent* TypeIndicator = Enemy->FindComponentByClass<UEnemyTypeIndicatorComponent>();
@@ -268,9 +285,18 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 			{
 				return true;
 			}
-			// Banking is a real physics overlap event, not a distance/tick check -
-			// bSweep=true is required to trigger ATargetZone::HandleZoneOverlap.
-			Enemy->SetActorLocation(Zone->GetActorLocation(), /*bSweep=*/true);
+			// Banking is a real physics overlap event, not a distance/tick check - the
+			// move must generate a begin-overlap against the zone. bSweep=false, NOT
+			// true: a plain teleport still runs UpdateOverlaps() and broadcasts the
+			// begin-overlap banking listens for, while a swept move dies entirely
+			// (bMoved=false, enemy never leaves its spot) whenever any third blocking
+			// actor sits on the straight line to the pen - live-diagnosed 2026-08-30:
+			// L1 room 2's still-Idle BomberEnemy at (4800,500) sat exactly between the
+			// driven bomber (4800,292) and its zone (4800,700), and which bomber the
+			// drive picks first is registration-order luck that a level re-save can
+			// (and did) reshuffle.
+			const bool bMoved = Enemy->SetActorLocation(Zone->GetActorLocation(), /*bSweep=*/false);
+			UE_LOG(LogTemp, Display, TEXT("LiveFireDrive: swept enemy %d/'%s' toward zone at %s - moved=%d, landed at %s"), EnemyIndexInRoom, *Enemy->GetActorLabel(), *Zone->GetActorLocation().ToCompactString(), bMoved ? 1 : 0, *Enemy->GetActorLocation().ToCompactString());
 			EnemyPhase = EEnemyPhase::AssertBanked;
 			return false;
 		}
@@ -280,6 +306,7 @@ bool FKrowdKontrolDriveAllEnemiesToBankedCommand::Update()
 			{
 				Test->TestEqual(TEXT("Enemy should reach Banked after a swept teleport onto its type-matched zone"),
 					Enemy->GetEnemyState(), EEnemyState::Banked);
+				UE_LOG(LogTemp, Display, TEXT("LiveFireDrive: enemy %d/'%s' banked"), EnemyIndexInRoom, *Enemy->GetActorLabel());
 				++EnemyIndexInRoom;
 				EnemyPhase = EEnemyPhase::WaitForDetection;
 			}

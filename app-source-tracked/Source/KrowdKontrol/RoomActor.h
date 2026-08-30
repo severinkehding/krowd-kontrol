@@ -8,6 +8,7 @@
 class APlaceholderTargetZoneActor;
 class ATargetZone;
 class UStaticMeshComponent;
+class UMaterialInterface;
 class UBoxComponent;
 class UPrimitiveComponent;
 class AEnemyBase;
@@ -248,6 +249,23 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnConstruction(const FTransform& Transform) override;
+
+	void ApplyAppearanceMaterials();
+
+	// Operator art pass (2026-08-30): room surface materials as real per-instance
+	// properties, applied in OnConstruction()/BeginPlay() via
+	// ApplyAppearanceMaterials(). Properties - NOT per-component overrideMaterials
+	// edits - because this actor's geometry is (re)configured from C++ on
+	// construction and play-start, which silently wiped every externally-painted
+	// override during the art pass. Defaults load the EnvKit MICs when present and
+	// stay null (engine default look) otherwise, so tests and fresh clones without
+	// the art content never depend on it.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room|Appearance")
+	TObjectPtr<UMaterialInterface> FloorMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Room|Appearance")
+	TObjectPtr<UMaterialInterface> WallMaterial;
 	virtual void Tick(float DeltaSeconds) override;
 
 private:

@@ -46,6 +46,11 @@ float ATargetZone::GetBankingRadiusUnits() const
 
 void ATargetZone::HandleZoneOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+	EvaluateHerdableForBanking(OtherActor);
+}
+
+void ATargetZone::EvaluateHerdableForBanking(AActor* OtherActor)
+{
 	IHerdable* Herdable = Cast<IHerdable>(OtherActor);
 	if (!Herdable || !Herdable->IsControlled())
 	{
