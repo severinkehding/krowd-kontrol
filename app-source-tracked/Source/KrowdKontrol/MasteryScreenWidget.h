@@ -29,6 +29,7 @@ class KROWDKONTROL_API UMasteryScreenWidget : public UUserWidget
 	friend class FKrowdKontrolMasteryScreenWidgetTest;
 	friend class FKrowdKontrolMainMenuMasteryScreenTest;
 	friend class FKrowdKontrolReservedGameplayColoursTest;
+	friend class FKrowdKontrolMainMenuMasteryResetTest;
 
 public:
 	// Fires when BACK is clicked. Touches no subsystem state - UMainMenuWidget is the
@@ -46,6 +47,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Mastery")
 	FText GetPointsDisplayText() const;
+
+	// Re-derives the points display - used by UMainMenuWidget after a full respec
+	// (issue #380, docs/prd-mastery-skill-tree.md REQ-5) so an already-open tree
+	// screen reflects the cleared points immediately, without requiring BACK +
+	// re-open. Scoped to points only for now - there is no bubble/tree content on
+	// this branch yet (issue #374, separate in-progress work); once that lands its
+	// own PR will extend this to also re-derive bubble visual state.
+	UFUNCTION(BlueprintCallable, Category = "Mastery")
+	void RefreshAfterRespec();
 
 protected:
 	virtual void NativeOnInitialized() override;

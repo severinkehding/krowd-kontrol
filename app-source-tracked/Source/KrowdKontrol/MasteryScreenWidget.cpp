@@ -136,6 +136,11 @@ FText UMasteryScreenWidget::GetPointsDisplayText() const
 	return PointsText ? PointsText->GetText() : FText::GetEmpty();
 }
 
+void UMasteryScreenWidget::RefreshAfterRespec()
+{
+	RefreshPointsDisplayText();
+}
+
 void UMasteryScreenWidget::HandleBackClicked()
 {
 	OnBackRequested.Broadcast();

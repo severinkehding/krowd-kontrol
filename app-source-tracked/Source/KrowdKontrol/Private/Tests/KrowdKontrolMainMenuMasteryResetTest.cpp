@@ -9,10 +9,13 @@
 
 #include "Misc/AutomationTest.h"
 #include "MainMenuWidget.h"
+#include "MasteryScreenWidget.h"
 #include "CrowdMasteryTotalSubsystem.h"
+#include "MasteryTreeData.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
+#include "Engine/DataTable.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
@@ -26,6 +29,26 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FKrowdKontrolMainMenuMasteryResetTest,
 	"KrowdKontrol.Unit.MainMenuMasteryReset",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+namespace KrowdKontrolMainMenuMasteryResetTest
+{
+	// Builds a 4-entry Bubbles array costing 1/2/3/4 points, named "<Prefix>_Bubble0..3" -
+	// mirrors KrowdKontrolCrowdMasteryTotalSubsystemSpendTest.cpp's BuildFourBubbles() shape.
+	TArray<FMasterySkillBubble> BuildFourBubbles(const FString& Prefix)
+	{
+		TArray<FMasterySkillBubble> Bubbles;
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			FMasterySkillBubble Bubble;
+			Bubble.BubbleId = FName(*FString::Printf(TEXT("%s_Bubble%d"), *Prefix, Index));
+			Bubble.DisplayName = FText::FromString(FString::Printf(TEXT("%s Skill %d"), *Prefix, Index));
+			Bubble.PointCost = Index + 1;
+			Bubble.EffectHookId = FName(*FString::Printf(TEXT("%s_Effect%d"), *Prefix, Index));
+			Bubbles.Add(Bubble);
+		}
+		return Bubbles;
+	}
+}
 
 bool FKrowdKontrolMainMenuMasteryResetTest::RunTest(const FString& Parameters)
 {
@@ -108,6 +131,8 @@ bool FKrowdKontrolMainMenuMasteryResetTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("bMasteryResetConfirmPending should be false after a second CONFIRM"), Widget->bMasteryResetConfirmPending);
 	TestEqual(TEXT("MasteryResetButton should be Visible again after a second CONFIRM"),
 		Widget->MasteryResetButton->GetVisibility(), ESlateVisibility::Visible);
+	TestEqual(TEXT("LastMasteryRespecCallOrder should stay empty when the subsystem fails to resolve"),
+		Widget->LastMasteryRespecCallOrder.Num(), 0);
 
 	// (e) CONFIRM actually resets a real, injected subsystem - the key behavioral proof,
 	// since the real GetGameInstance()-based resolution path is untestable in
@@ -138,6 +163,102 @@ bool FKrowdKontrolMainMenuMasteryResetTest::RunTest(const FString& Parameters)
 			SecondWidget->bMasteryResetConfirmPending);
 		TestEqual(TEXT("Confirming reset should refresh the on-screen mastery display to 0 (issue #329 AC-4)"),
 			SecondWidget->MasteryDisplayText->GetText().ToString(), FString(TEXT("CROWD MASTERY: 0")));
+	}
+
+	// (e2) CONFIRM performs a full respec (issue #380, docs/prd-mastery-skill-tree.md
+	// REQ-5): a real spent-points balance and a real unlocked bubble are refunded and
+	// cleared, in the pinned Refund-before-Reset order, and an already-open tree
+	// screen's points display refreshes immediately - no manual BACK/re-open needed.
+	// Modifier-slot clearing and bubble-visual refresh are out of scope here (#376 and
+	// #374 respectively have not landed on this branch) - this block only asserts what
+	// issue #380 itself owns: subsystem state, call order, and points-display refresh.
+	{
+		using namespace KrowdKontrolMainMenuMasteryResetTest;
+
+		UGameInstance* RespecGameInstanceOuter = NewObject<UGameInstance>();
+		UCrowdMasteryTotalSubsystem* RespecSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(RespecGameInstanceOuter);
+
+		UDataTable* RespecTable = NewObject<UDataTable>();
+		RespecTable->RowStruct = FMasteryTreeNode::StaticStruct();
+		FMasteryTreeNode RespecRootRow;
+		RespecRootRow.ParentNodeId = NAME_None;
+		RespecRootRow.Phase = EMasteryTreePhase::Phase1;
+		RespecRootRow.Bubbles = BuildFourBubbles(TEXT("Respec"));
+		RespecTable->AddRow(FName(TEXT("Node_Respec")), RespecRootRow);
+		RespecSubsystem->MasteryTreeTable = RespecTable;
+
+		RespecSubsystem->DepositRunMastery(5);
+		const FName RespecBubble0(TEXT("Respec_Bubble0"));
+		TestTrue(TEXT("Sanity: spending on the fixture bubble should succeed"),
+			RespecSubsystem->TrySpendOnBubble(RespecBubble0));
+		TestEqual(TEXT("Sanity: SpentPoints should be 1 before respec"), RespecSubsystem->GetSpentPoints(), 1);
+		TestEqual(TEXT("Sanity: UnlockedBubbles should hold 1 bubble before respec"), RespecSubsystem->GetUnlockedBubbles().Num(), 1);
+
+		UMainMenuWidget* RespecWidget = CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
+		if (TestNotNull(TEXT("RespecWidget should construct"), RespecWidget))
+		{
+			RespecWidget->CachedMasteryTotalSubsystem = RespecSubsystem;
+
+			// Open the tree screen and inject the same subsystem instance into it too, so
+			// both widgets reflect the identical single respec (friend access to
+			// UMasteryScreenWidget::CachedMasteryTotalSubsystem, same injection pattern
+			// block (e) above uses on UMainMenuWidget).
+			RespecWidget->HandleMasteryButtonClicked();
+			if (TestNotNull(TEXT("RespecWidget->MasteryScreenWidgetInstance should be non-null"),
+				ToRawPtr(RespecWidget->MasteryScreenWidgetInstance)))
+			{
+				UMasteryScreenWidget* RespecScreen = RespecWidget->MasteryScreenWidgetInstance;
+				RespecScreen->CachedMasteryTotalSubsystem = RespecSubsystem;
+				RespecScreen->RefreshPointsDisplayText();
+				TestEqual(TEXT("Sanity: tree screen should show 4 unspent points before respec"),
+					RespecScreen->GetPointsDisplayText().ToString(), FString(TEXT("UNSPENT POINTS: 4")));
+
+				RespecWidget->HandleMasteryResetClicked();
+				RespecWidget->HandleMasteryResetConfirmClicked();
+
+				TestEqual(TEXT("Full respec should zero SpentPoints"), RespecSubsystem->GetSpentPoints(), 0);
+				TestEqual(TEXT("Full respec should clear UnlockedBubbles"), RespecSubsystem->GetUnlockedBubbles().Num(), 0);
+				TestEqual(TEXT("Full respec should still zero the earned total (#329 semantics, unchanged)"),
+					RespecSubsystem->GetAccumulatedTotal(), 0);
+
+				const TArray<FString> ExpectedOrder = { TEXT("Refund"), TEXT("Reset") };
+				if (TestEqual(TEXT("LastMasteryRespecCallOrder should have exactly 2 entries"),
+					RespecWidget->LastMasteryRespecCallOrder.Num(), ExpectedOrder.Num()))
+				{
+					for (int32 Index = 0; Index < ExpectedOrder.Num(); ++Index)
+					{
+						TestEqual(*FString::Printf(TEXT("LastMasteryRespecCallOrder[%d] should pin Refund-before-Reset"), Index),
+							RespecWidget->LastMasteryRespecCallOrder[Index], ExpectedOrder[Index]);
+					}
+				}
+
+				TestEqual(TEXT("Tree screen points display should refresh to 0 immediately, no manual re-open"),
+					RespecScreen->GetPointsDisplayText().ToString(), FString(TEXT("UNSPENT POINTS: 0")));
+			}
+		}
+	}
+
+	// (e3) CONFIRM with real spent points/unlocks but the tree screen never opened
+	// (MasteryScreenWidgetInstance == nullptr) - the `if (MasteryScreenWidgetInstance)`
+	// guard in HandleMasteryResetConfirmClicked() must not crash.
+	{
+		UGameInstance* NoScreenGameInstanceOuter = NewObject<UGameInstance>();
+		UCrowdMasteryTotalSubsystem* NoScreenSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(NoScreenGameInstanceOuter);
+		NoScreenSubsystem->DepositRunMastery(3);
+
+		UMainMenuWidget* NoScreenWidget = CreateWidget<UMainMenuWidget>(World, UMainMenuWidget::StaticClass());
+		if (TestNotNull(TEXT("NoScreenWidget should construct"), NoScreenWidget))
+		{
+			NoScreenWidget->CachedMasteryTotalSubsystem = NoScreenSubsystem;
+			TestNull(TEXT("Sanity: MasteryScreenWidgetInstance should be null - never opened"),
+				ToRawPtr(NoScreenWidget->MasteryScreenWidgetInstance));
+
+			NoScreenWidget->HandleMasteryResetClicked();
+			NoScreenWidget->HandleMasteryResetConfirmClicked();
+			TestTrue(TEXT("CONFIRM with no tree screen open should not crash"), true);
+			TestEqual(TEXT("CONFIRM should still zero the total with no tree screen open"),
+				NoScreenSubsystem->GetAccumulatedTotal(), 0);
+		}
 	}
 
 	// (f) RefreshMasteryResetVisibility()'s null-button guard on an unbuilt widget
