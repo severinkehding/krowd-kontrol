@@ -315,7 +315,10 @@ namespace KrowdKontrolLevelTestUtils
 	// whichever enemy type the level's newly-unlocked ability counters - exactly one
 	// enemy present, alone, of CounteredType. Reuses EnemyCountByRoom/EnemyTypesByRoom
 	// callers already build for CheckRoomTargetZonesAndDensity, so callers don't
-	// re-walk TActorIterator a second time.
+	// re-walk TActorIterator a second time. Unlike CheckAllRoomsReachableViaDoors's
+	// silent zero-room skip, a zero-room level here is a hard test failure, not a
+	// vacuous pass - an onboarding level with no entrance room to be safe in is itself
+	// a bug worth surfacing.
 	inline void CheckSoloEncounterForCounteredType(
 		FAutomationTestBase& Test,
 		const TArray<ARoomActor*>& Rooms,
