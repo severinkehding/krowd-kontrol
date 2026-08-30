@@ -337,25 +337,30 @@ void UMainMenuWidget::HandleMasteryResetConfirmClicked()
 	bMasteryResetConfirmPending = false;
 	RefreshMasteryResetVisibility();
 
+	// Reset first so a failed/no-op resolve below (no GameInstance-scoped subsystem)
+	// leaves this empty rather than stale from a previous confirm.
 	LastMasteryRespecCallOrder.Reset();
 	if (UCrowdMasteryTotalSubsystem* MasterySubsystem = ResolveMasteryTotalSubsystem())
 	{
 		// Full respec (issue #380, docs/prd-mastery-skill-tree.md REQ-5): refund every
 		// spent point and clear all bubble unlocks BEFORE zeroing the earned total -
-		// pinned order, since doing it in reverse would transiently make available
-		// balance (AccumulatedTotal - SpentPoints) negative if anything read it
-		// mid-respec. Modifier-slot clearing is deferred - #376 (modifier catalog)
-		// has not landed, so there is no slot state to clear yet.
+		// pinned in this order defensively. No current caller reads mid-call (both
+		// callees are plain synchronous, disjoint-field mutations), but a future
+		// delegate/Tick added to either function would otherwise transiently expose a
+		// negative available balance (AccumulatedTotal - SpentPoints) in reverse order.
+		// Modifier-slot clearing is deferred - #376 (modifier catalog) has not landed,
+		// so there is no slot state to clear yet.
 		MasterySubsystem->RefundAllAndClearUnlocks();
 		LastMasteryRespecCallOrder.Add(TEXT("Refund"));
 		MasterySubsystem->ResetAccumulatedTotal();
 		LastMasteryRespecCallOrder.Add(TEXT("Reset"));
 	}
 
-	// The tree screen (if currently open) must reflect the cleared state
-	// immediately too (issue #380, the #349 lesson on immediate UI refresh) -
-	// RefreshAfterRespec() is a no-op-safe call on an instance that hasn't built
-	// its canvas yet.
+	// The tree screen (if it has been opened at least once this session -
+	// MasteryScreenWidgetInstance is created lazily and never nulled again, even
+	// after BACK) must reflect the cleared state immediately too (issue #380, the
+	// #349 lesson on immediate UI refresh) - RefreshAfterRespec() is a no-op-safe
+	// call on an instance that hasn't built its canvas yet.
 	if (MasteryScreenWidgetInstance)
 	{
 		MasteryScreenWidgetInstance->RefreshAfterRespec();

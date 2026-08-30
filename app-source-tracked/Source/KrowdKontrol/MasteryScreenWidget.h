@@ -11,14 +11,14 @@ class UCrowdMasteryTotalSubsystem;
 
 // Issue #373, docs/prd-mastery-skill-tree.md REQ-2's scaffolding half: a dedicated
 // screen for the Crowd Mastery skill tree to grow into, reachable from a new MASTERY
-// button on UMainMenuWidget. Shows the player's current unspent points (today,
-// identical to UCrowdMasteryTotalSubsystem::GetAccumulatedTotal() - there is no
-// spend/refund tracking yet, see RefreshPointsDisplayText()) and a BACK control that
-// broadcasts OnBackRequested rather than touching any subsystem state itself -
-// UMainMenuWidget owns the actual visibility swap. Builds its tree in C++, same
-// no-Widget-Blueprint lineage as UMainMenuWidget/UPostRunSummaryWidget. Deliberately
-// has no node/bubble tree content yet - that is a separate follow-up issue, see this
-// issue's own body and docs/prd-mastery-skill-tree.md.
+// button on UMainMenuWidget. Shows the player's current unspent points (issue #380:
+// UCrowdMasteryTotalSubsystem::GetAccumulatedTotal() - GetSpentPoints(), see
+// RefreshPointsDisplayText()) and a BACK control that broadcasts OnBackRequested
+// rather than touching any subsystem state itself - UMainMenuWidget owns the actual
+// visibility swap. Builds its tree in C++, same no-Widget-Blueprint lineage as
+// UMainMenuWidget/UPostRunSummaryWidget. Deliberately has no node/bubble tree content
+// yet - that is a separate follow-up issue, see this issue's own body and
+// docs/prd-mastery-skill-tree.md.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnMasteryScreenBackRequested);
 
 UCLASS()
@@ -51,9 +51,8 @@ public:
 	// Re-derives the points display - used by UMainMenuWidget after a full respec
 	// (issue #380, docs/prd-mastery-skill-tree.md REQ-5) so an already-open tree
 	// screen reflects the cleared points immediately, without requiring BACK +
-	// re-open. Scoped to points only for now - there is no bubble/tree content on
-	// this branch yet (issue #374, separate in-progress work); once that lands its
-	// own PR will extend this to also re-derive bubble visual state.
+	// re-open. Scoped to points only - no bubble/tree content exists in this
+	// codebase yet (issue #374, in progress).
 	UFUNCTION(BlueprintCallable, Category = "Mastery")
 	void RefreshAfterRespec();
 

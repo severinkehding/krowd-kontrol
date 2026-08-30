@@ -116,10 +116,53 @@ No `.Build.cs` change needed — no new dependencies.
 - **Persistence of spent points / unlocks across launches** — REQ-1 already scoped
   this as session-only; unaffected by this change.
 
+## Post-review fixes
+
+Automated review of this PR (code-review, comment-quality, test-coverage agents)
+independently traced the same CRITICAL bug: `UMasteryScreenWidget::RefreshPointsDisplayText()`
+still computed `UnspentPoints` as raw `GetAccumulatedTotal()`, never subtracting
+`GetSpentPoints()` — a formula left over from issue #373, before #371 shipped spend
+tracking. This PR's own block (e2) sanity assertion (`"UNSPENT POINTS: 4"` after a
+deposit of 5 and a spend of 1) was the first test anywhere to combine a real spend
+with this display, and it asserted the *intended* value, not the one the unfixed
+formula would produce.
+
+Fixed in `app-source-tracked/`:
+- `MasteryScreenWidget.cpp`'s `RefreshPointsDisplayText()` now computes
+  `GetAccumulatedTotal() - GetSpentPoints()` in both the cached and freshly-resolved
+  branches — matching the "available balance" formula `TrySpendOnBubble()` already
+  documents (`CrowdMasteryTotalSubsystem.h`).
+- Updated the two stale "there is no spend/refund tracking yet" comments
+  (`MasteryScreenWidget.h`'s class doc, `MasteryScreenWidget.cpp`'s function comment)
+  that dated from before #371 shipped.
+- Reframed `MainMenuWidget.cpp`'s refund-before-reset ordering comment from an
+  active-hazard claim to a defensive/forward-looking one — both callees are plain
+  synchronous, disjoint-field mutations, so nothing today can actually read a
+  mid-respec state.
+- Corrected `MainMenuWidget.cpp`'s `if (MasteryScreenWidgetInstance)` refresh-guard
+  comment from "if currently open" to "if it has been opened at least once this
+  session" (the pointer is never nulled by the BACK handler, only
+  `RemoveFromParent()`ed).
+- Added a one-line comment on `LastMasteryRespecCallOrder.Reset()` clarifying it
+  runs before subsystem resolution so a failed resolve leaves the array empty.
+- Added two direct unit-test blocks ((f2)/(f3)) to `KrowdKontrolMasteryScreenWidgetTest.cpp`
+  covering `RefreshAfterRespec()` in isolation (unbuilt-widget degrade-gracefully,
+  and a built widget re-reading a real subsystem's balance) — previously only
+  exercised indirectly through `KrowdKontrolMainMenuMasteryResetTest.cpp`.
+
+Note: `app/`'s live copy of `MasteryScreenWidget.cpp`/`.h` already carries an
+equivalent fix (attributed to #374, which independently corrected the same formula
+while building its superset tree-render work) — `app/` was left untouched for these
+files per the divergence policy above; only the `app-source-tracked/` splice and
+`MainMenuWidget.cpp`/the widget's own test file (byte-identical between `app/` and
+`app-source-tracked/`) were updated and mirrored to `app/`.
+
 ## Validation evidence
 
 `python harness/ci.py --quick` → `GATE_OK mode=quick` (`UNIT_PASSED tests=136`,
-`PIE_PASSED tests=8`) — no regression vs. the 136/8 baseline PR #399 already
+`PIE_PASSED tests=8`) — re-run after the post-review fixes above, against the live
+Editor build (not self-reported): all existing tests plus the new (f2)/(f3)
+assertions pass with no regression vs. the 136/8 baseline PR #399 already
 established.
 
 Hard invariants (`MISSION.md`'s 8): reviewed. Invariant #8 (Unreal project not

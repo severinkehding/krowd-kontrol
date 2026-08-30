@@ -96,24 +96,24 @@ void UMasteryScreenWidget::RefreshPointsDisplayText()
 		return;
 	}
 
-	// "Unspent" == GetAccumulatedTotal() verbatim for this issue only - there is no
-	// spend/refund API on UCrowdMasteryTotalSubsystem yet (docs/prd-mastery-skill-tree.md
-	// REQ-1, separate follow-up). A missing GameInstance (every KrowdKontrol.Unit.* test
-	// that constructs this widget via CreateNewMap() hits this) is the unremarkable
-	// default and stays unlogged; a present GameInstance with no resolvable subsystem is
-	// a real failure and is warned once below - same shape as
-	// UMainMenuWidget::RefreshMasteryDisplayText().
+	// "Unspent" == GetAccumulatedTotal() - GetSpentPoints() (issue #380 follow-through
+	// on #371's spend API) - the available balance, same formula TrySpendOnBubble()
+	// checks against (CrowdMasteryTotalSubsystem.h). A missing GameInstance (every
+	// KrowdKontrol.Unit.* test that constructs this widget via CreateNewMap() hits
+	// this) is the unremarkable default and stays unlogged; a present GameInstance
+	// with no resolvable subsystem is a real failure and is warned once below - same
+	// shape as UMainMenuWidget::RefreshMasteryDisplayText().
 	int32 UnspentPoints = 0;
 	if (CachedMasteryTotalSubsystem)
 	{
-		UnspentPoints = CachedMasteryTotalSubsystem->GetAccumulatedTotal();
+		UnspentPoints = CachedMasteryTotalSubsystem->GetAccumulatedTotal() - CachedMasteryTotalSubsystem->GetSpentPoints();
 	}
 	else if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UCrowdMasteryTotalSubsystem* MasterySubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>())
 		{
 			CachedMasteryTotalSubsystem = MasterySubsystem;
-			UnspentPoints = MasterySubsystem->GetAccumulatedTotal();
+			UnspentPoints = MasterySubsystem->GetAccumulatedTotal() - MasterySubsystem->GetSpentPoints();
 		}
 		else if (!bHasWarnedMissingMasteryTotalSubsystem)
 		{
