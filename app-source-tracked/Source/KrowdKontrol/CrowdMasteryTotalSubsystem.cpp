@@ -184,6 +184,21 @@ TArray<FName> UCrowdMasteryTotalSubsystem::GetUnlockedBubbles() const
 	return UnlockedBubbleIds.Array();
 }
 
+TArray<FName> UCrowdMasteryTotalSubsystem::GetUnlockedEffectHookIds() const
+{
+	TArray<FName> HookIds;
+	for (const FName& BubbleId : UnlockedBubbleIds)
+	{
+		const FMasteryTreeNode* Node = nullptr;
+		const FMasterySkillBubble* Bubble = nullptr;
+		if (FindBubbleAndOwningNode(BubbleId, Node, Bubble) && Bubble)
+		{
+			HookIds.Add(Bubble->EffectHookId);
+		}
+	}
+	return HookIds;
+}
+
 void UCrowdMasteryTotalSubsystem::RefundAllAndClearUnlocks()
 {
 	SpentPoints = 0;

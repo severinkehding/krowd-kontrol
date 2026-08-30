@@ -24,6 +24,11 @@
 #include "LevelClearTimeSubsystem.h"
 #include "LevelLifecycleSubsystem.h"
 #include "BossBase.h"
+#include "CrowdMasteryTotalSubsystem.h"
+#include "TargetZone.h"
+#include "RoomActor.h"
+#include "Components/BoxComponent.h"
+#include "GameFramework/FloatingPawnMovement.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -52,6 +57,7 @@ void AKrowdKontrolPlayerController::BeginPlay()
 		WireWidgetsToPawn(CurrentPawn);
 		ApplyBossCheckpointIfRequested(CurrentPawn);
 		RetryPendingAbilityUnlock(CurrentPawn);
+		ApplyStarterSkillEffects(CurrentPawn);
 	}
 }
 
@@ -61,6 +67,7 @@ void AKrowdKontrolPlayerController::OnPossess(APawn* InPawn)
 	WireWidgetsToPawn(InPawn);
 	ApplyBossCheckpointIfRequested(InPawn);
 	RetryPendingAbilityUnlock(InPawn);
+	ApplyStarterSkillEffects(InPawn);
 }
 
 void AKrowdKontrolPlayerController::CreateHUDWidgets()
@@ -366,6 +373,112 @@ ULevelClearTimeSubsystem* AKrowdKontrolPlayerController::ResolveLevelClearTimeSu
 			TEXT("a level-failed run's in-progress timer cannot be discarded."));
 	}
 	return CachedLevelClearTimeSubsystem;
+}
+
+namespace
+{
+	const FName EffectHook_AbilityCooldownReduction(TEXT("AbilityCooldownReduction"));
+	const FName EffectHook_EnergyMaxIncrease(TEXT("EnergyMaxIncrease"));
+	const FName EffectHook_MovementSpeedBonus(TEXT("MovementSpeedBonus"));
+	const FName EffectHook_PenZoneRadiusBonus(TEXT("PenZoneRadiusBonus"));
+
+	constexpr float StarterCooldownReductionMultiplier = 0.8f;   // 20% shorter cooldowns
+	constexpr float StarterEnergyMaxBonusMultiplier = 1.25f;     // +25% energy ceiling
+	constexpr float StarterMoveSpeedBonusMultiplier = 1.15f;     // +15% top speed
+	constexpr float StarterPenZoneRadiusBonusMultiplier = 1.2f;  // +20% pen-zone catch radius
+}
+
+void AKrowdKontrolPlayerController::ApplyStarterSkillEffects(APawn* InPawn)
+{
+	if (!InPawn || bStarterSkillEffectsApplied)
+	{
+		return;
+	}
+
+	UCrowdMasteryTotalSubsystem* MasterySubsystem = ResolveCrowdMasteryTotalSubsystem();
+	if (!MasterySubsystem)
+	{
+		return;
+	}
+	bStarterSkillEffectsApplied = true;
+
+	const TArray<FName> UnlockedHookIds = MasterySubsystem->GetUnlockedEffectHookIds();
+
+	if (UnlockedHookIds.Contains(EffectHook_AbilityCooldownReduction))
+	{
+		if (UAbilityCooldownComponent* CooldownComponent = InPawn->FindComponentByClass<UAbilityCooldownComponent>())
+		{
+			for (float& Duration : CooldownComponent->AbilityCooldownDurations)
+			{
+				Duration *= StarterCooldownReductionMultiplier;
+			}
+		}
+	}
+	if (UnlockedHookIds.Contains(EffectHook_EnergyMaxIncrease))
+	{
+		if (UPlayerEnergyComponent* EnergyComponent = InPawn->FindComponentByClass<UPlayerEnergyComponent>())
+		{
+			EnergyComponent->ApplyMaxEnergyBonus(EnergyComponent->MaxEnergy * StarterEnergyMaxBonusMultiplier);
+		}
+	}
+	if (UnlockedHookIds.Contains(EffectHook_MovementSpeedBonus))
+	{
+		if (UFloatingPawnMovement* Movement = InPawn->FindComponentByClass<UFloatingPawnMovement>())
+		{
+			Movement->MaxSpeed *= StarterMoveSpeedBonusMultiplier;
+		}
+	}
+	if (UnlockedHookIds.Contains(EffectHook_PenZoneRadiusBonus))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			// Force every room's target zone to exist before scaling: BeginPlay() order
+			// across actor classes is not guaranteed, so a room whose ARoomActor hasn't
+			// lazily spawned its zone yet would otherwise have it created afterward (by
+			// the EnsureBankingZonesWired() call below, or its own BeginPlay) at the
+			// default unscaled extent, permanently missing this bonus.
+			for (TActorIterator<ARoomActor> PreSpawnRoomIt(World); PreSpawnRoomIt; ++PreSpawnRoomIt)
+			{
+				PreSpawnRoomIt->EnsureBankingZonesWired();
+			}
+			for (TActorIterator<ATargetZone> It(World); It; ++It)
+			{
+				if (UBoxComponent* Box = It->ZoneCollisionComponent)
+				{
+					Box->SetBoxExtent(Box->GetUnscaledBoxExtent() * StarterPenZoneRadiusBonusMultiplier);
+				}
+			}
+			// Re-bake any already-shown banking-radius ring so it keeps reflecting the
+			// real extent (TargetZone.h:32-36 honesty invariant, issue #365/#393) -
+			// EnsureBankingZonesWired() is idempotent and safe to call more than once
+			// (RoomActor.cpp), and is the same refresh entry point ARoomActor::BeginPlay()
+			// itself uses to pair a zone with its ring marker.
+			for (TActorIterator<ARoomActor> RoomIt(World); RoomIt; ++RoomIt)
+			{
+				RoomIt->EnsureBankingZonesWired();
+			}
+		}
+	}
+}
+
+UCrowdMasteryTotalSubsystem* AKrowdKontrolPlayerController::ResolveCrowdMasteryTotalSubsystem()
+{
+	if (CachedCrowdMasteryTotalSubsystem)
+	{
+		return CachedCrowdMasteryTotalSubsystem;
+	}
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		CachedCrowdMasteryTotalSubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>();
+	}
+	if (!CachedCrowdMasteryTotalSubsystem && !bHasWarnedMissingCrowdMasteryTotalSubsystem)
+	{
+		bHasWarnedMissingCrowdMasteryTotalSubsystem = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("AKrowdKontrolPlayerController: no UCrowdMasteryTotalSubsystem available - ")
+			TEXT("starter skill effects cannot be applied."));
+	}
+	return CachedCrowdMasteryTotalSubsystem;
 }
 
 int32 AKrowdKontrolPlayerController::RefreshTargetZoneBeacons()
