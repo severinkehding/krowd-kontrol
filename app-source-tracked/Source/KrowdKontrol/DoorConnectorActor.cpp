@@ -8,6 +8,7 @@
 #include "Components/BoxComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Materials/MaterialInterface.h"
 
 namespace
 {
@@ -46,6 +47,14 @@ ADoorConnectorActor::ADoorConnectorActor()
 	if (CubeMeshFinder.Succeeded())
 	{
 		ConnectorFloorMeshComponent->SetStaticMesh(CubeMeshFinder.Object);
+	}
+	// Operator art pass (2026-08-30): match the rooms' floor material when the
+	// EnvKit content exists (see ARoomActor::FloorMaterial's rationale).
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ConnectorFloorMatFinder(
+		TEXT("/Game/EnvKit/Materials/MIC_KitFloor.MIC_KitFloor"));
+	if (ConnectorFloorMatFinder.Succeeded())
+	{
+		ConnectorFloorMeshComponent->SetMaterial(0, ConnectorFloorMatFinder.Object);
 	}
 	// RoomA/RoomB aren't set yet at construction time - start hidden until
 	// RecomputeConnectorGeometry() has something valid to show.

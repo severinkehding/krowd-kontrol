@@ -93,6 +93,7 @@ class KROWDKONTROL_API AEnemyBase : public AActor, public IThreatState, public I
 	friend class FKrowdKontrolAbilityMatchupSignalComponentTest;
 	friend class FKrowdKontrolLevelLifecycleSubsystemTest;
 	friend class FKrowdKontrolLevelSequenceSubsystemTest;
+	friend class FKrowdKontrolTargetZoneInZoneControlBankingTest;
 	friend class FKrowdKontrolCrowdMasterySubsystemTest;
 	// Same grant, for the BeginPlay-wiring coverage test (issue #174 pass-2 code-review
 	// finding), which drives one enemy to Controlled to prove the wired delegate

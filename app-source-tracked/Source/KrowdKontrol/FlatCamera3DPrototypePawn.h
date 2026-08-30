@@ -7,6 +7,8 @@
 #include "FlatCamera3DPrototypePawn.generated.h"
 
 class UStaticMeshComponent;
+class USkeletalMeshComponent;
+class UCosmeticLocomotionComponent;
 class UFloatingPawnMovement;
 class USpringArmComponent;
 class UCameraComponent;
@@ -54,6 +56,21 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UStaticMeshComponent> MeshComponent;
+
+	// Cosmetic-only player visual (operator art pass, 2026-08-30): the Fab
+	// "Cute Robot Character" skeletal mesh riding on top of the collision cube.
+	// MeshComponent stays the root/collision/movement/facing authority - this
+	// component carries no collision and exists purely so the player reads as a
+	// robot instead of a cube. The cube itself is hidden in game (kept visible in
+	// editor for authoring clarity).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<USkeletalMeshComponent> CosmeticMeshComponent;
+
+	// Drives the cute-robot visual's procedural move-bob (the FBX ships without
+	// animation clips, so clip-swapping isn't an option - see
+	// UCosmeticLocomotionComponent's own comment).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
+	TObjectPtr<UCosmeticLocomotionComponent> CosmeticLocomotionComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FlatCamera3DPrototype")
 	TObjectPtr<UFloatingPawnMovement> MovementComponent;

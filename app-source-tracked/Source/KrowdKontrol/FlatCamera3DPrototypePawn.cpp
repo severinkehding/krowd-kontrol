@@ -2,6 +2,9 @@
 
 #include "FlatCamera3DPrototypePawn.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "CosmeticLocomotionComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "GameFramework/FloatingPawnMovement.h"
@@ -43,6 +46,29 @@ AFlatCamera3DPrototypePawn::AFlatCamera3DPrototypePawn()
 	{
 		MeshComponent->SetStaticMesh(CubeMeshFinder.Object);
 	}
+
+	// Operator art pass (2026-08-30): cute-robot visual over the collision cube.
+	// Cube hidden in game only - editor keeps it for authoring; all collision,
+	// movement and cursor-facing still run through MeshComponent unchanged.
+	MeshComponent->SetHiddenInGame(true);
+	CosmeticMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CosmeticMeshComponent"));
+	CosmeticMeshComponent->SetupAttachment(MeshComponent);
+	CosmeticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> CuteRobotMeshFinder(
+		TEXT("/Game/CuteRobot/SK_CuteRobot.SK_CuteRobot"));
+	if (CuteRobotMeshFinder.Succeeded())
+	{
+		CosmeticMeshComponent->SetSkeletalMesh(CuteRobotMeshFinder.Object);
+	}
+	// Mesh is ~160uu tall with pivot at feet; cube is 100uu with centre pivot.
+	// 0.75 scale lands a ~120uu robot with feet at the cube's bottom face. Yaw -90:
+	// the FBX faces +Y, the pawn's cursor-facing convention is +X forward.
+	CosmeticMeshComponent->SetRelativeScale3D(FVector(0.75f, 0.75f, 0.75f));
+	CosmeticMeshComponent->SetRelativeLocation(FVector(0.f, 0.f, -50.f));
+	CosmeticMeshComponent->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
+
+	CosmeticLocomotionComponent = CreateDefaultSubobject<UCosmeticLocomotionComponent>(TEXT("CosmeticLocomotion"));
+	CosmeticLocomotionComponent->bProceduralBob = true;
 
 	MovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("MovementComponent"));
 	// MeshComponent is already RootComponent, so OnRegister()'s auto-detection would
