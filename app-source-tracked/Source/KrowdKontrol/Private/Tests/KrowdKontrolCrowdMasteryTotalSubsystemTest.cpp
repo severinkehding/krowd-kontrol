@@ -101,11 +101,27 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Paramet
 	RoundTripBubble.PointCost = 2;
 	RoundTripBubble.EffectHookId = FName(TEXT("RoundTrip_Effect0"));
 	RoundTripRootRow.Bubbles.Add(RoundTripBubble);
+
+	// Second bubble, zero-cost so it doesn't need extra budget: proves the
+	// TArray/TSet round trip at the ULevelClearTimeSaveGame boundary handles more
+	// than one entry, not just the single-element case (test-coverage review LOW
+	// finding) - same "don't just test the single-element case" instinct already
+	// applied to AccumulatedTotal above.
+	FMasterySkillBubble RoundTripBubble1;
+	const FName RoundTripBubbleId1(TEXT("RoundTrip_Bubble1"));
+	RoundTripBubble1.BubbleId = RoundTripBubbleId1;
+	RoundTripBubble1.DisplayName = FText::FromString(TEXT("Round Trip Skill 1"));
+	RoundTripBubble1.PointCost = 0;
+	RoundTripBubble1.EffectHookId = FName(TEXT("RoundTrip_Effect1"));
+	RoundTripRootRow.Bubbles.Add(RoundTripBubble1);
+
 	RoundTripTable->AddRow(FName(TEXT("Node_RoundTripRoot")), RoundTripRootRow);
 	Subsystem->MasteryTreeTable = RoundTripTable;
 
 	TestTrue(TEXT("Spending the exact available balance on the round-trip fixture bubble should succeed"),
 		Subsystem->TrySpendOnBubble(RoundTripBubbleId));
+	TestTrue(TEXT("Spending on the second, zero-cost round-trip fixture bubble should succeed"),
+		Subsystem->TrySpendOnBubble(RoundTripBubbleId1));
 	TestEqual(TEXT("SpentPoints should reflect the round-trip spend before any reload"),
 		Subsystem->GetSpentPoints(), 2);
 
@@ -132,10 +148,31 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("LoadPersistedTotal should read back SpentPoints the first session's TrySpendOnBubble write-through persisted"),
 		SecondSessionSubsystem->GetSpentPoints(), 2);
 	const TArray<FName> ReloadedUnlockedBubbles = SecondSessionSubsystem->GetUnlockedBubbles();
-	TestEqual(TEXT("LoadPersistedTotal should read back exactly one unlocked bubble"),
-		ReloadedUnlockedBubbles.Num(), 1);
-	TestTrue(TEXT("LoadPersistedTotal should read back the exact bubble ID the first session unlocked"),
+	TestEqual(TEXT("LoadPersistedTotal should read back both unlocked bubbles"),
+		ReloadedUnlockedBubbles.Num(), 2);
+	TestTrue(TEXT("LoadPersistedTotal should read back the first bubble ID the first session unlocked"),
 		ReloadedUnlockedBubbles.Contains(RoundTripBubbleId));
+	TestTrue(TEXT("LoadPersistedTotal should read back the second bubble ID the first session unlocked"),
+		ReloadedUnlockedBubbles.Contains(RoundTripBubbleId1));
+
+	// Refund persistence round trip (docs/prd-mastery-skill-tree.md REQ-1, issue #372):
+	// RefundAllAndClearUnlocks()'s write-through must reach disk too, same as
+	// TrySpendOnBubble()'s above - a third, independent subsystem instance should see
+	// the respec, not the pre-respec spend state (test-coverage review HIGH finding).
+	SecondSessionSubsystem->RefundAllAndClearUnlocks();
+
+	UGameInstance* ThirdGameInstanceOuter = NewObject<UGameInstance>();
+	UCrowdMasteryTotalSubsystem* ThirdSessionSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(ThirdGameInstanceOuter);
+	if (TestNotNull(TEXT("Third UCrowdMasteryTotalSubsystem should construct"), ThirdSessionSubsystem))
+	{
+		ThirdSessionSubsystem->LoadPersistedTotal();
+		TestEqual(TEXT("LoadPersistedTotal should read back SpentPoints as 0 after a persisted refund"),
+			ThirdSessionSubsystem->GetSpentPoints(), 0);
+		TestEqual(TEXT("LoadPersistedTotal should read back no unlocked bubbles after a persisted refund"),
+			ThirdSessionSubsystem->GetUnlockedBubbles().Num(), 0);
+		TestEqual(TEXT("LoadPersistedTotal should still read back the untouched earned total after a persisted refund"),
+			ThirdSessionSubsystem->GetAccumulatedTotal(), 2);
+	}
 
 	// Confirm the seeded sibling fields survived every PersistAccumulatedTotal()
 	// write-through this test triggered above - the same property

@@ -49,8 +49,8 @@ established for `AccumulatedCrowdMasteryTotal`, just extended to two more fields
 - A new save file or save slot — explicitly ruled out by the issue's own acceptance
   criteria.
 - Renaming `LoadPersistedTotal()`/`PersistAccumulatedTotal()` — both names remain
-  accurate enough after broadening; a rename would touch both existing test files
-  for a purely cosmetic reason the issue doesn't ask for.
+  accurate enough after broadening; a rename would touch every call site in this
+  class for a purely cosmetic reason the issue doesn't ask for.
 - Changing `ResetAccumulatedTotal()`'s semantics (whether resetting the earned
   total should also clear spend/unlocks) — pre-existing behavior, out of scope for
   a persistence-only issue.

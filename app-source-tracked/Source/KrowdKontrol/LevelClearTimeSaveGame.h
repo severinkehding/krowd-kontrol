@@ -43,10 +43,9 @@ public:
 
 	// The persisted mirror of UCrowdMasteryTotalSubsystem::UnlockedBubbleIds (issue #371,
 	// PR #391 — session-only there). TArray, not TSet, to match GetUnlockedBubbles()'s own
-	// return type and avoid TSet's build-config-dependent serialization; the subsystem
-	// converts to/from its internal TSet<FName> at load/persist time. Same shared save
-	// slot, not a separate save-game class. Pre-this-issue saves default this to an empty
-	// array on load, same reasoning as SpentCrowdMasteryPoints above.
+	// return type; the subsystem converts to/from its internal TSet<FName> at load/persist
+	// time. Same shared save slot, not a separate save-game class. Pre-this-issue saves
+	// default this to an empty array on load, same reasoning as SpentCrowdMasteryPoints above.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd Mastery")
 	TArray<FName> UnlockedCrowdMasteryBubbleIds;
 };

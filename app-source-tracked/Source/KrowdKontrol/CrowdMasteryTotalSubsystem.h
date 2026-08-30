@@ -159,8 +159,8 @@ private:
 	// Writes AccumulatedTotal, SpentPoints, and UnlockedBubbleIds together to the
 	// shared save slot (docs/prd-mastery-skill-tree.md REQ-1, issue #372 broadened
 	// this from AccumulatedTotal-only). Name kept for historical continuity - both
-	// existing test files call it by name and it still accurately persists the
-	// accumulated total, among other fields now.
+	// existing test files reference it by name in their own comments, and it still
+	// accurately persists the accumulated total, among other fields now.
 	void PersistAccumulatedTotal() const;
 
 	// Scans MasteryTreeTable's row map for the node owning BubbleId. Returns false
