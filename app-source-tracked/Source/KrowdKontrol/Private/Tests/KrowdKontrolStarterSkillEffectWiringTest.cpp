@@ -21,6 +21,7 @@
 #include "AbilityCooldownComponent.h"
 #include "PlayerEnergyComponent.h"
 #include "TargetZone.h"
+#include "RoomActor.h"
 #include "Components/BoxComponent.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "Engine/DataTable.h"
@@ -256,6 +257,83 @@ bool FKrowdKontrolStarterSkillEffectWiringTest::RunTest(const FString& Parameter
 	// fix, must genuinely retry resolution rather than short-circuit on a guard the first
 	// (failed) call left set.
 	UnresolvedController->ApplyStarterSkillEffects(UnresolvedPawn);
+
+	// PenZoneRadiusBonus / lazily-spawned-zone race (pass-1 code review, PR #396): a
+	// room's ATargetZone isn't created until ARoomActor::EnsureBankingZonesWired()
+	// runs (RoomActor.cpp) - normally triggered by the room's own BeginPlay(), but
+	// Unreal doesn't guarantee BeginPlay ordering across actor classes, so a room can
+	// still have no ATargetZone at all when ApplyStarterSkillEffects' scaling loop
+	// runs. This room is deliberately never BeginPlay'd (no DispatchBeginPlay() call):
+	// AddTargetZone() below only creates the marker actor, never the ATargetZone
+	// itself, so the only thing that can make it exist before the scaling loop is
+	// ApplyStarterSkillEffects' own pre-scaling EnsureBankingZonesWired() pass.
+	ATargetZone* DefaultExtentReferenceZone = World->SpawnActor<ATargetZone>();
+	if (!TestNotNull(TEXT("Reference zone for reading TargetZone's default extent should spawn"), DefaultExtentReferenceZone)
+		|| !TestNotNull(TEXT("Reference zone should have a ZoneCollisionComponent"), DefaultExtentReferenceZone->ZoneCollisionComponent.Get()))
+	{
+		return false;
+	}
+	const FVector DefaultZoneExtent = DefaultExtentReferenceZone->ZoneCollisionComponent->GetUnscaledBoxExtent();
+	World->DestroyActor(DefaultExtentReferenceZone);
+
+	ARoomActor* LazyZoneRoom = World->SpawnActor<ARoomActor>();
+	if (!TestNotNull(TEXT("Lazy-zone room should spawn"), LazyZoneRoom))
+	{
+		return false;
+	}
+	LazyZoneRoom->AddTargetZone(EEnemyType::RU_NNR);
+
+	AFlatCamera3DPrototypePawn* LazyZonePawn = World->SpawnActor<AFlatCamera3DPrototypePawn>();
+	AKrowdKontrolPlayerController* LazyZoneController = World->SpawnActor<AKrowdKontrolPlayerController>();
+	if (!TestNotNull(TEXT("Lazy-zone pawn should spawn"), LazyZonePawn)
+		|| !TestNotNull(TEXT("Lazy-zone controller should spawn"), LazyZoneController))
+	{
+		return false;
+	}
+
+	UDataTable* LazyZoneTable = NewObject<UDataTable>();
+	LazyZoneTable->RowStruct = FMasteryTreeNode::StaticStruct();
+
+	FMasteryTreeNode LazyZoneRootRow;
+	LazyZoneRootRow.ParentNodeId = NAME_None;
+	LazyZoneRootRow.Phase = EMasteryTreePhase::Phase1;
+
+	FMasterySkillBubble LazyZonePenZoneBubble;
+	LazyZonePenZoneBubble.BubbleId = FName(TEXT("B_LazyZonePenZone"));
+	LazyZonePenZoneBubble.PointCost = 0;
+	LazyZonePenZoneBubble.EffectHookId = FName(TEXT("PenZoneRadiusBonus"));
+	LazyZoneRootRow.Bubbles.Add(LazyZonePenZoneBubble);
+
+	LazyZoneTable->AddRow(FName(TEXT("Node_Root")), LazyZoneRootRow);
+
+	UGameInstance* LazyZoneGameInstanceOuter = NewObject<UGameInstance>();
+	UCrowdMasteryTotalSubsystem* LazyZoneMasterySubsystem = NewObject<UCrowdMasteryTotalSubsystem>(LazyZoneGameInstanceOuter);
+	LazyZoneMasterySubsystem->MasteryTreeTable = LazyZoneTable;
+
+	TestTrue(TEXT("Spending on the lazy-zone pen-zone bubble should succeed"),
+		LazyZoneMasterySubsystem->TrySpendOnBubble(FName(TEXT("B_LazyZonePenZone"))));
+
+	LazyZoneController->CachedCrowdMasteryTotalSubsystem = LazyZoneMasterySubsystem;
+	LazyZoneController->ApplyStarterSkillEffects(LazyZonePawn);
+
+	TArray<AActor*> LazyZoneAttachedActors;
+	LazyZoneRoom->GetTargetZones()[0].MarkerActor->GetAttachedActors(LazyZoneAttachedActors);
+	ATargetZone* LazySpawnedZone = nullptr;
+	for (AActor* Attached : LazyZoneAttachedActors)
+	{
+		if (ATargetZone* AttachedZone = Cast<ATargetZone>(Attached))
+		{
+			LazySpawnedZone = AttachedZone;
+			break;
+		}
+	}
+	if (TestNotNull(TEXT("ApplyStarterSkillEffects should have forced the room's zone to exist before scaling"), LazySpawnedZone)
+		&& LazySpawnedZone
+		&& TestNotNull(TEXT("Lazily-spawned zone should have a ZoneCollisionComponent"), LazySpawnedZone->ZoneCollisionComponent.Get()))
+	{
+		TestEqual(TEXT("A zone created by the pre-scaling EnsureBankingZonesWired() pass must still receive the bonus, not the default extent"),
+			LazySpawnedZone->ZoneCollisionComponent->GetUnscaledBoxExtent(), DefaultZoneExtent * 1.2f);
+	}
 
 	return true;
 }

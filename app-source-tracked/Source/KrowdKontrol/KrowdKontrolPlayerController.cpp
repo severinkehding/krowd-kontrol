@@ -432,6 +432,15 @@ void AKrowdKontrolPlayerController::ApplyStarterSkillEffects(APawn* InPawn)
 	{
 		if (UWorld* World = GetWorld())
 		{
+			// Force every room's target zone to exist before scaling: BeginPlay() order
+			// across actor classes is not guaranteed, so a room whose ARoomActor hasn't
+			// lazily spawned its zone yet would otherwise have it created afterward (by
+			// the EnsureBankingZonesWired() call below, or its own BeginPlay) at the
+			// default unscaled extent, permanently missing this bonus.
+			for (TActorIterator<ARoomActor> PreSpawnRoomIt(World); PreSpawnRoomIt; ++PreSpawnRoomIt)
+			{
+				PreSpawnRoomIt->EnsureBankingZonesWired();
+			}
 			for (TActorIterator<ATargetZone> It(World); It; ++It)
 			{
 				if (UBoxComponent* Box = It->ZoneCollisionComponent)
