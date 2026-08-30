@@ -348,8 +348,11 @@ void UMainMenuWidget::HandleMasteryResetConfirmClicked()
 		// callees are plain synchronous, disjoint-field mutations), but a future
 		// delegate/Tick added to either function would otherwise transiently expose a
 		// negative available balance (AccumulatedTotal - SpentPoints) in reverse order.
-		// Modifier-slot clearing is deferred - #376 (modifier catalog) has not landed,
-		// so there is no slot state to clear yet.
+		// Modifier-slot clearing is deferred - #376 (modifier catalog / 2-slot data
+		// model, the only issue that would add slot state here) is still OPEN, not
+		// merged, as of 2026-08-31 (verify: `gh issue view 376 --json state`), so
+		// there is no slot state to clear yet. Per #380's own Notes section, this is
+		// the directed P0-subset scoping, not an unqualified deferral.
 		MasterySubsystem->RefundAllAndClearUnlocks();
 		LastMasteryRespecCallOrder.Add(TEXT("Refund"));
 		MasterySubsystem->ResetAccumulatedTotal();

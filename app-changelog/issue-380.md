@@ -14,9 +14,10 @@ currently open — calls `UMasteryScreenWidget::RefreshAfterRespec()` so its poi
 display updates immediately, without requiring BACK + re-open.
 
 Modifier-slot clearing (the other half of `docs/prd-mastery-skill-tree.md` REQ-5) is
-out of scope — issue #376 (modifier catalog) has not landed, so there is no slot
-state to clear yet; the issue's own Notes section explicitly anticipates and directs
-this P0-subset scoping.
+out of scope — issue #376 (modifier catalog / 2-slot data model) is **still OPEN, not
+merged, as of 2026-08-31** (independently verifiable: `gh issue view 376 --json
+state` → `"state":"OPEN"`), so there is no slot state to clear yet; the issue's own
+Notes section explicitly anticipates and directs this P0-subset scoping.
 
 ## This is a re-implementation of a rejected PR
 
@@ -104,8 +105,9 @@ No `.Build.cs` change needed — no new dependencies.
 ## Scope limits (not built here)
 
 - **Modifier-slot clearing** (PRD REQ-5's other half) — #376 (modifier catalog /
-  2-slot data model) has not landed; there is no slot state to clear yet. The
-  issue's own Notes section directs this exact P0-subset scoping.
+  2-slot data model) is still OPEN, not merged, as of 2026-08-31 (verify: `gh issue
+  view 376 --json state`); there is no slot state to clear yet. The issue's own
+  Notes section directs this exact P0-subset scoping.
 - **Tree/bubble visual refresh on respec** — depends on #374's tree-render content,
   which is not part of this codebase's committed (`app-source-tracked/`) baseline
   yet. `app/`'s live `RefreshAfterRespec()` already does this as a bonus once #374
