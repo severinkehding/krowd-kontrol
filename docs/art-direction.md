@@ -61,6 +61,32 @@ floor slate `(0.28,0.30,0.34)`; walls steel-blue `(0.42,0.50,0.60)`, warm sand
 on the polar L4. Hard Invariant 3 still applies: the five reserved gameplay colours
 stay reserved; environment colours are desaturated.
 
+## Living city (operator session, 2026-08-30 evening)
+
+The backdrop is animated and dense — "mega city" in the packs' demo spirit:
+
+- **`AScenicCircuitActor`** (C++, cosmetic-only): drives a static mesh around a
+  closed waypoint loop at constant speed — collision-free, gameplay-inert,
+  unit-tested. Every level runs ~12: five flying ships on layered loops
+  (z 1500–2700, one crossing over the play strip), four rovers on a ring road
+  (y ±2700, both directions), and a three-car freight train on a rail line
+  (y −3600) that returns via a distant southern leg.
+- **Ring road** (`SM_road_004` segments) and **rail line** (`SM_railway_002`)
+  frame the strip; **skyline** rows of `SM_skyscraper_*` (plus spherical
+  building / space station accents) run behind the north districts and past the
+  east end. Skyline towers have `CastShadow` disabled — at the 31° sun their
+  shadows would otherwise blanket the play strip.
+- **Pens** are the operator-referenced post-and-rail rings: 9 dark
+  `SM_pipe_006` posts + cream engine-cylinder rails (`MIC_KitCream`), open-top
+  with an entry gap facing the room. (`SM_pipe_015` looked right for rails but
+  is a kinked connector — don't reuse.)
+- **Room walls** are panelised inside with vertical `SM_tile_platform_005`
+  plates (roll ±90), door lanes kept clear; wall MICs softened to
+  steel `(0.55,0.60,0.68)` / sand `(0.72,0.65,0.52)` / clay `(0.62,0.45,0.36)`.
+- Builder: `app/Saved/Scripts/build_living_city.py` (idempotent; label prefixes
+  `EnvPen`, `Scenic_`, `RoadSeg_`, `RailSeg_`, `Skyline_`, `WallPanel_`).
+- Camera: placed pawns save `CameraArmLength=2000`, `CameraBoomPitch=-50`.
+
 ## Character art (same session)
 
 - Player pawn: Fab "Cute Robot" skeletal mesh (`/Game/CuteRobot/`) with
