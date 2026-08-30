@@ -239,10 +239,10 @@ private:
 	// bonus on every ATargetZone in the level. One-shot per controller instance
 	// (bStarterSkillEffectsApplied), called from both BeginPlay()/OnPossess() exactly
 	// like WireWidgetsToPawn/ApplyBossCheckpointIfRequested/RetryPendingAbilityUnlock,
-	// since pawn-possession timing relative to BeginPlay isn't guaranteed. No-op (but
-	// still marks applied) when InPawn is null or no UCrowdMasteryTotalSubsystem is
-	// available. Does NOT implement ControlledDurationBonus - see this issue's PR body
-	// for why.
+	// since pawn-possession timing relative to BeginPlay isn't guaranteed. No-op (and
+	// does NOT mark applied, so the other call site can still retry) when InPawn is
+	// null or no UCrowdMasteryTotalSubsystem is available. Does NOT implement
+	// ControlledDurationBonus - see this issue's PR body for why.
 	void ApplyStarterSkillEffects(APawn* InPawn);
 
 	// Same GameInstance-resolve-and-cache shape as ResolveLevelClearTimeSubsystem(),

@@ -29,7 +29,13 @@ tunable — no new parallel stat system:
   `SpeedReductionPunishmentComponent` already uses, but permanent for the run (no
   restore call).
 - **`PenZoneRadiusBonus`** — scales every `ATargetZone` in the world's
-  `ZoneCollisionComponent` box extent by 1.2× (+20% catch radius).
+  `ZoneCollisionComponent` box extent by 1.2× (+20% catch radius), then re-runs
+  `ARoomActor::EnsureBankingZonesWired()` on every room so any already-baked
+  banking-radius ring reflects the new extent instead of silently drifting from the
+  real overlap volume (`TargetZone.h`'s ring-honesty invariant, issue #365/#393) —
+  `ARoomActor::BeginPlay()` bakes the ring once from whatever extent exists at that
+  point, and there's no declared ordering between it and this controller's own
+  `BeginPlay()`/`OnPossess()`.
 
 **`ControlledDurationBonus` is deliberately not implemented** (flagged here for
 operator sign-off per the issue's own instruction). The only existing
@@ -46,10 +52,31 @@ real per-run seam for it.
 `KrowdKontrol.Unit.StarterSkillEffectWiring` covers: an unlocked cooldown-reduction
 bubble scales every cooldown-duration entry; an unlocked move-speed bubble scales
 `MaxSpeed`; a bubble that was never spent (`EnergyMaxIncrease`) leaves `MaxEnergy`
-untouched; a repeat `OnPossess()` does not re-multiply `MaxSpeed` a second time.
-`PenZoneRadiusBonus` shares the identical `Contains()`-gated branch shape as the two
-directly-tested effects and isn't separately asserted, matching this codebase's
-existing "don't need N tests for N near-identical branches" precedent.
+untouched; an unlocked pen-zone bubble scales a spawned `ATargetZone`'s
+`ZoneCollisionComponent` extent; a repeat `OnPossess()` does not re-multiply
+`MaxSpeed` a second time; a null-`InPawn` call does not spuriously mark the one-shot
+guard applied; and, via a second, isolated pawn/controller/subsystem fixture (the
+effect-hook gate is per-hook-ID, not per-bubble, so it can't share the locked-case
+fixture above), an unlocked energy bubble does scale `MaxEnergy`. A third isolated
+controller/pawn with no resolvable `UCrowdMasteryTotalSubsystem` confirms
+`ResolveCrowdMasteryTotalSubsystem`'s missing-subsystem warning fires exactly once
+across two calls (warn-once), not on every call.
+
+Two review-round fixes, applied in the same PR:
+
+- `bStarterSkillEffectsApplied` is now set only after
+  `ResolveCrowdMasteryTotalSubsystem()` confirms a subsystem is actually available
+  (previously set unconditionally at entry) — matching `ApplyBossCheckpointIfRequested`'s
+  own precondition-then-flag ordering elsewhere in this file, and restoring the
+  dual-call-site design's actual purpose: if the `BeginPlay()` call site's subsystem
+  resolution fails, the `OnPossess()` call site can still retry, instead of finding
+  the guard already (and permanently) set. As a consequence, a null-`InPawn` call and
+  a missing-subsystem call now both consistently leave the guard unset; the header
+  doc comment is updated to match (it previously said both cases "still mark
+  applied", which was only ever true for the missing-subsystem case).
+- `PenZoneRadiusBonus` now re-wires banking-radius rings after resizing zones (see
+  above) — closes a real fairness bug where the ring shown to the player could
+  silently understate the actual (bonus-scaled) banking-overlap volume.
 
 `docs/prd-mastery-skill-tree.md` REQ-3 is annotated `⚠️ partially implemented, issue
 #375`, matching REQ-1's existing annotation convention.
@@ -89,7 +116,6 @@ existing "don't need N tests for N near-identical branches" precedent.
 `harness/run_ue_automation.sh KrowdKontrol.Unit.StarterSkillEffectWiring`:
 
 ```
-UE_BUILD_START KrowdKontrolEditor Win64 Development
 UE_BUILD_OK
 UE_AUTOMATION_RESULT passed=1 total=1
 UE_AUTOMATION_OK
@@ -98,13 +124,15 @@ UE_AUTOMATION_OK
 `harness/run_ue_automation.sh KrowdKontrol.Unit` (full suite, 0 regressions):
 
 ```
-UE_BUILD_START KrowdKontrolEditor Win64 Development
 UE_BUILD_OK
 UE_AUTOMATION_RESULT passed=132 total=132
 UE_AUTOMATION_OK
 ```
 
-(131 passing before this change per issue #371's changelog + 1 new = 132.)
+(131 passing before this change per issue #371's changelog + 1 new = 132 — the
+review-round test additions extend the same `KrowdKontrol.Unit.StarterSkillEffectWiring`
+test function rather than adding new test files, so the total count is unchanged from
+the original submission.)
 
 `python harness/ci.py --quick`:
 

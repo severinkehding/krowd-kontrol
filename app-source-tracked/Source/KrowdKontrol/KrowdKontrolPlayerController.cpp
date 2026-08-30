@@ -26,6 +26,7 @@
 #include "BossBase.h"
 #include "CrowdMasteryTotalSubsystem.h"
 #include "TargetZone.h"
+#include "RoomActor.h"
 #include "Components/BoxComponent.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "Engine/GameInstance.h"
@@ -393,13 +394,14 @@ void AKrowdKontrolPlayerController::ApplyStarterSkillEffects(APawn* InPawn)
 	{
 		return;
 	}
-	bStarterSkillEffectsApplied = true;
 
 	UCrowdMasteryTotalSubsystem* MasterySubsystem = ResolveCrowdMasteryTotalSubsystem();
 	if (!MasterySubsystem)
 	{
 		return;
 	}
+	bStarterSkillEffectsApplied = true;
+
 	const TArray<FName> UnlockedHookIds = MasterySubsystem->GetUnlockedEffectHookIds();
 
 	if (UnlockedHookIds.Contains(EffectHook_AbilityCooldownReduction))
@@ -436,6 +438,15 @@ void AKrowdKontrolPlayerController::ApplyStarterSkillEffects(APawn* InPawn)
 				{
 					Box->SetBoxExtent(Box->GetUnscaledBoxExtent() * StarterPenZoneRadiusBonusMultiplier);
 				}
+			}
+			// Re-bake any already-shown banking-radius ring so it keeps reflecting the
+			// real extent (TargetZone.h:32-36 honesty invariant, issue #365/#393) -
+			// EnsureBankingZonesWired() is idempotent and safe to call more than once
+			// (RoomActor.cpp), and is the same refresh entry point ARoomActor::BeginPlay()
+			// itself uses to pair a zone with its ring marker.
+			for (TActorIterator<ARoomActor> RoomIt(World); RoomIt; ++RoomIt)
+			{
+				RoomIt->EnsureBankingZonesWired();
 			}
 		}
 	}
