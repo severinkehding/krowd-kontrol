@@ -172,7 +172,7 @@ private:
 	// so the warn-once check and message live in one place.
 	bool HasMasteryTreeTable() const;
 
-	// Scans ModifierCatalogTable's row map for ModifierId. Returns nullptr if
+	// Looks up ModifierId in ModifierCatalogTable's row map. Returns nullptr if
 	// ModifierCatalogTable is unset or ModifierId is not found - same fail-closed
 	// shape FindBubbleAndOwningNode already establishes for the tree table.
 	const FMasteryModifierRow* FindModifierRow(FName ModifierId) const;

@@ -72,13 +72,22 @@ The structure mirrors Lies of P's P-Organ (operator-supplied screenshots):
   movement speed). Effects apply at run start via the existing
   pawn/component seams — no new parallel stat system.
 
-### REQ-4: Modifier slots (P1)
+### REQ-4: Modifier slots (P1) — ⚠️ partially implemented, issue #376
 - 2 slots per unlocked skill; slotting UI in the P-Organ detail style (select
   skill → see its slots → pick from owned modifiers of the matching
   category/tier). Modifier acquisition source for Alpha: earned alongside
   mastery at level clear (simplest honest source; refine later).
 - Tier gating: Tier II/III modifiers usable only when the tree has reached
   the corresponding phase.
+
+  Issue #376 shipped the modifier catalog DataTable
+  (`EModifierCategory`/`EModifierTier`/`FMasteryModifierRow`) and the
+  `UCrowdMasteryTotalSubsystem` grant/slot/unslot API
+  (`GrantModifier`/`TrySlotModifier`/`UnslotModifier`/`GetSlottedModifiers`),
+  including the anti-duplication category rule and respec interaction, as
+  session-only state with unit tests. Still open: modifier acquisition
+  wiring (nothing calls `GrantModifier` yet), the slotting UI, and tier-gate
+  enforcement (see `app-changelog/issue-376.md`).
 
 ### REQ-5: Respec integration (P0)
 - The existing RESET → CONFIRM flow becomes full respec: zero the earned

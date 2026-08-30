@@ -63,6 +63,7 @@ bool FKrowdKontrolModifierDataTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("DT_ModifierCatalogTable should have at least 5 rows"), RowMap.Num() >= 5);
 
 			TSet<EModifierCategory> SeenCategories;
+			TSet<EModifierTier> SeenTiers;
 			for (const TPair<FName, uint8*>& RowPair : RowMap)
 			{
 				const FMasteryModifierRow* Row = reinterpret_cast<const FMasteryModifierRow*>(RowPair.Value);
@@ -77,9 +78,11 @@ bool FKrowdKontrolModifierDataTest::RunTest(const FString& Parameters)
 					Row->Tier < EModifierTier::Count);
 
 				SeenCategories.Add(Row->Category);
+				SeenTiers.Add(Row->Tier);
 			}
 
 			TestTrue(TEXT("DT_ModifierCatalogTable should span at least 2 categories"), SeenCategories.Num() >= 2);
+			TestTrue(TEXT("DT_ModifierCatalogTable should span at least 2 tiers (Tier I and Tier II)"), SeenTiers.Num() >= 2);
 		}
 	}
 

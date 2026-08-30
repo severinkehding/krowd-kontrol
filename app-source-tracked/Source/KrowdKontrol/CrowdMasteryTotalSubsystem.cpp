@@ -254,20 +254,23 @@ bool UCrowdMasteryTotalSubsystem::TrySlotModifier(FName BubbleId, FName Modifier
 	{
 		return false;
 	}
-	TArray<FName>& Slots = SlottedModifiersByBubbleId.FindOrAdd(BubbleId);
-	if (Slots.Num() >= 2)
+	const TArray<FName>* ExistingSlots = SlottedModifiersByBubbleId.Find(BubbleId);
+	if (ExistingSlots && ExistingSlots->Num() >= 2)
 	{
 		return false;
 	}
-	for (const FName& ExistingId : Slots)
+	if (ExistingSlots)
 	{
-		const FMasteryModifierRow* ExistingRow = FindModifierRow(ExistingId);
-		if (ExistingRow && ExistingRow->Category == Row->Category)
+		for (const FName& ExistingId : *ExistingSlots)
 		{
-			return false;
+			const FMasteryModifierRow* ExistingRow = FindModifierRow(ExistingId);
+			if (ExistingRow && ExistingRow->Category == Row->Category)
+			{
+				return false;
+			}
 		}
 	}
-	Slots.Add(ModifierId);
+	SlottedModifiersByBubbleId.FindOrAdd(BubbleId).Add(ModifierId);
 	return true;
 }
 

@@ -75,6 +75,18 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 		return false;
 	}
 
+	// Unset-table fail-safe: every guarded entry point should fail closed, not
+	// crash, while ModifierCatalogTable is still unassigned - mirrors
+	// KrowdKontrolCrowdMasteryTotalSubsystemSpendTest.cpp's MasteryTreeTable check.
+	// TrySlotModifier isn't independently assertable here since it also requires an
+	// unlocked bubble, which itself requires MasteryTreeTable; GrantModifier/
+	// GetOwnedModifiers alone are sufficient to exercise HasModifierCatalogTable()'s
+	// false branch, matching the granularity the sibling test uses for MasteryTreeTable.
+	TestFalse(TEXT("GrantModifier should fail closed when ModifierCatalogTable is unset"),
+		Subsystem->GrantModifier(FName(TEXT("Mod_SurvivalA"))));
+	TestEqual(TEXT("GetOwnedModifiers should be empty when ModifierCatalogTable is unset"),
+		Subsystem->GetOwnedModifiers().Num(), 0);
+
 	// Fixture tree: a single root node (no prerequisite) with 4 bubbles costing
 	// 1/2/3/4 points - Bubble0/2/3 get unlocked for the scenarios below, Bubble1 is
 	// deliberately left never-unlocked (scenario 2).
@@ -109,13 +121,6 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	ModifierTable->AddRow(ModNeverGranted, BuildModifierRow(EModifierCategory::ItemType, EModifierTier::TierI, TEXT("Never Granted"), TEXT("NeverGranted")));
 	Subsystem->ModifierCatalogTable = ModifierTable;
 
-	// Unset-table fail-safe: every guarded entry point should fail closed, not
-	// crash, while ModifierCatalogTable is still unassigned (checked before it's
-	// assigned above would require a second subsystem - assert directly here isn't
-	// possible post-assignment, so this is covered by HasModifierCatalogTable's
-	// mirrored warn-once shape, exercised implicitly by every FindModifierRow call
-	// above once assigned).
-
 	// Deposit enough to afford all 4 root bubbles (1+2+3+4=10).
 	Subsystem->DepositRunMastery(10);
 	TestTrue(TEXT("Unlocking BubbleA should succeed"), Subsystem->TrySpendOnBubble(BubbleA));
@@ -140,8 +145,13 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("A rejected not-unlocked slot should not mutate that bubble's slots"),
 		Subsystem->GetSlottedModifiers(BubbleNeverUnlocked).Num(), 0);
 
-	// 3. Slot-when-full rejection.
-	TestTrue(TEXT("Slotting the first modifier into BubbleFull should succeed"),
+	// 3. Slot-when-full rejection. Also pins down current cross-bubble-reuse behavior:
+	// ModSurvivalA is already slotted into BubbleA from scenario 1, and TrySlotModifier
+	// has no guard against slotting the same owned modifier into more than one bubble
+	// at once (OwnedModifierIds is own-once, not consumed on slot) - this is documented
+	// here as current behavior, not a confirmed design decision. Flag for reviewer if
+	// this should instead be rejected.
+	TestTrue(TEXT("Slotting the first modifier into BubbleFull should succeed (also documents cross-bubble reuse: ModSurvivalA is already slotted into BubbleA)"),
 		Subsystem->TrySlotModifier(BubbleFull, ModSurvivalA));
 	TestTrue(TEXT("Slotting a second, different-category modifier into BubbleFull should succeed"),
 		Subsystem->TrySlotModifier(BubbleFull, ModAttack));
@@ -170,7 +180,7 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	TestFalse(TEXT("Unslotting an already-absent modifier should no-op and return false"),
 		Subsystem->UnslotModifier(BubbleA, ModSurvivalA));
 
-	// 7. Defensive rejections (run before the respec below, while BubbleA is still
+	// 6. Defensive rejections (run before the respec below, while BubbleA is still
 	// unlocked and has an open slot).
 	TestFalse(TEXT("GrantModifier on an unknown ModifierId should fail"),
 		Subsystem->GrantModifier(FName(TEXT("Mod_DoesNotExist"))));
@@ -183,7 +193,7 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	TestFalse(TEXT("TrySlotModifier with a not-owned ModifierId should fail"),
 		Subsystem->TrySlotModifier(BubbleA, ModNeverGranted));
 
-	// 6. Respec clears slots, not inventory.
+	// 7. Respec clears slots, not inventory.
 	Subsystem->RefundAllAndClearUnlocks();
 	TestEqual(TEXT("RefundAllAndClearUnlocks should clear BubbleCategory's slotted modifiers"),
 		Subsystem->GetSlottedModifiers(BubbleCategory).Num(), 0);
