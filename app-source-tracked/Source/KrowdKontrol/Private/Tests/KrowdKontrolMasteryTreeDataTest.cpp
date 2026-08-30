@@ -13,6 +13,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "MasteryTreeData.h"
+#include "ModifierData.h"
 #include "Engine/DataTable.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -36,6 +37,7 @@ namespace KrowdKontrolMasteryTreeDataTest
 			Bubble.DisplayName = FText::FromString(FString::Printf(TEXT("%s Skill %d"), *Prefix, Index));
 			Bubble.PointCost = Index + 1;
 			Bubble.EffectHookId = FName(*FString::Printf(TEXT("%s_Effect%d"), *Prefix, Index));
+			Bubble.SlotAcceptedCategories = { EModifierCategory::SurvivalType, EModifierCategory::AttackType };
 			Bubbles.Add(Bubble);
 		}
 		return Bubbles;
@@ -83,6 +85,15 @@ bool FKrowdKontrolMasteryTreeDataTest::RunTest(const FString& Parameters)
 					Bubble.PointCost, Index + 1);
 				TestEqual(*FString::Printf(TEXT("Root bubble %d EffectHookId should round-trip"), Index),
 					Bubble.EffectHookId, FName(*FString::Printf(TEXT("Root_Effect%d"), Index)));
+				TestEqual(*FString::Printf(TEXT("Root bubble %d SlotAcceptedCategories should round-trip with 2 entries"), Index),
+					Bubble.SlotAcceptedCategories.Num(), 2);
+				if (Bubble.SlotAcceptedCategories.Num() == 2)
+				{
+					TestEqual(*FString::Printf(TEXT("Root bubble %d slot 0 accepted category should round-trip"), Index),
+						static_cast<uint8>(Bubble.SlotAcceptedCategories[0]), static_cast<uint8>(EModifierCategory::SurvivalType));
+					TestEqual(*FString::Printf(TEXT("Root bubble %d slot 1 accepted category should round-trip"), Index),
+						static_cast<uint8>(Bubble.SlotAcceptedCategories[1]), static_cast<uint8>(EModifierCategory::AttackType));
+				}
 			}
 		}
 
