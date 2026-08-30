@@ -121,6 +121,13 @@ bool FKrowdKontrolLevel03StructureTest::RunTest(const FString& Parameters)
 	}
 
 	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
+
+	// Issue #31: Level 3's entrance room must be a forced-safe solo Trooper
+	// encounter, since Root (unlocked on arrival in Level 3) counters TR_UPR
+	// (AbilityData.cpp).
+	KrowdKontrolLevelTestUtils::CheckSoloEncounterForCounteredType(
+		*this, Rooms, EnemyCountByRoom, EnemyTypesByRoom, EEnemyType::TR_UPR);
+
 	KrowdKontrolLevelTestUtils::CheckRoomBankingZonesSelfHeal(*this, Rooms);
 
 	TestTrue(TEXT("L_Level03's total enemy count should be strictly greater than L_Level02's (REQ-3 difficulty ramp)"),

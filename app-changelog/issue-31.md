@@ -1,13 +1,17 @@
-# Issue #31: Onboarding — forced-safe solo Sniper encounter on Level 2's Sleep unlock
+# Issue #31: Onboarding — forced-safe solo encounters for Sleep/Root/Fear/Snare
 
 Issue #31 asks that each of the four remaining abilities (Sleep, Root, Fear, Snare)
 get a forced-safe solo encounter with its colour-matched enemy type immediately after
 that ability unlocks, before that enemy type ever appears mixed into a crowd. This PR
-implements **Sleep only** (Level 2 → Sniper) — the first/earliest of the four unlocks
-— per issue #31's own Notes clause pre-authorizing a per-ability split if the full
-scope would exceed FACTORY_RULES.md's 500-line PR cap. Root (Level 3 → Trooper), Fear
-(Level 4 → Bomber), and Snare (Level 5 → Runner) are deferred to three follow-up
-issues (see "Deferred scope" below).
+now implements all four: Sleep (Level 2 → Sniper), Root (Level 3 → Trooper), Fear
+(Level 4 → Bomber), and Snare (Level 5 → Runner).
+
+**Pass-1 update:** the original version of this PR shipped Sleep only, deferring
+Root/Fear/Snare to follow-up issues per issue #31's own Notes clause (pre-authorizing
+a per-ability split if the full scope would exceed FACTORY_RULES.md's 500-line PR
+cap). Pass-1 validation (behavioral + E2E, both scoring "partially"/"too_narrow")
+determined the full four-ability scope should ship in this PR instead, so
+Root/Fear/Snare were added here rather than split out.
 
 This is a level-content placement problem, not a runtime one: Sleep unlocks the
 instant the player arrives in Level 2 (`AbilityUnlockComponent.cpp`'s
@@ -53,71 +57,95 @@ Final entrance-room state, re-verified via a second headless read: exactly one e
 `ASniperEnemy`, no other enemy actor present. Room count (4), door count (3), and
 total enemy count (8) are unchanged.
 
+### Level 3 (Root → Trooper), Level 4 (Fear → Bomber), Level 5 (Snare → Runner)
+
+Same headless-Editor Python investigation/edit mechanism, applied to the three
+follow-up levels (pass-1 update — see top of this file):
+
+- **Level 3**: entrance room already held one `TrooperEnemy` alongside a `RunnerEnemy`
+  — simplest case, no import needed. Relocated the `RunnerEnemy` into the second room
+  (chain order), added the now-missing `RU_NNR` target zone there. No marker-origin
+  fix needed (second room isn't at the world origin). Total enemy count unchanged
+  (10).
+- **Level 4**: entrance room held a `RunnerEnemy` and a `TrooperEnemy`, no `BomberEnemy`
+  at all. Relocated the closest existing `BomberEnemy` (second room) into the entrance
+  room, its previous occupants into the second room, added the missing `RU_NNR` zone
+  (second room) and `B0_0MR` zone (entrance room). The entrance-room zone hit the same
+  world-origin marker regression `L_Level02` did (`RoomActor_0` sits at (0,0,0) in
+  every level) — fixed the same way, repositioned to the ±700/1200-unit Y-offset
+  convention. Total enemy count unchanged (12).
+- **Level 5**: entrance room already held one `RunnerEnemy` alongside a `TrooperEnemy`
+  — same simple case as Level 3. Relocated the `TrooperEnemy` into the second room,
+  which already had a matching `TR_UPR` zone, so no new target zone was needed at all.
+  Total enemy count unchanged (14).
+
+Every level's final entrance-room state was re-verified via a headless read: exactly
+one enemy, of the correct countered type, no other enemy actor present. Room/door/
+total-enemy counts are unchanged from each level's existing design targets.
+
 ## Test change (Task 3)
 
 Added `KrowdKontrolLevelTestUtils::CheckSoloEncounterForCounteredType` — a reusable
 helper in `LevelStructureTestUtils.h`, following `CheckEnemyDensityRamp`'s existing
 doc-comment/signature style — asserting the entrance room (lowest X, same
 `SortRoomsByX` definition the density-ramp check already uses) contains exactly one
-enemy, and that enemy is of the given `CounteredType`. Wired into
-`KrowdKontrolLevel02Test.cpp` immediately after the existing
-`CheckRoomTargetZonesAndDensity` call, passing `EEnemyType::SN_1PR` (Sleep's
-countered type, `AbilityData.cpp`'s `GetSleep()`). The helper takes rooms/
-enemy-count/enemy-type maps already built by the existing test body, so no new
-`TActorIterator` walk was added.
+enemy, and that enemy is of the given `CounteredType`. Wired into all four of
+`KrowdKontrolLevel02Test.cpp` (`EEnemyType::SN_1PR`), `KrowdKontrolLevel03Test.cpp`
+(`EEnemyType::TR_UPR`), `KrowdKontrolLevel04Test.cpp` (`EEnemyType::B0_0MR`), and
+`KrowdKontrolLevel05Test.cpp` (`EEnemyType::RU_NNR`), each immediately after the
+existing `CheckRoomTargetZonesAndDensity` call. The helper takes rooms/enemy-count/
+enemy-type maps already built by each existing test body, so no new `TActorIterator`
+walk was added.
 
-## Acceptance criteria (scoped to Sleep only)
+### Live Alert-state coverage (pass-1 medium-severity follow-up)
 
-- [x] Immediately after Sleep unlocks (Level 2 arrival), exactly one Sniper spawns
-      alone in the entrance room, with no other enemy actor present in that room.
-- [x] The Sniper uses its normal state-machine AI — confirmed by construction: no new
-      runtime component or special-cased behavior is added anywhere in this change.
-- [x] No text box or paused UI is shown around this encounter — confirmed by
+`CheckSoloEncounterForCounteredType` only proves static placement at level load,
+since `KrowdKontrolLevelNNTest.cpp`'s `FAutomationEditorCommonUtils::LoadMap` never
+dispatches `BeginPlay()`. Added `KrowdKontrolPIESoloEncounterAlertTest.cpp` — four new
+`KrowdKontrol.PIE.SoloEncounterAlert.L_LevelNN` tests (mirrors
+`KrowdKontrolPIESerializedPlacedActorHealthTest.cpp`'s `AutomationOpenMap` shape) that
+open each level in a real PIE session and poll, on a wall-clock timeout (not a fixed
+frame count), until the entrance room's sole enemy transitions `Idle`→`Alert`, then
+asserts it's the correct countered type. The wall-clock poll (not a short fixed-frame
+wait) is necessary because `AEnemyBase::TickCheckDetection`'s `Idle`→`Alert` branch is
+gated on `!OwningRoom->IsActivationPending()`, and `ARoomActor`'s first-entry
+countdown (`RoomActivationCountdownSeconds`, 3.0s default) keeps that pending for a
+few real seconds after the player first enters — confirmed empirically: an initial
+version of this test using a 5-frame wait failed on all four levels (found the correct
+enemy/type but `GetEnemyState() != Alert` yet); switching to a 10s wall-clock poll
+(mirroring `KrowdKontrolPIESniperRangeBreakChaseTest.cpp`'s own `WaitForRoomActivated`
+phase, which hits the same gate) passed on all four.
+
+## Acceptance criteria
+
+- [x] Immediately after each ability unlocks (Sleep/Root/Fear/Snare, Levels 2-5),
+      exactly one enemy of the matching countered type spawns alone in that level's
+      entrance room, with no other enemy actor present in that room.
+- [x] Every entrance-room enemy uses its normal state-machine AI — confirmed by
+      construction (no new runtime component/special-cased behavior anywhere in this
+      change) and by the new live-PIE `KrowdKontrol.PIE.SoloEncounterAlert.*` tests,
+      which prove it actually reaches `EEnemyState::Alert` through real per-tick
+      `TickCheckDetection`, not a direct/friend call.
+- [x] No text box or paused UI is shown around any of these encounters — confirmed by
       construction: no widget/UI code is touched.
-- [x] A new automation test (`KrowdKontrol.Unit.Level02Structure`'s extended
-      assertion, via `CheckSoloEncounterForCounteredType`) confirms exactly one
-      Sniper is present/placed in Level 2's entrance room.
-- [x] All pre-existing `KrowdKontrolLevel02Test.cpp` assertions still pass (room
-      count 4, door count 3, total enemy count 8, target-zone coverage, reachability,
-      self-heal).
+- [x] `KrowdKontrol.Unit.Level0{2,3,4,5}Structure`'s extended assertion (via
+      `CheckSoloEncounterForCounteredType`) confirms exactly one enemy of the correct
+      type is present/placed in each level's entrance room at load.
+- [x] `KrowdKontrol.PIE.SoloEncounterAlert.L_Level0{2,3,4,5}` confirms that same
+      entrance-room enemy actually goes live-Alert during a real PIE session.
+- [x] All pre-existing `KrowdKontrolLevel0{2,3,4,5}Test.cpp` assertions still pass
+      (room/door/total-enemy counts, target-zone coverage, reachability, self-heal).
 - [x] `python harness/ci.py` full mode exits `GATE_OK`.
-- [x] Root/Fear/Snare are deferred to three follow-up issues (see below) — this PR
-      covers Sleep only, per issue #31's own split-if-oversized instruction.
-
-On "active/alerted" in the AC: this repo's existing `KrowdKontrolLevelNNTest.cpp`
-family never dispatches `BeginPlay()` (`FAutomationEditorCommonUtils::LoadMap`
-doesn't start play), so no automation test in this codebase can observe a live
-`EEnemyState::Alert` transition against a *loaded real map*. This PR satisfies the
-AC's intent via the same structural-placement convention every existing level test
-already uses: exactly one enemy present, alone, is the thing that would go Alert when
-the player enters.
-
-## Deferred scope
-
-Per issue #31's own Notes clause and this plan's scope cut, three follow-up issues
-should be filed, each reusing `CheckSoloEncounterForCounteredType` exactly as this PR
-does, just targeting a different level/type pair:
-
-- "Onboarding: forced-safe solo Trooper encounter after Root unlock (Level 3)" —
-  `L_Level03Test.cpp` / `EEnemyType::TR_UPR`
-- "Onboarding: forced-safe solo Bomber encounter after Fear unlock (Level 4)" —
-  `L_Level04Test.cpp` / `EEnemyType::B0_0MR`
-- "Onboarding: forced-safe solo Runner encounter after Snare unlock (Level 5)" —
-  `L_Level05Test.cpp` / `EEnemyType::RU_NNR`
-
-Each level's `.umap` edit (if needed) is an independent, isolated Editor-content
-change with its own risk of breaking that level's own already-passing structure test,
-so bundling all four into one PR/issue was avoided.
 
 ## Validation evidence
 
-Full gate (`python harness/ci.py`, mode=full):
+Full gate (`python harness/ci.py`, mode=full), re-run after the pass-1 update above:
 
 ```
 HARNESS_START mode=full driver=cli
 STATIC_SKIPPED no 'static' command in harness.config.json
 UNIT_PASSED tests=138
-PIE_PASSED tests=8
+PIE_PASSED tests=12
 APP_STARTED driver=cli
 UE_BUILD_START KrowdKontrolEditor Win64 Development
 UE_BUILD_OK
@@ -129,15 +157,20 @@ MUTATIONS_ABSENT no harness/mutations/run.py
 GATE_OK mode=full
 ```
 
-The `PIE_PASSED` rung includes `KrowdKontrol.PIE.SerializedPlacedActorHealth.L_Level02`
-— this failed on the first pass (new target-zone marker landed at the world origin,
-see "Content change" above) and passed after the marker was repositioned, so this run
-directly exercises the fix for that regression, not just the new placement.
+`PIE_PASSED` went from 8 (original Sleep-only pass) to 12: the four new
+`KrowdKontrol.PIE.SoloEncounterAlert.L_Level0{2,3,4,5}` tests. The `PIE` rung also
+still includes `KrowdKontrol.PIE.SerializedPlacedActorHealth.L_Level02` — this failed
+on the first pass (new target-zone marker landed at the world origin, see "Content
+change" above) and passed after the marker was repositioned, so this run directly
+exercises the fix for that regression, not just the new placement. The Level 4
+entrance-room marker hit the same regression and was fixed the same way (see "Content
+change" above), but has no dedicated `SerializedPlacedActorHealth` test today (that
+test file only covers L_Level01/L_Level02 - out of scope for this PR to extend).
 
-`app/` and `app-source-tracked/` copies of both changed files are identical (verified
-via `diff`, re-confirmed at PR-creation time).
+`app/` and `app-source-tracked/` copies of every changed/added file are identical
+(verified via `diff`, re-confirmed at PR-creation time).
 
 MISSION.md Hard Invariants reviewed against this diff: no kill-rule, colour-lock,
 ability-roster, enemy-roster, engine/dimensionality, networking, or `app`-tracking
-invariant is touched — this is enemy/target-zone placement inside one already-shipped
-level plus a new structural test assertion.
+invariant is touched — this is enemy/target-zone placement inside four already-shipped
+levels plus new structural and live-PIE test assertions.
