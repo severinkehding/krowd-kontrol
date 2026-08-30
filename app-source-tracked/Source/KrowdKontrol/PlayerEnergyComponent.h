@@ -13,8 +13,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnergyChanged, float, NewEnergy);
 // not per-hit damage, is the difficulty lever). See issue #78.
 //
 // ApplyContactDamage is the ONLY public method permitted to reduce CurrentEnergy - no
-// other public mutator (setter, BlueprintCallable, or otherwise) may ever be added to
-// this class. Doing so would reopen the exact hole this component exists to close.
+// other public mutator that can lower CurrentEnergy (setter, BlueprintCallable, or
+// otherwise) may ever be added to this class. Doing so would reopen the exact hole
+// this component exists to close. ApplyMaxEnergyBonus below is the sole, deliberate
+// exception: it only ever raises CurrentEnergy (proportionally, alongside a MaxEnergy
+// increase) and no-ops on any NewMaxEnergy that wouldn't raise the ceiling, so it
+// cannot be used to work around the ApplyContactDamage-only-decrease rule above.
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KROWDKONTROL_API UPlayerEnergyComponent : public UActorComponent
 {
@@ -67,6 +71,17 @@ public:
 	// amount subtracted (post-clamp).
 	UFUNCTION(BlueprintCallable, Category = "Player Energy")
 	float ApplyContactDamage(float RawAmount, AActor* DamageSource);
+
+	// Raises MaxEnergy to NewMaxEnergy and proportionally tops up CurrentEnergy so the
+	// energy bar's fill fraction is preserved across the change (e.g. 60/100 ->
+	// 75/125) - without this, a MaxEnergy bonus (e.g. a starter skill effect applied
+	// at run start, KrowdKontrolPlayerController.cpp) would be invisible to the player
+	// until they took contact damage back down past the old ceiling. No-ops if
+	// NewMaxEnergy does not exceed the current MaxEnergy, so this can only ever raise
+	// CurrentEnergy - never lower it - and does not reopen the
+	// ApplyContactDamage-only-decrease invariant above.
+	UFUNCTION(BlueprintCallable, Category = "Player Energy")
+	void ApplyMaxEnergyBonus(float NewMaxEnergy);
 
 	// Read-only accessor for CurrentEnergy - a future HUD can either bind
 	// OnEnergyChanged or poll this. No corresponding setter exists on purpose.

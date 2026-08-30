@@ -194,6 +194,16 @@ bool FKrowdKontrolStarterSkillEffectWiringTest::RunTest(const FString& Parameter
 	}
 	const float PreUnlockedMaxEnergy = EnergyPawnEnergyComponent->MaxEnergy;
 
+	// Drain some energy first (below the default MaxDamagePerHit-per-call clamp, so 4
+	// calls of 10 each) so the top-up assertion below actually proves proportional
+	// scaling, not just "starts full, ends full" - which even a buggy
+	// CurrentEnergy = MaxEnergy implementation would satisfy.
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		EnergyPawnEnergyComponent->ApplyContactDamage(10.0f, nullptr);
+	}
+	const float PreUnlockedCurrentEnergy = EnergyPawnEnergyComponent->GetCurrentEnergy();
+
 	UDataTable* EnergyUnlockedTable = NewObject<UDataTable>();
 	EnergyUnlockedTable->RowStruct = FMasteryTreeNode::StaticStruct();
 
@@ -221,6 +231,9 @@ bool FKrowdKontrolStarterSkillEffectWiringTest::RunTest(const FString& Parameter
 
 	TestEqual(TEXT("MaxEnergy should be scaled up by the starter multiplier for the unlocked energy bubble"),
 		EnergyPawnEnergyComponent->MaxEnergy, PreUnlockedMaxEnergy * 1.25f);
+
+	TestEqual(TEXT("CurrentEnergy should be proportionally topped up alongside the MaxEnergy increase, not left behind"),
+		EnergyPawnEnergyComponent->GetCurrentEnergy(), PreUnlockedCurrentEnergy * 1.25f);
 
 	// ResolveCrowdMasteryTotalSubsystem's missing-subsystem warning must fire exactly
 	// once (warn-once), not on every ApplyStarterSkillEffects call - mirrors

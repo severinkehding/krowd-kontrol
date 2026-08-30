@@ -38,3 +38,25 @@ float UPlayerEnergyComponent::ApplyContactDamage(float RawAmount, AActor* Damage
 
 	return PreviousEnergy - CurrentEnergy;
 }
+
+void UPlayerEnergyComponent::ApplyMaxEnergyBonus(float NewMaxEnergy)
+{
+	const float SafeNewMaxEnergy = FMath::Max(0.0f, NewMaxEnergy);
+	if (SafeNewMaxEnergy <= MaxEnergy)
+	{
+		return;
+	}
+
+	// Fraction, not raw amount, is what gets preserved - a full bar stays full, a
+	// half-drained bar stays half-drained, relative to the new ceiling.
+	const float FillFraction = MaxEnergy > 0.0f ? CurrentEnergy / MaxEnergy : 1.0f;
+
+	MaxEnergy = SafeNewMaxEnergy;
+	const float PreviousEnergy = CurrentEnergy;
+	CurrentEnergy = FMath::Clamp(FillFraction * MaxEnergy, 0.0f, MaxEnergy);
+
+	if (CurrentEnergy != PreviousEnergy)
+	{
+		OnEnergyChanged.Broadcast(CurrentEnergy);
+	}
+}

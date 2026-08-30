@@ -418,7 +418,7 @@ void AKrowdKontrolPlayerController::ApplyStarterSkillEffects(APawn* InPawn)
 	{
 		if (UPlayerEnergyComponent* EnergyComponent = InPawn->FindComponentByClass<UPlayerEnergyComponent>())
 		{
-			EnergyComponent->MaxEnergy *= StarterEnergyMaxBonusMultiplier;
+			EnergyComponent->ApplyMaxEnergyBonus(EnergyComponent->MaxEnergy * StarterEnergyMaxBonusMultiplier);
 		}
 	}
 	if (UnlockedHookIds.Contains(EffectHook_MovementSpeedBonus))
