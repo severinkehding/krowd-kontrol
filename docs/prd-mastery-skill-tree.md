@@ -80,12 +80,18 @@ The structure mirrors Lies of P's P-Organ (operator-supplied screenshots):
 - Tier gating: Tier II/III modifiers usable only when the tree has reached
   the corresponding phase.
 
-### REQ-5: Respec integration (P0)
+### REQ-5: Respec integration (P0) — ⚠️ partially implemented, issue #380
 - The existing RESET → CONFIRM flow becomes full respec: zero the earned
   total only if it already did (unchanged semantics for the total), clear all
   unlocks and slotted modifiers, refund spent points before any zeroing —
   order and semantics unit-pinned. The menu display and tree screen both
   refresh immediately (the #349 lesson).
+
+  Issue #380 shipped the P0 subset: refund-before-zero ordering (unit-pinned via
+  `LastMasteryRespecCallOrder`), unlock clearing, and immediate menu/tree-screen
+  refresh. Modifier-slot clearing is deferred — the modifier catalog / 2-slot data
+  model (#376) has not landed, so there is no slot state yet to clear (see
+  `app-changelog/issue-380.md`).
 
 ## Out of scope
 

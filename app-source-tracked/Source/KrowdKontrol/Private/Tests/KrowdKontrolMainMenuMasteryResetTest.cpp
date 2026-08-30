@@ -132,6 +132,8 @@ bool FKrowdKontrolMainMenuMasteryResetTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("bMasteryResetConfirmPending should be false after a second CONFIRM"), Widget->bMasteryResetConfirmPending);
 	TestEqual(TEXT("MasteryResetButton should be Visible again after a second CONFIRM"),
 		Widget->MasteryResetButton->GetVisibility(), ESlateVisibility::Visible);
+	TestEqual(TEXT("LastMasteryRespecCallOrder should stay empty when the subsystem fails to resolve"),
+		Widget->LastMasteryRespecCallOrder.Num(), 0);
 
 	// (e) CONFIRM actually resets a real, injected subsystem - the key behavioral proof,
 	// since the real GetGameInstance()-based resolution path is untestable in
