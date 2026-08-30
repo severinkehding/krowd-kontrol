@@ -128,6 +128,12 @@ bool FKrowdKontrolLevel02StructureTest::RunTest(const FString& Parameters)
 	// count, mirroring KrowdKontrolLevel01Test.cpp's own approach.
 	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
 
+	// Issue #31: Level 2's entrance room must be a forced-safe solo Sniper
+	// encounter, since Sleep (unlocked on arrival in Level 2) counters SN_1PR
+	// (AbilityData.cpp:38).
+	KrowdKontrolLevelTestUtils::CheckSoloEncounterForCounteredType(
+		*this, Rooms, EnemyCountByRoom, EnemyTypesByRoom, EEnemyType::SN_1PR);
+
 	// Issue #211 pass-1 review follow-up: extends the same self-heal proof
 	// KrowdKontrolLevel01Test.cpp now has to L_Level02 - the E2E holdout only checked
 	// L_Level01 live in PIE, so this is new coverage for this level specifically.

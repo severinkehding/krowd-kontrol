@@ -121,6 +121,13 @@ bool FKrowdKontrolLevel05StructureTest::RunTest(const FString& Parameters)
 	}
 
 	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
+
+	// Issue #31: Level 5's entrance room must be a forced-safe solo Runner
+	// encounter, since Snare (unlocked on arrival in Level 5) counters RU_NNR
+	// (AbilityData.cpp).
+	KrowdKontrolLevelTestUtils::CheckSoloEncounterForCounteredType(
+		*this, Rooms, EnemyCountByRoom, EnemyTypesByRoom, EEnemyType::RU_NNR);
+
 	KrowdKontrolLevelTestUtils::CheckRoomBankingZonesSelfHeal(*this, Rooms);
 
 	TestTrue(TEXT("L_Level05's total enemy count should be strictly greater than L_Level04's (REQ-3 difficulty ramp)"),

@@ -121,6 +121,13 @@ bool FKrowdKontrolLevel04StructureTest::RunTest(const FString& Parameters)
 	}
 
 	KrowdKontrolLevelTestUtils::CheckRoomTargetZonesAndDensity(*this, Rooms, EnemyTypesByRoom, EnemyCountByRoom);
+
+	// Issue #31: Level 4's entrance room must be a forced-safe solo Bomber
+	// encounter, since Fear (unlocked on arrival in Level 4) counters B0_0MR
+	// (AbilityData.cpp).
+	KrowdKontrolLevelTestUtils::CheckSoloEncounterForCounteredType(
+		*this, Rooms, EnemyCountByRoom, EnemyTypesByRoom, EEnemyType::B0_0MR);
+
 	KrowdKontrolLevelTestUtils::CheckRoomBankingZonesSelfHeal(*this, Rooms);
 
 	TestTrue(TEXT("L_Level04's total enemy count should be strictly greater than L_Level03's (REQ-3 difficulty ramp)"),
