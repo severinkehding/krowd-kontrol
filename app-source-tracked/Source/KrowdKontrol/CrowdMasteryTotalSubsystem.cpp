@@ -36,6 +36,8 @@ void UCrowdMasteryTotalSubsystem::LoadPersistedTotal()
 {
 	ULevelClearTimeSaveGame* SaveGameObject = LoadOrCreateSaveGame();
 	AccumulatedTotal = SaveGameObject->AccumulatedCrowdMasteryTotal;
+	SpentPoints = SaveGameObject->SpentCrowdMasteryPoints;
+	UnlockedBubbleIds = TSet<FName>(SaveGameObject->UnlockedCrowdMasteryBubbleIds);
 }
 
 ULevelClearTimeSaveGame* UCrowdMasteryTotalSubsystem::LoadOrCreateSaveGame() const
@@ -66,10 +68,12 @@ void UCrowdMasteryTotalSubsystem::PersistAccumulatedTotal() const
 {
 	ULevelClearTimeSaveGame* SaveGameObject = LoadOrCreateSaveGame();
 	SaveGameObject->AccumulatedCrowdMasteryTotal = AccumulatedTotal;
+	SaveGameObject->SpentCrowdMasteryPoints = SpentPoints;
+	SaveGameObject->UnlockedCrowdMasteryBubbleIds = UnlockedBubbleIds.Array();
 	if (!UGameplayStatics::SaveGameToSlot(SaveGameObject, ULevelClearTimeSubsystem::SaveSlotName, 0))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("UCrowdMasteryTotalSubsystem::PersistAccumulatedTotal: SaveGameToSlot failed for slot '%s' - accumulated total was not persisted and will be lost on next launch."),
+			TEXT("UCrowdMasteryTotalSubsystem::PersistAccumulatedTotal: SaveGameToSlot failed for slot '%s' - accumulated total, spent points, and unlocked bubbles were not persisted and will be lost on next launch."),
 			*ULevelClearTimeSubsystem::SaveSlotName);
 	}
 }
@@ -205,6 +209,7 @@ bool UCrowdMasteryTotalSubsystem::TrySpendOnBubble(FName BubbleId)
 	}
 	SpentPoints += Bubble->PointCost;
 	UnlockedBubbleIds.Add(BubbleId);
+	PersistAccumulatedTotal();
 	return true;
 }
 
@@ -218,6 +223,7 @@ void UCrowdMasteryTotalSubsystem::RefundAllAndClearUnlocks()
 	SpentPoints = 0;
 	UnlockedBubbleIds.Empty();
 	SlottedModifiersByBubbleId.Empty();
+	PersistAccumulatedTotal();
 }
 
 bool UCrowdMasteryTotalSubsystem::GrantModifier(FName ModifierId)

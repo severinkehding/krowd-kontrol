@@ -17,6 +17,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "LevelClearTimeSaveGame.h"
 #include "LevelClearTimeSubsystem.h"
+#include "MasteryTreeData.h"
+#include "Engine/DataTable.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -82,6 +84,31 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("A deposit after reset should be recorded normally"),
 		Subsystem->GetAccumulatedTotal(), 2);
 
+	// Spend/unlock persistence round trip (docs/prd-mastery-skill-tree.md REQ-1, issue
+	// #372): TrySpendOnBubble's write-through must reach disk so a second, independent
+	// subsystem instance can read the exact same spend state back - same "simulate a
+	// relaunch" shape the AccumulatedTotal round trip below already proves, extended to
+	// cover the two fields issue #371 added session-only.
+	UDataTable* RoundTripTable = NewObject<UDataTable>();
+	RoundTripTable->RowStruct = FMasteryTreeNode::StaticStruct();
+	FMasteryTreeNode RoundTripRootRow;
+	RoundTripRootRow.ParentNodeId = NAME_None;
+	RoundTripRootRow.Phase = EMasteryTreePhase::Phase1;
+	FMasterySkillBubble RoundTripBubble;
+	const FName RoundTripBubbleId(TEXT("RoundTrip_Bubble0"));
+	RoundTripBubble.BubbleId = RoundTripBubbleId;
+	RoundTripBubble.DisplayName = FText::FromString(TEXT("Round Trip Skill 0"));
+	RoundTripBubble.PointCost = 2;
+	RoundTripBubble.EffectHookId = FName(TEXT("RoundTrip_Effect0"));
+	RoundTripRootRow.Bubbles.Add(RoundTripBubble);
+	RoundTripTable->AddRow(FName(TEXT("Node_RoundTripRoot")), RoundTripRootRow);
+	Subsystem->MasteryTreeTable = RoundTripTable;
+
+	TestTrue(TEXT("Spending the exact available balance on the round-trip fixture bubble should succeed"),
+		Subsystem->TrySpendOnBubble(RoundTripBubbleId));
+	TestEqual(TEXT("SpentPoints should reflect the round-trip spend before any reload"),
+		Subsystem->GetSpentPoints(), 2);
+
 	// Save/reload cycle (PRD "Crowd Mastery Persistence" REQ-4, issue #330): a
 	// fresh, independently-constructed subsystem instance (simulating closing and
 	// reopening the game - a fresh UGameInstance/subsystem, sharing only the
@@ -102,6 +129,13 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Paramet
 	SecondSessionSubsystem->LoadPersistedTotal();
 	TestEqual(TEXT("LoadPersistedTotal should read back the total the first session's last write-through persisted"),
 		SecondSessionSubsystem->GetAccumulatedTotal(), 2);
+	TestEqual(TEXT("LoadPersistedTotal should read back SpentPoints the first session's TrySpendOnBubble write-through persisted"),
+		SecondSessionSubsystem->GetSpentPoints(), 2);
+	const TArray<FName> ReloadedUnlockedBubbles = SecondSessionSubsystem->GetUnlockedBubbles();
+	TestEqual(TEXT("LoadPersistedTotal should read back exactly one unlocked bubble"),
+		ReloadedUnlockedBubbles.Num(), 1);
+	TestTrue(TEXT("LoadPersistedTotal should read back the exact bubble ID the first session unlocked"),
+		ReloadedUnlockedBubbles.Contains(RoundTripBubbleId));
 
 	// Confirm the seeded sibling fields survived every PersistAccumulatedTotal()
 	// write-through this test triggered above - the same property
@@ -145,6 +179,33 @@ bool FKrowdKontrolCrowdMasteryTotalSubsystemTest::RunTest(const FString& Paramet
 		WrongTypeSubsystem->LoadPersistedTotal();
 		TestEqual(TEXT("LoadPersistedTotal should fall back to 0 when the save slot holds a non-ULevelClearTimeSaveGame object, not crash"),
 			WrongTypeSubsystem->GetAccumulatedTotal(), 0);
+	}
+
+	// Backward compatibility (issue #372 acceptance criteria): a save written before this
+	// issue only ever set AccumulatedCrowdMasteryTotal - SpentCrowdMasteryPoints and
+	// UnlockedCrowdMasteryBubbleIds were never written by old code, so they're absent from
+	// that save data exactly as if this were a pre-this-issue file. USaveGame property
+	// serialization defaults any UPROPERTY missing from the loaded data to its C++
+	// initializer, so this simulates a real pre-issue save without needing an actual old
+	// binary fixture.
+	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);
+	{
+		ULevelClearTimeSaveGame* LegacySaveGame = CastChecked<ULevelClearTimeSaveGame>(
+			UGameplayStatics::CreateSaveGameObject(ULevelClearTimeSaveGame::StaticClass()));
+		LegacySaveGame->AccumulatedCrowdMasteryTotal = 9;
+		UGameplayStatics::SaveGameToSlot(LegacySaveGame, ULevelClearTimeSubsystem::SaveSlotName, 0);
+	}
+	UGameInstance* LegacyGameInstanceOuter = NewObject<UGameInstance>();
+	UCrowdMasteryTotalSubsystem* LegacySubsystem = NewObject<UCrowdMasteryTotalSubsystem>(LegacyGameInstanceOuter);
+	if (TestNotNull(TEXT("UCrowdMasteryTotalSubsystem should construct for the backward-compatibility check"), LegacySubsystem))
+	{
+		LegacySubsystem->LoadPersistedTotal();
+		TestEqual(TEXT("A pre-issue-372 save's AccumulatedCrowdMasteryTotal should still load correctly"),
+			LegacySubsystem->GetAccumulatedTotal(), 9);
+		TestEqual(TEXT("A pre-issue-372 save missing SpentCrowdMasteryPoints should default SpentPoints to 0"),
+			LegacySubsystem->GetSpentPoints(), 0);
+		TestEqual(TEXT("A pre-issue-372 save missing UnlockedCrowdMasteryBubbleIds should default GetUnlockedBubbles to empty"),
+			LegacySubsystem->GetUnlockedBubbles().Num(), 0);
 	}
 
 	// Clean up all real on-disk state this test created, so a repeat run starts

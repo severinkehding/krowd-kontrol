@@ -31,10 +31,14 @@ struct FMasteryModifierRow;
 //
 // docs/prd-mastery-skill-tree.md REQ-1, issue #371: also the runtime authority for
 // spending the accumulated total against the skill-tree data model (issue #370,
-// MasteryTreeData.h). SpentPoints/UnlockedBubbleIds below are session-only in this
-// issue - no persistence yet, that is a separate follow-up issue - and none of this
-// new code violates the GetWorld()/GetGameInstance() rule above (MasteryTreeTable
-// loads via LoadObject(), never GetWorld()).
+// MasteryTreeData.h). SpentPoints/UnlockedBubbleIds below now persist too
+// (docs/prd-mastery-skill-tree.md REQ-1, issue #372): LoadPersistedTotal()/
+// PersistAccumulatedTotal() read/write all three fields (AccumulatedTotal,
+// SpentPoints, UnlockedBubbleIds) together through the same shared save slot.
+// TrySpendOnBubble() and RefundAllAndClearUnlocks() below both write-through on
+// mutation, same as DepositRunMastery()/ResetAccumulatedTotal() already did for
+// AccumulatedTotal. None of this new code violates the GetWorld()/GetGameInstance()
+// rule above (MasteryTreeTable loads via LoadObject(), never GetWorld()).
 UCLASS()
 class KROWDKONTROL_API UCrowdMasteryTotalSubsystem : public UGameInstanceSubsystem
 {
@@ -60,11 +64,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
 	void ResetAccumulatedTotal();
 
-	// Reads the persisted accumulated total from the shared save slot into
-	// AccumulatedTotal (PRD "Crowd Mastery Persistence" REQ-4, issue #330). Called from
-	// Initialize() at real GameInstance startup; public (not private, not called only
-	// from Initialize()) so the Automation Framework test can drive it directly against
-	// a bare NewObject<>()-constructed instance without a live FSubsystemCollectionBase.
+	// Reads the persisted accumulated total, spent points, and unlocked bubble IDs
+	// from the shared save slot into AccumulatedTotal/SpentPoints/UnlockedBubbleIds
+	// (PRD "Crowd Mastery Persistence" REQ-4, issue #330; docs/prd-mastery-skill-tree.md
+	// REQ-1, issue #372). Called from Initialize() at real GameInstance startup;
+	// public (not private, not called only from Initialize()) so the Automation
+	// Framework test can drive it directly against a bare NewObject<>()-constructed
+	// instance without a live FSubsystemCollectionBase.
 	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
 	void LoadPersistedTotal();
 
@@ -81,7 +87,8 @@ public:
 	// (GetAccumulatedTotal() - GetSpentPoints()). Fails and leaves all state
 	// unchanged if BubbleId is unknown, already unlocked, its prerequisite (owning
 	// node's parent reached) is not met, or the available balance is insufficient.
-	// Returns true only on an actual spend.
+	// Returns true only on an actual spend. A successful spend also persists to disk
+	// (docs/prd-mastery-skill-tree.md REQ-1, issue #372) so it survives a relaunch.
 	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
 	bool TrySpendOnBubble(FName BubbleId);
 
@@ -98,7 +105,8 @@ public:
 
 	// Full respec: zeroes SpentPoints and clears UnlockedBubbleIds. Never touches
 	// AccumulatedTotal - the earned total stays the separate, already-existing
-	// authority this respec doesn't affect.
+	// authority this respec doesn't affect. Also persists the respec to disk
+	// (docs/prd-mastery-skill-tree.md REQ-1, issue #372) so it survives a relaunch.
 	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
 	void RefundAllAndClearUnlocks();
 
@@ -147,6 +155,12 @@ public:
 
 private:
 	ULevelClearTimeSaveGame* LoadOrCreateSaveGame() const;
+
+	// Writes AccumulatedTotal, SpentPoints, and UnlockedBubbleIds together to the
+	// shared save slot (docs/prd-mastery-skill-tree.md REQ-1, issue #372 broadened
+	// this from AccumulatedTotal-only). Name kept for historical continuity - both
+	// existing test files call it by name and it still accurately persists the
+	// accumulated total, among other fields now.
 	void PersistAccumulatedTotal() const;
 
 	// Scans MasteryTreeTable's row map for the node owning BubbleId. Returns false
