@@ -2,23 +2,24 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "MasterySkillBubbleWidget.h"
 #include "MasteryScreenWidget.generated.h"
 
 class UBorder;
 class UTextBlock;
 class UButton;
+class UCanvasPanel;
 class UCrowdMasteryTotalSubsystem;
 
-// Issue #373, docs/prd-mastery-skill-tree.md REQ-2's scaffolding half: a dedicated
-// screen for the Crowd Mastery skill tree to grow into, reachable from a new MASTERY
-// button on UMainMenuWidget. Shows the player's current unspent points (today,
-// identical to UCrowdMasteryTotalSubsystem::GetAccumulatedTotal() - there is no
-// spend/refund tracking yet, see RefreshPointsDisplayText()) and a BACK control that
-// broadcasts OnBackRequested rather than touching any subsystem state itself -
-// UMainMenuWidget owns the actual visibility swap. Builds its tree in C++, same
-// no-Widget-Blueprint lineage as UMainMenuWidget/UPostRunSummaryWidget. Deliberately
-// has no node/bubble tree content yet - that is a separate follow-up issue, see this
-// issue's own body and docs/prd-mastery-skill-tree.md.
+// Issue #373 (scaffolding) + issue #374 (docs/prd-mastery-skill-tree.md REQ-2's
+// tree render/click-to-unlock half): a dedicated screen for the Crowd Mastery
+// skill tree, reachable from a new MASTERY button on UMainMenuWidget. Shows the
+// player's unspent points (GetAccumulatedTotal() - GetSpentPoints()), renders
+// every MasteryTreeTable node/bubble via PopulateTreeContent(), and a BACK
+// control that broadcasts OnBackRequested rather than touching any subsystem
+// state itself - UMainMenuWidget owns the actual visibility swap. Builds its
+// tree in C++, same no-Widget-Blueprint lineage as
+// UMainMenuWidget/UPostRunSummaryWidget.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnMasteryScreenBackRequested);
 
 UCLASS()
@@ -29,6 +30,8 @@ class KROWDKONTROL_API UMasteryScreenWidget : public UUserWidget
 	friend class FKrowdKontrolMasteryScreenWidgetTest;
 	friend class FKrowdKontrolMainMenuMasteryScreenTest;
 	friend class FKrowdKontrolReservedGameplayColoursTest;
+	friend class FKrowdKontrolMasteryTreeContentTest;
+	friend class FKrowdKontrolMainMenuMasteryResetTest;
 
 public:
 	// Fires when BACK is clicked. Touches no subsystem state - UMainMenuWidget is the
@@ -46,6 +49,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Mastery")
 	FText GetPointsDisplayText() const;
+
+	// Re-derives both the points display and every bubble's visual state in one call
+	// - used by UMainMenuWidget after a full respec (issue #380,
+	// docs/prd-mastery-skill-tree.md REQ-5) so an already-open tree screen reflects
+	// the cleared unlocks/points immediately, without requiring BACK + re-open.
+	UFUNCTION(BlueprintCallable, Category = "Mastery")
+	void RefreshAfterRespec();
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -66,6 +76,24 @@ private:
 	UFUNCTION()
 	void HandleBackClicked();
 
+	// Issue #374, docs/prd-mastery-skill-tree.md REQ-2: builds every node/bubble
+	// widget from MasteryTreeTable and calls RefreshBubbleStates() once at the end.
+	void PopulateTreeContent();
+
+	// Re-derives every bubble's visual state from the subsystem (unlocked / prereq
+	// / affordability) - called after PopulateTreeContent() and again after every
+	// successful spend, never caches state client-side.
+	void RefreshBubbleStates();
+
+	// Bound to every UMasterySkillBubbleWidget::OnBubbleClicked instance.
+	UFUNCTION()
+	void HandleBubbleClicked(FName BubbleId);
+
+	// Extracted from RefreshPointsDisplayText()'s original body (issue #373) so
+	// PopulateTreeContent()/RefreshBubbleStates()/HandleBubbleClicked() share the
+	// same resolve-and-cache-once/warn-once logic instead of duplicating it.
+	UCrowdMasteryTotalSubsystem* ResolveMasteryTotalSubsystem();
+
 	UPROPERTY()
 	TObjectPtr<UBorder> RootBorder;
 
@@ -80,6 +108,18 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> BackButtonLabel;
+
+	// Issue #374: the tree's canvas panel, populated by PopulateTreeContent(). So
+	// tests can assert count/contents, mirroring MainMenuWidget.h's
+	// LevelSelectButtons array declaration comment style.
+	UPROPERTY()
+	TObjectPtr<UCanvasPanel> TreeCanvas;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UMasterySkillBubbleWidget>> BubbleWidgets;
+
+	UPROPERTY()
+	TMap<FName, TObjectPtr<UMasterySkillBubbleWidget>> BubbleWidgetsByBubbleId;
 
 	// Lazy cache of the GameInstance-scoped mastery-total subsystem - single read
 	// path (no reset/deposit flow on this widget, unlike UMainMenuWidget's split

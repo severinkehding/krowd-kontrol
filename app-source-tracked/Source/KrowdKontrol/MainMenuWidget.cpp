@@ -337,10 +337,30 @@ void UMainMenuWidget::HandleMasteryResetConfirmClicked()
 	bMasteryResetConfirmPending = false;
 	RefreshMasteryResetVisibility();
 
+	LastMasteryRespecCallOrder.Reset();
 	if (UCrowdMasteryTotalSubsystem* MasterySubsystem = ResolveMasteryTotalSubsystem())
 	{
+		// Full respec (issue #380, docs/prd-mastery-skill-tree.md REQ-5): refund every
+		// spent point and clear all bubble unlocks BEFORE zeroing the earned total -
+		// pinned order, since doing it in reverse would transiently make available
+		// balance (AccumulatedTotal - SpentPoints) negative if anything read it
+		// mid-respec. Modifier-slot clearing is deferred - #376 (modifier catalog)
+		// has not landed, so there is no slot state to clear yet.
+		MasterySubsystem->RefundAllAndClearUnlocks();
+		LastMasteryRespecCallOrder.Add(TEXT("Refund"));
 		MasterySubsystem->ResetAccumulatedTotal();
+		LastMasteryRespecCallOrder.Add(TEXT("Reset"));
 	}
+
+	// The tree screen (if currently open) must reflect the cleared state
+	// immediately too (issue #380, the #349 lesson on immediate UI refresh) -
+	// RefreshAfterRespec() is a no-op-safe call on an instance that hasn't built
+	// its canvas yet.
+	if (MasteryScreenWidgetInstance)
+	{
+		MasteryScreenWidgetInstance->RefreshAfterRespec();
+	}
+
 	// The reset happens while the menu is already on screen, so NativeConstruct()'s
 	// on-show refresh never re-runs - without this the display keeps showing the
 	// pre-reset total until the next menu visit (PR #349 pass-2 escalation: the

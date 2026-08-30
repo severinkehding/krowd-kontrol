@@ -124,8 +124,9 @@ private:
 	UFUNCTION()
 	void HandleMasteryResetCancelClicked();
 
-	// Bound to MasteryResetConfirmButton->OnClicked. The only path that calls
-	// ResetAccumulatedTotal() - disarms the confirm step either way.
+	// Bound to MasteryResetConfirmButton->OnClicked. Performs a full respec (issue
+	// #380, docs/prd-mastery-skill-tree.md REQ-5) - RefundAllAndClearUnlocks() then
+	// ResetAccumulatedTotal() - and disarms the confirm step either way.
 	UFUNCTION()
 	void HandleMasteryResetConfirmClicked();
 
@@ -189,6 +190,14 @@ private:
 	// while the CONFIRM/CANCEL row is showing instead of the RESET button.
 	UPROPERTY()
 	bool bMasteryResetConfirmPending = false;
+
+	// Test-observability seam (mirrors LastSelectedLevelMapName's precedent) -
+	// records each respec step in the literal order
+	// HandleMasteryResetConfirmClicked() performs them (issue #380), so a test can
+	// pin refund-before-zero without needing to make the subsystem's methods
+	// virtual just for a spy subclass.
+	UPROPERTY()
+	TArray<FString> LastMasteryRespecCallOrder;
 
 	// Lazy cache of the GameInstance-scoped mastery-total subsystem, shared by both
 	// ResolveMasteryTotalSubsystem() (reset flow) and RefreshMasteryDisplayText()
