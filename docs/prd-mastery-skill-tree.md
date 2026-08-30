@@ -64,13 +64,29 @@ The structure mirrors Lies of P's P-Organ (operator-supplied screenshots):
   Pan/zoom is P2 — a first version may fit the Alpha-sized tree on one
   screen.
 
-### REQ-3: Skill effects — starter set (P0)
+### REQ-3: Skill effects — starter set (P0) — ⚠️ partially implemented, issue #375
 - Each bubble maps to a real, wired effect. Starter catalog kept small and
   built on existing tunables (examples, final list at implementer's
   discretion with operator sign-off in the PR: ability cooldown reduction,
   Controlled-duration bonus, energy max increase, pen-zone radius bonus,
   movement speed). Effects apply at run start via the existing
   pawn/component seams — no new parallel stat system.
+
+  Issue #375 wired 4 of the 5 named examples through
+  `AKrowdKontrolPlayerController::ApplyStarterSkillEffects` at run start:
+  ability cooldown reduction, energy max increase, movement speed bonus, and
+  pen-zone radius bonus, each mutating an existing tunable
+  (`UAbilityCooldownComponent::AbilityCooldownDurations`,
+  `UPlayerEnergyComponent::MaxEnergy`, `UFloatingPawnMovement::MaxSpeed`,
+  `ATargetZone::ZoneCollisionComponent`'s box extent). Controlled-duration
+  bonus is deliberately not implemented — the only candidate value
+  (`AbilityData::Get(Ability).BaseDurationSeconds`) is a documented locked
+  GDD constant shared by every pawn and run, and mutating or shadowing it
+  would mean either `const_cast`ing a documented-immutable global or
+  introducing exactly the "new parallel stat system" this requirement
+  forbids. `ControlledDurationBonus` bubbles remain spendable/unlockable but
+  produce no gameplay effect until a follow-up issue exposes a real
+  per-run duration-bonus seam. See `app-changelog/issue-375.md`.
 
 ### REQ-4: Modifier slots (P1)
 - 2 slots per unlocked skill; slotting UI in the P-Organ detail style (select

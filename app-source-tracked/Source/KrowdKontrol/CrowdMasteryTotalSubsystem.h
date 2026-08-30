@@ -95,6 +95,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd Mastery")
 	TArray<FName> GetUnlockedBubbles() const;
 
+	// Every currently-unlocked bubble's EffectHookId, in no particular order. A bubble
+	// whose owning node can no longer be resolved (MasteryTreeTable reassigned/edited
+	// since unlock) is silently skipped, same fail-closed posture FindBubbleAndOwningNode
+	// already documents.
+	UFUNCTION(BlueprintPure, Category = "Crowd Mastery")
+	TArray<FName> GetUnlockedEffectHookIds() const;
+
 	// Full respec: zeroes SpentPoints and clears UnlockedBubbleIds. Never touches
 	// AccumulatedTotal - the earned total stays the separate, already-existing
 	// authority this respec doesn't affect.

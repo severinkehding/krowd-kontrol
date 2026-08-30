@@ -24,6 +24,10 @@
 #include "LevelClearTimeSubsystem.h"
 #include "LevelLifecycleSubsystem.h"
 #include "BossBase.h"
+#include "CrowdMasteryTotalSubsystem.h"
+#include "TargetZone.h"
+#include "Components/BoxComponent.h"
+#include "GameFramework/FloatingPawnMovement.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -52,6 +56,7 @@ void AKrowdKontrolPlayerController::BeginPlay()
 		WireWidgetsToPawn(CurrentPawn);
 		ApplyBossCheckpointIfRequested(CurrentPawn);
 		RetryPendingAbilityUnlock(CurrentPawn);
+		ApplyStarterSkillEffects(CurrentPawn);
 	}
 }
 
@@ -61,6 +66,7 @@ void AKrowdKontrolPlayerController::OnPossess(APawn* InPawn)
 	WireWidgetsToPawn(InPawn);
 	ApplyBossCheckpointIfRequested(InPawn);
 	RetryPendingAbilityUnlock(InPawn);
+	ApplyStarterSkillEffects(InPawn);
 }
 
 void AKrowdKontrolPlayerController::CreateHUDWidgets()
@@ -366,6 +372,93 @@ ULevelClearTimeSubsystem* AKrowdKontrolPlayerController::ResolveLevelClearTimeSu
 			TEXT("a level-failed run's in-progress timer cannot be discarded."));
 	}
 	return CachedLevelClearTimeSubsystem;
+}
+
+namespace
+{
+	const FName EffectHook_AbilityCooldownReduction(TEXT("AbilityCooldownReduction"));
+	const FName EffectHook_EnergyMaxIncrease(TEXT("EnergyMaxIncrease"));
+	const FName EffectHook_MovementSpeedBonus(TEXT("MovementSpeedBonus"));
+	const FName EffectHook_PenZoneRadiusBonus(TEXT("PenZoneRadiusBonus"));
+
+	constexpr float StarterCooldownReductionMultiplier = 0.8f;   // 20% shorter cooldowns
+	constexpr float StarterEnergyMaxBonusMultiplier = 1.25f;     // +25% energy ceiling
+	constexpr float StarterMoveSpeedBonusMultiplier = 1.15f;     // +15% top speed
+	constexpr float StarterPenZoneRadiusBonusMultiplier = 1.2f;  // +20% pen-zone catch radius
+}
+
+void AKrowdKontrolPlayerController::ApplyStarterSkillEffects(APawn* InPawn)
+{
+	if (!InPawn || bStarterSkillEffectsApplied)
+	{
+		return;
+	}
+	bStarterSkillEffectsApplied = true;
+
+	UCrowdMasteryTotalSubsystem* MasterySubsystem = ResolveCrowdMasteryTotalSubsystem();
+	if (!MasterySubsystem)
+	{
+		return;
+	}
+	const TArray<FName> UnlockedHookIds = MasterySubsystem->GetUnlockedEffectHookIds();
+
+	if (UnlockedHookIds.Contains(EffectHook_AbilityCooldownReduction))
+	{
+		if (UAbilityCooldownComponent* CooldownComponent = InPawn->FindComponentByClass<UAbilityCooldownComponent>())
+		{
+			for (float& Duration : CooldownComponent->AbilityCooldownDurations)
+			{
+				Duration *= StarterCooldownReductionMultiplier;
+			}
+		}
+	}
+	if (UnlockedHookIds.Contains(EffectHook_EnergyMaxIncrease))
+	{
+		if (UPlayerEnergyComponent* EnergyComponent = InPawn->FindComponentByClass<UPlayerEnergyComponent>())
+		{
+			EnergyComponent->MaxEnergy *= StarterEnergyMaxBonusMultiplier;
+		}
+	}
+	if (UnlockedHookIds.Contains(EffectHook_MovementSpeedBonus))
+	{
+		if (UFloatingPawnMovement* Movement = InPawn->FindComponentByClass<UFloatingPawnMovement>())
+		{
+			Movement->MaxSpeed *= StarterMoveSpeedBonusMultiplier;
+		}
+	}
+	if (UnlockedHookIds.Contains(EffectHook_PenZoneRadiusBonus))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			for (TActorIterator<ATargetZone> It(World); It; ++It)
+			{
+				if (UBoxComponent* Box = It->ZoneCollisionComponent)
+				{
+					Box->SetBoxExtent(Box->GetUnscaledBoxExtent() * StarterPenZoneRadiusBonusMultiplier);
+				}
+			}
+		}
+	}
+}
+
+UCrowdMasteryTotalSubsystem* AKrowdKontrolPlayerController::ResolveCrowdMasteryTotalSubsystem()
+{
+	if (CachedCrowdMasteryTotalSubsystem)
+	{
+		return CachedCrowdMasteryTotalSubsystem;
+	}
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		CachedCrowdMasteryTotalSubsystem = GameInstance->GetSubsystem<UCrowdMasteryTotalSubsystem>();
+	}
+	if (!CachedCrowdMasteryTotalSubsystem && !bHasWarnedMissingCrowdMasteryTotalSubsystem)
+	{
+		bHasWarnedMissingCrowdMasteryTotalSubsystem = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("AKrowdKontrolPlayerController: no UCrowdMasteryTotalSubsystem available - ")
+			TEXT("starter skill effects cannot be applied."));
+	}
+	return CachedCrowdMasteryTotalSubsystem;
 }
 
 int32 AKrowdKontrolPlayerController::RefreshTargetZoneBeacons()

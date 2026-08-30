@@ -17,6 +17,7 @@ class UPunishmentDebugMenuWidget;
 class APlaceholderTargetZoneActor;
 class ULevelClearTimeSubsystem;
 class ULevelFailComponent;
+class UCrowdMasteryTotalSubsystem;
 
 // Owns and wires the project's persistent HUD widgets (PRD 13) into the viewport.
 // Neither playable level (L_FlatCamera3DPrototype, L_Paper2DPrototype) had any
@@ -45,6 +46,11 @@ class KROWDKONTROL_API AKrowdKontrolPlayerController : public APlayerController
 	// IsBriefingVisible() no-op guard) rather than bypassing it via a direct
 	// DismissBriefing() call on the widget.
 	friend class FKrowdKontrolLevelBriefingSubsystemTest;
+
+	// Grants the Automation Framework test direct access to
+	// CachedCrowdMasteryTotalSubsystem (issue #375), same GetGameInstance()-is-null-in-
+	// CreateNewMap()-Worlds rationale as CachedLevelClearTimeSubsystem's friendship above.
+	friend class FKrowdKontrolStarterSkillEffectWiringTest;
 
 public:
 	UPROPERTY(BlueprintReadOnly, Category = "HUD")
@@ -227,6 +233,27 @@ private:
 
 	bool bHasWarnedMissingLevelClearTimeSubsystem = false;
 
+	// Applies every currently-unlocked Crowd Mastery bubble's starter effect to InPawn
+	// (docs/prd-mastery-skill-tree.md REQ-3, issue #375) - ability cooldown reduction,
+	// energy max increase, movement speed bonus, and (world-scoped) pen-zone radius
+	// bonus on every ATargetZone in the level. One-shot per controller instance
+	// (bStarterSkillEffectsApplied), called from both BeginPlay()/OnPossess() exactly
+	// like WireWidgetsToPawn/ApplyBossCheckpointIfRequested/RetryPendingAbilityUnlock,
+	// since pawn-possession timing relative to BeginPlay isn't guaranteed. No-op (but
+	// still marks applied) when InPawn is null or no UCrowdMasteryTotalSubsystem is
+	// available. Does NOT implement ControlledDurationBonus - see this issue's PR body
+	// for why.
+	void ApplyStarterSkillEffects(APawn* InPawn);
+
+	// Same GameInstance-resolve-and-cache shape as ResolveLevelClearTimeSubsystem(),
+	// test-injectable via CachedCrowdMasteryTotalSubsystem below.
+	UCrowdMasteryTotalSubsystem* ResolveCrowdMasteryTotalSubsystem();
+
+	UPROPERTY()
+	TObjectPtr<UCrowdMasteryTotalSubsystem> CachedCrowdMasteryTotalSubsystem;
+
+	bool bHasWarnedMissingCrowdMasteryTotalSubsystem = false;
+
 	// The LevelFailComponent WireWidgetsToPawn last bound HandleLevelFailed to.
 	// WireWidgetsToPawn runs on both BeginPlay and OnPossess, so a repossession
 	// (not built yet - REQ-4's restart flow will be the first caller) could otherwise
@@ -315,4 +342,10 @@ private:
 	// site does this today) would re-teleport the pawn and could double-log the
 	// missing-boss warning.
 	bool bBossCheckpointApplied = false;
+
+	// One-shot guard for ApplyStarterSkillEffects(), same never-reset-once-set idiom as
+	// bBossCheckpointApplied above - without it, a controller that runs both
+	// BeginPlay() and OnPossess() (or a later repossession) would double-apply a
+	// multiplicative bonus.
+	bool bStarterSkillEffectsApplied = false;
 };
