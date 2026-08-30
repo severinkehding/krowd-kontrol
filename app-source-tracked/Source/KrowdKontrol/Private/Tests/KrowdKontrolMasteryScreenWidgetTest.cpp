@@ -97,6 +97,35 @@ bool FKrowdKontrolMasteryScreenWidgetTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("RefreshPointsDisplayText on an unbuilt widget should not crash"), true);
 	}
 
+	// (f2) RefreshAfterRespec() (issue #380) is a thin forward to
+	// RefreshPointsDisplayText() - on an unbuilt widget it must degrade the same way,
+	// not crash, mirroring block (f)'s pattern for the function it wraps.
+	UMasteryScreenWidget* UnbuiltRespecWidget = NewObject<UMasteryScreenWidget>();
+	if (TestNotNull(TEXT("UnbuiltRespecWidget should construct"), UnbuiltRespecWidget))
+	{
+		UnbuiltRespecWidget->RefreshAfterRespec();
+		TestTrue(TEXT("RefreshAfterRespec on an unbuilt widget should not crash"), true);
+		TestTrue(TEXT("GetPointsDisplayText should stay empty after RefreshAfterRespec on an unbuilt widget"),
+			UnbuiltRespecWidget->GetPointsDisplayText().IsEmpty());
+	}
+
+	// (f3) RefreshAfterRespec() on a built widget re-reads the injected subsystem's
+	// available balance (AccumulatedTotal - SpentPoints), same formula
+	// RefreshPointsDisplayText() itself uses - proves the forwarding call actually
+	// picks up a real spend, not just a deposit.
+	UMasteryScreenWidget* RespecWidget = CreateWidget<UMasteryScreenWidget>(World, UMasteryScreenWidget::StaticClass());
+	if (TestNotNull(TEXT("RespecWidget should construct"), RespecWidget))
+	{
+		UGameInstance* RespecGameInstanceOuter = NewObject<UGameInstance>();
+		UCrowdMasteryTotalSubsystem* RespecSubsystem = NewObject<UCrowdMasteryTotalSubsystem>(RespecGameInstanceOuter);
+		RespecSubsystem->DepositRunMastery(10);
+		RespecWidget->CachedMasteryTotalSubsystem = RespecSubsystem;
+
+		RespecWidget->RefreshAfterRespec();
+		TestEqual(TEXT("RefreshAfterRespec should show the full deposit when nothing has been spent"),
+			RespecWidget->GetPointsDisplayText().ToString(), FString(TEXT("UNSPENT POINTS: 10")));
+	}
+
 	// (g) Initialize() guard - must not rebuild the tree when NativeOnInitialized()
 	// (invoked synchronously by CreateWidget()) already built it.
 	UMasteryScreenWidget* GuardWidget = CreateWidget<UMasteryScreenWidget>(World, UMasteryScreenWidget::StaticClass());

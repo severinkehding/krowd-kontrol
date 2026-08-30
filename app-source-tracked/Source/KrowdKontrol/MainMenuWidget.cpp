@@ -337,10 +337,38 @@ void UMainMenuWidget::HandleMasteryResetConfirmClicked()
 	bMasteryResetConfirmPending = false;
 	RefreshMasteryResetVisibility();
 
+	// Reset first so a failed/no-op resolve below (no GameInstance-scoped subsystem)
+	// leaves this empty rather than stale from a previous confirm.
+	LastMasteryRespecCallOrder.Reset();
 	if (UCrowdMasteryTotalSubsystem* MasterySubsystem = ResolveMasteryTotalSubsystem())
 	{
+		// Full respec (issue #380, docs/prd-mastery-skill-tree.md REQ-5): refund every
+		// spent point and clear all bubble unlocks BEFORE zeroing the earned total -
+		// pinned in this order defensively. No current caller reads mid-call (both
+		// callees are plain synchronous, disjoint-field mutations), but a future
+		// delegate/Tick added to either function would otherwise transiently expose a
+		// negative available balance (AccumulatedTotal - SpentPoints) in reverse order.
+		// Modifier-slot clearing is deferred - #376 (modifier catalog / 2-slot data
+		// model, the only issue that would add slot state here) is still OPEN, not
+		// merged, as of 2026-08-31 (verify: `gh issue view 376 --json state`), so
+		// there is no slot state to clear yet. Per #380's own Notes section, this is
+		// the directed P0-subset scoping, not an unqualified deferral.
+		MasterySubsystem->RefundAllAndClearUnlocks();
+		LastMasteryRespecCallOrder.Add(TEXT("Refund"));
 		MasterySubsystem->ResetAccumulatedTotal();
+		LastMasteryRespecCallOrder.Add(TEXT("Reset"));
 	}
+
+	// The tree screen (if it has been opened at least once this session -
+	// MasteryScreenWidgetInstance is created lazily and never nulled again, even
+	// after BACK) must reflect the cleared state immediately too (issue #380, the
+	// #349 lesson on immediate UI refresh) - RefreshAfterRespec() is a no-op-safe
+	// call on an instance that hasn't built its canvas yet.
+	if (MasteryScreenWidgetInstance)
+	{
+		MasteryScreenWidgetInstance->RefreshAfterRespec();
+	}
+
 	// The reset happens while the menu is already on screen, so NativeConstruct()'s
 	// on-show refresh never re-runs - without this the display keeps showing the
 	// pre-reset total until the next menu visit (PR #349 pass-2 escalation: the
