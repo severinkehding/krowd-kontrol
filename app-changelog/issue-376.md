@@ -109,6 +109,35 @@ PR at all.
   same owned modifier into multiple bubbles at once (not consumed on slot).
   Documented as current behavior (see the slot test's scenario 3 comment), not
   silently fixed here — a real design decision for a follow-up issue.
+- Same-bubble self-duplication policy — `TrySlotModifier` also currently allows
+  the same owned modifier into two of one bubble's own slots when both accept
+  its category. Documented as current behavior (see the slot test's scenario 4c
+  comment), mirroring the cross-bubble case above — not silently fixed here.
+
+## Review fixes
+
+- `ModifierData.h`'s `Category` field comment described an "anti-duplication
+  bucket" — the exact opposite of this issue's fixed-per-slot design decision
+  above. Corrected to match every other comment in this change (`TrySlotModifier`,
+  `SlotAcceptedCategories`) and cross-reference this file's design-decision note.
+- `TrySlotModifier` called `SlottedModifiersByBubbleId.FindOrAdd(BubbleId)`
+  before confirming any slot would actually accept the candidate, so a rejected
+  call (both-slots-full or category-mismatch) could still leave behind a
+  `[NAME_None, NAME_None]` map entry for a bubble that had never been
+  successfully slotted into — contradicting the "no mutation until every guard
+  passes" claim above. Restructured to find the matching open slot read-only
+  first, mutating only once a match is confirmed, exactly matching
+  `TrySpendOnBubble`'s existing shape.
+- `UnslotModifier(BubbleId, NAME_None)` could spuriously return `true` by
+  matching the internal empty-slot sentinel via `IndexOfByKey`. Added an
+  explicit `ModifierId == NAME_None` guard.
+- Added tests: same-bubble self-duplication (documents current behavior, see
+  above), an un-authored (`SlotAcceptedCategories` left empty) bubble failing
+  closed, `UnslotModifier` on a bubble with no prior slot entry at all, and
+  `UnslotModifier(BubbleId, NAME_None)` against a bubble with open slots.
+  `SlotAcceptedCategories` is now also covered by
+  `KrowdKontrolMasteryTreeDataTest.cpp`'s existing per-field DataTable
+  round-trip loop.
 
 ## Validation evidence
 

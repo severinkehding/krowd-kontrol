@@ -261,15 +261,12 @@ bool UCrowdMasteryTotalSubsystem::TrySlotModifier(FName BubbleId, FName Modifier
 		return false;
 	}
 
-	TArray<FName>& Slots = SlottedModifiersByBubbleId.FindOrAdd(BubbleId);
-	if (Slots.Num() != MaxModifierSlotsPerBubble)
-	{
-		Slots.Init(NAME_None, MaxModifierSlotsPerBubble);
-	}
-
+	const TArray<FName>* ExistingSlots = SlottedModifiersByBubbleId.Find(BubbleId);
+	int32 OpenSlotIndex = INDEX_NONE;
 	for (int32 SlotIndex = 0; SlotIndex < MaxModifierSlotsPerBubble; ++SlotIndex)
 	{
-		if (Slots[SlotIndex] != NAME_None)
+		const FName Occupant = (ExistingSlots && ExistingSlots->IsValidIndex(SlotIndex)) ? (*ExistingSlots)[SlotIndex] : NAME_None;
+		if (Occupant != NAME_None)
 		{
 			continue;
 		}
@@ -277,14 +274,29 @@ bool UCrowdMasteryTotalSubsystem::TrySlotModifier(FName BubbleId, FName Modifier
 		{
 			continue;
 		}
-		Slots[SlotIndex] = ModifierId;
-		return true;
+		OpenSlotIndex = SlotIndex;
+		break;
 	}
-	return false;
+	if (OpenSlotIndex == INDEX_NONE)
+	{
+		return false;
+	}
+
+	TArray<FName>& Slots = SlottedModifiersByBubbleId.FindOrAdd(BubbleId);
+	if (Slots.Num() != MaxModifierSlotsPerBubble)
+	{
+		Slots.Init(NAME_None, MaxModifierSlotsPerBubble);
+	}
+	Slots[OpenSlotIndex] = ModifierId;
+	return true;
 }
 
 bool UCrowdMasteryTotalSubsystem::UnslotModifier(FName BubbleId, FName ModifierId)
 {
+	if (ModifierId == NAME_None)
+	{
+		return false;
+	}
 	TArray<FName>* Slots = SlottedModifiersByBubbleId.Find(BubbleId);
 	if (!Slots)
 	{

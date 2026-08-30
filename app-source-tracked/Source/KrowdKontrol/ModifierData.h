@@ -54,8 +54,12 @@ struct FMasteryModifierRow : public FTableRowBase
 {
 	GENERATED_BODY()
 
-	// Which anti-duplication bucket this modifier occupies among a skill's own
-	// slotted modifiers (see EModifierCategory above).
+	// Which category this modifier belongs to, matched against a bubble's per-slot
+	// pre-assigned accepted category (FMasterySkillBubble::SlotAcceptedCategories) -
+	// UCrowdMasteryTotalSubsystem::TrySlotModifier requires some *open* slot's
+	// accepted category to equal this; it is not an anti-duplication check against
+	// a bubble's already-slotted modifiers (see app-changelog/issue-376.md's
+	// "fixed-per-slot category, not anti-duplication" design-decision note).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd Mastery")
 	EModifierCategory Category = EModifierCategory::AttackType;
 

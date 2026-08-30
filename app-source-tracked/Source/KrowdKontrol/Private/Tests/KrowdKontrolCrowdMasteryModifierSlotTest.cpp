@@ -116,6 +116,25 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	MismatchBubble.EffectHookId = FName(TEXT("Root_EffectMismatch"));
 	MismatchBubble.SlotAcceptedCategories = { EModifierCategory::SurvivalType, EModifierCategory::AttackType };
 	RootRow.Bubbles.Add(MismatchBubble);
+	// BubbleSelfDup: both slots accept AttackType, dedicated (never touched by scenario 4)
+	// so scenario 4c can prove TrySlotModifier has no guard against placing the SAME owned
+	// modifier into two of its own bubble's slots.
+	FMasterySkillBubble SelfDupBubble;
+	SelfDupBubble.BubbleId = FName(TEXT("Root_BubbleSelfDup"));
+	SelfDupBubble.DisplayName = FText::FromString(TEXT("Root Skill SelfDup"));
+	SelfDupBubble.PointCost = 1;
+	SelfDupBubble.EffectHookId = FName(TEXT("Root_EffectSelfDup"));
+	SelfDupBubble.SlotAcceptedCategories = { EModifierCategory::AttackType, EModifierCategory::AttackType };
+	RootRow.Bubbles.Add(SelfDupBubble);
+	// BubbleUnauthored: SlotAcceptedCategories deliberately left at its empty default,
+	// the real-world shape of a bubble unlocked before its DataTable row is fully
+	// authored - scenario 4d proves TrySlotModifier fails closed against it.
+	FMasterySkillBubble UnauthoredBubble;
+	UnauthoredBubble.BubbleId = FName(TEXT("Root_BubbleUnauthored"));
+	UnauthoredBubble.DisplayName = FText::FromString(TEXT("Root Skill Unauthored"));
+	UnauthoredBubble.PointCost = 1;
+	UnauthoredBubble.EffectHookId = FName(TEXT("Root_EffectUnauthored"));
+	RootRow.Bubbles.Add(UnauthoredBubble);
 	TreeTable->AddRow(FName(TEXT("Node_Root")), RootRow);
 	Subsystem->MasteryTreeTable = TreeTable;
 
@@ -124,6 +143,8 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	const FName BubbleFull(TEXT("Root_Bubble2"));
 	const FName BubbleCategory(TEXT("Root_Bubble3"));
 	const FName BubbleMismatch(TEXT("Root_BubbleMismatch"));
+	const FName BubbleSelfDup(TEXT("Root_BubbleSelfDup"));
+	const FName BubbleUnauthored(TEXT("Root_BubbleUnauthored"));
 
 	// Fixture modifier catalog: 2 SurvivalType (SurvivalB doubles as the
 	// BubbleMismatch slot-0-accepts-Survival case), 2 AttackType (for BubbleCategory's
@@ -146,12 +167,15 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	ModifierTable->AddRow(ModNeverGranted, BuildModifierRow(EModifierCategory::ItemType, EModifierTier::TierI, TEXT("Never Granted"), TEXT("NeverGranted")));
 	Subsystem->ModifierCatalogTable = ModifierTable;
 
-	// Deposit enough to afford all 4 root bubbles plus BubbleMismatch (1+2+3+4+5=15).
-	Subsystem->DepositRunMastery(15);
+	// Deposit enough to afford all 4 root bubbles plus BubbleMismatch, BubbleSelfDup,
+	// and BubbleUnauthored (1+2+3+4+5+1+1=17).
+	Subsystem->DepositRunMastery(17);
 	TestTrue(TEXT("Unlocking BubbleA should succeed"), Subsystem->TrySpendOnBubble(BubbleA));
 	TestTrue(TEXT("Unlocking BubbleFull should succeed"), Subsystem->TrySpendOnBubble(BubbleFull));
 	TestTrue(TEXT("Unlocking BubbleCategory should succeed"), Subsystem->TrySpendOnBubble(BubbleCategory));
 	TestTrue(TEXT("Unlocking BubbleMismatch should succeed"), Subsystem->TrySpendOnBubble(BubbleMismatch));
+	TestTrue(TEXT("Unlocking BubbleSelfDup should succeed"), Subsystem->TrySpendOnBubble(BubbleSelfDup));
+	TestTrue(TEXT("Unlocking BubbleUnauthored should succeed"), Subsystem->TrySpendOnBubble(BubbleUnauthored));
 	// BubbleNeverUnlocked is deliberately never spent on.
 
 	TestTrue(TEXT("GrantModifier(SurvivalA) should succeed"), Subsystem->GrantModifier(ModSurvivalA));
@@ -216,12 +240,38 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("BubbleMismatch should have exactly 2 slotted modifiers once both differently-accepting slots fill"),
 		Subsystem->GetSlottedModifiers(BubbleMismatch).Num(), 2);
 
+	// 4c. Same-bubble self-duplication: BubbleSelfDup's slots both accept AttackType,
+	// and TrySlotModifier has no guard against placing the SAME owned modifier into two
+	// of its own bubble's slots (mirrors the cross-bubble reuse documented in scenario 3).
+	TestTrue(TEXT("Slotting ModAttack into BubbleSelfDup's first AttackType-accepting slot should succeed"),
+		Subsystem->TrySlotModifier(BubbleSelfDup, ModAttack));
+	TestTrue(TEXT("Slotting the SAME ModAttack again into BubbleSelfDup's second AttackType-accepting slot should also succeed (documents same-bubble self-duplication, mirroring scenario 3's cross-bubble note)"),
+		Subsystem->TrySlotModifier(BubbleSelfDup, ModAttack));
+	TestEqual(TEXT("BubbleSelfDup should report 2 slotted-modifier entries even though both hold the same ModifierId"),
+		Subsystem->GetSlottedModifiers(BubbleSelfDup).Num(), 2);
+
+	// 4d. Un-authored slot fails closed: BubbleUnauthored's SlotAcceptedCategories is
+	// left at its empty default, the real-world shape of a bubble unlocked before its
+	// DataTable row is fully authored - every slot attempt should fail closed, same
+	// posture as an unset MasteryTreeTable/ModifierCatalogTable.
+	TestFalse(TEXT("Slotting into a bubble with an un-authored (empty) SlotAcceptedCategories should fail closed"),
+		Subsystem->TrySlotModifier(BubbleUnauthored, ModAttack));
+	TestEqual(TEXT("BubbleUnauthored should have no slotted modifiers after the fail-closed rejection"),
+		Subsystem->GetSlottedModifiers(BubbleUnauthored).Num(), 0);
+
 	// 5. Unslot.
 	TestTrue(TEXT("Unslotting a present modifier should succeed"), Subsystem->UnslotModifier(BubbleA, ModSurvivalA));
 	TestEqual(TEXT("BubbleA should have no slotted modifiers after unslotting its only entry"),
 		Subsystem->GetSlottedModifiers(BubbleA).Num(), 0);
 	TestFalse(TEXT("Unslotting an already-absent modifier should no-op and return false"),
 		Subsystem->UnslotModifier(BubbleA, ModSurvivalA));
+	TestFalse(TEXT("Unslotting from a bubble that was never slotted into at all should no-op and return false"),
+		Subsystem->UnslotModifier(BubbleNeverUnlocked, ModAttack));
+	// BubbleA's slots are now [NAME_None, NAME_None] after the unslot above - the exact
+	// state where IndexOfByKey(NAME_None) would spuriously find the open-slot sentinel
+	// without the ModifierId == NAME_None guard.
+	TestFalse(TEXT("UnslotModifier(BubbleId, NAME_None) should fail rather than spuriously matching an empty slot sentinel"),
+		Subsystem->UnslotModifier(BubbleA, NAME_None));
 
 	// 6. Defensive rejections (run before the respec below, while BubbleA is still
 	// unlocked and has an open slot).
