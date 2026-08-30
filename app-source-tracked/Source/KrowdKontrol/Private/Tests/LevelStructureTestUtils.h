@@ -135,8 +135,12 @@ namespace KrowdKontrolLevelTestUtils
 
 	// Asserts every room has a floor mesh with a valid UStaticMesh set (REQ-3 - no
 	// void anywhere along the playable path) and that collision is split correctly:
-	// the floor keeps blocking collision, but walls stay non-blocking so they don't
-	// seal off connector paths (ARoomActor has no per-door "which wall side" data).
+	// the floor keeps blocking collision, and walls stay non-blocking here specifically
+	// because this asserts pre-BeginPlay construction-time state - the only context this
+	// helper is ever called from (KrowdKontrolRoomActorTest.cpp, which never dispatches
+	// BeginPlay). At real play time, ARoomActor::SealRoomPerimeter() (issue #243) enables
+	// blocking collision on any wall side with no connecting door, and gaps the sides
+	// that have one - see KrowdKontrolRoomActorPerimeterSealingTest.cpp for that coverage.
 	inline void CheckRoomsHaveFloorGeometry(FAutomationTestBase& Test, const TArray<ARoomActor*>& Rooms)
 	{
 		for (ARoomActor* Room : Rooms)
@@ -304,5 +308,36 @@ namespace KrowdKontrolLevelTestUtils
 				}
 			}
 		}
+	}
+
+	// Issue #31: the entrance room (lowest X, same definition SortRoomsByX/
+	// CheckEnemyDensityRamp already use) must be a forced-safe solo encounter for
+	// whichever enemy type the level's newly-unlocked ability counters - exactly one
+	// enemy present, alone, of CounteredType. Reuses EnemyCountByRoom/EnemyTypesByRoom
+	// callers already build for CheckRoomTargetZonesAndDensity, so callers don't
+	// re-walk TActorIterator a second time.
+	inline void CheckSoloEncounterForCounteredType(
+		FAutomationTestBase& Test,
+		const TArray<ARoomActor*>& Rooms,
+		const TMap<ARoomActor*, int32>& EnemyCountByRoom,
+		const TMap<ARoomActor*, TSet<EEnemyType>>& EnemyTypesByRoom,
+		EEnemyType CounteredType)
+	{
+		TArray<ARoomActor*> SortedRooms = SortRoomsByX(Rooms);
+		if (!Test.TestTrue(TEXT("Solo-encounter check requires at least one room"), SortedRooms.Num() > 0))
+		{
+			return;
+		}
+
+		ARoomActor* EntranceRoom = SortedRooms[0];
+		Test.TestEqual(TEXT("Entrance room should contain exactly one enemy (issue #31 forced-safe solo encounter)"),
+			EnemyCountByRoom.FindRef(EntranceRoom), 1);
+
+		const TSet<EEnemyType>* PlacedTypes = EnemyTypesByRoom.Find(EntranceRoom);
+		const bool bHasCounteredType = PlacedTypes && PlacedTypes->Contains(CounteredType) && PlacedTypes->Num() == 1;
+		Test.TestTrue(
+			FString::Printf(TEXT("Entrance room's sole enemy should be the newly-unlocked ability's countered type (%s)"),
+				*UEnum::GetDisplayValueAsText(CounteredType).ToString()),
+			bHasCounteredType);
 	}
 }
