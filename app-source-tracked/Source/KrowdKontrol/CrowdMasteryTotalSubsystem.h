@@ -8,6 +8,7 @@ class ULevelClearTimeSaveGame;
 class UDataTable;
 struct FMasteryTreeNode;
 struct FMasterySkillBubble;
+struct FMasteryModifierRow;
 
 // docs/prd-crowd-mastery-persistence.md REQ-1, issue #327: sole authority for the
 // Crowd Mastery total accumulated across every run cleared this play session.
@@ -105,6 +106,45 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd Mastery")
 	int32 GetSpentPoints() const { return SpentPoints; }
 
+	// Content asset: one row per modifier (issue #376's ModifierCatalogTable
+	// family). Same EditDefaultsOnly / auto-load-in-Initialize()-for-real-worlds
+	// shape MasteryTreeTable above already establishes. Public, so Automation tests
+	// inject an in-code NewObject<UDataTable>() directly, no friendship needed.
+	UPROPERTY(EditDefaultsOnly, Category = "Crowd Mastery")
+	TObjectPtr<UDataTable> ModifierCatalogTable;
+
+	// Adds ModifierId to the owned-modifiers inventory. Fails and leaves state
+	// unchanged if ModifierId is unknown in ModifierCatalogTable or already owned.
+	// Returns true only on an actual grant. Not called from anywhere in this issue
+	// - the real earn trigger (level-clear acquisition) is a separate, later issue;
+	// this is the minimal primitive that issue will call.
+	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
+	bool GrantModifier(FName ModifierId);
+
+	// Every currently-owned modifier ID.
+	UFUNCTION(BlueprintPure, Category = "Crowd Mastery")
+	TArray<FName> GetOwnedModifiers() const;
+
+	// Attempts to slot ModifierId into one of BubbleId's up to MaxModifierSlotsPerBubble
+	// modifier slots. Fails and leaves all state unchanged if: BubbleId is not
+	// unlocked; ModifierId is unknown or not owned; or no open slot's pre-assigned
+	// accepted category (FMasterySkillBubble::SlotAcceptedCategories, indexed by slot
+	// position) matches ModifierId's Category - this covers both "already full" (no
+	// open slot at all) and "category mismatch" (an open slot exists but its accepted
+	// category differs) in one check. Returns true only on an actual slot.
+	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
+	bool TrySlotModifier(FName BubbleId, FName ModifierId);
+
+	// Removes ModifierId from BubbleId's slotted modifiers, if present. Returns
+	// true only if an entry was actually removed.
+	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
+	bool UnslotModifier(FName BubbleId, FName ModifierId);
+
+	// BubbleId's currently slotted modifier IDs (0-2 entries). Empty if BubbleId
+	// has no slotted modifiers or is unknown.
+	UFUNCTION(BlueprintPure, Category = "Crowd Mastery")
+	TArray<FName> GetSlottedModifiers(FName BubbleId) const;
+
 private:
 	ULevelClearTimeSaveGame* LoadOrCreateSaveGame() const;
 	void PersistAccumulatedTotal() const;
@@ -129,6 +169,16 @@ private:
 	// so the warn-once check and message live in one place.
 	bool HasMasteryTreeTable() const;
 
+	// Looks up ModifierId in ModifierCatalogTable's row map. Returns nullptr if
+	// ModifierCatalogTable is unset or ModifierId is not found - same fail-closed
+	// shape FindBubbleAndOwningNode already establishes for the tree table.
+	const FMasteryModifierRow* FindModifierRow(FName ModifierId) const;
+
+	// True if ModifierCatalogTable is assigned; false otherwise, logging the
+	// missing-table warning exactly once via bHasWarnedMissingModifierCatalogTable.
+	// Same warn-once shape HasMasteryTreeTable() already establishes.
+	bool HasModifierCatalogTable() const;
+
 	int32 AccumulatedTotal = 0;
 	int32 SpentPoints = 0;
 	TSet<FName> UnlockedBubbleIds;
@@ -137,4 +187,27 @@ private:
 	// diagnostic instead of spamming on every guarded call - same pattern as
 	// ULevelBriefingSubsystem::bHasWarnedMissingBriefingTable.
 	mutable bool bHasWarnedMissingMasteryTreeTable = false;
+
+	// Every modifier ID the player owns, regardless of whether it is currently
+	// slotted anywhere. Survives RefundAllAndClearUnlocks() (PRD REQ-5: respec
+	// clears unlocks and slotted modifiers, not earned inventory).
+	TSet<FName> OwnedModifierIds;
+
+	// Per unlocked bubble, exactly MaxModifierSlotsPerBubble entries once the bubble
+	// has ever been touched by TrySlotModifier, indexed by slot position (matching
+	// FMasterySkillBubble::SlotAcceptedCategories's indexing) - NAME_None marks an
+	// open slot. GetSlottedModifiers() filters NAME_None out before returning, so
+	// callers still see a 0-2-entry, gap-free list. Cleared by
+	// RefundAllAndClearUnlocks() alongside UnlockedBubbleIds.
+	TMap<FName, TArray<FName>> SlottedModifiersByBubbleId;
+
+	// Warn-once guard for ModifierCatalogTable, same pattern as
+	// bHasWarnedMissingMasteryTreeTable above.
+	mutable bool bHasWarnedMissingModifierCatalogTable = false;
+
+	// Slots per unlocked skill bubble (PRD REQ-4: "Each unlocked skill has 2
+	// modifier slots"). Also the fixed size TrySlotModifier initializes each
+	// bubble's SlottedModifiersByBubbleId entry to, and the bound
+	// FMasterySkillBubble::SlotAcceptedCategories is indexed against.
+	static constexpr int32 MaxModifierSlotsPerBubble = 2;
 };

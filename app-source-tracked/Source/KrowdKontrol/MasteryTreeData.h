@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
+#include "ModifierData.h"
 #include "MasteryTreeData.generated.h"
 
 // docs/prd-mastery-skill-tree.md REQ-1, issue #370: the P-Organ-style skill tree's
@@ -60,6 +61,17 @@ struct FMasterySkillBubble
 	// has to guess at that later issue's real effect taxonomy.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mastery Tree")
 	FName EffectHookId;
+
+	// The category each of this bubble's up to 2 modifier slots accepts (issue #376,
+	// PRD REQ-4: a slot has a pre-assigned accepted category that a candidate
+	// modifier must match, per the P-Organ reference's per-slot category shape -
+	// UCrowdMasteryTotalSubsystem::TrySlotModifier reads this by slot index, not an
+	// anti-duplication check across already-slotted modifiers). Index 0 is this
+	// bubble's first slot's accepted category, index 1 its second. Left empty (the
+	// default), every slot attempt on this bubble fails closed until authored, same
+	// posture as an unset MasteryTreeTable/ModifierCatalogTable.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mastery Tree")
+	TArray<EModifierCategory> SlotAcceptedCategories;
 };
 
 // One DataTable row per tree node (the DataTable's RowName is the node's own

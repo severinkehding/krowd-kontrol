@@ -2,6 +2,7 @@
 #include "LevelClearTimeSaveGame.h"
 #include "LevelClearTimeSubsystem.h"
 #include "MasteryTreeData.h"
+#include "ModifierData.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/DataTable.h"
 
@@ -12,6 +13,10 @@ void UCrowdMasteryTotalSubsystem::Initialize(FSubsystemCollectionBase& Collectio
 	if (!MasteryTreeTable)
 	{
 		MasteryTreeTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Data/DT_MasteryTreeTable.DT_MasteryTreeTable"));
+	}
+	if (!ModifierCatalogTable)
+	{
+		ModifierCatalogTable = LoadObject<UDataTable>(nullptr, TEXT("/Game/Data/DT_ModifierCatalogTable.DT_ModifierCatalogTable"));
 	}
 }
 
@@ -82,6 +87,30 @@ bool UCrowdMasteryTotalSubsystem::HasMasteryTreeTable() const
 			TEXT("UCrowdMasteryTotalSubsystem: MasteryTreeTable is unset - all skill-tree spend/prerequisite lookups will fail until it is assigned."));
 	}
 	return false;
+}
+
+bool UCrowdMasteryTotalSubsystem::HasModifierCatalogTable() const
+{
+	if (ModifierCatalogTable)
+	{
+		return true;
+	}
+	if (!bHasWarnedMissingModifierCatalogTable)
+	{
+		bHasWarnedMissingModifierCatalogTable = true;
+		UE_LOG(LogTemp, Warning,
+			TEXT("UCrowdMasteryTotalSubsystem: ModifierCatalogTable is unset - all modifier grant/slot lookups will fail until it is assigned."));
+	}
+	return false;
+}
+
+const FMasteryModifierRow* UCrowdMasteryTotalSubsystem::FindModifierRow(FName ModifierId) const
+{
+	if (!HasModifierCatalogTable())
+	{
+		return nullptr;
+	}
+	return ModifierCatalogTable->FindRow<FMasteryModifierRow>(ModifierId, TEXT("UCrowdMasteryTotalSubsystem::FindModifierRow"));
 }
 
 bool UCrowdMasteryTotalSubsystem::FindBubbleAndOwningNode(FName BubbleId, const FMasteryTreeNode*& OutNode, const FMasterySkillBubble*& OutBubble) const
@@ -188,4 +217,100 @@ void UCrowdMasteryTotalSubsystem::RefundAllAndClearUnlocks()
 {
 	SpentPoints = 0;
 	UnlockedBubbleIds.Empty();
+	SlottedModifiersByBubbleId.Empty();
+}
+
+bool UCrowdMasteryTotalSubsystem::GrantModifier(FName ModifierId)
+{
+	if (OwnedModifierIds.Contains(ModifierId))
+	{
+		return false;
+	}
+	if (!FindModifierRow(ModifierId))
+	{
+		return false;
+	}
+	OwnedModifierIds.Add(ModifierId);
+	return true;
+}
+
+TArray<FName> UCrowdMasteryTotalSubsystem::GetOwnedModifiers() const
+{
+	return OwnedModifierIds.Array();
+}
+
+bool UCrowdMasteryTotalSubsystem::TrySlotModifier(FName BubbleId, FName ModifierId)
+{
+	if (!UnlockedBubbleIds.Contains(BubbleId))
+	{
+		return false;
+	}
+	if (!OwnedModifierIds.Contains(ModifierId))
+	{
+		return false;
+	}
+	const FMasteryModifierRow* Row = FindModifierRow(ModifierId);
+	if (!Row)
+	{
+		return false;
+	}
+	const FMasteryTreeNode* Node = nullptr;
+	const FMasterySkillBubble* Bubble = nullptr;
+	if (!FindBubbleAndOwningNode(BubbleId, Node, Bubble))
+	{
+		return false;
+	}
+
+	TArray<FName>& Slots = SlottedModifiersByBubbleId.FindOrAdd(BubbleId);
+	if (Slots.Num() != MaxModifierSlotsPerBubble)
+	{
+		Slots.Init(NAME_None, MaxModifierSlotsPerBubble);
+	}
+
+	for (int32 SlotIndex = 0; SlotIndex < MaxModifierSlotsPerBubble; ++SlotIndex)
+	{
+		if (Slots[SlotIndex] != NAME_None)
+		{
+			continue;
+		}
+		if (!Bubble->SlotAcceptedCategories.IsValidIndex(SlotIndex) || Bubble->SlotAcceptedCategories[SlotIndex] != Row->Category)
+		{
+			continue;
+		}
+		Slots[SlotIndex] = ModifierId;
+		return true;
+	}
+	return false;
+}
+
+bool UCrowdMasteryTotalSubsystem::UnslotModifier(FName BubbleId, FName ModifierId)
+{
+	TArray<FName>* Slots = SlottedModifiersByBubbleId.Find(BubbleId);
+	if (!Slots)
+	{
+		return false;
+	}
+	const int32 SlotIndex = Slots->IndexOfByKey(ModifierId);
+	if (SlotIndex == INDEX_NONE)
+	{
+		return false;
+	}
+	(*Slots)[SlotIndex] = NAME_None;
+	return true;
+}
+
+TArray<FName> UCrowdMasteryTotalSubsystem::GetSlottedModifiers(FName BubbleId) const
+{
+	TArray<FName> Result;
+	if (const TArray<FName>* Slots = SlottedModifiersByBubbleId.Find(BubbleId))
+	{
+		for (const FName& SlottedId : *Slots)
+		{
+			if (SlottedId != NAME_None)
+			{
+				Result.Add(SlottedId);
+			}
+		}
+	}
+	return Result;
 }
