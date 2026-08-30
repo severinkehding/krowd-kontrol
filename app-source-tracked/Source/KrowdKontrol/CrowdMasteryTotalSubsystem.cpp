@@ -213,6 +213,21 @@ TArray<FName> UCrowdMasteryTotalSubsystem::GetUnlockedBubbles() const
 	return UnlockedBubbleIds.Array();
 }
 
+TArray<FName> UCrowdMasteryTotalSubsystem::GetUnlockedEffectHookIds() const
+{
+	TArray<FName> HookIds;
+	for (const FName& BubbleId : UnlockedBubbleIds)
+	{
+		const FMasteryTreeNode* Node = nullptr;
+		const FMasterySkillBubble* Bubble = nullptr;
+		if (FindBubbleAndOwningNode(BubbleId, Node, Bubble) && Bubble)
+		{
+			HookIds.Add(Bubble->EffectHookId);
+		}
+	}
+	return HookIds;
+}
+
 void UCrowdMasteryTotalSubsystem::RefundAllAndClearUnlocks()
 {
 	SpentPoints = 0;
@@ -254,23 +269,33 @@ bool UCrowdMasteryTotalSubsystem::TrySlotModifier(FName BubbleId, FName Modifier
 	{
 		return false;
 	}
-	if (const TArray<FName>* ExistingSlots = SlottedModifiersByBubbleId.Find(BubbleId))
+	const FMasteryTreeNode* Node = nullptr;
+	const FMasterySkillBubble* Bubble = nullptr;
+	if (!FindBubbleAndOwningNode(BubbleId, Node, Bubble))
 	{
-		if (ExistingSlots->Num() >= 2)
-		{
-			return false;
-		}
-		for (const FName& ExistingId : *ExistingSlots)
-		{
-			const FMasteryModifierRow* ExistingRow = FindModifierRow(ExistingId);
-			if (ExistingRow && ExistingRow->Category == Row->Category)
-			{
-				return false;
-			}
-		}
+		return false;
 	}
-	SlottedModifiersByBubbleId.FindOrAdd(BubbleId).Add(ModifierId);
-	return true;
+
+	TArray<FName>& Slots = SlottedModifiersByBubbleId.FindOrAdd(BubbleId);
+	if (Slots.Num() != MaxModifierSlotsPerBubble)
+	{
+		Slots.Init(NAME_None, MaxModifierSlotsPerBubble);
+	}
+
+	for (int32 SlotIndex = 0; SlotIndex < MaxModifierSlotsPerBubble; ++SlotIndex)
+	{
+		if (Slots[SlotIndex] != NAME_None)
+		{
+			continue;
+		}
+		if (!Bubble->SlotAcceptedCategories.IsValidIndex(SlotIndex) || Bubble->SlotAcceptedCategories[SlotIndex] != Row->Category)
+		{
+			continue;
+		}
+		Slots[SlotIndex] = ModifierId;
+		return true;
+	}
+	return false;
 }
 
 bool UCrowdMasteryTotalSubsystem::UnslotModifier(FName BubbleId, FName ModifierId)
@@ -280,11 +305,27 @@ bool UCrowdMasteryTotalSubsystem::UnslotModifier(FName BubbleId, FName ModifierI
 	{
 		return false;
 	}
-	return Slots->RemoveSingle(ModifierId) > 0;
+	const int32 SlotIndex = Slots->IndexOfByKey(ModifierId);
+	if (SlotIndex == INDEX_NONE)
+	{
+		return false;
+	}
+	(*Slots)[SlotIndex] = NAME_None;
+	return true;
 }
 
 TArray<FName> UCrowdMasteryTotalSubsystem::GetSlottedModifiers(FName BubbleId) const
 {
-	const TArray<FName>* Slots = SlottedModifiersByBubbleId.Find(BubbleId);
-	return Slots ? *Slots : TArray<FName>();
+	TArray<FName> Result;
+	if (const TArray<FName>* Slots = SlottedModifiersByBubbleId.Find(BubbleId))
+	{
+		for (const FName& SlottedId : *Slots)
+		{
+			if (SlottedId != NAME_None)
+			{
+				Result.Add(SlottedId);
+			}
+		}
+	}
+	return Result;
 }

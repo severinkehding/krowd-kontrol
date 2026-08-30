@@ -36,7 +36,7 @@ A populated placeholder content asset, `/Game/Data/DT_ModifierCatalogTable`
 independently verified via a second headless `export_to_json_string()` call before
 the Automation test asserting against the real asset was even written.
 
-## Design decision: category rule is anti-duplication, not fixed-per-slot
+## Design decision: category rule is anti-duplication, not fixed-per-slot (superseded)
 
 The issue's literal acceptance-criteria wording ("the modifier's category doesn't
 match what the slot accepts") reads as if each of a bubble's 2 slots has its own
@@ -47,6 +47,17 @@ the same type" — anti-duplication across a bubble's own slots. `TrySlotModifie
 implements the anti-duplication reading and documents this decision directly in its
 doc comment. This is the one genuine design judgment call in this change; flagged
 here for reviewer visibility per this workflow's own prior stalled-run guidance.
+
+**Superseded by pass-1 validation feedback (PR #401).** The behavioral validator
+held the issue's literal wording as decisive: a slot has a pre-assigned accepted
+category, not an anti-duplication rule across already-slotted modifiers.
+`FMasterySkillBubble` now carries `SlotAcceptedCategories` (indexed by slot
+position), and `TrySlotModifier` matches a candidate modifier's `Category` against
+an open slot's accepted category instead of scanning already-slotted modifiers for
+a `Category` collision. `KrowdKontrolCrowdMasteryModifierSlotTest.cpp` scenario 4
+was rewritten accordingly (two same-category slots both filling proves this is no
+longer an anti-duplication rule; a mismatched-category rejection with an open slot
+still available proves it's a fixed per-slot check, not "first empty slot wins").
 
 `EModifierCategory` includes a fourth category, `ItemType`, beyond the PRD's own
 three named examples (Survival/Attack/Ability) — the PRD's own cited reference
@@ -76,8 +87,8 @@ source documents four, and including it now avoids a breaking enum change later.
       modifier references (`SlottedModifiersByBubbleId`) and a separate owned
       inventory (`OwnedModifierIds`)
 - [x] `TrySlotModifier`/`UnslotModifier` API exists, rejects on not-unlocked,
-      both-slots-full, and category-duplicate-across-the-skill's-own-slots (the
-      anti-duplication reading, documented in the code, not silently assumed)
+      both-slots-full, and category-mismatch against a slot's pre-assigned accepted
+      category (see "superseded" note above)
 - [x] `Tier` value is stored and exposed but not gate-enforced
 - [x] Unit tests cover all 4 literally-named acceptance-criteria cases plus the
       respec interaction, unslot, and defensive unknown/not-owned rejections

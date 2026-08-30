@@ -84,7 +84,8 @@ The structure mirrors Lies of P's P-Organ (operator-supplied screenshots):
   (`EModifierCategory`/`EModifierTier`/`FMasteryModifierRow`) and the
   `UCrowdMasteryTotalSubsystem` grant/slot/unslot API
   (`GrantModifier`/`TrySlotModifier`/`UnslotModifier`/`GetSlottedModifiers`),
-  including the anti-duplication category rule and respec interaction, as
+  including per-slot pre-assigned accepted-category matching
+  (`FMasterySkillBubble::SlotAcceptedCategories`) and respec interaction, as
   session-only state with unit tests. Still open: modifier acquisition
   wiring (nothing calls `GrantModifier` yet), the slotting UI, and tier-gate
   enforcement (see `app-changelog/issue-376.md`).

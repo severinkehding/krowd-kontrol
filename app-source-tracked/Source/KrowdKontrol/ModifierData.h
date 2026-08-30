@@ -12,11 +12,11 @@
 // yet resolved into a real gameplay effect (same deferred-resolution posture
 // FMasterySkillBubble::EffectHookId already documents).
 
-// Which of a skill's slots a modifier competes for anti-duplication against
-// (UCrowdMasteryTotalSubsystem::TrySlotModifier rejects slotting two modifiers of
-// the same Category onto the same bubble - see that function's doc comment for why
-// this is an anti-duplication rule, not a fixed-per-slot-accepted-category rule).
-// Four categories, not the PRD's three named examples (Survival/Attack/Ability) -
+// Which category a modifier belongs to, matched against a bubble's per-slot
+// pre-assigned accepted category (FMasterySkillBubble::SlotAcceptedCategories -
+// UCrowdMasteryTotalSubsystem::TrySlotModifier rejects a candidate modifier unless
+// some open slot's accepted category equals this). Four categories, not the PRD's
+// three named examples (Survival/Attack/Ability) -
 // ItemType is included now per the cited reference source so the enum doesn't need
 // a breaking change once a later issue needs it. Count is a sentinel, not a real
 // category - hidden so it never shows up in a Blueprint dropdown, same idiom as

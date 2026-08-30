@@ -1,8 +1,10 @@
 // Confirms UCrowdMasteryTotalSubsystem's modifier grant/slot/unslot API (issue #376,
 // docs/prd-mastery-skill-tree.md REQ-4): GrantModifier/TrySlotModifier/UnslotModifier
-// mutate state only on success, TrySlotModifier's category rule is anti-duplication
-// across a bubble's own slots (not fixed-per-slot-category - see that function's doc
-// comment), and RefundAllAndClearUnlocks() clears slotted modifiers while leaving the
+// mutate state only on success, TrySlotModifier's category rule matches a candidate
+// modifier's Category against an open slot's pre-assigned accepted category
+// (FMasterySkillBubble::SlotAcceptedCategories - not an anti-duplication check across
+// already-slotted modifiers, see that function's doc comment), and
+// RefundAllAndClearUnlocks() clears slotted modifiers while leaving the
 // owned-modifiers inventory untouched (PRD REQ-5).
 //
 // No UWorld/CreateNewMap() needed - same rationale
@@ -33,6 +35,9 @@ namespace KrowdKontrolCrowdMasteryModifierSlotTest
 {
 	// Builds a 4-entry Bubbles array costing 1/2/3/4 points, named "<Prefix>_Bubble0..3" -
 	// mirrors KrowdKontrolCrowdMasteryTotalSubsystemSpendTest.cpp's BuildFourBubbles() shape.
+	// Each bubble's 2 slots default to accepting SurvivalType/AttackType respectively -
+	// callers that need a different accepted-category shape (the scenario-4 cases below)
+	// overwrite SlotAcceptedCategories after the fact.
 	TArray<FMasterySkillBubble> BuildFourBubbles(const FString& Prefix)
 	{
 		TArray<FMasterySkillBubble> Bubbles;
@@ -43,6 +48,7 @@ namespace KrowdKontrolCrowdMasteryModifierSlotTest
 			Bubble.DisplayName = FText::FromString(FString::Printf(TEXT("%s Skill %d"), *Prefix, Index));
 			Bubble.PointCost = Index + 1;
 			Bubble.EffectHookId = FName(*FString::Printf(TEXT("%s_Effect%d"), *Prefix, Index));
+			Bubble.SlotAcceptedCategories = { EModifierCategory::SurvivalType, EModifierCategory::AttackType };
 			Bubbles.Add(Bubble);
 		}
 		return Bubbles;
@@ -87,15 +93,29 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("GetOwnedModifiers should be empty when ModifierCatalogTable is unset"),
 		Subsystem->GetOwnedModifiers().Num(), 0);
 
-	// Fixture tree: a single root node (no prerequisite) with 4 bubbles costing
-	// 1/2/3/4 points - Bubble0/2/3 get unlocked for the scenarios below, Bubble1 is
-	// deliberately left never-unlocked (scenario 2).
+	// Fixture tree: a single root node (no prerequisite) with the 4 BuildFourBubbles()
+	// bubbles (Bubble0/2/3 get unlocked below, Bubble1 is deliberately left
+	// never-unlocked - scenario 2), plus one hand-built 5th bubble, BubbleMismatch,
+	// whose slots accept different categories (Survival/Attack) with neither matching
+	// AbilityType - proves TrySlotModifier rejects a category mismatch even while a
+	// slot is still open, not just when both slots are full (scenario 4b).
+	// BubbleCategory (Bubble3)'s default SlotAcceptedCategories is overridden below to
+	// [AttackType, AttackType] - both slots accepting the *same* category - so
+	// scenario 4 can prove the rule is per-slot acceptance, not anti-duplication.
 	UDataTable* TreeTable = NewObject<UDataTable>();
 	TreeTable->RowStruct = FMasteryTreeNode::StaticStruct();
 	FMasteryTreeNode RootRow;
 	RootRow.ParentNodeId = NAME_None;
 	RootRow.Phase = EMasteryTreePhase::Phase1;
 	RootRow.Bubbles = BuildFourBubbles(TEXT("Root"));
+	RootRow.Bubbles[3].SlotAcceptedCategories = { EModifierCategory::AttackType, EModifierCategory::AttackType };
+	FMasterySkillBubble MismatchBubble;
+	MismatchBubble.BubbleId = FName(TEXT("Root_BubbleMismatch"));
+	MismatchBubble.DisplayName = FText::FromString(TEXT("Root Skill Mismatch"));
+	MismatchBubble.PointCost = 5;
+	MismatchBubble.EffectHookId = FName(TEXT("Root_EffectMismatch"));
+	MismatchBubble.SlotAcceptedCategories = { EModifierCategory::SurvivalType, EModifierCategory::AttackType };
+	RootRow.Bubbles.Add(MismatchBubble);
 	TreeTable->AddRow(FName(TEXT("Node_Root")), RootRow);
 	Subsystem->MasteryTreeTable = TreeTable;
 
@@ -103,34 +123,41 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	const FName BubbleNeverUnlocked(TEXT("Root_Bubble1"));
 	const FName BubbleFull(TEXT("Root_Bubble2"));
 	const FName BubbleCategory(TEXT("Root_Bubble3"));
+	const FName BubbleMismatch(TEXT("Root_BubbleMismatch"));
 
-	// Fixture modifier catalog: 2 SurvivalType (for the category-duplicate case), 1
-	// each of AttackType/AbilityType/ItemType. Mod_NeverGranted is deliberately
-	// never passed to GrantModifier (scenario 7's not-owned rejection).
+	// Fixture modifier catalog: 2 SurvivalType (SurvivalB doubles as the
+	// BubbleMismatch slot-0-accepts-Survival case), 2 AttackType (for BubbleCategory's
+	// both-slots-accept-AttackType case), 1 AbilityType (matches no slot on
+	// BubbleCategory or BubbleMismatch), 1 ItemType. Mod_NeverGranted is deliberately
+	// never passed to GrantModifier (scenario 6's not-owned rejection).
 	UDataTable* ModifierTable = NewObject<UDataTable>();
 	ModifierTable->RowStruct = FMasteryModifierRow::StaticStruct();
 	const FName ModSurvivalA(TEXT("Mod_SurvivalA"));
 	const FName ModSurvivalB(TEXT("Mod_SurvivalB"));
 	const FName ModAttack(TEXT("Mod_Attack"));
+	const FName ModAttackB(TEXT("Mod_AttackB"));
 	const FName ModAbility(TEXT("Mod_Ability"));
 	const FName ModNeverGranted(TEXT("Mod_NeverGranted"));
 	ModifierTable->AddRow(ModSurvivalA, BuildModifierRow(EModifierCategory::SurvivalType, EModifierTier::TierI, TEXT("Survival A"), TEXT("SurvivalA")));
 	ModifierTable->AddRow(ModSurvivalB, BuildModifierRow(EModifierCategory::SurvivalType, EModifierTier::TierI, TEXT("Survival B"), TEXT("SurvivalB")));
 	ModifierTable->AddRow(ModAttack, BuildModifierRow(EModifierCategory::AttackType, EModifierTier::TierI, TEXT("Attack"), TEXT("Attack")));
+	ModifierTable->AddRow(ModAttackB, BuildModifierRow(EModifierCategory::AttackType, EModifierTier::TierI, TEXT("Attack B"), TEXT("AttackB")));
 	ModifierTable->AddRow(ModAbility, BuildModifierRow(EModifierCategory::AbilityType, EModifierTier::TierI, TEXT("Ability"), TEXT("Ability")));
 	ModifierTable->AddRow(ModNeverGranted, BuildModifierRow(EModifierCategory::ItemType, EModifierTier::TierI, TEXT("Never Granted"), TEXT("NeverGranted")));
 	Subsystem->ModifierCatalogTable = ModifierTable;
 
-	// Deposit enough to afford all 4 root bubbles (1+2+3+4=10).
-	Subsystem->DepositRunMastery(10);
+	// Deposit enough to afford all 4 root bubbles plus BubbleMismatch (1+2+3+4+5=15).
+	Subsystem->DepositRunMastery(15);
 	TestTrue(TEXT("Unlocking BubbleA should succeed"), Subsystem->TrySpendOnBubble(BubbleA));
 	TestTrue(TEXT("Unlocking BubbleFull should succeed"), Subsystem->TrySpendOnBubble(BubbleFull));
 	TestTrue(TEXT("Unlocking BubbleCategory should succeed"), Subsystem->TrySpendOnBubble(BubbleCategory));
+	TestTrue(TEXT("Unlocking BubbleMismatch should succeed"), Subsystem->TrySpendOnBubble(BubbleMismatch));
 	// BubbleNeverUnlocked is deliberately never spent on.
 
 	TestTrue(TEXT("GrantModifier(SurvivalA) should succeed"), Subsystem->GrantModifier(ModSurvivalA));
 	TestTrue(TEXT("GrantModifier(SurvivalB) should succeed"), Subsystem->GrantModifier(ModSurvivalB));
 	TestTrue(TEXT("GrantModifier(Attack) should succeed"), Subsystem->GrantModifier(ModAttack));
+	TestTrue(TEXT("GrantModifier(AttackB) should succeed"), Subsystem->GrantModifier(ModAttackB));
 	TestTrue(TEXT("GrantModifier(Ability) should succeed"), Subsystem->GrantModifier(ModAbility));
 
 	// 1. Successful slot.
@@ -160,18 +187,34 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("BubbleFull should still have exactly 2 slotted modifiers after the rejected third"),
 		Subsystem->GetSlottedModifiers(BubbleFull).Num(), 2);
 
-	// 4. Category-duplicate rejection, and same-slot different-category success -
-	// proves the rejection is category-based, not slot-index-based.
-	TestTrue(TEXT("Slotting the first SurvivalType modifier into BubbleCategory should succeed"),
-		Subsystem->TrySlotModifier(BubbleCategory, ModSurvivalA));
-	TestFalse(TEXT("Slotting a second, different SurvivalType modifier into the same bubble should fail (category duplicate)"),
-		Subsystem->TrySlotModifier(BubbleCategory, ModSurvivalB));
-	TestEqual(TEXT("BubbleCategory should still have exactly 1 slotted modifier after the rejected duplicate-category attempt"),
-		Subsystem->GetSlottedModifiers(BubbleCategory).Num(), 1);
-	TestTrue(TEXT("Slotting a different-category modifier into that same still-open slot should succeed"),
+	// 4. Slot-accepts-category matching, not anti-duplication: BubbleCategory's slots
+	// both accept AttackType, so two DIFFERENT AttackType modifiers both fit. An
+	// anti-duplication rule (reject a candidate sharing an already-slotted
+	// modifier's Category) would have rejected the second one here - this proves the
+	// rule is per-slot acceptance instead.
+	TestTrue(TEXT("Slotting the first AttackType modifier into BubbleCategory (both slots accept AttackType) should succeed"),
 		Subsystem->TrySlotModifier(BubbleCategory, ModAttack));
-	TestEqual(TEXT("BubbleCategory should have exactly 2 slotted modifiers after the different-category success"),
+	TestTrue(TEXT("Slotting a second, different AttackType modifier into BubbleCategory's other AttackType-accepting slot should succeed (proves this isn't anti-duplication)"),
+		Subsystem->TrySlotModifier(BubbleCategory, ModAttackB));
+	TestEqual(TEXT("BubbleCategory should have exactly 2 slotted modifiers once both AttackType-accepting slots fill"),
 		Subsystem->GetSlottedModifiers(BubbleCategory).Num(), 2);
+
+	// 4b. Slot-accepts-category rejection with an open slot still available - proves
+	// the rule is a fixed per-slot accepted category, not "first open slot wins".
+	// BubbleMismatch's slot 0 accepts SurvivalType and slot 1 accepts AttackType, so
+	// an AbilityType modifier fits neither slot even though both are open.
+	TestFalse(TEXT("Slotting an AbilityType modifier into BubbleMismatch should fail: neither slot accepts AbilityType"),
+		Subsystem->TrySlotModifier(BubbleMismatch, ModAbility));
+	TestEqual(TEXT("BubbleMismatch should have no slotted modifiers after the rejected mismatch attempt"),
+		Subsystem->GetSlottedModifiers(BubbleMismatch).Num(), 0);
+	TestTrue(TEXT("Slotting a SurvivalType modifier into BubbleMismatch's SurvivalType-accepting slot should succeed"),
+		Subsystem->TrySlotModifier(BubbleMismatch, ModSurvivalB));
+	TestFalse(TEXT("Slotting an AbilityType modifier into BubbleMismatch's one remaining (AttackType-accepting) slot should still fail"),
+		Subsystem->TrySlotModifier(BubbleMismatch, ModAbility));
+	TestTrue(TEXT("Slotting an AttackType modifier into BubbleMismatch's remaining AttackType-accepting slot should succeed"),
+		Subsystem->TrySlotModifier(BubbleMismatch, ModAttack));
+	TestEqual(TEXT("BubbleMismatch should have exactly 2 slotted modifiers once both differently-accepting slots fill"),
+		Subsystem->GetSlottedModifiers(BubbleMismatch).Num(), 2);
 
 	// 5. Unslot.
 	TestTrue(TEXT("Unslotting a present modifier should succeed"), Subsystem->UnslotModifier(BubbleA, ModSurvivalA));
@@ -186,8 +229,8 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 		Subsystem->GrantModifier(FName(TEXT("Mod_DoesNotExist"))));
 	TestFalse(TEXT("GrantModifier on an already-owned ModifierId should fail (no duplicate entries)"),
 		Subsystem->GrantModifier(ModSurvivalA));
-	TestEqual(TEXT("GetOwnedModifiers should still have exactly 4 entries after the redundant/unknown grant attempts"),
-		Subsystem->GetOwnedModifiers().Num(), 4);
+	TestEqual(TEXT("GetOwnedModifiers should still have exactly 5 entries after the redundant/unknown grant attempts"),
+		Subsystem->GetOwnedModifiers().Num(), 5);
 	TestFalse(TEXT("TrySlotModifier with an unknown ModifierId should fail"),
 		Subsystem->TrySlotModifier(BubbleA, FName(TEXT("Mod_DoesNotExist"))));
 	TestFalse(TEXT("TrySlotModifier with a not-owned ModifierId should fail"),
@@ -202,7 +245,7 @@ bool FKrowdKontrolCrowdMasteryModifierSlotTest::RunTest(const FString& Parameter
 	TestTrue(TEXT("RefundAllAndClearUnlocks should leave the owned-modifiers inventory untouched"),
 		Subsystem->GetOwnedModifiers().Contains(ModSurvivalA));
 	TestEqual(TEXT("RefundAllAndClearUnlocks should not change the owned-modifiers count"),
-		Subsystem->GetOwnedModifiers().Num(), 4);
+		Subsystem->GetOwnedModifiers().Num(), 5);
 
 	UGameplayStatics::DeleteGameInSlot(ULevelClearTimeSubsystem::SaveSlotName, 0);
 

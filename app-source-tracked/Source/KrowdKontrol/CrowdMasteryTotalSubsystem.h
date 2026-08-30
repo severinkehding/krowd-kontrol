@@ -96,6 +96,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd Mastery")
 	TArray<FName> GetUnlockedBubbles() const;
 
+	// Every currently-unlocked bubble's EffectHookId, in no particular order. A bubble
+	// whose owning node can no longer be resolved (MasteryTreeTable reassigned/edited
+	// since unlock) is silently skipped, same fail-closed posture FindBubbleAndOwningNode
+	// already documents.
+	UFUNCTION(BlueprintPure, Category = "Crowd Mastery")
+	TArray<FName> GetUnlockedEffectHookIds() const;
+
 	// Full respec: zeroes SpentPoints and clears UnlockedBubbleIds. Never touches
 	// AccumulatedTotal - the earned total stays the separate, already-existing
 	// authority this respec doesn't affect.
@@ -125,16 +132,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd Mastery")
 	TArray<FName> GetOwnedModifiers() const;
 
-	// Attempts to slot ModifierId into one of BubbleId's up to 2 modifier slots.
-	// Fails and leaves all state unchanged if: BubbleId is not unlocked; ModifierId
-	// is unknown or not owned; BubbleId already has 2 slotted modifiers; or
-	// BubbleId already has a slotted modifier sharing ModifierId's Category. This
-	// last rule is deliberately an anti-duplication rule across a skill's own two
-	// slots - not a fixed-per-slot-accepted-category check - because the shipped
-	// data model has no per-slot-category field to check against, and the PRD's
-	// own cited reference source documents the real rule as "a node can't have
-	// upgrades of the same type" (see the plan's Alternatives Rejected for the full
-	// reasoning). Returns true only on an actual slot.
+	// Attempts to slot ModifierId into one of BubbleId's up to MaxModifierSlotsPerBubble
+	// modifier slots. Fails and leaves all state unchanged if: BubbleId is not
+	// unlocked; ModifierId is unknown or not owned; or no open slot's pre-assigned
+	// accepted category (FMasterySkillBubble::SlotAcceptedCategories, indexed by slot
+	// position) matches ModifierId's Category - this covers both "already full" (no
+	// open slot at all) and "category mismatch" (an open slot exists but its accepted
+	// category differs) in one check. Returns true only on an actual slot.
 	UFUNCTION(BlueprintCallable, Category = "Crowd Mastery")
 	bool TrySlotModifier(FName BubbleId, FName ModifierId);
 
@@ -196,11 +200,21 @@ private:
 	// clears unlocks and slotted modifiers, not earned inventory).
 	TSet<FName> OwnedModifierIds;
 
-	// Per unlocked bubble, the up to 2 modifier IDs currently slotted into it.
-	// Cleared by RefundAllAndClearUnlocks() alongside UnlockedBubbleIds.
+	// Per unlocked bubble, exactly MaxModifierSlotsPerBubble entries once the bubble
+	// has ever been touched by TrySlotModifier, indexed by slot position (matching
+	// FMasterySkillBubble::SlotAcceptedCategories's indexing) - NAME_None marks an
+	// open slot. GetSlottedModifiers() filters NAME_None out before returning, so
+	// callers still see a 0-2-entry, gap-free list. Cleared by
+	// RefundAllAndClearUnlocks() alongside UnlockedBubbleIds.
 	TMap<FName, TArray<FName>> SlottedModifiersByBubbleId;
 
 	// Warn-once guard for ModifierCatalogTable, same pattern as
 	// bHasWarnedMissingMasteryTreeTable above.
 	mutable bool bHasWarnedMissingModifierCatalogTable = false;
+
+	// Slots per unlocked skill bubble (PRD REQ-4: "Each unlocked skill has 2
+	// modifier slots"). Also the fixed size TrySlotModifier initializes each
+	// bubble's SlottedModifiersByBubbleId entry to, and the bound
+	// FMasterySkillBubble::SlotAcceptedCategories is indexed against.
+	static constexpr int32 MaxModifierSlotsPerBubble = 2;
 };
