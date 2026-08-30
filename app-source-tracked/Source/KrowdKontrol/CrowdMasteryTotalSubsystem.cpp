@@ -254,13 +254,12 @@ bool UCrowdMasteryTotalSubsystem::TrySlotModifier(FName BubbleId, FName Modifier
 	{
 		return false;
 	}
-	const TArray<FName>* ExistingSlots = SlottedModifiersByBubbleId.Find(BubbleId);
-	if (ExistingSlots && ExistingSlots->Num() >= 2)
+	if (const TArray<FName>* ExistingSlots = SlottedModifiersByBubbleId.Find(BubbleId))
 	{
-		return false;
-	}
-	if (ExistingSlots)
-	{
+		if (ExistingSlots->Num() >= 2)
+		{
+			return false;
+		}
 		for (const FName& ExistingId : *ExistingSlots)
 		{
 			const FMasteryModifierRow* ExistingRow = FindModifierRow(ExistingId);
