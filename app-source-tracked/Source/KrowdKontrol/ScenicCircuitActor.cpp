@@ -30,6 +30,7 @@ void AScenicCircuitActor::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+	SpeedUnitsPerSecond += AccelerationUnitsPerSecond2 * DeltaSeconds;
 	DistanceAlongPath += SpeedUnitsPerSecond * DeltaSeconds;
 	BobPhaseSeconds += DeltaSeconds;
 	ApplyPathPosition();
@@ -38,7 +39,8 @@ void AScenicCircuitActor::Tick(float DeltaSeconds)
 float AScenicCircuitActor::TotalPathLength() const
 {
 	float Total = 0.0f;
-	for (int32 i = 0; i < Waypoints.Num(); ++i)
+	const int32 SegmentCount = bLoop ? Waypoints.Num() : Waypoints.Num() - 1;
+	for (int32 i = 0; i < SegmentCount; ++i)
 	{
 		Total += FVector::Dist(Waypoints[i], Waypoints[(i + 1) % Waypoints.Num()]);
 	}
@@ -56,20 +58,35 @@ void AScenicCircuitActor::ApplyPathPosition()
 	{
 		return;
 	}
-	float Remaining = FMath::Fmod(DistanceAlongPath, Total);
-	if (Remaining < 0.0f)
+	float Remaining;
+	if (bLoop)
 	{
-		Remaining += Total;
+		Remaining = FMath::Fmod(DistanceAlongPath, Total);
+		if (Remaining < 0.0f)
+		{
+			Remaining += Total;
+		}
 	}
-	for (int32 i = 0; i < Waypoints.Num(); ++i)
+	else
+	{
+		// one-shot: park exactly at the final waypoint once the path is spent
+		Remaining = FMath::Min(DistanceAlongPath, Total);
+	}
+	const int32 SegmentCount = bLoop ? Waypoints.Num() : Waypoints.Num() - 1;
+	for (int32 i = 0; i < SegmentCount; ++i)
 	{
 		const FVector& A = Waypoints[i];
 		const FVector& B = Waypoints[(i + 1) % Waypoints.Num()];
 		const float SegLength = FVector::Dist(A, B);
-		if (Remaining > SegLength && SegLength > KINDA_SMALL_NUMBER)
+		const bool bLastSegment = i == SegmentCount - 1;
+		if (Remaining > SegLength && SegLength > KINDA_SMALL_NUMBER && !(!bLoop && bLastSegment))
 		{
 			Remaining -= SegLength;
 			continue;
+		}
+		if (!bLoop && bLastSegment)
+		{
+			Remaining = FMath::Min(Remaining, SegLength);
 		}
 		const FVector Direction = SegLength > KINDA_SMALL_NUMBER ? (B - A) / SegLength : FVector::ForwardVector;
 		FVector NewLocation = A + Direction * Remaining;

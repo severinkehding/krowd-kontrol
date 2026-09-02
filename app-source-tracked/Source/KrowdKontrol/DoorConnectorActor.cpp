@@ -9,6 +9,8 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Materials/MaterialInterface.h"
+#include "EnemyBase.h"
+#include "EngineUtils.h"
 
 namespace
 {
@@ -34,7 +36,9 @@ ADoorConnectorActor::ADoorConnectorActor()
 	// OnRoomClearedStateChanged, but no event exists for "the player crossed the
 	// door", and polling at 0.25s is imperceptible at door scale.
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.25f;
+	// Was 0.25s (gate polling only); the sliding leaves animate per-frame now and
+	// RefreshGateState() stays cheap enough that the throttle bought nothing real.
+	PrimaryActorTick.TickInterval = 0.f;
 
 	USceneComponent* DoorConnectorRoot = CreateDefaultSubobject<USceneComponent>(TEXT("DoorConnectorRoot"));
 	RootComponent = DoorConnectorRoot;
@@ -115,12 +119,47 @@ ADoorConnectorActor::ADoorConnectorActor()
 	CorridorGuardRailAComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CorridorGuardRailAComponent"));
 	ConfigureCorridorGuardRail(CorridorGuardRailAComponent, DoorConnectorRoot);
 
+	DoorPanelLeftComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DoorPanelLeftComponent"));
+	DoorPanelLeftComponent->SetupAttachment(DoorConnectorRoot);
+	DoorPanelRightComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DoorPanelRightComponent"));
+	DoorPanelRightComponent->SetupAttachment(DoorConnectorRoot);
+	// The packs' matched sliding pair - both pivots sit at the closed meeting
+	// edge, so co-locating them at the door centre closes the pair naturally.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DoorLeafLeftFinder(
+		TEXT("/Game/Space_Station_2/Meshes/SM_door_002.SM_door_002"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DoorLeafRightFinder(
+		TEXT("/Game/Space_Station_2/Meshes/SM_door_006.SM_door_006"));
+	for (UStaticMeshComponent* Panel : { DoorPanelLeftComponent.Get(), DoorPanelRightComponent.Get() })
+	{
+		Panel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Panel->SetCollisionProfileName(TEXT("NoCollision"));
+		Panel->SetGenerateOverlapEvents(false);
+		Panel->SetCanEverAffectNavigation(false);
+	}
+	if (DoorLeafLeftFinder.Succeeded())
+	{
+		DoorPanelLeftComponent->SetStaticMesh(DoorLeafLeftFinder.Object);
+	}
+	if (DoorLeafRightFinder.Succeeded())
+	{
+		DoorPanelRightComponent->SetStaticMesh(DoorLeafRightFinder.Object);
+	}
+
 	CorridorGuardRailBComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CorridorGuardRailBComponent"));
 	ConfigureCorridorGuardRail(CorridorGuardRailBComponent, DoorConnectorRoot);
 }
 
 void ADoorConnectorActor::HideConnectorVisuals()
 {
+	bDoorPlaneValid = false;
+	if (DoorPanelLeftComponent)
+	{
+		DoorPanelLeftComponent->SetVisibility(false);
+	}
+	if (DoorPanelRightComponent)
+	{
+		DoorPanelRightComponent->SetVisibility(false);
+	}
 	ConnectorFloorMeshComponent->SetVisibility(false);
 	DoorMarkerMeshComponent->SetVisibility(false);
 	DoorMarkerLightComponent->SetVisibility(false);
@@ -162,6 +201,21 @@ void ADoorConnectorActor::RecomputeConnectorGeometry()
 	DoorMarkerMeshComponent->SetWorldLocation(Midpoint + FVector(0.f, 0.f, DoorMarkerHeight));
 	DoorMarkerMeshComponent->SetVisibility(true);
 	DoorMarkerLightComponent->SetVisibility(true);
+
+	// Door-plane frame for the sliding leaves: leaves stand across the corridor
+	// (their width axis along the connector's lateral Y), meeting at the centre.
+	DoorPlaneCenter = Midpoint;
+	DoorLateralDirection = FRotationMatrix(Delta.Rotation()).GetUnitAxis(EAxis::Y);
+	DoorPanelRotation = Delta.Rotation() + FRotator(0.f, 90.f, 0.f);
+	bDoorPlaneValid = true;
+	const FVector PanelScale(ConnectorFloorWidth * 0.5f / 97.6f, 1.f, 300.f / 217.8f);
+	for (UStaticMeshComponent* Panel : { DoorPanelLeftComponent.Get(), DoorPanelRightComponent.Get() })
+	{
+		Panel->SetWorldRotation(DoorPanelRotation);
+		Panel->SetWorldScale3D(PanelScale);
+		Panel->SetVisibility(true);
+	}
+	TickDoorPanels(0.f);
 
 	GateBlockingComponent->SetWorldLocation(Midpoint);
 	GateBlockingComponent->SetWorldRotation(Delta.Rotation());
@@ -245,6 +299,42 @@ void ADoorConnectorActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	RefreshGateState();
+	TickDoorPanels(DeltaSeconds);
+}
+
+void ADoorConnectorActor::TickDoorPanels(float DeltaSeconds)
+{
+	if (!bDoorPlaneValid || !DoorPanelLeftComponent || !DoorPanelRightComponent)
+	{
+		return;
+	}
+	// Open only when the gate itself is passable AND someone is actually at the
+	// door - the player pawn or any enemy (controlled trains and fleeing robots
+	// cross doors without the player right next to them).
+	bool bWantsOpen = false;
+	if (bIsGateOpen && GetWorld())
+	{
+		const float RadiusSquared = DoorProximityRadius * DoorProximityRadius;
+		if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+		{
+			bWantsOpen = FVector::DistSquared(PlayerPawn->GetActorLocation(), DoorPlaneCenter) < RadiusSquared;
+		}
+		if (!bWantsOpen)
+		{
+			for (TActorIterator<AEnemyBase> It(GetWorld()); It; ++It)
+			{
+				if (FVector::DistSquared(It->GetActorLocation(), DoorPlaneCenter) < RadiusSquared)
+				{
+					bWantsOpen = true;
+					break;
+				}
+			}
+		}
+	}
+	DoorPanelSlide01 = FMath::FInterpConstantTo(DoorPanelSlide01, bWantsOpen ? 1.f : 0.f, DeltaSeconds, 2.2f);
+	const FVector SlideOffset = DoorLateralDirection * DoorSlideDistance * DoorPanelSlide01;
+	DoorPanelLeftComponent->SetWorldLocation(DoorPlaneCenter - SlideOffset);
+	DoorPanelRightComponent->SetWorldLocation(DoorPlaneCenter + SlideOffset);
 }
 
 void ADoorConnectorActor::RefreshGateState()

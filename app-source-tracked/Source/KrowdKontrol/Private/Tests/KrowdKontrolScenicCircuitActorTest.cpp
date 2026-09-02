@@ -79,7 +79,30 @@ bool FKrowdKontrolScenicCircuitActorTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("StartOffsetAlongPath should place the mover that far around the loop"),
 		Staggered->GetActorLocation(), FVector(400.f, 0.f, 0.f));
 
-	// (f) degenerate: fewer than 2 waypoints must not move or divide by zero.
+	// (f) one-shot (bLoop false): the mover parks exactly at the final waypoint
+	// once the open path is spent, instead of wrapping.
+	AScenicCircuitActor* OneShot = World->SpawnActor<AScenicCircuitActor>();
+	OneShot->Waypoints = { FVector::ZeroVector, FVector(400.f, 0.f, 0.f), FVector(400.f, 400.f, 0.f) };
+	OneShot->bLoop = false;
+	OneShot->SpeedUnitsPerSecond = 100.0f;
+	OneShot->Tick(60.0f);
+	TestEqual(TEXT("A one-shot mover should park at the final waypoint"),
+		OneShot->GetActorLocation(), FVector(400.f, 400.f, 0.f));
+
+	// (g) acceleration grows the speed over time (the intro starship's takeoff).
+	AScenicCircuitActor* Takeoff = World->SpawnActor<AScenicCircuitActor>();
+	Takeoff->Waypoints = { FVector::ZeroVector, FVector(100000.f, 0.f, 0.f) };
+	Takeoff->bLoop = false;
+	Takeoff->SpeedUnitsPerSecond = 100.0f;
+	Takeoff->AccelerationUnitsPerSecond2 = 50.0f;
+	Takeoff->Tick(1.0f);
+	const float FirstSecond = Takeoff->GetActorLocation().X;
+	Takeoff->Tick(1.0f);
+	const float SecondSecond = Takeoff->GetActorLocation().X - FirstSecond;
+	TestTrue(TEXT("An accelerating mover should cover more ground each second"),
+		SecondSecond > FirstSecond + 25.0f);
+
+	// (h) degenerate: fewer than 2 waypoints must not move or divide by zero.
 	AScenicCircuitActor* Parked = World->SpawnActor<AScenicCircuitActor>(FVector(7.f, 8.f, 9.f), FRotator::ZeroRotator);
 	Parked->Waypoints = { FVector(1.f, 2.f, 3.f) };
 	Parked->Tick(1.0f);
