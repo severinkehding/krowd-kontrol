@@ -87,6 +87,36 @@ The backdrop is animated and dense — "mega city" in the packs' demo spirit:
   `EnvPen`, `Scenic_`, `RoadSeg_`, `RailSeg_`, `Skyline_`, `WallPanel_`).
 - Camera: placed pawns save `CameraArmLength=2000`, `CameraBoomPitch=-50`.
 
+## Intro flythrough (operator scene brief, 2026-09-02)
+
+Selecting Level 1 from the menu now opens **`L_Intro`** — a full copy of the
+colony demo map (`Demonstration_Brown` duplicated; the demo itself stays
+pristine) staged as a 7-second camera flight into the plaza bunker's garage
+mouth at (−6624, 7412), then a fade to black and travel into `L_Level01`. Other
+levels still open directly.
+
+- **`AIntroFlythroughDirector`** (+ `AIntroGameMode`, spectator start): eased
+  waypoint flight, focus-point framing, `StartCameraFade` at 6.1s,
+  `OpenLevel(L_Level01)` at 7s (IsGameWorld-gated seam, unit-tested).
+- Scene surgery in `L_Intro`: the garage truck (`SM_transport_001` + its eight
+  separate `SM_Wheel_001` actors — demo vehicles are multi-actor!) removed; a
+  second transport + `SM_transport_004` drive a lane/sand-road loop with
+  trace-snapped heights (the plaza deck sits at z≈214, not 0);
+  `SM_starship_005` lifts off and accelerates north = screen-right of the
+  approach (`bLoop=false` + `AccelerationUnitsPerSecond2` on
+  `AScenicCircuitActor`); the `SM_antenna_008` dish scans yaw −70°→+100°,
+  pitch 61°→26° over the 7s via **`AScenicRotatorActor`** (PingPong).
+- Builder: `app/Saved/Scripts/build_intro.py` (+ `fix_intro_movers.py`).
+
+## Sliding doors (same brief)
+
+`ADoorConnectorActor` now carries the packs' matched sliding-leaf pair
+(`SM_door_002` left / `SM_door_006` right — both pivots at the closed meeting
+edge). Purely visual (NoCollision; blocking stays `GateBlockingComponent`):
+shut while the gate is locked, sliding apart whenever the player or any enemy
+is within `DoorProximityRadius` of an open gate. Applies to every level's
+doors automatically.
+
 ## Character art (same session)
 
 - Player pawn: Fab "Cute Robot" skeletal mesh (`/Game/CuteRobot/`) with

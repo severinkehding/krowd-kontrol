@@ -38,6 +38,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scenic Circuit", meta = (ClampMin = "0.0"))
 	float SpeedUnitsPerSecond = 600.0f;
 
+	// false: one-shot - the mover eases to a stop at the final waypoint instead
+	// of wrapping (the intro starship's takeoff run). The waypoint list is then
+	// treated as an open polyline, not a closed loop.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scenic Circuit")
+	bool bLoop = true;
+
+	// Added to the speed every second while moving (one-shot takeoffs accelerate;
+	// 0 keeps the classic constant-speed amble).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scenic Circuit", meta = (ClampMin = "0.0"))
+	float AccelerationUnitsPerSecond2 = 0.0f;
+
 	// Yaw toward the current travel direction (plus YawOffsetDegrees for meshes
 	// whose visual nose is not +X - most pack ships model forward as -Y).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scenic Circuit")

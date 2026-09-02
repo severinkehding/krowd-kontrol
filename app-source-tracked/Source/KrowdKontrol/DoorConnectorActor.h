@@ -55,6 +55,24 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
 	TObjectPtr<UPointLightComponent> DoorMarkerLightComponent;
 
+	// Sliding door leaves (operator scene brief, 2026-09-02): the packs' matched
+	// left/right pair (SM_door_002 / SM_door_006, whose pivots both sit at the
+	// closed meeting edge). Purely visual - NoCollision; the gate's actual
+	// blocking stays GateBlockingComponent's job. Closed while the gate is
+	// locked; once IsGateOpen(), they slide apart whenever the player pawn or
+	// any enemy comes within DoorProximityRadius and glide shut again after.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<UStaticMeshComponent> DoorPanelLeftComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Door Connector")
+	TObjectPtr<UStaticMeshComponent> DoorPanelRightComponent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Door Connector", meta = (ClampMin = "50.0"))
+	float DoorProximityRadius = 450.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Door Connector", meta = (ClampMin = "10.0"))
+	float DoorSlideDistance = 165.f;
+
 	// The room whose OwnedEnemies gate this door. When unset (the common, real-level
 	// case), BeginPlay derives it as whichever of RoomA/RoomB sits closer to the level
 	// entrance (lower world X) - the room this door is the exit from - so real placed
@@ -127,5 +145,20 @@ private:
 	UFUNCTION()
 	void RefreshGateState();
 
+	// Advances the sliding-leaf animation one frame: picks the open/closed target
+	// from gate + proximity state, eases DoorPanelSlide01 toward it, and applies
+	// the leaf offsets around the cached door plane.
+	void TickDoorPanels(float DeltaSeconds);
+
 	bool bIsGateOpen = true;
+
+	friend class FKrowdKontrolDoorConnectorSlidingPanelTest;
+
+	// Door-plane frame cached by RecomputeConnectorGeometry() for the per-frame
+	// panel animation (world-space centre and the lateral slide direction).
+	FVector DoorPlaneCenter = FVector::ZeroVector;
+	FVector DoorLateralDirection = FVector::RightVector;
+	FRotator DoorPanelRotation = FRotator::ZeroRotator;
+	bool bDoorPlaneValid = false;
+	float DoorPanelSlide01 = 0.f;
 };
